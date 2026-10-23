@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # The SDK gets its own PRs: protocol changes can move rule behaviour.
+      mcp-sdk:
+        patterns: ["@modelcontextprotocol/*"]
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # @types/node tracks the oldest supported Node (engines >=20.19).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

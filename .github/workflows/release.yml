@@ -1,0 +1,47 @@
+name: Release
+
+# Push a tag like v0.1.0 (matching package.json) to publish to npm.
+# Publishing uses npm trusted publishing (OIDC): configure it on npmjs.com for this repository,
+# workflow file "release.yml" and environment "npm". No long-lived npm token is needed;
+# provenance is attached automatically (publishConfig.provenance is also set).
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@^11.5.1
+      - run: npm ci
+      - name: Tag matches package.json version
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          MCP_REVIEW_CHECK_SKIP_BUILD: '1'
+      - name: Publish to npm
+        # Pre-release tags (v0.2.0-rc.1) go to the "next" dist-tag.
+        run: npm publish $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
+        env:
+          # Only for the very first publish (a trusted publisher can be configured only once the package exists):
+          # a short-lived granular token in the NPM_TOKEN secret. Delete the secret afterwards; OIDC is used when it is empty.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--prerelease")
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
+const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
 /** Snapshot of the rule IDs the BAD fixture must trigger (frozen; update deliberately). */
 const BAD_STDIO_RULES = [
   'APPS-001', 'APPS-003', 'APPS-005', 'APPS-007', 'APPS-012', 'APPS-017', 'APPS-018',
@@ -180,6 +182,6 @@ describe('e2e stdio', () => {
     expect(list.stdout).toContain('TOOL-011');
     expect(list.stdout).toContain('MAN-031');
     expect((await cli(['--help'])).stdout).toMatch(/provisional/);
-    expect((await cli(['--version'])).stdout.trim()).toBe('0.1.0');
+    expect((await cli(['--version'])).stdout.trim()).toBe(PKG_VERSION);
   });
 });

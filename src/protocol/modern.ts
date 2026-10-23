@@ -2,9 +2,10 @@
 import type { HttpExchange } from '../snapshot.js';
 import type { Tracer } from './trace.js';
 import { isObj } from '../rules/util/access.js';
+import { VERSION } from '../version.js';
 
 export const MODERN_VERSION = '2026-07-28';
-export const CLIENT_INFO = { name: 'mcp-review-check', version: '0.1.0' };
+export const CLIENT_INFO = { name: 'mcp-review-check', version: VERSION };
 
 export interface ModernResponse {
   exchange: HttpExchange;

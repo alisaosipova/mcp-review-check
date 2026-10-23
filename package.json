@@ -2,6 +2,14 @@
   "name": "mcp-review-check",
   "version": "0.1.0",
   "description": "Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec review criteria.",
+  "homepage": "https://github.com/OWNER/mcp-review-check#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/mcp-review-check/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/mcp-review-check.git"
+  },
   "type": "module",
   "bin": {
     "mcp-review-check": "dist/cli.js"
@@ -10,15 +18,22 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20.19"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/postbuild.mjs",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "readme:rules": "node scripts/rules-table.mjs --write"
+    "readme:rules": "node scripts/rules-table.mjs --write",
+    "prepack": "npm run build"
   },
   "keywords": [
     "mcp",

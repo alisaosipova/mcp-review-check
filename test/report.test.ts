@@ -14,6 +14,7 @@ import { failed, score, verdict } from '../src/report/score.js';
 import { groupFindings, renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { loadSnapshot } from './helpers.js';
+import { VERSION } from '../src/version.js';
 
 const f = (ruleId: string, severity: Finding['severity'], over: Partial<Finding> = {}): Finding => ({
   ruleId, title: 't', severity, platforms: ['claude'], message: 'm', fix: 'fix', docs: ['https://x.test'], ...over,
@@ -70,7 +71,7 @@ describe('text report', () => {
 
   it('renders header, groups, checklist, verdicts, disclaimer and CTA without ANSI when color is off', () => {
     const text = renderText(report(loadSnapshot('minimal-http')), { color: false, verbose: false });
-    expect(text.startsWith('mcp-review-check 0.1.0 · rules 2026-10-22 · target: all')).toBe(true);
+    expect(text.startsWith(`mcp-review-check ${VERSION} · rules 2026-10-22 · target: all`)).toBe(true);
     expect(text).toContain('Server  Acme Notes 1.4.2 · https://mcp.acme.test/mcp');
     expect(text).toMatch(/ERRORS \(\d+\)/);
     expect(text).toContain('  x TOOL-011 [claude] delete_invoice: neither readOnlyHint nor destructiveHint is set');
@@ -91,7 +92,7 @@ describe('other formats', () => {
   it('json has the documented shape and uncollapsed findings', () => {
     const j = toJson(report(loadSnapshot('minimal-http'))) as Record<string, any>;
     for (const k of ['tool', 'target', 'startedAt', 'durationMs', 'server', 'coverage', 'summary', 'findings', 'skipped', 'ignored', 'manual', 'disclaimer', 'contact']) expect(j).toHaveProperty(k);
-    expect(j.tool).toEqual({ name: 'mcp-review-check', version: '0.1.0', catalogDate: '2026-10-22' });
+    expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: '2026-10-22' });
     expect(j.summary).toHaveProperty('verdicts.claude');
     expect(j.findings[0]).toHaveProperty('docs');
     expect(j.contact).toBeNull();

@@ -142,7 +142,7 @@ export interface Started {
   close(): Promise<void>;
 }
 
-export async function listen(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>, path = '/mcp'): Promise<Started> {
+export async function listen(handler: (req: IncomingMessage, res: ServerResponse) => unknown, path = '/mcp'): Promise<Started> {
   const server = http.createServer((req, res) => {
     Promise.resolve(handler(req, res)).catch((e) => { if (!res.headersSent) res.writeHead(500); res.end(String(e)); });
   });
