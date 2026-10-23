@@ -83,11 +83,13 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | 0 | Completed, below the `--fail-on` threshold |
 | 1 | Completed, threshold reached |
 | 2 | Usage or configuration error, or `--output` could not be written |
-| 3 | Could not reach the server or complete any handshake (a report is still printed) |
+| 3 | Could not reach the server or complete any handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist) |
 
 A `401` without `--bearer` is not fatal: the auth probe runs and the report says which checks need a token.
 
 If the server declares tools but `tools/list` fails (error, crash, timeout, or more than 100 pages), SPEC-020 reports an error and the report says that tool checks could not run.
+
+A failed connect names its cause instead of `fetch failed`: the hostname does not resolve, the connection was refused or timed out, the TLS certificate is not trusted (`CERT_*`, self-signed), or the URL answered 404/405/an HTML page and is not an MCP endpoint, with a suggested URL (`<url>/mcp`, or `/mcp` instead of the deprecated `/sse`). A URL without a scheme is rejected with a suggestion (`https://…`, or `http://` for localhost).
 
 **Redaction.** One redactor covers the whole report in every format (messages, evidence, target, SARIF URI, fatal message, stdio stderr, `--verbose` trace): `--bearer`, `--header` values, `--env` values, secret query parameters (`api_key`, `token`, ...) and the password in `user:pass@`, and stdio arguments that follow a secret-looking flag (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `"Authorization: Bearer X"`), including when the server echoes them on stdout, on stderr or in what it lists. Usage errors never repeat option values. Values shorter than 4 characters, `true`, `false`, `yes`, `no`, `on`, `off`, `null`, `undefined`, `none` and numbers with up to 6 digits before an optional decimal part are not treated as secrets: they would blank out unrelated report text.
 

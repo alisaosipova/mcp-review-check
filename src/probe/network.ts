@@ -37,7 +37,11 @@ export async function lookupHost(host: string, deps: Deps): Promise<DnsResult> {
   if (h === 'localhost' || h.endsWith('.localhost')) return { host: h, a: ['127.0.0.1'], aaaa: ['::1'] };
   const [a, aaaa] = await Promise.allSettled([deps.resolve4(h), deps.resolve6(h)]);
   const res: DnsResult = { host: h, a: a.status === 'fulfilled' ? a.value : [], aaaa: aaaa.status === 'fulfilled' ? aaaa.value : [] };
-  if (a.status === 'rejected' && aaaa.status === 'rejected') res.error = String((a.reason as Error)?.message ?? a.reason);
+  if (a.status === 'rejected' && aaaa.status === 'rejected') {
+    res.error = String((a.reason as Error)?.message ?? a.reason);
+    const code = (a.reason as { code?: unknown })?.code;
+    if (typeof code === 'string') res.code = code;
+  }
   return res;
 }
 

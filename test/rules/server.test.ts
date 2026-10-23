@@ -151,8 +151,24 @@ describe('SRV rules', () => {
     expect(f[0].severity).toBe('info');
   });
 
-  it('SRV-003 fatal transport failure is an error', () => {
-    const f = evaluate(byId('SRV-003'), snap({ url: URL_OK, set: (s) => { s.fatal = 'connection refused'; } }));
-    expect(f[0].severity).toBe('error');
+  it('SRV-003 fatal HTTP connect failure is a spec error with the diagnosis hint as fix (directories read INCOMPLETE)', () => {
+    const f = evaluate(byId('SRV-003'), snap({ url: URL_OK, set: (s) => {
+      s.fatal = 'could not complete a handshake: HTTP 404: https://mcp.acme.test/ is not an MCP endpoint; try https://mcp.acme.test/mcp';
+      s.connectDiagnosis = { kind: 'not-mcp', status: 404, summary: 'HTTP 404: https://mcp.acme.test/ is not an MCP endpoint', hint: 'try https://mcp.acme.test/mcp' };
+    } }));
+    expect(f[0]).toMatchObject({ severity: 'error', platforms: ['spec'], fix: 'Try https://mcp.acme.test/mcp.' });
+  });
+
+  it('SRV-004 (B7): NXDOMAIN says "does not resolve", not IPv4-only; informational when the connect failed on it', () => {
+    const nx = { host: 'nope.acme.test', a: [], aaaa: [], error: 'queryA ENOTFOUND nope.acme.test', code: 'ENOTFOUND' };
+    const fatal = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = nx; s.fatal = 'could not complete a handshake'; } }));
+    expect(fatal).toHaveLength(1);
+    expect(fatal[0]).toMatchObject({ severity: 'info', message: 'hostname nope.acme.test does not resolve (NXDOMAIN) (system resolver)' });
+    expect(fatal[0].message).not.toMatch(/IPv4/);
+    // an authorization server that does not resolve is a real blocker
+    const as = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = dns(['93.184.216.34']); s.authProbe = { trigger: 'preflight-401', prmAttempts: [], as: [], timings: {}, asDns: [{ ...nx, host: 'auth.acme.test' }] }; } }));
+    expect(as[0]).toMatchObject({ severity: 'error', message: expect.stringMatching(/auth\.acme\.test does not resolve/) });
+    const servfail = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...nx, error: 'queryA ESERVFAIL', code: 'ESERVFAIL' }; } }));
+    expect(servfail[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^inconclusive \(network\): DNS lookup/) });
   });
 });

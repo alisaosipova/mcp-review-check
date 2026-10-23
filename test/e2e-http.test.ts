@@ -1,7 +1,7 @@
 // End-to-end: the built CLI against in-process HTTP fixtures (bridge, legacy SSE, OAuth, 2026-07-28).
 import { afterEach, describe, expect, it } from 'vitest';
 import { startAuthServer } from './fixtures/auth-server.js';
-import { startBridge, type BridgeOptions, type Started } from './fixtures/http-bridge.js';
+import { listen, startBridge, type BridgeOptions, type Started } from './fixtures/http-bridge.js';
 import { startModernServer } from './fixtures/modern-server.js';
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
@@ -170,6 +170,46 @@ describe('e2e http', () => {
     servers = [];
     const r = await cli([url, '--format', 'json', '--timeout', '3000']);
     expect(r.code).toBe(3);
-    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003')?.severity).toBe('error');
+    const srv003 = r.json.findings.find((f: any) => f.ruleId === 'SRV-003');
+    expect(srv003).toMatchObject({ severity: 'error', platforms: ['spec'] });
+    // B7: the cause code is surfaced, and a connect failure reads INCOMPLETE (as for stdio), not BLOCKED
+    expect(srv003.message).toMatch(/connection refused by 127\.0\.0\.1:\d+ \(ECONNREFUSED\)/);
+    expect(r.json.coverage.diagnosis).toMatchObject({ kind: 'refused', code: 'ECONNREFUSED' });
+    expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
+    expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
+    expect(r.json.manual).toEqual([]);
+    const text = await cli([url, '--timeout', '3000']);
+    expect(text.stdout).toMatch(/Could not connect: connection refused by .*nothing is listening there/);
+    expect(text.stdout).not.toMatch(/MANUAL CHECKLIST/);
+  });
+
+  it('B7: an HTML 404 page is "not an MCP endpoint" with a /mcp suggestion and no HTML in the report', async () => {
+    const page = track(await listen((_req, res) => {
+      res.writeHead(404, { 'content-type': 'text/html' });
+      res.end(`<!doctype html><html><head><title>Page not found</title><style>body{}</style></head><body><h1>Oops</h1>${'<p>filler</p>'.repeat(200)}</body></html>`);
+    }, '/'));
+    const r = await cli([page.url, '--format', 'json', '--timeout', '3000']);
+    expect(r.code).toBe(3);
+    const msg = r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message;
+    expect(msg).toContain(`HTTP 404 with an HTML page ("Page not found"): ${page.url} is not an MCP endpoint; try ${page.base}/mcp`);
+    expect(msg).not.toMatch(/<|filler/);
+    expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
+  });
+
+  it('B7: a /sse URL that no longer serves SSE suggests /mcp', async () => {
+    const gone = track(await listen((_req, res) => {
+      res.writeHead(_req.method === 'GET' ? 410 : 405, { 'content-type': 'application/json' });
+      res.end('{"error":"SSE transport is deprecated"}');
+    }, '/sse'));
+    const r = await cli([gone.url, '--format', 'json', '--timeout', '3000']);
+    expect(r.code).toBe(3);
+    expect(r.json.coverage.reason).toBe(`HTTP 405: ${gone.url} is not an MCP endpoint; /sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve ${gone.base}/mcp`);
+  });
+
+  it('B7: a URL without a scheme gets a suggestion (exit 2)', async () => {
+    const r = await cli(['mcp.example.com/mcp']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/did you mean https:\/\/mcp\.example\.com\/mcp\?/);
+    expect((await cli(['localhost:3000/mcp'])).stderr).toMatch(/did you mean http:\/\/localhost:3000\/mcp\?/);
   });
 });

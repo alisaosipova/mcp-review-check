@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
+import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, scoreLabel, type Report } from './report/index.js';
@@ -156,6 +157,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       spec = { kind: 'stdio', command: parts[0], args: parts.slice(1), env: envVars, cwd: values.cwd };
     } else {
       const raw = positionals[0];
+      const hint = schemeSuggestion(raw);
+      // "host:3000/mcp" parses as scheme "host:", so a missing scheme is checked before the protocol.
+      if (hint) throw new UsageError(`the URL needs a scheme: did you mean ${shownUrl(hint)}?`);
       let u: URL;
       try { u = new URL(raw); } catch { throw new UsageError(`invalid URL: ${shownUrl(raw)}`); }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new UsageError('URL must use http or https');
@@ -186,7 +190,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // the server sent is scrubbed before the rules run; the target stays as entered (rules parse and hash it).
     const snap = { ...redactDeep(observed, redactor), target: observed.target };
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
-    const built = buildReport(snap, result, manualChecklist(snap), failOn, started, performance.now() - t0);
+    // No manual checklist when nothing connected: the connect failure is the only thing to act on.
+    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap), failOn, started, performance.now() - t0);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
 

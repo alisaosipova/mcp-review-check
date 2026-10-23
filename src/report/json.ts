@@ -28,7 +28,7 @@ export function toJson(r: Report): Record<string, unknown> {
       auth: authSummary(snap),
       localMode: snap.localMode,
     },
-    coverage: snap.coverage,
+    coverage: snap.connectDiagnosis ? { ...snap.coverage, diagnosis: snap.connectDiagnosis } : snap.coverage,
     summary: r.summary,
     findings: r.findings.map(findingJson),
     skipped: r.skipped,

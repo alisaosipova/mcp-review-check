@@ -72,6 +72,17 @@ export interface DnsResult {
   a: string[];
   aaaa: string[];
   error?: string;
+  /** Resolver error code when both lookups failed (ENOTFOUND = NXDOMAIN, ENODATA, ETIMEOUT, ...). */
+  code?: string;
+}
+
+/** Why an HTTP handshake failed (B7): the network cause or "not an MCP endpoint", with a hint. */
+export interface ConnectDiagnosis {
+  kind: 'dns' | 'refused' | 'timeout' | 'reset' | 'tls' | 'not-mcp' | 'http' | 'other';
+  summary: string;
+  code?: string;
+  status?: number;
+  hint?: string;
 }
 
 export interface AsObservation {
@@ -143,6 +154,7 @@ export interface Snapshot {
   coverage: { toolLevel: 'ok' | 'auth-required' | 'token-rejected' | 'connect-failed' | 'list-failed'; reason?: string };
   /** Set when no transport worked (SRV-003 fatal, exit code 3). */
   fatal?: string;
+  connectDiagnosis?: ConnectDiagnosis;
   env?: { nodeExtraCaCerts?: boolean };
   options: { target: TargetOpt; active: boolean; activeAuth: boolean; authenticated?: boolean };
 }

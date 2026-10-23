@@ -20,6 +20,8 @@ First public release, planned as 0.1.0.
 - JSON reports carry `schemaVersion` (1) and `tool.catalogAgeDays`.
 - A check run warns on stderr when the rule catalog is more than 90 days old.
 - Secret redaction for stdio as well as HTTP: one redactor per run scrubs every report format and the `--verbose` output of `--bearer`, `--header` and `--env` values, URL credentials, and stdio arguments after secret-looking flags, kebab-case or camelCase (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `Authorization: Bearer X`), including where the server echoes them on stdout, on stderr or in its tool metadata. Usage errors no longer repeat option values.
+- Connection diagnostics: DNS (NXDOMAIN), refused, timed-out and TLS-certificate failures are named, and a URL that answers 404/405 or an HTML page is reported as "not an MCP endpoint" with a suggested URL (`<url>/mcp`, or `/mcp` instead of `/sse`). A URL without a scheme is rejected (exit 2) with a `https://` suggestion (`http://` for localhost).
+- JSON reports gain `coverage.diagnosis` on a failed connect.
 
 #### Rules added
 
@@ -29,8 +31,11 @@ First public release, planned as 0.1.0.
 
 #### Other rule changes
 
+- SRV-004 says "does not resolve (NXDOMAIN)" instead of "no A record; Connectors are IPv4-only" when a hostname does not exist, and a failed DNS lookup is `inconclusive (network)` (info).
+
 ### Changed
 
 - Requires Node 20.19 or newer. The development dependencies moved to vitest 4 and `@types/node` 20, and `npm audit` reports no known vulnerabilities.
 - The version in `--version`, the report header, JSON `tool.version` and the `clientInfo` sent to the server is read from `package.json` (one place).
 - In `--stdio "<command>"`, a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. Use quotes (or the `--` form) for arguments with spaces.
+- A failed HTTP connect is now a spec-only SRV-003 error (its fix is the suggested next step), so the Claude and ChatGPT verdicts read `INCOMPLETE` (as for stdio) instead of `BLOCKED`; the manual checklist is not printed when nothing connected. An HTML error page in an SDK error message is shown by its title only.

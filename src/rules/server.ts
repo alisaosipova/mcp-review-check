@@ -4,7 +4,7 @@ import { defineRule, type RawFinding } from './types.js';
 import { isObj, isNonEmptyStr, isStr, toolName } from './util/access.js';
 import { corpus } from './util/text.js';
 import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_SUFFIXES } from './util/net.js';
-import { allExchanges, probeExchange } from './util/obs.js';
+import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
 
 const DEPLOY = 'Deploy-time check: ';
 const SUBMISSION = 'https://claude.com/docs/connectors/building/submission';
@@ -55,7 +55,14 @@ export const SRV_003 = defineRule(
       // A local launch failure is not a directory transport defect: spec only, with stdio-specific advice.
       return [{ platforms: ['spec'], severity: 'error', message: `stdio server did not start: ${snap.fatal}`, fix: 'Check that the command starts and speaks MCP on stdin/stdout (the stderr cause is shown above; --verbose prints all of stderr).' }];
     }
-    if (snap.fatal) return [{ severity: 'error', message: `No working transport: ${snap.fatal}` }];
+    if (snap.fatal) {
+      // Nothing could be checked: spec error only, so the directory verdicts read INCOMPLETE (as for stdio), not BLOCKED.
+      const hint = snap.connectDiagnosis?.hint;
+      return [{
+        platforms: ['spec'], severity: 'error', message: `No working transport: ${snap.fatal}`,
+        fix: hint ? `${hint[0].toUpperCase()}${hint.slice(1)}.` : 'Check the URL and that the server answers a Streamable HTTP POST initialize there (--verbose prints the HTTP trace).',
+      }];
+    }
     if (snap.transport.kind === 'sse') return [{ message: 'legacy HTTP+SSE only; Streamable HTTP POST was rejected' }];
     return [];
   },
@@ -73,6 +80,15 @@ export const SRV_004 = defineRule(
     const results = [snap.transport.dns, ...(snap.authProbe?.asDns ?? [])].filter((d) => d !== undefined);
     for (const d of results) {
       const note = ' (system resolver)';
+      if (d.a.length === 0 && d.aaaa.length === 0 && d.error) {
+        // NXDOMAIN or a failed lookup is not an IPv6-only host. When the MCP host itself does not resolve, the
+        // connect failure (SRV-003) carries the verdict and this stays informational.
+        const own = d === snap.transport.dns && !!snap.fatal;
+        if (d.code === 'ENOTFOUND' || /ENOTFOUND|NXDOMAIN/.test(d.error)) out.push(localize(snap, { severity: own ? 'info' : undefined, message: `hostname ${d.host} does not resolve (NXDOMAIN)${note}` }));
+        else if (d.code === 'ENODATA' || /ENODATA/.test(d.error)) out.push(localize(snap, { severity: own ? 'info' : undefined, message: `${d.host} has no A or AAAA records${note}` }));
+        else out.push({ severity: 'info', message: `${INCONCLUSIVE}: DNS lookup for ${d.host} failed (${d.code ?? d.error})${note}` });
+        continue;
+      }
       if (d.a.length === 0) {
         out.push(localize(snap, { platforms: ['claude'], message: `${d.host} has no A record; Connectors are IPv4-only${note}` }));
         out.push(localize(snap, { platforms: ['chatgpt'], severity: 'info', message: `${d.host} has no A record${note}` }));

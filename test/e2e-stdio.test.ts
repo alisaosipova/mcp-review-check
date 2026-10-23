@@ -200,6 +200,7 @@ describe('e2e stdio', () => {
     expect(srv003.platforms).toEqual(['spec']);
     expect(srv003.fix).toMatch(/stdin\/stdout/);
     expect(r.json.summary.verdicts.claude.verdict).not.toBe('BLOCKED');
+    expect(r.json.manual).toEqual([]); // no manual checklist when nothing connected
   });
 
   it('--list-rules, --help and --version exit 0', async () => {

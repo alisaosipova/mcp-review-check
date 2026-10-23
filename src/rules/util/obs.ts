@@ -55,3 +55,6 @@ export function rpcView(o: ProbeObservation | undefined): RpcView | undefined {
 export function probeRpc(snap: Snapshot, name: WireProbeName): RpcView | undefined {
   return rpcView(snap.transport.probes[name]);
 }
+
+export const INCONCLUSIVE = 'inconclusive (network)';
+

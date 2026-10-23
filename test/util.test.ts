@@ -177,7 +177,7 @@ describe('review fixes: helpers', () => {
 
   it('cleanErrorMessage strips HTML pages and shows the status', () => {
     const m = cleanErrorMessage(`Streamable HTTP error: Error POSTing to endpoint: <!doctype html><html><head><title>Example Domain</title></head><body>${'x'.repeat(600)}</body></html>`, 405);
-    expect(m.startsWith('HTTP 405: Streamable HTTP error: Error POSTing to endpoint: Example Domain')).toBe(true);
+    expect(m).toBe('HTTP 405: Streamable HTTP error: Error POSTing to endpoint: HTML page ("Example Domain")');
     expect(m).not.toContain('<');
     expect(m.length).toBeLessThan(220);
   });

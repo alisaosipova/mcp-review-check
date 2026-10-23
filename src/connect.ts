@@ -5,6 +5,7 @@ import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotoc
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt } from './snapshot.js';
+import { describeCause, describeHttpFailure, diagnosisText, networkCause } from './diagnose.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
@@ -144,6 +145,11 @@ interface LegacyConn {
   protocolVersion?: string;
   status?: number;
   message?: string;
+  /** Network cause of a failed fetch (ENOTFOUND, ECONNREFUSED, CERT_*, ...). */
+  cause?: { code?: string; message?: string };
+  /** The failing initialize response (B7 diagnostics). */
+  contentType?: string;
+  body?: string;
 }
 
 const MODERN_CODES = [-32020, -32021, -32022];
@@ -168,7 +174,11 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       await tracer.flush();
       if (e instanceof TypeError && attempt === 0) continue; // network error: retry once
       const status = e instanceof StreamableHTTPError ? (e as StreamableHTTPError).code : undefined;
-      last = { ok: false, status, message: cleanErrorMessage((e as Error).message, status) };
+      const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
+      last = {
+        ok: false, status, message: cleanErrorMessage((e as Error).message, status),
+        cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
+      };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
         const sse = await connectSse(url, headers, tracer, timeoutMs, clientName);
         if (sse.ok) return sse;
@@ -179,12 +189,13 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
   return last;
 }
 
-/** Strip an HTML page out of an SDK error message, cap its length and show the HTTP status. */
+/** Replace an HTML page in an SDK error message by its title, cap the length and show the HTTP status. */
 export function cleanErrorMessage(message: string, status?: number): string {
   let m = message;
-  if (/<(!doctype|html|head|body)\b/i.test(m)) {
-    m = m.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]{0,500}>/g, ' ');
-    m = `${m.replace(/\s+/g, ' ').trim()} (HTML response)`;
+  const html = /<(!doctype|html|head|body)\b/i.exec(m);
+  if (html) {
+    const title = /<title[^<>]{0,200}>([^<]{1,200})<\/title>/i.exec(m)?.[1].replace(/\s+/g, ' ').trim();
+    m = `${m.slice(0, html.index).trim()} HTML page${title ? ` ("${title}")` : ''}`.trim();
   }
   if (m.length > 200) m = `${m.slice(0, 200)}…`;
   return status !== undefined && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m;
@@ -283,9 +294,12 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
 
   const connected = conn.ok || snap.era === 'modern';
   if (!connected && !authFailed) {
-    const why = conn.status === 403 ? 'HTTP 403 (forbidden)' : conn.message ?? 'unknown error';
-    snap.fatal = `could not complete a handshake: ${why}`;
-    snap.coverage = { toolLevel: 'connect-failed', reason: why };
+    const d = conn.status === 403
+      ? { kind: 'http' as const, status: 403, summary: 'HTTP 403 (forbidden)' }
+      : conn.cause ? describeCause(url, conn.cause) : describeHttpFailure(url, { status: conn.status, contentType: conn.contentType, body: conn.body, message: conn.message });
+    snap.connectDiagnosis = d;
+    snap.fatal = `could not complete a handshake: ${diagnosisText(d)}`;
+    snap.coverage = { toolLevel: 'connect-failed', reason: diagnosisText(d) };
   }
 
   if (connected && !authFailed) {
