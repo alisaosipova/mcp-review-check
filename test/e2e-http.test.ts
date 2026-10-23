@@ -231,6 +231,42 @@ describe('e2e http', () => {
     expect(r.json.coverage.reason).toBe(`HTTP 405: ${gone.url} is not an MCP endpoint; /sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve ${gone.base}/mcp`);
   });
 
+  it('--max-duration (W1-8): a server that never answers is reported as a connect failure at the deadline', async () => {
+    const silent = track(await listen(() => new Promise(() => {})));
+    const t0 = Date.now();
+    const r = await cli([silent.url, '--format', 'json', '--max-duration', '1500']);
+    expect(Date.now() - t0).toBeLessThan(12000);
+    expect(r.code).toBe(3);
+    expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 1500, phase: 'connect' });
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toMatch(/no handshake within --max-duration \(1500 ms\)/);
+  });
+
+  it('--max-duration (W1-8): after the handshake the run stops with INCOMPLETE verdicts and names the phase', async () => {
+    // Answers initialize (and refuses server/discover and GET); every later request hangs.
+    const s = track(await listen(async (req, res) => {
+      if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+      let body = '';
+      for await (const c of req) body += c;
+      const m = JSON.parse(body);
+      if (m.id === undefined) { res.writeHead(202).end(); return; }
+      const reply = (x: object) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...x })); };
+      if (m.method === 'initialize') return reply({ result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'hang', version: '1' } } });
+      if (m.method === 'server/discover') return reply({ error: { code: -32601, message: 'Method not found' } });
+      await new Promise(() => {});
+    }));
+    const t0 = Date.now();
+    const r = await cli([s.url, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
+    expect(Date.now() - t0).toBeLessThan(15000);
+    expect([0, 1], r.stderr).toContain(r.code); // a handshake happened: not exit 3
+    expect(r.json.server.era).toBe('legacy');
+    expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
+    expect(r.json.coverage.toolLevel).toBe('stopped');
+    expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
+    expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
+    const md = await cli([s.url, '--format', 'markdown', '--max-duration', '1500']);
+    expect(md.stdout).toMatch(/stopped by --max-duration 1500 ms during listing/);
+  });
+
   it('B7: a URL without a scheme gets a suggestion (exit 2)', async () => {
     const r = await cli(['mcp.example.com/mcp']);
     expect(r.code).toBe(2);

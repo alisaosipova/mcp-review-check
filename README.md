@@ -69,6 +69,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
 | `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 240000)`. RT-005's 60 s and 240 s Claude thresholds need a larger `--timeout`; a call that gets no answer is reported by RT-005 as a warning. The GET probe uses 5 s and the TLS check 10 s. |
+| `--max-duration <ms>` | no limit | Overall deadline for the whole check. When it runs out, the report covers what ran, says in which phase it stopped, and the verdicts read `INCOMPLETE` (exit 3 if no handshake completed). |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
 | `--active` | off | Runs the RT rules by calling read-only tools. |

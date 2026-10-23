@@ -33,6 +33,7 @@ Options:
   --format <f>            text | json | markdown | sarif (default: text)
   --output <file>         Write the report to a file; print a summary line to stderr.
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
+  --max-duration <ms>     Stop the whole check after this long and report what ran (default: no limit).
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -114,7 +115,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       options: {
         stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
         target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
-        timeout: { type: 'string', default: '30000' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
+        timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
         active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
         env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
         'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -139,6 +140,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new UsageError('--timeout must be a positive number of milliseconds');
     // Node clamps larger setTimeout delays to 1 ms; withTimeout adds a 1000 ms margin on top.
     if (timeoutMs > MAX_TIMEOUT_MS) throw new UsageError(`--timeout must be at most ${MAX_TIMEOUT_MS} ms`);
+    let maxDurationMs: number | undefined;
+    if (values['max-duration'] !== undefined) {
+      maxDurationMs = Number(values['max-duration']);
+      if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > MAX_TIMEOUT_MS) throw new UsageError(`--max-duration must be a positive number of milliseconds (at most ${MAX_TIMEOUT_MS})`);
+    }
 
     const headers: Record<string, string> = {};
     for (const h of values.header ?? []) { const [k, v] = parseHeader(h); headers[k] = v; }
@@ -181,7 +187,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values['active-auth']) stderr += 'Notice: --active-auth creates a DCR client on your authorization server and sends bogus /authorize and /token requests.\n';
 
     const opts: BuildOptions = {
-      target: spec, headers, bearer, timeoutMs, platforms: target,
+      target: spec, headers, bearer, timeoutMs, platforms: target, maxDurationMs,
       active: !!values.active, activeAuth: !!values['active-auth'], toolArgs,
     };
     redactor = opts.redactor = redactorFor(opts);

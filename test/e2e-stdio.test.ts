@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
 const GOOD_PATH = fileURLToPath(new URL('./fixtures/good-server.mjs', import.meta.url));
+const HANG = `node ${fileURLToPath(new URL('./fixtures/hang-server.mjs', import.meta.url))}`;
 const HUGE = `node ${fileURLToPath(new URL('./fixtures/huge-server.mjs', import.meta.url))}`;
 const LEAKY = `node ${fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url))}`;
 const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -237,6 +238,28 @@ describe('e2e stdio', () => {
     expect(text.stdout).toContain('1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
     const md = await cli(['--stdio', HUGE, '--format', 'markdown']);
     expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
+  });
+
+  it('--max-duration (W1-8): a server that never answers is stopped at the deadline with a partial report', async () => {
+    const t0 = Date.now();
+    const r = await cli(['--stdio', HANG, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
+    expect(Date.now() - t0).toBeLessThan(15000);
+    expect([0, 1], r.stderr).toContain(r.code); // a handshake happened: not exit 3
+    expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
+    expect(r.json.coverage.toolLevel).toBe('stopped');
+    expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
+    const text = await cli(['--stdio', HANG, '--max-duration', '1500']);
+    expect(text.stdout).toMatch(/stopped by --max-duration 1500 ms during listing/);
+    expect((await cli(['--stdio', HANG, '--max-duration', '0'])).code).toBe(2);
+  });
+
+  it('--max-duration (W1-8): a stdio server that never completes initialize exits 3 at the deadline', async () => {
+    const t0 = Date.now();
+    const r = await cli(['--stdio', 'node -e "setInterval(() => {}, 1000)"', '--format', 'json', '--timeout', '20000', '--max-duration', '1500']);
+    expect(Date.now() - t0).toBeLessThan(15000);
+    expect(r.code).toBe(3);
+    expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 1500, phase: 'connect' });
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toMatch(/no handshake within --max-duration \(1500 ms\)/);
   });
 
   it('exit code follows --target (B5): a spec-only error passes unless --fail-on-spec, and the Result line says why', async () => {

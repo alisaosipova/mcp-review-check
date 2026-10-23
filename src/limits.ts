@@ -75,5 +75,7 @@ export function limitsNotice(snap: Snapshot): string | undefined {
     const shown = t.slice(0, 3).map((x) => `${x.where} (${x.length} chars, cap ${kb(x.cap)})`).join(', ');
     parts.push(`${t.length} oversized input${t.length === 1 ? '' : 's'} truncated before pattern checks: ${shown}${t.length > 3 ? ', …' : ''}`);
   }
+  const s = snap.limits?.stopped;
+  if (s) parts.push(`stopped by --max-duration ${s.maxDurationMs} ms during ${s.phase}; later checks did not run`);
   return parts.length ? `${parts.join('. ')}.` : undefined;
 }

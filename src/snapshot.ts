@@ -85,9 +85,10 @@ export interface ConnectDiagnosis {
   hint?: string;
 }
 
-/** Input caps applied before the regex rules (W1-8). */
+/** Input caps applied before the regex rules (W1-8) and the --max-duration stop. */
 export interface Limits {
   truncated: Array<{ where: string; length: number; cap: number }>;
+  stopped?: { maxDurationMs: number; phase: string };
 }
 
 export interface AsObservation {
@@ -156,7 +157,7 @@ export interface Snapshot {
   };
   authProbe?: AuthProbe;
   active?: { calls: ActiveCall[]; clientInfoVariants?: Record<string, string[]> };
-  coverage: { toolLevel: 'ok' | 'auth-required' | 'token-rejected' | 'connect-failed' | 'list-failed'; reason?: string };
+  coverage: { toolLevel: 'ok' | 'auth-required' | 'token-rejected' | 'connect-failed' | 'list-failed' | 'stopped'; reason?: string };
   /** Set when no transport worked (SRV-003 fatal, exit code 3). */
   fatal?: string;
   connectDiagnosis?: ConnectDiagnosis;

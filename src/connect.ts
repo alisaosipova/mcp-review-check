@@ -37,6 +37,8 @@ export interface BuildOptions {
   toolArgs?: Record<string, unknown>;
   /** The run's single Redactor (runCli passes it); built from these options when absent. */
   redactor?: Redactor;
+  /** Overall deadline for the whole check (--max-duration); checks still pending then are skipped. */
+  maxDurationMs?: number;
 }
 
 /** The redactor for these options: --bearer, --header values, URL credentials, stdio argv secrets and --env values. */
@@ -46,6 +48,25 @@ export function redactorFor(opts: BuildOptions): Redactor {
     bearer: opts.bearer, headers: opts.headers,
     ...(t.kind === 'http' ? { url: t.url } : { argv: [t.command, ...t.args], env: t.env }),
   });
+}
+
+/** Where a run is; --max-duration reports the phase and stops at the next checkpoint. */
+interface Progress {
+  phase: string;
+  stopped?: boolean;
+  tracer?: Tracer;
+  stderrTail?: () => string;
+  nonJsonStdout?: string[];
+  /** Close open clients (and the stdio child) when the deadline hits. */
+  close?: () => Promise<void>;
+}
+
+class Stopped extends Error {}
+
+function checkpoint(p: Progress | undefined, phase: string): void {
+  if (!p) return;
+  if (p.stopped) throw new Stopped(phase);
+  p.phase = phase;
 }
 
 export interface BuildResult {
@@ -238,12 +259,13 @@ async function safeTlsCheck(deps: Deps, hostname: string, port: number): Promise
   }
 }
 
-async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOptions, deps: Deps): Promise<BuildResult> {
+async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
   const url = new URL(urlAsEntered);
   const timeoutMs = opts.timeoutMs ?? 30000;
   const connectTimeout = Math.min(timeoutMs, 15000);
   const headers = { ...(opts.headers ?? {}) };
   const tracer = createTracer(redactorFor(opts), deps.now);
+  if (progress) progress.tracer = tracer;
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
 
@@ -267,6 +289,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
 
   // 3. legacy connect (with SSE fallback)
   const conn = await connectLegacyHttp(url, authHeaders, tracer, connectTimeout, undefined, !discOk && !discSignal);
+  if (progress) progress.close = async () => { await conn.client?.close().catch(() => {}); };
   await tracer.flush();
   const authFailed = conn.status === 401 || (!conn.ok && !discOk && disc.exchange.status === 401);
   if (conn.ok) {
@@ -286,6 +309,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     trigger ??= opts.bearer ? 'bearer-rejected' : 'preflight-401';
   }
   if (trigger) {
+    checkpoint(progress, 'auth probe');
     const challengeExchange = pf.status === 401 || pf.status === 403 ? pf : [...tracer.exchanges].reverse().find((e) => e.status === 401) ?? pf;
     const { probe, tlsHosts } = await runAuthProbe({ tracer, url, trigger, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
     snap.authProbe = probe;
@@ -306,9 +330,12 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   if (connected && !authFailed) {
     const lister: Lister = conn.ok ? legacyLister(conn.client!, timeoutMs) : (m, k) => modern.listAll(m, k);
     const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs) : modernReader(modern);
+    checkpoint(progress, 'listing');
     await listEverything(snap, lister);
+    checkpoint(progress, 'UI resource reads');
     await readUiResources(snap, reader, deps.now);
     const useModern = snap.era === 'modern' || snap.era === 'dual';
+    checkpoint(progress, 'wire probes');
     snap.transport.probes = {
       ...snap.transport.probes,
       ...(await runWireProbes({
@@ -317,11 +344,13 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
       })),
     };
     if (!snap.listMeta.tools?.error) {
+      checkpoint(progress, 'tools re-list');
       const relist = await lister('tools/list', 'tools');
       if (!relist.error) snap.toolsRelist = relist.items.map(toolName); // a failed re-list (rate limit) is not a different set
       snap.toolsFreshConnection = await freshToolNames(url, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined);
     }
     if (opts.active && !snap.listMeta.tools?.error) {
+      checkpoint(progress, 'active tool calls');
       snap.active = await runActive({
         snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, modern: conn.ok ? undefined : modern,
         listWithClientName: conn.ok && conn.kind === 'streamable-http' ? (name) => freshToolNames(url, authHeaders, tracer, connectTimeout, timeoutMs, 'streamable-http', name) : undefined,
@@ -406,7 +435,7 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   return { client, rec, nonJson, stderr: () => stderrTail };
 }
 
-async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio' }>, opts: BuildOptions, deps: Deps): Promise<BuildResult> {
+async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio' }>, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
   const timeoutMs = opts.timeoutMs ?? 30000;
   // A stdio start can include an `npx -y` download, so it gets the full --timeout rather than the 15 s HTTP connect cap.
   const connectTimeout = timeoutMs;
@@ -419,11 +448,19 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     snap.coverage = { toolLevel: 'connect-failed', reason: (e as Error).message };
     return { snap, stderrTail: (e as { stderrTail?: string }).stderrTail };
   }
+  if (progress) {
+    progress.stderrTail = conn.stderr;
+    progress.nonJsonStdout = conn.nonJson;
+    progress.close = async () => { await conn.client.close().catch(() => {}); };
+  }
   snap.era = 'legacy';
   adoptInitialize(snap, conn.rec.initializeRaw);
   const lister = legacyLister(conn.client, timeoutMs);
+  checkpoint(progress, 'listing');
   await listEverything(snap, lister);
+  checkpoint(progress, 'UI resource reads');
   await readUiResources(snap, legacyReader(conn.client, timeoutMs), deps.now);
+  checkpoint(progress, 'wire probes');
   snap.transport.probes = await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client });
   const freshNames = async (name?: string) => {
     try {
@@ -433,9 +470,11 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     } catch { return undefined; }
   };
   if (!snap.listMeta.tools?.error) {
+    checkpoint(progress, 'tools re-list');
     const relist = await lister('tools/list', 'tools');
     if (!relist.error) snap.toolsRelist = relist.items.map(toolName);
     snap.toolsFreshConnection = await freshNames();
+    checkpoint(progress, 'active tool calls');
     if (opts.active) snap.active = await runActive({ snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, listWithClientName: freshNames });
   }
   await new Promise((r) => setTimeout(r, 50)); // let trailing stdout/stderr arrive
@@ -457,8 +496,51 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-  const result = await (t.kind === 'http' ? buildHttp(snap, t.url, opts, deps) : buildStdio(snap, t, opts, deps));
+  const progress: Progress = { phase: 'connect' };
+  const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
+  const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
   capSnapshot(result.snap);
   return result;
+}
+
+/** Resolve with whatever was observed when --max-duration runs out; the rest of the run is abandoned. */
+async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: number, progress: Progress): Promise<BuildResult> {
+  let timer: NodeJS.Timeout | undefined;
+  const stop = new Promise<BuildResult>((resolve) => {
+    timer = setTimeout(() => {
+      progress.stopped = true;
+      void progress.close?.();
+      resolve({ snap: stoppedSnapshot(snap, ms, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() });
+    }, ms);
+  });
+  run.catch(() => {}); // a Stopped checkpoint (or a closed client) after the deadline is expected
+  try {
+    return await Promise.race([run, stop]);
+  } catch (e) {
+    if (e instanceof Stopped) return stop;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A detached copy of the partial snapshot (the abandoned run may still assign fields) marked as stopped. */
+function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapshot {
+  const snap: Snapshot = {
+    ...live, tools: [...live.tools], resources: [...live.resources], resourceTemplates: [...live.resourceTemplates], prompts: [...live.prompts],
+    listMeta: { ...live.listMeta }, resourceReads: { ...live.resourceReads }, coverage: { ...live.coverage },
+    transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: [...(progress.tracer?.exchanges ?? live.transport.exchanges)] },
+  };
+  if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };
+  if (progress.stderrTail && snap.target.kind === 'stdio') snap.transport.stdio ??= { nonJsonStdout: [...(progress.nonJsonStdout ?? [])], stderrTail: progress.stderrTail() };
+  snap.limits = { truncated: [...(live.limits?.truncated ?? [])], stopped: { maxDurationMs: ms, phase: progress.phase } };
+  const why = `stopped by --max-duration (${ms} ms) during ${progress.phase}`;
+  if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {
+    snap.fatal = `no handshake within --max-duration (${ms} ms)`;
+    snap.coverage = { toolLevel: 'connect-failed', reason: why };
+  } else if (snap.coverage.toolLevel === 'ok') {
+    snap.coverage = { toolLevel: 'stopped', reason: why };
+  }
+  return snap;
 }
 

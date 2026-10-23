@@ -22,6 +22,7 @@ function authReason(snap: Snapshot): string | undefined {
   if (snap.coverage.toolLevel === 'token-rejected') return 'token rejected (401)';
   if (snap.coverage.toolLevel === 'connect-failed') return 'could not connect';
   if (snap.coverage.toolLevel === 'list-failed') return snap.coverage.reason ?? 'tools/list failed';
+  if (snap.coverage.toolLevel === 'stopped') return 'stopped by --max-duration';
   return undefined;
 }
 
