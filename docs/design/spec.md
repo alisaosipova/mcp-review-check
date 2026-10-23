@@ -1,6 +1,18 @@
 # mcp-review-check: Implementation SPEC
 
-Spec version 0.1. Rule catalog date 2026-10-22. Status: ready for implementation.
+> **Design document; it may differ from the implementation.** This is the plan the first version was built from.
+> It is kept for the reasoning behind each rule, not as user documentation. For current behaviour see the
+> [README](../../README.md), [docs/RULES.md](../RULES.md), `mcp-review-check --help` and `mcp-review-check explain <RULE-ID>`;
+> the catalog in `src/rules/` is authoritative for rule IDs, severities and sources.
+>
+> Known differences: the catalog has 144 automated rules (APPS-019 added) and 31 manual checklist items, dated
+> 2026-10-22; Node 20.19+ is required, so the Node 18 notes in §4.4 and milestone M0 are historical, and the test
+> runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
+> the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
+> and the CLI gained options such as `--max-duration`, `--quiet`, `--checklist`, `--local`, `--no-local` and `explain`.
+> See CHANGELOG.md for the full list.
+
+Spec version 0.1. Rule catalog date 2026-10-22. Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md), not here.
 
 `mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 18, sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 

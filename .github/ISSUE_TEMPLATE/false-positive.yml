@@ -1,0 +1,59 @@
+name: False positive
+description: A rule reported a problem that is not one (or used the wrong severity).
+title: "[FP] <RULE-ID>: "
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! False positives on real servers are the most useful reports we get.
+        Please remove tokens, internal hostnames and anything private before posting.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID(s)
+      placeholder: INJ-006
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mcp-review-check version
+      description: Output of `npx mcp-review-check --version`. The JSON report also has `tool.version` and `tool.catalogDate`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Server
+      description: Public URL or package name if you can share it. Otherwise describe it (SDK, transport, auth).
+  - type: dropdown
+    id: listed
+    attributes:
+      label: Is the server already listed in a directory?
+      options:
+        - "No"
+        - Claude connector directory
+        - ChatGPT Apps / plugin directory
+        - Both
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: Finding from the JSON report
+      description: |
+        Run with `--format json --output report.json` and paste the finding object(s) for this rule
+        (ruleId, message, tool/resource, path, evidence). The whole report is welcome if you can share it.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is not a problem
+      description: Quote the text that triggered the rule and, if possible, the directory documentation that allows it.
+    validations:
+      required: true

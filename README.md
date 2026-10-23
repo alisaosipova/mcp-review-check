@@ -322,6 +322,8 @@ npm test             # vitest: rule unit tests, fixture servers, e2e, auth probe
 MCP_REVIEW_CHECK_LIVE=1 npm test   # adds smoke tests against public servers
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule, [SECURITY.md](SECURITY.md) for what the tool sends, the threat model and how to report a vulnerability, and [docs/design/spec.md](docs/design/spec.md) for the original design document (it may differ from the implementation).
+
 Test fixtures live in `test/fixtures/`: a compliant stdio server (`good-server.mjs`), a server that violates many rules (`bad-server.mjs`), an HTTP bridge with switches for wire-level defects, an OAuth metadata server with good and bad variants, and a raw 2026-07-28 server.
 
 ## License

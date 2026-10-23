@@ -1,0 +1,53 @@
+name: Rejected despite passing
+description: A directory rejected (or asked for changes to) a server that mcp-review-check passed.
+title: "[Rejection] "
+labels: ["missed-rejection"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These reports tell us which review criteria the rules do not cover yet.
+        Share only what you are comfortable making public; you can paraphrase the reviewer's message.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Directory
+      options:
+        - Claude connector directory
+        - ChatGPT Apps / plugin directory
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: When was the review?
+      placeholder: 2026-10
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Rejection reason
+      description: The reviewer's message or the portal error, quoted or paraphrased.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mcp-review-check version and catalog date
+      description: From the report header (`mcp-review-check 0.1.0 · rules 2026-10-22`) or `tool` in the JSON report.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Report
+      description: The summary and any findings from `--format json` (or the text report), with secrets removed.
+      render: text
+  - type: checkboxes
+    id: manual
+    attributes:
+      label: Manual checklist
+      options:
+        - label: The rejection was about an item on the manual checklist (MAN-*) printed in the report.
