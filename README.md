@@ -4,7 +4,7 @@ Lint an MCP server against the public review criteria of the **Claude connector 
 
 `mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against 143 automated rules. Every rule links to its public source. Checks that cannot be automated are printed as a manual checklist.
 
-- Runs on Node 18.19+; no telemetry.
+- Requires Node 20.19 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
 - Text, JSON, Markdown and SARIF output; CI-friendly exit codes.
 

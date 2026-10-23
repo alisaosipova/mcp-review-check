@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18.19"
+    "node": ">=20.19"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/postbuild.mjs",
@@ -35,8 +35,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^18.19.130",
+    "@types/node": "^20.19.43",
     "typescript": "~5.9",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   }
 }
