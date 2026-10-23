@@ -99,3 +99,28 @@ export function originMatches(origin: string, entry: string): boolean {
 export function extractLinks(html: string): string[] {
   return [...html.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
 }
+
+/**
+ * HTML and JS comments removed (block comments with indexOf, so unterminated openers stay linear). A `//` counts as
+ * a line comment only at a line start or after whitespace or ;{}(),>, so URLs such as https://x keep their path.
+ */
+export function stripComments(text: string): string {
+  let out = '';
+  let i = 0;
+  // Cached next positions of each opener (re-searched only once passed), so many comments stay linear.
+  let block = text.indexOf('/*');
+  let html = text.indexOf('<!--');
+  while (i < text.length) {
+    if (block >= 0 && block < i) block = text.indexOf('/*', i);
+    if (html >= 0 && html < i) html = text.indexOf('<!--', i);
+    const next = block < 0 ? html : html < 0 ? block : Math.min(block, html);
+    if (next < 0) { out += text.slice(i); break; }
+    out += text.slice(i, next);
+    const close = next === block ? '*/' : '-->';
+    const end = text.indexOf(close, next + 2);
+    if (end < 0) { out += text.slice(next); break; }
+    out += ' ';
+    i = end + close.length;
+  }
+  return out.replace(/(^|[\s;{}(),>])\/\/[^\n]*/g, '$1');
+}

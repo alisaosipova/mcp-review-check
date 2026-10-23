@@ -52,7 +52,11 @@ const cases: Record<string, Case> = {
     pos: ui({ html: `${GOOD_HTML}<script>app.openExternal({ url: "https://docs.acme.test/help" })</script>` }),
     neg: ui({ html: `${GOOD_HTML}<script>app.openExternal({ url: "https://docs.acme.test/help" })</script>`, meta: { ...GOOD_META, 'openai/widgetCSP': { redirect_domains: ['https://docs.acme.test'] } } }),
   },
-  'APPS-014': { pos: ui({ html: '<!doctype html><script type="module">import { App } from "@modelcontextprotocol/ext-apps"; const app = new App();</script>' }), neg: ui() },
+  'APPS-014': {
+    pos: ui({ html: '<!doctype html><script type="module">import { App } from "@modelcontextprotocol/ext-apps"; const app = new App();</script>' }),
+    // the same import followed by connect() is the documented pattern
+    neg: ui({ html: '<!doctype html><script type="module">import { App } from "@modelcontextprotocol/ext-apps"; const app = new App(); await app.connect();</script>' }),
+  },
   'APPS-015': { pos: ui({ html: `${GOOD_HTML}<script>alert("hi")</script>` }), neg: ui({ html: `${GOOD_HTML}<script>dialog.prompt("x")</script>` }) },
   'APPS-016': { pos: ui({ html: `${GOOD_HTML}<script>localStorage.setItem("a","b")</script>` }), neg: ui(), severity: 'info' },
   'APPS-017': { pos: ui({ meta: { ...GOOD_META, ui: { ...GOOD_META.ui, prefersBorder: 'yes' } } }), neg: ui(), severity: 'error' },
@@ -132,5 +136,16 @@ describe('APPS rules', () => {
 
   it('normalizeMime lowercases type and trims around ;', () => {
     expect(normalizeMime('Text/HTML ; profile=mcp-app')).toBe(MIME);
+  });
+
+  it('APPS-014 ignores ext-apps mentions in comments and accepts a hand-written ui/initialize handshake (Svelte)', () => {
+    const rule = appsRules.find((r) => r.id === 'APPS-014')!;
+    // Svelte's MCP-UI adapter: ext-apps appears only in a JSDoc comment and the adapter sends ui/initialize itself.
+    const adapter = '<script>/**\n * MCP Apps SEP protocol methods (from @modelcontextprotocol/ext-apps):\n * - ui/notifications/tool-input\n */\nconst METHODS = { INITIALIZE: "ui/initialize" };\nsend(METHODS.INITIALIZE);</script>';
+    expect(evaluate(rule, ui({ html: adapter }))).toEqual([]);
+    // a comment-only mention without any handshake is not a use either
+    expect(evaluate(rule, ui({ html: '<script>// built without @modelcontextprotocol/ext-apps\nrender();</script><!-- new App() is not used -->' }))).toEqual([]);
+    // the App class used in code with neither connect() nor ui/initialize is still reported
+    expect(evaluate(rule, ui({ html: '<script>/* widget */ const app = new App({ name: "x" }); app.render();</script>' }))).toHaveLength(1);
   });
 });

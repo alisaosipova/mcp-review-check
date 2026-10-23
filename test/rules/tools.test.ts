@@ -11,26 +11,45 @@ const ann = (a: Record<string, unknown>, over: Record<string, unknown> = {}) => 
 const prop = (desc = 'A parameter') => ({ type: 'string', description: desc });
 
 const cases: Record<string, Case> = {
-  'TOOL-001': { pos: one(tool({ name: 'search notes!' })), neg: ok, severity: 'warning' },
-  'TOOL-002': { pos: one(tool({ name: `search_${'x'.repeat(60)}` })), neg: ok, severity: 'error' },
+  'TOOL-001': { pos: one(tool({ name: 'search notes!' })), neg: one(tool({ name: 'notes.search_v2-beta' })), severity: 'warning' },
+  // exactly 64 characters is allowed
+  'TOOL-002': { pos: one(tool({ name: `search_${'x'.repeat(60)}` })), neg: one(tool({ name: `search_${'x'.repeat(57)}` })), severity: 'error' },
   'TOOL-003': { pos: snap({ tools: [tool(), tool()] }), neg: snap({ tools: [tool(), tool({ name: 'get_note' })] }), severity: 'error' },
-  'TOOL-004': { pos: one(tool({ name: 'best_search' })), neg: ok },
-  'TOOL-005': { pos: one(tool({ name: 'tool_1' })), neg: ok, severity: 'info' },
-  'TOOL-006': { pos: one(tool({ title: undefined })), neg: ok, severity: 'error' },
-  'TOOL-007': { pos: one(tool({ description: '  ' })), neg: ok, severity: 'error' },
-  'TOOL-008': { pos: one(tool({ description: 'Search notes' })), neg: ok, severity: 'warning' },
-  'TOOL-009': { pos: one(toolWithProps('search_notes', { keywords: { type: 'string' }, limit: { type: 'integer', description: 'Max' } })), neg: ok, match: /keywords/ },
-  'TOOL-010': { pos: ann({ readOnlyHint: 'true', destructiveHint: false, openWorldHint: false }), neg: ok, severity: 'error' },
-  'TOOL-011': { pos: ann({ openWorldHint: false }), neg: ok, severity: 'error' },
-  'TOOL-012': { pos: ann({ readOnlyHint: true, destructiveHint: false }), neg: ok, match: /openWorldHint/ },
-  'TOOL-013': { pos: ann({ readOnlyHint: true, destructiveHint: true, openWorldHint: false }), neg: ok, severity: 'error' },
+  // "recommendations" is not the promotional word "recommended"
+  'TOOL-004': { pos: one(tool({ name: 'best_search' })), neg: one(tool({ name: 'list_recommendations', title: 'List recommendations' })) },
+  'TOOL-005': { pos: one(tool({ name: 'tool_1' })), neg: one(tool({ name: 'notes_v2_search' })), severity: 'info' },
+  // a title in annotations.title only is enough
+  'TOOL-006': { pos: one(tool({ title: undefined })), neg: ann({ title: 'Search notes', readOnlyHint: true, destructiveHint: false, openWorldHint: false }, { title: undefined }), severity: 'error' },
+  // a terse description is TOOL-008's concern, not a missing one
+  'TOOL-007': { pos: one(tool({ description: '  ' })), neg: one(tool({ description: 'Search notes.' })), severity: 'error' },
+  'TOOL-008': { pos: one(tool({ description: 'Search notes' })), neg: one(tool({ description: 'Search Acme notes by keyword; returns ids and titles.' })), severity: 'warning' },
+  'TOOL-009': {
+    pos: one(toolWithProps('search_notes', { keywords: { type: 'string' }, limit: { type: 'integer', description: 'Max' } })), match: /keywords/,
+    // a description on the $ref target counts; array items need no description of their own
+    neg: one(tool({ inputSchema: { type: 'object', properties: { tag: { $ref: '#/$defs/Tag' }, ids: { type: 'array', description: 'Note ids', items: { type: 'string' } } }, $defs: { Tag: { type: 'string', description: 'Tag name' } } } })),
+  },
+  'TOOL-010': { pos: ann({ readOnlyHint: 'true', destructiveHint: false, openWorldHint: false }), neg: ann({ title: 'Search notes', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false }), severity: 'error' },
+  'TOOL-011': {
+    pos: ann({ openWorldHint: false }), severity: 'error',
+    neg: one(tool({ name: 'delete_note', description: 'Delete one note by id.', annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false } })),
+  },
+  // explicit false values count as declared
+  'TOOL-012': { pos: ann({ readOnlyHint: true, destructiveHint: false }), neg: ann({ readOnlyHint: false, destructiveHint: false, openWorldHint: false }, { name: 'add_tag' }), match: /openWorldHint/ },
+  'TOOL-013': {
+    pos: ann({ readOnlyHint: true, destructiveHint: true, openWorldHint: false }), severity: 'error',
+    neg: one(tool({ name: 'update_note', description: 'Replace the body of a note.', annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } })),
+  },
   'TOOL-014': { pos: one(tool({ name: 'delete_note', description: 'Deletes a note forever from the workspace.' })), neg: ok, severity: 'warning' },
   'TOOL-015': {
     pos: one(toolWithProps('get_page', { url: prop('Page URL') }, { annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
     neg: one(toolWithProps('get_page', { url: { type: 'string', description: 'Docs URL', pattern: '^https://docs\\.acme\\.test/' } })),
   },
-  'TOOL-016': { pos: one(tool({ inputSchema: { type: 'array' } })), neg: ok, severity: 'error' },
-  'TOOL-017': { pos: one(tool({ inputSchema: { type: 'object', properties: { a: { type: 'strang' } } } })), neg: ok, severity: 'error' },
+  // a tool without parameters still declares an object schema
+  'TOOL-016': { pos: one(tool({ inputSchema: { type: 'array' } })), neg: one(tool({ name: 'list_folders', inputSchema: { type: 'object', properties: {} } })), severity: 'error' },
+  'TOOL-017': {
+    pos: one(tool({ inputSchema: { type: 'object', properties: { a: { type: 'strang' } } } })), severity: 'error',
+    neg: one(tool({ inputSchema: { type: 'object', properties: { due: { type: ['string', 'null'], format: 'date', description: 'Due date' }, n: { type: 'integer', minimum: 1, description: 'Count' } } } })),
+  },
   'TOOL-018': { pos: one(tool({ inputSchema: { type: 'object' } })), neg: one(tool({ inputSchema: { type: 'object', additionalProperties: false } })), severity: 'info' },
   'TOOL-019': {
     pos: one(toolWithProps('get_profile', { address: { $ref: 'https://schemas.acme.test/address.json', description: 'x' } })),
@@ -38,7 +57,8 @@ const cases: Record<string, Case> = {
   },
   'TOOL-020': {
     pos: one(tool({ inputSchema: Array.from({ length: 12 }).reduce<Record<string, unknown>>((inner) => ({ type: 'object', properties: { n: inner } }), { type: 'string' }) })),
-    neg: ok, severity: 'info',
+    // ten levels deep is still within bounds
+    neg: one(tool({ inputSchema: Array.from({ length: 8 }).reduce<Record<string, unknown>>((inner) => ({ type: 'object', properties: { n: inner } }), { type: 'string' }) })), severity: 'info',
   },
   'TOOL-021': {
     pos: one(toolWithProps('get_note', { id: { type: 'object', description: 'Id', 'x-mcp-header': 'Note Id' } })),
@@ -62,15 +82,23 @@ const cases: Record<string, Case> = {
     pos: snap({ tools: [
       toolWithProps('list_operations', {}),
       toolWithProps('do_thing', { operation_id: prop('Op'), args: { type: 'object', additionalProperties: true, description: 'Args' } }),
+    ] }), severity: 'error',
+    // a discovery tool next to typed per-operation tools is not a dispatcher
+    neg: snap({ tools: [
+      toolWithProps('list_operations', {}),
+      toolWithProps('get_operation', { operation_id: prop('Op'), fields: { type: 'array', items: { type: 'string' }, description: 'Fields' } }),
     ] }),
-    neg: ok, severity: 'error',
   },
   'TOOL-026': {
     pos: one(toolWithProps('run_query', { sql: prop('SQL text') }, { title: 'Run query', description: 'Run a query against the warehouse and return rows.' })),
     neg: one(toolWithProps('run_query', { sql: prop('SQL text') }, { description: 'Run a read-only query against the Acme Warehouse API and return rows.' })),
   },
-  'TOOL-027': { pos: one(toolWithProps('list_notes', { folder: prop() })), neg: ok, severity: 'info' },
-  'TOOL-028': { pos: one(toolWithProps('get_note', { id: prop() })), neg: ok, severity: 'info' },
+  'TOOL-027': {
+    pos: one(toolWithProps('list_notes', { folder: prop() })), severity: 'info',
+    // Exa: numResults bounds the search
+    neg: one(toolWithProps('web_search_exa', { query: prop('Query'), numResults: { type: 'integer', description: 'Results' } })),
+  },
+  'TOOL-028': { pos: one(toolWithProps('get_note', { id: prop() })), neg: one(toolWithProps('get_note', { id: prop(), include_body: { type: 'boolean', description: 'Include the body' } })), severity: 'info' },
   'TOOL-029': {
     pos: one(tool({ _meta: { 'openai/toolInvocation/invoking': 'x'.repeat(65) } })),
     neg: one(tool({ _meta: { 'openai/toolInvocation/invoking': 'Searching…' } })), severity: 'error',
@@ -104,6 +132,10 @@ describe('TOOL rules', () => {
 
   const byId = (id: string) => all.find((r) => r.id === id)!;
 
+  it('a clean snapshot (one good tool) gives no finding for any rule: the negative baseline the near-miss cases replaced', () => {
+    for (const rule of all) expect(evaluate(rule, ok, true).map((f) => f.message), rule.id).toEqual([]);
+  });
+
   it('TOOL-001 non-string name is an error', () => {
     expect(evaluate(byId('TOOL-001'), one(tool({ name: 42 })))[0].severity).toBe('error');
   });
@@ -111,6 +143,35 @@ describe('TOOL rules', () => {
   it('TOOL-003 case-only duplicates are info', () => {
     const f = evaluate(byId('TOOL-003'), snap({ tools: [tool({ name: 'Get_Note' }), tool({ name: 'get_note' })] }));
     expect(f.map((x) => x.severity)).toEqual(['info']);
+  });
+
+  it('TOOL-006 long title: info with a snippet; differing titles are shown as snippets (Svelte, Hugging Face)', () => {
+    const long = 'Hugging Face Hub: Find, use and view models, datasets, spaces, buckets, papers, documentation and collections. Get daily papers reports.';
+    const f = evaluate(byId('TOOL-006'), one(tool({ title: undefined, annotations: { title: long, readOnlyHint: true } })));
+    // D-6: the 60-character limit has no public source, so a long title is info, not a warning
+    expect(f).toMatchObject([{ severity: 'info', platforms: ['claude'], message: expect.stringMatching(/^title is \d+ characters \(linter-defined limit 60\): "Hugging Face Hub: Find, use .*…"$/) }]);
+    expect(f[0].message.length).toBeLessThan(140);
+    const both = evaluate(byId('TOOL-006'), one(tool({ title: 'x'.repeat(1191), annotations: { title: 'Get documentation', readOnlyHint: true } })));
+    expect(both.map((x) => x.message.length).every((n) => n < 160)).toBe(true);
+    expect(evaluate(byId('TOOL-006'), one(tool({ title: 'Search notes in the shared Acme workspace by keyword or tag' })))).toEqual([]);
+  });
+
+  it('TOOL-007 missing description is a Claude error too', () => {
+    const f = evaluate(byId('TOOL-007'), one(tool({ description: undefined })));
+    expect(f[0].severityByPlatform).toMatchObject({ claude: 'error', chatgpt: 'error', spec: 'info' });
+  });
+
+  it('TOOL-027 limit-like parameters and no "query"/"all" triggers (AWS, MS Learn)', () => {
+    const t = byId('TOOL-027');
+    const docs = (name: string, props: Record<string, unknown>, description: string) => one(toolWithProps(name, props, { description }));
+    expect(evaluate(t, docs('microsoft_docs_fetch', { url: prop('Page URL') }, 'Fetch a Microsoft Learn page as markdown. Use when search results are incomplete. Returns all content of the page.'))).toEqual([]);
+    // a name without a verb still falls back to the description
+    expect(evaluate(t, docs('hub_repos', { q: prop('Words') }, 'Search the Hub and list matching repositories.'))).toHaveLength(1);
+    expect(evaluate(t, docs('query_metrics', { expr: prop('PromQL') }, 'Run a query against the metrics store.'))).toEqual([]);
+    for (const p of ['max_length', 'start_index', 'max_tokens', 'maxCharacters', 'page_token', 'top_k']) {
+      expect(evaluate(t, docs('search_docs', { phrase: prop('Words'), [p]: { type: 'integer', description: 'Bound' } }, 'Search the docs.')), p).toEqual([]);
+    }
+    expect(evaluate(t, docs('search_docs', { phrase: prop('Words') }, 'Search the docs.'))).toHaveLength(1);
   });
 
   it('TOOL-006 differing title and annotations.title is spec info', () => {

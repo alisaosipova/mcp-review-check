@@ -31,7 +31,7 @@ const cases: Record<string, Case> = {
   'SRV-008': {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.probes.originNone = exchange({ status: 200 }); s.transport.probes.originClaude = exchange({ status: 403 }); } }),
     neg: snap({ url: URL_OK, set: (s) => { s.transport.probes.originNone = exchange({ status: 200 }); s.transport.probes.originClaude = exchange({ status: 200 }); s.transport.probes.originEvil = exchange({ status: 403 }); } }),
-    severity: 'warning', match: /overly strict/,
+    severity: 'info', match: /gets 403 \(assumed host Origin, not verified/,
   },
   'SRV-009': {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.preflight = exchange({ status: 403, headers: { 'cf-mitigated': 'challenge' } }); } }),
@@ -121,6 +121,28 @@ describe('SRV rules', () => {
     expect(f[0].severity).toBe('info');
   });
 
+  it('SRV-002 gives ChatGPT its own fix and docs (not the Claude plugin advice)', () => {
+    const f = evaluate(byId('SRV-002'), snap());
+    const claude = f.find((x) => x.platforms.includes('claude'))!;
+    const chatgpt = f.find((x) => x.platforms.includes('chatgpt'))!;
+    expect(claude.fix).toMatch(/Claude plugin/);
+    expect(claude.docs[0]).toMatch(/claude\.com/);
+    expect(chatgpt.fix).not.toMatch(/plugin/i);
+    expect(chatgpt.fix).toMatch(/public HTTPS Streamable HTTP endpoint/);
+    expect(chatgpt.docs[0]).toMatch(/developers\.openai\.com/);
+  });
+
+  it('SRV-008 strict Origin rejection is informational: real host Origin values are not captured', () => {
+    const strict = snap({ url: URL_OK, set: (s) => {
+      s.transport.probes.originNone = exchange({ status: 200 });
+      s.transport.probes.originClaude = exchange({ status: 403 });
+      s.transport.probes.originChatgpt = exchange({ status: 403 });
+      s.transport.probes.originEvil = exchange({ status: 403 });
+    } });
+    const f = evaluate(byId('SRV-008'), strict);
+    expect(f.map((x) => [x.platforms[0], x.severity]).sort()).toEqual([['chatgpt', 'info'], ['claude', 'info']]);
+  });
+
   it('SRV-013 reports a problem shared by initialize and server/discover once; an empty version is a warning', () => {
     // Kiwi: serverInfo { name, version: "" } in both initialize and the server/discover _meta.
     const kiwi = snap({ set: (s) => {
@@ -141,6 +163,17 @@ describe('SRV rules', () => {
       s.discoverRaw = { supportedVersions: ['2026-07-28'], capabilities: {}, _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'acme', version: '' } } };
     } }));
     expect(mixed.map((x) => x.message).sort()).toEqual(['serverInfo.name is not a non-empty string (initialize)', 'serverInfo.version is an empty string (server/discover); set the server version']);
+  });
+
+  it('SRV-016 skips an HTML catch-all page (SPA), not a verification file', () => {
+    const spa = snap({ url: URL_OK, set: (s) => { s.transport.probes.challenge = exchange({ method: 'GET', status: 200, contentType: 'text/html; charset=utf-8', bodySnippet: '<!doctype html>\n<html><head><title>GitMCP</title></head><body></body></html>' }); } });
+    expect(evaluate(byId('SRV-016'), spa)).toEqual([]);
+    const sniffed = snap({ url: URL_OK, set: (s) => { s.transport.probes.challenge = exchange({ method: 'GET', status: 200, bodySnippet: '<html lang="en">\n<body>app</body></html>' }); } });
+    expect(evaluate(byId('SRV-016'), sniffed)).toEqual([]);
+  });
+
+  it('SRV-020 cites the versioning page', () => {
+    expect(byId('SRV-020').sources).toEqual(['https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning']);
   });
 
   it('SRV-013 modern: missing serverInfo meta is a warning', () => {

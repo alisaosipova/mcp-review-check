@@ -24,6 +24,8 @@ export interface RawFinding {
   path?: string;
   evidence?: string;
   fix?: string;
+  /** Overrides the rule's sources for this finding (e.g. a platform-specific page). */
+  docs?: string[];
 }
 
 export interface Rule extends RuleMeta {

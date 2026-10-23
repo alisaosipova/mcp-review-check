@@ -44,11 +44,14 @@ export const SRV_002 = defineRule(
     id: 'SRV-002', title: 'Local stdio server cannot be submitted as a remote connector', severity: { claude: 'info', chatgpt: 'info' }, needs: ['stdio'],
     rationale: 'Local servers go through a different distribution channel.',
     fix: 'Deploy remotely, or package the server as a Claude plugin.',
-    sources: [SUBMISSION],
+    sources: [SUBMISSION, OAI_MCP],
   },
   () => [
-    { platforms: ['claude'], message: 'Directory no longer accepts local MCPB servers; distribute via a plugin.' },
-    { platforms: ['chatgpt'], message: 'Requires a public HTTPS Streamable HTTP endpoint.' },
+    { platforms: ['claude'], message: 'Directory no longer accepts local MCPB servers; distribute via a plugin.', fix: 'Deploy remotely, or package the server as a Claude plugin.', docs: [SUBMISSION] },
+    {
+      platforms: ['chatgpt'], message: 'ChatGPT apps connect only to a public HTTPS Streamable HTTP endpoint; a local stdio server cannot be submitted.',
+      fix: 'Deploy the server behind a public HTTPS Streamable HTTP endpoint (ChatGPT has no local-server channel).', docs: [OAI_MCP],
+    },
   ],
 );
 
@@ -178,9 +181,9 @@ function is2xx(e: HttpExchange | undefined): boolean {
 
 export const SRV_008 = defineRule(
   {
-    id: 'SRV-008', title: 'Origin header handling', severity: { claude: 'warning', chatgpt: 'warning', spec: 'error' }, needs: ['http'],
-    rationale: 'The spec requires a 403 for an invalid Origin, but hosts send their own Origin values.',
-    fix: 'Validate Origin against an allowlist that includes the host origins.',
+    id: 'SRV-008', title: 'Origin header handling', severity: { claude: 'info', chatgpt: 'info', spec: 'error' }, needs: ['http'],
+    rationale: 'The spec requires a 403 for an invalid Origin. Whether a host sends an Origin header, and which one, is not documented.',
+    fix: 'Validate Origin against an allowlist; if hosts cannot connect, allow the Origin values they send.',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
   },
   (snap) => {
@@ -191,7 +194,8 @@ export const SRV_008 = defineRule(
       ['chatgpt', probeExchange(snap, 'originChatgpt'), 'https://chatgpt.com'],
     ];
     for (const [p, ex, origin] of pairs) {
-      if (ex?.status === 403 && is2xx(base)) out.push({ platforms: [p], message: `overly strict Origin validation: Origin ${origin} gets 403` });
+      // Informational until the Origin a real host sends is captured: the values probed here are assumptions.
+      if (ex?.status === 403 && is2xx(base)) out.push({ platforms: [p], message: `Origin ${origin} gets 403 (assumed host Origin, not verified; a server that rejects foreign Origins follows the spec)` });
     }
     const evil = probeExchange(snap, 'originEvil');
     if (is2xx(evil)) {
@@ -378,6 +382,8 @@ export const SRV_016 = defineRule(
   (snap) => {
     const ex = probeExchange(snap, 'challenge');
     if (ex?.status !== 200) return [];
+    // An HTML page is a SPA catch-all (gitmcp), not a verification file: there is nothing to check yet.
+    if (/html/i.test(ex.contentType ?? '') || /^\s*<(!doctype|html)\b/i.test(ex.bodySnippet ?? '')) return [];
     const body = (ex.bodySnippet ?? '').trim();
     const problems: string[] = [];
     if (/json/i.test(ex.contentType ?? '')) problems.push('JSON Content-Type');
@@ -468,7 +474,7 @@ export const SRV_020 = defineRule(
     id: 'SRV-020', title: 'Protocol era report', severity: { spec: 'info' }, needs: ['http'],
     rationale: 'Reports which protocol revision the server speaks.',
     fix: 'No action needed.',
-    sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle'],
+    sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning'],
   },
   (snap) => {
     if (snap.era === 'unknown') return [];

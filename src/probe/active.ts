@@ -4,11 +4,13 @@ import type { ActiveCall, Snapshot } from '../snapshot.js';
 import type { ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
 import { WRITE_VERBS } from '../rules/lexicon.js';
+import { CLAUDE_TOOL_TIMEOUT_MS } from '../rules/runtime.js';
 import { annotations, isObj, properties, toolName, type Obj } from '../rules/util/access.js';
 import { tokenize } from '../rules/util/text.js';
 
 const MAX_TOOLS = 50;
-const MAX_CALL_MS = 240000;
+// One second past Claude's limit, so a call that would time out in Claude is seen as exceeding it.
+const MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000;
 
 export function isSafeToCall(tool: Obj): boolean {
   const a = annotations(tool);

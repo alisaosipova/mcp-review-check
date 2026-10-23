@@ -68,7 +68,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--target claude\|chatgpt\|all` | `all` | `spec` rules always run and are reported; the exit code counts only the chosen directories (see [Exit codes](#exit-codes)). |
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
-| `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 240000)`. RT-005's 60 s and 240 s Claude thresholds need a larger `--timeout`; a call that gets no answer is reported by RT-005 as a warning. The GET probe uses 5 s and the TLS check 10 s. |
+| `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 241000)`. RT-005 reports a call that runs past Claude's documented 240 s tool timeout as an error (use `--timeout 241000` to measure it); its 60 s (Claude) and 5 s (ChatGPT) thresholds are linter-defined. A call that gets no answer before a shorter `--timeout` is an RT-005 warning. The GET probe uses 5 s and the TLS check 10 s. |
 | `--max-duration <ms>` | no limit | Overall deadline for the whole check. When it runs out, the report covers what ran, says in which phase it stopped, and the verdicts read `INCOMPLETE` (exit 3 if no handshake completed). |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
@@ -148,7 +148,7 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 | SRV-005 | Temporary tunnel or shared hosting domain | chatgpt: error, claude: warning | [link](https://developers.openai.com/plugins/build/mcp-server) |
 | SRV-006 | No cross-host redirect at the registered URL | claude: error | [link](https://claude.com/docs/connectors/building/troubleshooting) |
 | SRV-007 | Host-header (DNS-rebinding) protection rejects the public hostname | claude: error, chatgpt: error | [link](https://claude.com/docs/connectors/building/testing) |
-| SRV-008 | Origin header handling | claude: warning, chatgpt: warning, spec: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http) |
+| SRV-008 | Origin header handling | claude: info, chatgpt: info, spec: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http) |
 | SRV-009 | Bot challenge or WAF signature in responses | claude: warning, chatgpt: warning | [link](https://claude.com/docs/connectors/building/authentication) |
 | SRV-010 | Handshake and listing latency | chatgpt: info | [link](https://developers.openai.com/plugins/deploy/troubleshooting) |
 | SRV-011 | Server name ends with "MCP", "MCP Server" or "Plugin" | chatgpt: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
@@ -160,7 +160,7 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 | SRV-017 | Canonical server URL form | spec: warning, claude: info | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#canonical-server-uri) |
 | SRV-018 | stdio server writes non-MCP output to stdout | spec: error | [link](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) |
 | SRV-019 | tools/list stable across calls and connections | spec: warning | [link](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#capabilities) |
-| SRV-020 | Protocol era report | spec: info | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle) |
+| SRV-020 | Protocol era report | spec: info | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning) |
 | SPEC-001 | initialize result shape | spec: error | [link](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) |
 | SPEC-002 | Capabilities declared for served primitives | spec: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#capabilities) |
 | SPEC-003 | Request responses use application/json or text/event-stream | spec: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http) |
@@ -187,7 +187,7 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 | TOOL-004 | Promotional or comparative tool name | chatgpt: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | TOOL-005 | Opaque tool name | chatgpt: info | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | TOOL-006 | Tool has a title | claude: error, spec: info | [link](https://claude.com/docs/connectors/building/review-criteria) |
-| TOOL-007 | Tool has a description | chatgpt: error, claude: warning, spec: info | [link](https://developers.openai.com/plugins/plugin-guidelines) |
+| TOOL-007 | Tool has a description | chatgpt: error, claude: error, spec: info | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | TOOL-008 | Description too thin, generic or overloaded | claude: warning, chatgpt: warning | [link](https://developers.openai.com/plugins/plan/tools) |
 | TOOL-009 | Every input parameter has a description | chatgpt: info, claude: info | [link](https://developers.openai.com/plugins/plan/tools) |
 | TOOL-010 | Annotation field types | spec: error | [link](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts) |

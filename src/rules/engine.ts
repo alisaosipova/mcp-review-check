@@ -120,7 +120,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       const finding: Finding = {
         ruleId: rule.id, title: rule.title, severity, platforms, severityByPlatform, message: r.message,
         tool: r.tool, resource: r.resource, path: r.path, evidence: r.evidence,
-        fix: r.fix ?? rule.fix, docs: rule.sources,
+        fix: r.fix ?? rule.fix, docs: r.docs ?? rule.sources,
       };
       (ignore.has(rule.id) ? ignored : findings).push(finding);
     }

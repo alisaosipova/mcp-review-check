@@ -31,14 +31,24 @@ First public release, planned as 0.1.0.
 
 #### Severity raised
 
+- TOOL-007 (missing tool description) is an error for Claude as well as ChatGPT (Software Directory Policy: tools must have descriptions).
 - SRV-001 checks the MCP server's own TLS certificate, also when the server does not answer 401 (it was only reported by AUTH-010 on OAuth servers): an untrusted certificate is an error. AUTH-010 now covers the authorization server hosts only.
 
 #### Severity lowered / false positives fixed
 
+- SRV-008: a 403 for the assumed Claude/ChatGPT `Origin` values is info, not a warning, until the Origin real hosts send is verified.
+- SRV-016: an HTML page at `/.well-known/openai-apps-challenge` (a SPA catch-all) is not checked as a verification file.
+- TOOL-027: more limit-like parameters count (`max_length`, `start_index`, `max_tokens`, `maxCharacters`, `numResults`, `page_token`, `top_k`, …); `query` and `all` no longer trigger it, and the description is used only when the tool name has no verb.
+- APPS-014: ext-apps mentions in comments do not count, and a widget that sends `ui/initialize` itself has connected.
+- RT-*: a 2026-07-28 `resultType: "input_required"` interim result is neither a success nor an error (RT-005 still measures its latency).
 - SRV-013: a problem in both `initialize` and `server/discover` is reported once, naming both; an empty `serverInfo.version` is a warning (missing stays an error).
 
 #### Other rule changes
 
+- RT-005: `--active` tool calls are cut off at 241 s, so a call past Claude's documented 240 s timeout is an error ("exceeds Claude's 240 s tool call timeout"); the 60 s and 5 s thresholds are labelled linter-defined.
+- TOOL-006 reports a tool title longer than 60 characters as info for Claude (linter-defined limit; a title is a UI label), and long titles are shown as snippets in its messages.
+- SRV-002: the ChatGPT finding has its own fix and OpenAI docs link instead of the Claude plugin advice.
+- SRV-020 cites the 2026-07-28 versioning page.
 - SRV-004 says "does not resolve (NXDOMAIN)" instead of "no A record; Connectors are IPv4-only" when a hostname does not exist, and a failed DNS lookup is `inconclusive (network)` (info).
 
 ### Changed

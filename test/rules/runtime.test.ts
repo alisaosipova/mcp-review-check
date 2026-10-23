@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { synthesizeArgs, isSafeToCall, wrongTypeValue } from '../../src/probe/active.js';
+import { runActive, synthesizeArgs, isSafeToCall, wrongTypeValue } from '../../src/probe/active.js';
+import type { ModernClient } from '../../src/protocol/modern.js';
 import { runtimeRules } from '../../src/rules/runtime.js';
 import type { ActiveCall, Snapshot } from '../../src/snapshot.js';
 import { checkCase, evaluate, snap, tool, type Case } from '../helpers.js';
@@ -98,6 +99,37 @@ describe('RT rules', () => {
     expect(evaluate(byId('RT-003'), s)).toEqual([]);
     expect(evaluate(byId('RT-001'), s)).toEqual([]);
     expect(evaluate(byId('RT-005'), s)).toMatchObject([{ severity: 'warning', message: expect.stringMatching(/no answer after 2000 ms/) }]);
+  });
+
+  it('RT-005: Claude\'s 240 s limit is reachable; 60 s and 5 s are labelled linter-defined', () => {
+    const t = byId('RT-005');
+    // --active cuts calls off one second after Claude's limit, so a call still running then exceeds it.
+    const cut = evaluate(t, active([call({ transportError: 'McpError: Request timed out', durationMs: 241000 })]));
+    expect(cut).toMatchObject([{ severity: 'error', platforms: ['claude'], message: expect.stringMatching(/exceeds Claude's 240 s tool call timeout/) }]);
+    const slow = evaluate(t, active([call({ durationMs: 240500, result: text('ok') })]));
+    expect(slow.find((x) => x.platforms.includes('claude'))).toMatchObject({ severity: 'error', message: expect.stringMatching(/exceeds Claude's 240 s/) });
+    const mid = evaluate(t, active([call({ durationMs: 61000, result: text('ok') })]));
+    expect(mid.map((x) => x.message).sort()).toEqual(['call took 61000 ms (> 5 s, linter-defined threshold)', 'call took 61000 ms (> 60 s, linter-defined threshold)']);
+  });
+
+  it('runActive cuts a call off at 241 s even with a larger --timeout', async () => {
+    const seen: number[] = [];
+    const modern = { request: async (_m: string, _p: unknown, o: { timeoutMs: number }) => { seen.push(o.timeoutMs); return { result: text('ok'), exchange: { status: 200 } }; } } as unknown as ModernClient;
+    let now = 0;
+    await runActive({ snap: snap({ tools: [tool({ inputSchema: { type: 'object', properties: {} } })] }), timeoutMs: 600000, now: () => (now += 10), modern });
+    expect(seen).toEqual([241000]);
+  });
+
+  it('RT-*: an input_required interim result (MRTR) is neither a success nor an error', () => {
+    const interim = { resultType: 'input_required', inputRequests: { confirm: { method: 'elicitation/create', params: { message: 'Which workspace?' } } } };
+    const s = active([
+      call({ kind: 'synthetic', result: interim }),
+      call({ kind: 'invalid-missing', result: interim }),
+      call({ kind: 'invalid-type', result: interim }),
+    ], undefined, [uiTool, tool()]);
+    for (const id of ['RT-001', 'RT-002', 'RT-003', 'RT-004', 'RT-006', 'RT-007', 'RT-008', 'RT-009', 'RT-010', 'RT-011']) expect(evaluate(byId(id), s), id).toEqual([]);
+    // the same wrong-type call answered with a final success is still RT-002
+    expect(evaluate(byId('RT-002'), active([call({ kind: 'invalid-type', result: { resultType: 'complete', ...text('ok') } })]))).toHaveLength(1);
   });
 
   it('RT-009 is skipped for chatgpt when a complete mcp/www_authenticate is present', () => {

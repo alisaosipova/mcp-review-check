@@ -4,7 +4,7 @@ import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
 import { deref, walkSchema } from './util/schemaWalk.js';
-import { firstVerb, tokenize, toolKind, words } from './util/text.js';
+import { firstVerb, snippet, tokenize, toolKind, words } from './util/text.js';
 import { TEXT_CAP } from '../limits.js';
 
 const MCP_TOOLS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools';
@@ -107,6 +107,9 @@ export const TOOL_005 = defineRule(
   }),
 );
 
+/** Linter-defined: a title is a short label in the host UI, not a description. */
+export const TITLE_MAX = 60;
+
 export const TOOL_006 = defineRule(
   {
     id: 'TOOL-006', title: 'Tool has a title', severity: { claude: 'error', spec: 'info' }, needs: ['tools'],
@@ -118,14 +121,19 @@ export const TOOL_006 = defineRule(
     const at = annotations(t).title;
     const title = t.title ?? at;
     if (!isNonEmptyStr(title)) return { platforms: ['claude'], message: 'no title' };
-    if (t.title !== undefined && at !== undefined && t.title !== at) return { platforms: ['spec'], message: `title and annotations.title differ ("${String(t.title)}" wins)` };
-    return undefined;
+    const out: RawFinding[] = [];
+    const len = [...title].length;
+    if (len > TITLE_MAX) {
+      out.push({ platforms: ['claude'], severity: 'info', message: `title is ${len} characters (linter-defined limit ${TITLE_MAX}): "${snippet(title, 0, title.length, TITLE_MAX)}"`, fix: 'Use a short human-readable label as the title (e.g. "Search docs"); keep details in the description.' });
+    }
+    if (t.title !== undefined && at !== undefined && t.title !== at) out.push({ platforms: ['spec'], message: `title and annotations.title differ ("${snippet(String(t.title), 0, String(t.title).length, TITLE_MAX)}" wins)` });
+    return out;
   }),
 );
 
 export const TOOL_007 = defineRule(
   {
-    id: 'TOOL-007', title: 'Tool has a description', severity: { chatgpt: 'error', claude: 'warning', spec: 'info' }, needs: ['tools'],
+    id: 'TOOL-007', title: 'Tool has a description', severity: { chatgpt: 'error', claude: 'error', spec: 'info' }, needs: ['tools'],
     rationale: 'Models choose tools from their descriptions.',
     fix: 'Describe what the tool does, when to use it and what it returns.',
     sources: [OAI_GUIDE, CLAUDE_POLICY],
@@ -340,8 +348,10 @@ export const TOOL_026 = defineRule(
   }),
 );
 
-const COLLECTION_TOKENS = new Set(['list', 'search', 'query', 'export', 'dump', 'find', 'all']);
-const LIMIT_PROP = /^(limit|max_?results|page|page_?size|per_?page|cursor|offset|next_?token|top|first)$/i;
+// "query" and "all" are left out: a search box parameter or "all regions" does not make a tool return a collection.
+const COLLECTION_TOKENS = new Set(['list', 'search', 'export', 'dump', 'find']);
+// Any bound on the result: count, page, offset, or size of the returned text (max_length, max_tokens, maxCharacters).
+const LIMIT_PROP = /^(limit|max_?(results|items|count|length|tokens|chars|characters|size|records|rows|hits)|num_?results|top_?k|page|page_?(size|token|number)|per_?page|cursor|offset|start_?index|next_?(token|page_?token|cursor)|top|first)$/i;
 
 export const TOOL_027 = defineRule(
   {
@@ -353,7 +363,10 @@ export const TOOL_027 = defineRule(
   (snap) => perTool(snap, (t, name) => {
     if (toolKind(t) === 'write') return undefined; // "creates entities from lists" is not a collection read
     const d = isStr(t.description) ? t.description : '';
-    const implied = tokenize(name).some((x) => COLLECTION_TOKENS.has(x)) || /\b(lists?|search(es)?|quer(y|ies)|exports?|dumps?|finds?|all)\b/i.test(d);
+    // The name's verb decides; the description counts only for names without a verb ("Use after the search tool"
+    // in a fetch tool's description, as on MS Learn, does not make it a collection read).
+    const toks = tokenize(name);
+    const implied = toks.some((x) => COLLECTION_TOKENS.has(x)) || (!firstVerb(name) && /\b(lists?|search(es)?|exports?|dumps?|finds?)\b/i.test(d));
     if (!implied) return undefined;
     const names: string[] = [];
     walkSchema(t.inputSchema, (v) => { if (v.viaProperty) names.push(v.name); });

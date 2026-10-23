@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiMeta, uiTools, uiUriOf } from './util/access.js';
-import { extractOrigins, originMatches, type OriginKind } from './util/html.js';
+import { extractOrigins, originMatches, stripComments, type OriginKind } from './util/html.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, registrableDomain, SHARED_HOST_SUFFIXES } from './util/net.js';
 import { cspOf, RESOURCE_MIME_TYPE, UI_EXTENSION, uiResources } from './util/ui.js';
 
@@ -319,7 +319,12 @@ export const APPS_014 = defineRule(
   (snap) => uiResources(snap).flatMap((r): RawFinding[] => {
     if (!r.html) return [];
     const out: RawFinding[] = [];
-    if (/@modelcontextprotocol\/ext-apps|new App\(/.test(r.html) && !/\.connect\s*\(/.test(r.html) && !/useApp\s*\(/.test(r.html)) out.push({ resource: r.uri, message: 'uses the ext-apps App but never calls connect()' });
+    // A mention in a comment is not a use (Svelte's MCP-UI adapter documents ext-apps in a JSDoc comment), and a
+    // widget that sends ui/initialize itself performs the handshake without the App class. Stripping comments only
+    // narrows the "uses" test; the "connects" test reads the raw HTML so a mis-stripped string cannot hide a call.
+    const usesApp = /@modelcontextprotocol\/ext-apps|new App\(/.test(stripComments(r.html));
+    const connects = /\.connect\s*\(|useApp\s*\(|["'`]ui\/initialize["'`]/.test(r.html);
+    if (usesApp && !connects) out.push({ resource: r.uri, message: 'uses the ext-apps App but never calls connect()' });
     if (/sendSizeChanged\s*\([^)]{0,500}height\s*:\s*0\b/.test(r.html)) out.push({ resource: r.uri, message: 'sendSizeChanged reports height 0' });
     return out;
   }),

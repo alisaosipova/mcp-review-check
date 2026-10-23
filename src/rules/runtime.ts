@@ -8,10 +8,14 @@ import { isGenericError, nfkc, snippet } from './util/text.js';
 import { parseWwwAuthenticate } from './util/wwwAuth.js';
 
 const CLAUDE_REVIEW = 'https://claude.com/docs/connectors/building/review-criteria';
+/** Claude's documented per-call tool timeout (RT-005); --active cuts calls off one second later. */
+export const CLAUDE_TOOL_TIMEOUT_MS = 240000;
 const CLAUDE_BUILD = 'https://claude.com/docs/connectors/building';
 
-/** Calls that got an answer; timed-out or failed calls are reported by RT-005 only. */
-const calls = (snap: Snapshot) => (snap.active?.calls ?? []).filter((c) => !c.transportError);
+/** A 2026-07-28 interim result (resultType "input_required", MRTR): neither a success nor an error yet. */
+export const isInputRequired = (c: ActiveCall) => isObj(c.result) && c.result.resultType === 'input_required';
+/** Calls that got a final answer; timed-out or failed calls are reported by RT-005 only, interim results by none. */
+const calls = (snap: Snapshot) => (snap.active?.calls ?? []).filter((c) => !c.transportError && !isInputRequired(c));
 const allCalls = (snap: Snapshot) => snap.active?.calls ?? [];
 const isInvalid = (c: ActiveCall) => c.kind === 'invalid-missing' || c.kind === 'invalid-type';
 const resultObj = (c: ActiveCall): Obj | undefined => (isObj(c.result) ? c.result : undefined);
@@ -108,20 +112,22 @@ export const RT_004 = defineRule(
 export const RT_005 = defineRule(
   {
     id: 'RT-005', title: 'Tool latency', severity: { claude: 'error', chatgpt: 'warning' }, needs: ['active'],
-    rationale: 'Hosts time out slow tools.',
+    rationale: "Claude cuts tool calls off at 240 s (documented). The 60 s and 5 s thresholds are linter-defined responsiveness targets.",
     fix: 'Keep tool calls fast; move long work to background jobs.',
     sources: [CLAUDE_BUILD, 'https://developers.openai.com/plugins/deploy/troubleshooting'],
   },
   (snap) => allCalls(snap).flatMap((c): RawFinding[] => {
     const ms = Math.round(c.durationMs);
-    const out: RawFinding[] = [];
+    const limit = `Claude's ${CLAUDE_TOOL_TIMEOUT_MS / 1000} s tool call timeout`;
     if (c.transportError) {
-      // Calls are cut off at min(--timeout, 240 s), so the 60 s and 240 s Claude thresholds need a larger --timeout.
+      // Calls are cut off at min(--timeout, 241 s): a call still running past 240 s exceeds Claude's limit.
+      if (c.durationMs >= CLAUDE_TOOL_TIMEOUT_MS) return [{ tool: c.tool, platforms: ['claude'], message: `${c.kind} call got no answer within ${ms} ms; exceeds ${limit}` }];
       return [{ tool: c.tool, severity: 'warning', message: `${c.kind} call got no answer after ${ms} ms: ${c.transportError} (raise --timeout to measure slower tools)` }];
     }
-    if (ms > 240000) out.push({ tool: c.tool, platforms: ['claude'], message: `call took ${ms} ms (> 240 s)` });
-    else if (ms > 60000) out.push({ tool: c.tool, platforms: ['claude'], severity: 'warning', message: `call took ${ms} ms (> 60 s)` });
-    if (ms > 5000) out.push({ tool: c.tool, platforms: ['chatgpt'], message: `call took ${ms} ms (> 5 s)` });
+    const out: RawFinding[] = [];
+    if (ms > CLAUDE_TOOL_TIMEOUT_MS) out.push({ tool: c.tool, platforms: ['claude'], message: `call took ${ms} ms; exceeds ${limit}` });
+    else if (ms > 60000) out.push({ tool: c.tool, platforms: ['claude'], severity: 'warning', message: `call took ${ms} ms (> 60 s, linter-defined threshold)` });
+    if (ms > 5000) out.push({ tool: c.tool, platforms: ['chatgpt'], message: `call took ${ms} ms (> 5 s, linter-defined threshold)` });
     return out;
   }),
 );

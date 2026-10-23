@@ -84,12 +84,12 @@ describe('e2e http', () => {
     expect(r.code).toBe(3);
   });
 
-  it('overly strict Origin validation → SRV-008 warnings for both hosts', async () => {
+  it('strict Origin validation → SRV-008 info for both hosts (the host Origin values are unverified)', async () => {
     const s = await good({ strictOrigin: true });
     const r = await cli([s.url, '--format', 'json']);
     const f = r.json.findings.filter((x: any) => x.ruleId === 'SRV-008');
     expect(f.map((x: any) => x.platforms[0]).sort()).toEqual(['chatgpt', 'claude']);
-    expect(f.every((x: any) => x.severity === 'warning')).toBe(true);
+    expect(f.every((x: any) => x.severity === 'info' && /not verified/.test(x.message))).toBe(true);
   });
 
   it('legacy HTTP+SSE only → SSE fallback and SRV-003 warning', async () => {
