@@ -8,12 +8,12 @@ import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type 
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
-import { createRedactor, createTracer, type Tracer } from './protocol/trace.js';
+import { createTracer, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, type Deps } from './probe/network.js';
 import { runWireProbes } from './probe/wire.js';
-import { isSecretQueryParam } from './rules/auth.js';
+import { buildRedactor } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
 import { isLoopbackHost } from './rules/util/net.js';
 
@@ -33,6 +33,17 @@ export interface BuildOptions {
   active?: boolean;
   activeAuth?: boolean;
   toolArgs?: Record<string, unknown>;
+  /** The run's single Redactor (runCli passes it); built from these options when absent. */
+  redactor?: Redactor;
+}
+
+/** The redactor for these options: --bearer, --header values, URL credentials, stdio argv secrets and --env values. */
+export function redactorFor(opts: BuildOptions): Redactor {
+  const t = opts.target;
+  return opts.redactor ?? buildRedactor({
+    bearer: opts.bearer, headers: opts.headers,
+    ...(t.kind === 'http' ? { url: t.url } : { argv: [t.command, ...t.args], env: t.env }),
+  });
 }
 
 export interface BuildResult {
@@ -220,9 +231,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const timeoutMs = opts.timeoutMs ?? 30000;
   const connectTimeout = Math.min(timeoutMs, 15000);
   const headers = { ...(opts.headers ?? {}) };
-  const secretQuery = [...url.searchParams.entries()].filter(([k]) => isSecretQueryParam(k)).map(([, v]) => v);
-  const redactor = createRedactor(Object.keys(headers), [...(opts.bearer ? [opts.bearer] : []), ...Object.values(headers), ...secretQuery]);
-  const tracer = createTracer(redactor, deps.now);
+  const tracer = createTracer(redactorFor(opts), deps.now);
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
 

@@ -18,15 +18,18 @@ export interface Redactor {
 }
 
 export function createRedactor(secretHeaders: string[] = [], secretValues: string[] = []): Redactor {
+  // Each secret also in its JSON-escaped and percent-encoded forms; longest first so a secret that contains
+  // another one is replaced whole.
+  const forms = secretValues.filter((v) => v.length >= 4).flatMap((v) => [v, JSON.stringify(v).slice(1, -1), encodeURIComponent(v)]);
   return {
     headerNames: new Set(['authorization', 'cookie', 'proxy-authorization', ...secretHeaders.map((h) => h.toLowerCase())]),
-    values: new Set(secretValues.filter((v) => v.length >= 4)),
+    values: new Set([...new Set(forms)].sort((a, b) => b.length - a.length)),
   };
 }
 
 export function scrub(text: string, r: Redactor): string {
   let out = text;
-  for (const v of r.values) out = out.split(v).join(REDACTED);
+  for (const v of r.values) if (out.includes(v)) out = out.split(v).join(REDACTED);
   return out;
 }
 

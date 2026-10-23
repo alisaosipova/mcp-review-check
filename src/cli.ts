@@ -3,7 +3,8 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { buildSnapshot, type BuildOptions, type TargetSpec } from './connect.js';
+import { buildSnapshot, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
+import { redactDeep, scrub, type Redactor } from './redact.js';
 import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, scoreLabel, type Report } from './report/index.js';
 import { renderJson } from './report/json.js';
@@ -34,7 +35,7 @@ Options:
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
   --active-auth           Probe DCR, /authorize and /token. CREATES A DCR CLIENT on your authorization server.
   --tool-args <file>      JSON {toolName: args} for --active calls.
-  --env K=V               Environment variable for --stdio (repeatable).
+  --env K=V               Environment variable for --stdio (repeatable). Values are redacted in output.
   --cwd <dir>             Working directory for --stdio.
   --ignore <RULE-ID>      Ignore a rule (repeatable).
   --list-rules            Print the rule catalog and exit.
@@ -45,6 +46,8 @@ Options:
 
 --stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash outside quotes is literal
 (Windows paths work); the "-- <command> [args...]" form passes arguments verbatim, with options before --.
+Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
+after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
 Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect.
 The score (100 - 12/error - 4/warning, max 3 per rule) is provisional.
@@ -62,9 +65,10 @@ export interface CliResult {
   stderr: string;
 }
 
+// Usage errors never echo option values: they may be credentials.
 function parseHeader(raw: string): [string, string] {
   const i = raw.indexOf(':');
-  if (i <= 0) throw new UsageError(`--header must look like "Name: value" (got "${raw}")`);
+  if (i <= 0) throw new UsageError('--header must look like "Name: value" (no ":" found; the value is not shown)');
   const k = raw.slice(0, i).trim();
   const v = raw.slice(i + 1).trim();
   if (/[\r\n]/.test(k) || /[\r\n]/.test(v)) throw new UsageError('--header values must not contain CR or LF');
@@ -90,8 +94,14 @@ function render(r: Report, format: string, color: boolean, verbose: boolean): st
   }
 }
 
+/** A URL for a usage error: query and fragment hidden (they may carry credentials). */
+function shownUrl(raw: string): string {
+  return raw.replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q)).replace(/\/\/[^/@]*@/, '//…@');
+}
+
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY): Promise<CliResult> {
   let stderr = '';
+  let redactor: Redactor | undefined;
   try {
     const split = splitStdioArgv(argv);
     const { values, positionals } = parseArgs({
@@ -139,14 +149,14 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const envVars: Record<string, string> = {};
       for (const kv of values.env ?? []) {
         const i = kv.indexOf('=');
-        if (i <= 0) throw new UsageError(`--env must look like K=V (got "${kv}")`);
+        if (i <= 0) throw new UsageError('--env must look like K=V (no "=" found; the value is not shown)');
         envVars[kv.slice(0, i)] = kv.slice(i + 1);
       }
       spec = { kind: 'stdio', command: parts[0], args: parts.slice(1), env: envVars, cwd: values.cwd };
     } else {
       const raw = positionals[0];
       let u: URL;
-      try { u = new URL(raw); } catch { throw new UsageError(`invalid URL: ${raw}`); }
+      try { u = new URL(raw); } catch { throw new UsageError(`invalid URL: ${shownUrl(raw)}`); }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new UsageError('URL must use http or https');
       if (values.env?.length || values.cwd) throw new UsageError('--env and --cwd apply only to --stdio');
       spec = { kind: 'http', url: raw };
@@ -154,7 +164,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
 
     let toolArgs: Record<string, unknown> | undefined;
     if (values['tool-args']) {
-      try { toolArgs = JSON.parse(readFileSync(values['tool-args'], 'utf8')); } catch (e) { throw new UsageError(`cannot read --tool-args: ${(e as Error).message}`); }
+      try { toolArgs = JSON.parse(readFileSync(values['tool-args'], 'utf8')); } catch (e) {
+        // A JSON syntax error message quotes the file (which may hold credentials): name the problem only.
+        throw new UsageError(`cannot read --tool-args: ${e instanceof SyntaxError ? 'not valid JSON' : (e as Error).message}`);
+      }
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }
     if (values['active-auth']) stderr += 'Notice: --active-auth creates a DCR client on your authorization server and sends bogus /authorize and /token requests.\n';
@@ -163,17 +176,24 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       target: spec, headers, bearer, timeoutMs, platforms: target,
       active: !!values.active, activeAuth: !!values['active-auth'], toolArgs,
     };
+    redactor = opts.redactor = redactorFor(opts);
     const started = new Date();
     const t0 = performance.now();
-    const { snap, stderrTail, tracer } = await buildSnapshot(opts);
+    const { snap: observed, stderrTail, tracer } = await buildSnapshot(opts);
+    // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so what
+    // the server sent is scrubbed before the rules run; the target stays as entered (rules parse and hash it).
+    const snap = { ...redactDeep(observed, redactor), target: observed.target };
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
-    const report = buildReport(snap, result, manualChecklist(snap), failOn, started, performance.now() - t0);
+    const built = buildReport(snap, result, manualChecklist(snap), failOn, started, performance.now() - t0);
+    // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
+    const report = redactDeep(built, redactor);
 
     const color = isTty && !values['no-color'] && !env.NO_COLOR && format === 'text' && !values.output;
     const body = render(report, format, color, !!values.verbose);
     if (values.verbose) {
       for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;
+      stderr = scrub(stderr, redactor);
     }
     const code = snap.fatal ? 3 : report.summary.failed ? 1 : 0;
     const s = report.summary;
@@ -192,7 +212,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
       return { code: 2, stdout: '', stderr: `${stderr}error: ${(e as Error).message}\nRun with --help for usage.\n` };
     }
-    return { code: 3, stdout: '', stderr: `${stderr}fatal: ${(e as Error).stack ?? e}\n` };
+    const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\n`;
+    return { code: 3, stdout: '', stderr: redactor ? scrub(fatal, redactor) : fatal };
   }
 }
 
