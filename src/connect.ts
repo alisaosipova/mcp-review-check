@@ -2,6 +2,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
@@ -62,6 +63,8 @@ interface Progress {
   nonJsonStdout?: string[];
   /** Close open clients (and the stdio child) when the deadline hits. */
   close?: () => Promise<void>;
+  /** Every stdio server process still running (main and fresh connections), ended at the deadline (R-60). */
+  children?: Set<ChildProcess>;
 }
 
 class Stopped extends Error {}
@@ -413,14 +416,18 @@ export function stderrSummary(tail: string): string {
   return picked.join(' | ');
 }
 
-async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}): Promise<StdioConn> {
+async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}, progress?: Progress): Promise<StdioConn> {
   const inner = new StdioClientTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
   // Masked before the 4096-character tail and the 200-character summary lines cut it (SEC-1).
   inner.stderr?.on('data', (c: Buffer) => { stderrTail = scrub(stderrTail + c.toString('utf8'), r).slice(-4096); });
   const nonJson: string[] = [];
   const tap = () => {
-    const proc = (inner as unknown as { _process?: { stdout?: NodeJS.ReadableStream } })._process;
+    const proc = (inner as unknown as { _process?: ChildProcess })._process;
+    if (proc && progress?.children) {
+      if (progress.stopped) proc.kill('SIGKILL'); // spawned while the deadline was ending the others
+      else { progress.children.add(proc); proc.once('exit', () => progress.children?.delete(proc)); }
+    }
     let buf = '';
     proc?.stdout?.on('data', (c: Buffer) => {
       buf += c.toString('utf8');
@@ -451,7 +458,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   snap.localMode = opts.local ?? true;
   let conn: StdioConn;
   try {
-    conn = await connectStdio(t, connectTimeout, redactorFor(opts));
+    conn = await connectStdio(t, connectTimeout, redactorFor(opts), {}, progress);
   } catch (e) {
     snap.fatal = `could not start or initialize the stdio server: ${(e as Error).message}`;
     snap.coverage = { toolLevel: 'connect-failed', reason: (e as Error).message };
@@ -473,7 +480,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   snap.transport.probes = await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client });
   const fresh = async (variant: ClientVariant = {}) => {
     try {
-      const c = await connectStdio(t, connectTimeout, redactorFor(opts), variant);
+      const c = await connectStdio(t, connectTimeout, redactorFor(opts), variant, progress);
       try { const r = await listAll(c.client, 'tools/list', 'tools', timeoutMs); return r.error ? undefined : r.items; }
       finally { await c.client.close().catch(() => {}); }
     } catch { return undefined; }
@@ -512,7 +519,7 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-  const progress: Progress = { phase: 'connect' };
+  const progress: Progress = { phase: 'connect', children: new Set() };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
   // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises
@@ -525,11 +532,14 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
 /** Resolve with whatever was observed when --max-duration runs out; the rest of the run is abandoned. */
 async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: number, progress: Progress): Promise<BuildResult> {
   let timer: NodeJS.Timeout | undefined;
+  let ending: Promise<void> | undefined;
   const stop = new Promise<BuildResult>((resolve) => {
     timer = setTimeout(() => {
       progress.stopped = true;
       void progress.close?.();
-      resolve({ snap: stoppedSnapshot(snap, ms, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() });
+      const stopped = { snap: stoppedSnapshot(snap, ms, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() };
+      ending = endChildren(progress.children);
+      void ending.then(() => resolve(stopped));
     }, ms);
   });
   run.catch(() => {}); // a Stopped checkpoint (or a closed client) after the deadline is expected
@@ -540,6 +550,17 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
     throw e;
   } finally {
     clearTimeout(timer);
+    await ending; // the run can still finish while the servers are being ended: the CLI exits only after them
+  }
+}
+
+/** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait (R-60). */
+async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 1000): Promise<void> {
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    const live = [...(children ?? [])]; // a process leaves the set on 'exit'
+    if (!live.length) return;
+    for (const c of live) c.kill(signal);
+    await Promise.race([Promise.all(live.map((c) => new Promise((done) => c.once('exit', done)))), new Promise((done) => setTimeout(done, graceMs).unref())]);
   }
 }
 
