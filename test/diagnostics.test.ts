@@ -44,6 +44,13 @@ describe('connection diagnostics (B7)', () => {
     expect(suggestedEndpoint(new URL('https://a.test/mcp'))).toBeUndefined();
   });
 
+  it('S-26 (R-18): a status below 100 (the SDK\'s -1 for an unexpected content type) is not printed as an HTTP status', () => {
+    const page = describeHttpFailure(U, { status: -1, contentType: 'text/html; charset=utf-8', body: '<!doctype html><html><head><title>My App</title></head></html>', message: 'HTTP -1: Unexpected content type' });
+    expect(page).toMatchObject({ kind: 'not-mcp', summary: 'response with an HTML page ("My App"): https://mcp.acme.test/ is not an MCP endpoint' });
+    expect(page.status).toBeUndefined();
+    expect(describeHttpFailure(U, { status: 0 }).summary).toBe('unknown error');
+  });
+
   it('schemeSuggestion: https for public hosts, http for localhost, nothing for real URLs', () => {
     expect(schemeSuggestion('mcp.example.com/mcp')).toBe('https://mcp.example.com/mcp');
     expect(schemeSuggestion('localhost:3000/mcp')).toBe('http://localhost:3000/mcp');

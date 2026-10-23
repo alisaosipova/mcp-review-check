@@ -248,6 +248,21 @@ describe('e2e http', () => {
     expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
   });
 
+  it('S-26 (R-18): an HTML page served with 200 is "not an MCP endpoint" without a made-up HTTP status', async () => {
+    const page = track(await listen((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><html><head><title>My App</title></head><body><div id="root"></div></body></html>');
+    }, '/'));
+    const want = `response with an HTML page ("My App"): ${page.url} is not an MCP endpoint; try ${page.base}/mcp`;
+    const r = await cli([page.url, '--format', 'json', '--timeout', '3000']);
+    expect(r.code, r.stderr).toBe(3);
+    expect(r.stdout + r.stderr).not.toMatch(/HTTP -1/);
+    expect(r.json.coverage.reason).toBe(want);
+    const text = await cli([page.url, '--timeout', '3000']);
+    expect(text.stdout + text.stderr).not.toMatch(/HTTP -1/);
+    expect(text.stdout).toContain(`Could not connect: ${want}`);
+  });
+
   it('B7: a /sse URL that no longer serves SSE suggests /mcp', async () => {
     const gone = track(await listen((_req, res) => {
       res.writeHead(_req.method === 'GET' ? 410 : 405, { 'content-type': 'application/json' });
@@ -292,6 +307,28 @@ describe('e2e http', () => {
     expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
     const md = await cli([s.url, '--format', 'markdown', '--max-duration', '1500']);
     expect(md.stdout).toMatch(/stopped by --max-duration 1500 ms during listing/);
+  });
+
+  it('S-26 (R-60): a stop after the handshake reads INCOMPLETE even when errors were found before it', async () => {
+    // Answers initialize over plain http (SRV-001 error with --no-local); every later request hangs.
+    const s = track(await listen(async (req, res) => {
+      if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+      let body = '';
+      for await (const c of req) body += c;
+      const m = JSON.parse(body);
+      if (m.id === undefined) { res.writeHead(202).end(); return; }
+      const reply = (x: object) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...x })); };
+      if (m.method === 'initialize') return reply({ result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'hang', version: '1' } } });
+      if (m.method === 'server/discover') return reply({ error: { code: -32601, message: 'Method not found' } });
+      await new Promise(() => {});
+    }));
+    const r = await cli([s.url, '--format', 'json', '--no-local', '--timeout', '20000', '--max-duration', '2500']);
+    expect([0, 1], r.stderr).toContain(r.code); // a handshake happened: not exit 3
+    expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-001')).toMatchObject({ severity: 'error' });
+    expect(r.json.summary.verdicts.claude).toMatchObject({ verdict: 'INCOMPLETE' });
+    expect(r.json.summary.verdicts.claude.errors).toBeGreaterThan(0);
+    expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
   });
 
   it('B7: a URL without a scheme gets a suggestion (exit 2)', async () => {

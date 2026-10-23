@@ -158,6 +158,20 @@ describe('review round 1 (R-11, R-17, D-4)', () => {
   });
 });
 
+describe('review round 2 (R-60)', () => {
+  it('S-26: a --max-duration stop after the handshake reads INCOMPLETE even with errors found before it', () => {
+    const srv001 = f('SRV-001', 'error', { platforms: ['claude', 'chatgpt'], severityByPlatform: { claude: 'error', chatgpt: 'error' } });
+    const s = loadSnapshot('minimal-http');
+    s.coverage = { toolLevel: 'stopped', reason: 'stopped by --max-duration (4000 ms) during listing' };
+    s.limits = { truncated: [], stopped: { maxDurationMs: 4000, phase: 'listing' } };
+    const r = buildReport(s, { ...runRules(s, RULES), findings: [srv001] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
+    expect(r.summary.verdicts).toMatchObject({ claude: { verdict: 'INCOMPLETE', errors: 1 }, chatgpt: { verdict: 'INCOMPLETE', errors: 1 } });
+    // without the stop the same error blocks
+    const done = loadSnapshot('minimal-http');
+    expect(buildReport(done, { ...runRules(done, RULES), findings: [srv001] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1).summary.verdicts.claude?.verdict).toBe('BLOCKED');
+  });
+});
+
 describe('text report', () => {
   it('collapses 2 or more findings of the same rule and message (R-28)', () => {
     const list = ['a', 'b', 'c', 'd', 'e'].map((t) => f('TOOL-012', 'error', { tool: t, message: 'missing openWorldHint' }));

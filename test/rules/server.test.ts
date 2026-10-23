@@ -255,4 +255,19 @@ describe('SRV rules', () => {
     expect(evaluate(byId('SRV-001'), tls({ code: 'ENOTFOUND' }))).toEqual([]);
     expect(evaluate(byId('SRV-001'), tls({ code: 'ECONNREFUSED' }))).toEqual([]);
   });
+
+  const tlsFail = (code: string) => evaluate(byId('SRV-001'), snap({ url: URL_OK, set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, code }]; } }));
+
+  it('S-26 (R-21): a certificate for another name (ERR_TLS_*) is an error, like a self-signed one', () => {
+    for (const code of ['ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']) {
+      expect(tlsFail(code), code).toMatchObject([{ severity: 'error', message: `TLS handshake with mcp.acme.test failed: ${code}; hosts reject this certificate` }]);
+    }
+    expect(tlsFail('EHOSTUNREACH')).toEqual([]);
+  });
+
+  it('S-26 (R-21): EPROTO is a TLS protocol failure, not a certificate verdict', () => {
+    const proto = tlsFail('EPROTO');
+    expect(proto).toMatchObject([{ severity: 'error', message: 'TLS handshake with mcp.acme.test failed: EPROTO (not a TLS endpoint?)' }]);
+    expect(proto[0].message).not.toMatch(/certificate/);
+  });
 });

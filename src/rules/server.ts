@@ -7,6 +7,7 @@ import { corpus } from './util/text.js';
 import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_SUFFIXES } from './util/net.js';
 import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
 import { TEXT_CAP } from '../limits.js';
+import { isTlsCode } from '../diagnose.js';
 
 /** Message prefix of a deploy-time finding made informational in local mode; the local banner lists their rules. */
 export const DEPLOY = 'Deploy-time check: ';
@@ -34,9 +35,12 @@ export const SRV_001 = defineRule(
     const host = snap.target.url.host;
     const t = (snap.transport.tls ?? []).find((x) => (x.role ? x.role === 'mcp' : x.host === host));
     // A plain network error (ENOTFOUND, ECONNREFUSED, ...) is not a certificate verdict: SRV-003/SRV-004 report it.
-    if (!t || t.ok || (/^E[A-Z_]+$/.test(t.code ?? '') && t.code !== 'EPROTO' && !t.transient)) return [];
+    // Certificate codes (ERR_TLS_CERT_ALTNAME_INVALID, ...) and TLS protocol errors (EPROTO, ERR_SSL_*) are.
+    const tlsProto = /^(EPROTO|ERR_SSL_)/.test(t?.code ?? '');
+    if (!t || t.ok || (/^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && !tlsProto && !t.transient)) return [];
     const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
     if (t.transient) return [{ severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }];
+    if (tlsProto) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (not a TLS endpoint?)${tries}` })];
     return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}; hosts reject this certificate` })];
   },
 );

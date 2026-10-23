@@ -33,7 +33,7 @@ function finding(e: CorpusEntry, text: string, m: RegExpExecArray, extra: Partia
   return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"`, evidence: m[0].slice(0, 120), ...extra };
 }
 
-/** Run patterns over the NFKC-normalized corpus; one finding per entry (the first matching pattern wins). */
+/** Run patterns over the NFKC-normalized corpus; one finding per entry (the first matching pattern wins, an informational one only when no other matches). */
 export function scanCorpus(
   snap: Snapshot, patterns: Pattern[],
   filter?: (e: CorpusEntry, m: RegExpExecArray, p: Pattern) => boolean,
@@ -42,14 +42,17 @@ export function scanCorpus(
   const out: RawFinding[] = [];
   for (const e of corpus(snap)) {
     const text = nfkc(e.text);
+    let hit: RawFinding | undefined;
     for (const p of patterns) {
       const m = matchPattern(p, text);
       if (!m || (filter && !filter(e, m, p))) continue;
       const f = finding(e, text, m, { ...decorate?.(e), ...(p.severity ? { severity: p.severity } : {}) });
       if (p.note) f.message += ` (${p.note})`;
-      out.push(f);
+      if (p.severity === 'info') { hit ??= f; continue; } // a later pattern may still match harder wording
+      hit = f;
       break; // one finding per entry
     }
+    if (hit) out.push(hit);
   }
   return out;
 }
@@ -210,6 +213,7 @@ export const INJ_005 = defineRule(
 );
 
 const SELF = String.raw`(this|these|our)(\s+(tool|skill|server|plugin|connector|app|resource|prompt|function)s?)?`;
+const CONDITIONAL = String.raw`${SELF}(\s+first)?\s+(when(ever)?|if|for|to|before|after|whenever)\b`;
 
 export const INJ_006_PATTERNS: Pattern[] = [
   // "Do NOT use it for other MCP servers" restricts this tool's own scope (Kiwi): the object after the verb must not be a self reference.
@@ -217,8 +221,9 @@ export const INJ_006_PATTERNS: Pattern[] = [
   { re: /\b(instead of|rather than)\b[^.]{0,40}\b(other|built-?in|default|any)\b[^.]{0,20}(tools?|search|web|plugins?)/i },
   { re: /\bonly (use|call) this (tool|server|plugin)\b(?!\s+(when|if|for|to)\b)/i },
   // "Always use this tool when/to/for ..." says when the tool applies (MS Learn, Hugging Face skills): informational.
-  { re: new RegExp(String.raw`\balways (use|call|prefer) ${SELF}(\s+first)?\s+(when(ever)?|if|for|to|before|after|whenever)\b`, 'i'), severity: 'info', note: 'conditional: fine when it describes when this applies' },
-  { re: /\b(always (use|call|prefer) (this|these|our)\b|prefer (this|our) (tool|plugin|server)|better than|superior to|unlike (other|competitor))/i },
+  { re: new RegExp(String.raw`\balways (use|call|prefer) ${CONDITIONAL}`, 'i'), severity: 'info', note: 'conditional: fine when it describes when this applies' },
+  // The conditional form above is not matched again here, so "better than ..." next to it is still a warning.
+  { re: new RegExp(String.raw`\b(always (use|call|prefer) (?!${CONDITIONAL})(this|these|our)\b|prefer (this|our) (tool|plugin|server)|better than|superior to|unlike (other|competitor))`, 'i') },
 ];
 
 /** The fix for the kind of object that was flagged: a tool, a skill (skill:// resource), another resource, a prompt or the instructions. */

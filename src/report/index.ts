@@ -41,8 +41,8 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   const { failed, ...g } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
   const complete = snap.coverage.toolLevel === 'ok';
   const verdicts: Report['summary']['verdicts'] = {};
-  // A failed connect (exit 3) checked nothing: INCOMPLETE whatever the static findings say (R-17, D-4).
-  for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal);
+  // A failed connect (exit 3) checked nothing, a --max-duration stop not everything: INCOMPLETE whatever the findings say (R-17, R-60, D-4).
+  for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal || !!snap.limits?.stopped);
   return {
     tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
     startedAt: startedAt.toISOString(), durationMs, snap,

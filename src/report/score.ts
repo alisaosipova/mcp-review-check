@@ -21,7 +21,7 @@ export function score(findings: Finding[]): number {
   return Math.max(0, 100 - 12 * errors - 4 * warnings);
 }
 
-/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass; after a failed connect (`connectFailed`, R-17) it is INCOMPLETE even with errors. */
+/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass; after a failed connect or a --max-duration stop (`connectFailed`, R-17, R-60) it is INCOMPLETE even with errors. */
 export function verdict(findings: Finding[], platform: Platform, complete = true, connectFailed = false): { verdict: Verdict; errors: number; warnings: number } {
   // Count each finding at this platform's own severity, not the maximum over all its platforms.
   const mine = findings.filter((f) => f.platforms.includes(platform)).map((f) => platformSeverity(f, platform));

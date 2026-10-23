@@ -71,15 +71,17 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   const html = /text\/html/i.test(f.contentType ?? '') || /<(!doctype|html|head|body)\b/i.test(f.body ?? '');
   const sse = /\/sse\/?$/i.test(url.pathname);
   const next = suggestedEndpoint(url);
-  if ((f.status !== undefined && [404, 405, 410].includes(f.status)) || html) {
+  // The SDK reports an unexpected content type as code -1: that is not an HTTP status.
+  const status = f.status !== undefined && f.status >= 100 ? f.status : undefined;
+  if ((status !== undefined && [404, 405, 410].includes(status)) || html) {
     const title = html ? htmlTitle(f.body) : undefined;
-    const what = `${f.status !== undefined ? `HTTP ${f.status}` : 'response'}${html ? ` with an HTML page${title ? ` ("${title}")` : ''}` : ''}`;
+    const what = `${status !== undefined ? `HTTP ${status}` : 'response'}${html ? ` with an HTML page${title ? ` ("${title}")` : ''}` : ''}`;
     const hint = sse
       ? `/sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve ${next}`
       : next ? `try ${next}` : 'check the path the server mounts MCP on';
-    return { kind: 'not-mcp', status: f.status, summary: `${what}: ${displayUrl(url.href)} is not an MCP endpoint`, hint };
+    return { kind: 'not-mcp', status, summary: `${what}: ${displayUrl(url.href)} is not an MCP endpoint`, hint };
   }
-  return { kind: 'http', status: f.status, summary: f.message ?? (f.status !== undefined ? `HTTP ${f.status}` : 'unknown error'), ...(sse && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}) };
+  return { kind: 'http', status, summary: f.message ?? (status !== undefined ? `HTTP ${status}` : 'unknown error'), ...(sse && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}) };
 }
 
 /** "summary; hint" for coverage.reason and the fatal message. */

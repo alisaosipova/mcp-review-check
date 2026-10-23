@@ -148,4 +148,10 @@ describe('APPS rules', () => {
     // the App class used in code with neither connect() nor ui/initialize is still reported
     expect(evaluate(rule, ui({ html: '<script>/* widget */ const app = new App({ name: "x" }); app.render();</script>' }))).toHaveLength(1);
   });
+
+  it('S-26 (R-54): APPS-014 accepts a hand-written ui/initialize handshake when the App class is used in code without connect()', () => {
+    const rule = appsRules.find((r) => r.id === 'APPS-014')!;
+    const html = '<script>const app = new App({ name: "x" });\nwindow.parent.postMessage({ jsonrpc: "2.0", id: 1, method: \'ui/initialize\', params: {} }, "*");</script>';
+    expect(evaluate(rule, ui({ html }))).toEqual([]);
+  });
 });

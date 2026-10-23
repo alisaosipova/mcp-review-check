@@ -262,11 +262,12 @@ export const RT_011 = defineRule(
     return calls(snap).filter(isSuccess).flatMap((c): RawFinding[] => {
       const text = nfkc(textOf(resultObj(c)));
       for (const patterns of groups) {
-        // As in scanCorpus, the first matching pattern of a group decides; an informational match is not injection.
+        // As in scanCorpus, the first matching pattern of a group decides; an informational match is not injection,
+        // but a later pattern of the group may still match harder wording in the same text.
         for (const p of patterns) {
           const m = matchPattern(p, text);
           if (!m || !own({ text, where: 'tool.description' }, m, p)) continue;
-          if (p.severity === 'info') break;
+          if (p.severity === 'info') continue;
           return [{ tool: c.tool, message: `output contains "${snippet(text, m.index, m[0].length)}"` }];
         }
       }
