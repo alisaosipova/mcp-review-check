@@ -2,6 +2,7 @@
 // revision in the header instead of an SRV-020 line, TOOL-013 info only with --verbose, the MAN-024 text (R-34).
 // Black-box: the built CLI against the GOOD and BAD stdio fixtures and in-process HTTP servers.
 import { afterEach, describe, expect, it } from 'vitest';
+import { startAuthServer } from './fixtures/auth-server.js';
 import { startBridge, type Started } from './fixtures/http-bridge.js';
 import { startModernServer } from './fixtures/modern-server.js';
 // @ts-expect-error untyped .mjs fixture
@@ -104,6 +105,26 @@ describe('R-33: --quiet', () => {
     const untimed = (r: any) => ({ ...r, startedAt: undefined, durationMs: undefined });
     expect(jsonFlagged.code, jsonFlagged.stderr).toBe(json.code);
     expect(untimed(jsonFlagged.json)).toEqual(untimed(json.json));
+  });
+});
+
+describe('D-4: --quiet keeps the reason in the Result line', () => {
+  it('D-4: with --quiet the Result line names auth-required and why the check is partial', async () => {
+    const s = track(await startAuthServer({}));
+    const [plain, quiet] = await Promise.all([cli([s.url]), cli([s.url, '--quiet'])]);
+    expect(plain.stdout).toContain('Server requires OAuth'); // the header notice, which --quiet drops
+    expect(quiet.stdout).not.toContain('Server requires OAuth');
+    expect(quiet.stdout).toMatch(/Result: (PASS|FAIL) \(--fail-on error\)[^\n]* · partial check: auth-required \(server requires auth; pass --bearer <token>\)$/m);
+  });
+
+  it('D-4: with --quiet the Result line of a failed connect (exit 3) names the cause, also under --ignore SRV-003', async () => {
+    const s = await startBridge(createGoodServer);
+    const url = s.url;
+    await s.close();
+    const r = await cli([url, '--quiet', '--ignore', 'SRV-003', '--timeout', '3000']);
+    expect(r.code).toBe(3);
+    expect(r.stdout).not.toContain('SRV-003');
+    expect(r.stdout).toMatch(/Result: FAIL \(could not connect: connection refused by 127\.0\.0\.1:\d+ \(ECONNREFUSED\); nothing is listening there/);
   });
 });
 

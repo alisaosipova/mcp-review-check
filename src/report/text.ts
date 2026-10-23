@@ -150,7 +150,7 @@ export function renderText(r: Report, opts: TextOptions): string {
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
-  out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x))}`].join(' · '));
+  out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x), opts.quiet)}`].join(' · '));
   if (opts.cta && !opts.quiet) out.push('', opts.cta);
   out.push('', DISCLAIMER);
   return out.join('\n') + '\n';

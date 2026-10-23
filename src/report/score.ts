@@ -21,13 +21,13 @@ export function score(findings: Finding[]): number {
   return Math.max(0, 100 - 12 * errors - 4 * warnings);
 }
 
-/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass. */
-export function verdict(findings: Finding[], platform: Platform, complete = true): { verdict: Verdict; errors: number; warnings: number } {
+/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass; after a failed connect (`connectFailed`, R-17) it is INCOMPLETE even with errors. */
+export function verdict(findings: Finding[], platform: Platform, complete = true, connectFailed = false): { verdict: Verdict; errors: number; warnings: number } {
   // Count each finding at this platform's own severity, not the maximum over all its platforms.
   const mine = findings.filter((f) => f.platforms.includes(platform)).map((f) => platformSeverity(f, platform));
   const errors = mine.filter((s) => s === 'error').length;
   const warnings = mine.filter((s) => s === 'warning').length;
-  const v: Verdict = errors ? 'BLOCKED' : !complete ? 'INCOMPLETE' : warnings ? 'NEEDS ATTENTION' : 'NO AUTOMATED BLOCKERS';
+  const v: Verdict = connectFailed ? 'INCOMPLETE' : errors ? 'BLOCKED' : !complete ? 'INCOMPLETE' : warnings ? 'NEEDS ATTENTION' : 'NO AUTOMATED BLOCKERS';
   return { verdict: v, errors, warnings };
 }
 
@@ -43,7 +43,7 @@ export interface Gate {
   platforms: Platform[];
   /** Why the run failed ("claude: 2 errors (TOOL-006, TOOL-011)"); null on a pass. */
   reason: string | null;
-  /** Spec findings at or above the threshold that did not count because spec is not gated; null when none. */
+  /** Spec findings at or above the threshold that no gated platform counted (spec is not gated); null when none. */
   notGated: string | null;
 }
 
@@ -65,7 +65,8 @@ function tally(list: Finding[], p: Platform): string {
 export function gate(findings: Finding[], failOn: FailOn, platforms: Platform[]): Gate {
   const hits = (p: Platform) => (failOn === 'never' ? [] : findings.filter((f) => f.platforms.includes(p) && reaches(platformSeverity(f, p), failOn)));
   const parts = platforms.map((p) => [p, hits(p)] as const).filter(([, l]) => l.length).map(([p, l]) => `${p}: ${tally(l, p)}`);
-  const spec = platforms.includes('spec') ? [] : hits('spec');
+  const counted = new Set(platforms.flatMap(hits));
+  const spec = platforms.includes('spec') ? [] : hits('spec').filter((f) => !counted.has(f));
   return {
     failed: parts.length > 0, platforms,
     reason: parts.length ? parts.join('; ') : null,

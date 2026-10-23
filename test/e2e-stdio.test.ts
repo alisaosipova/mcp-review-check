@@ -292,6 +292,18 @@ describe('e2e stdio', () => {
     expect(bad.stdout).toMatch(/Result: FAIL \(--fail-on error\) · claude: \d+ errors \((INJ|TOOL|DATA|APPS)-\d+/);
   });
 
+  it('R-11: a FAIL also names the spec findings that were not gated, and not those a directory counted', async () => {
+    const [text, json] = await Promise.all([cli(['--stdio', BAD, '--target', 'claude', '--no-color']), cli(['--stdio', BAD, '--target', 'claude', '--format', 'json'])]);
+    expect(text.code).toBe(1);
+    expect(text.stdout).toMatch(/Result: FAIL \(--fail-on error\) · claude: \d+ errors \([^\n]* · spec: \d+ errors? \([^\n]*\) not gated; add --fail-on-spec/);
+    const notGated: string = json.json.summary.gate.notGated;
+    expect(notGated).toMatch(/^spec: \d+ errors? \([A-Z]+-\d+.*\) not gated; add --fail-on-spec to fail on spec findings$/);
+    // A finding that is an error for Claude as well as for the spec failed the run: it is not listed as not gated.
+    const claudeErrors = new Set(json.json.findings.filter((f: any) => (f.severityByPlatform?.claude ?? 'info') === 'error').map((f: any) => f.ruleId));
+    const listed = /\(([^)]*)\) not gated/.exec(notGated)![1].split(', ');
+    expect(listed.filter((id) => claudeErrors.has(id))).toEqual([]);
+  });
+
   it('--list-rules, --help and --version exit 0', async () => {
     const list = await cli(['--list-rules']);
     expect(list.code).toBe(0);

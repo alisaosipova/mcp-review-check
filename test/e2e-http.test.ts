@@ -301,6 +301,50 @@ describe('e2e http', () => {
     expect((await cli(['localhost:3000/mcp'])).stderr).toMatch(/did you mean http:\/\/localhost:3000\/mcp\?/);
   });
 
+  it('R-19: a dotless host with a port and no scheme (mcp:8080/mcp) gets an http:// suggestion (exit 2)', async () => {
+    for (const [raw, hint] of [['mcp:8080/mcp', 'http://mcp:8080/mcp'], ['app:3000', 'http://app:3000']]) {
+      const r = await cli([raw]);
+      expect(r.code, raw).toBe(2);
+      expect(r.stderr).toContain(`did you mean ${hint}?`);
+    }
+  });
+
+  it('R-17: a failed connect to a plain-http URL reads INCOMPLETE, even with the SRV-001 http error', async () => {
+    const s = await good();
+    const url = s.url;
+    await s.close();
+    servers = [];
+    // --no-local keeps SRV-001 "URL uses http" an error for both directories, as for a public http:// URL.
+    const r = await cli([url, '--no-local', '--format', 'json', '--timeout', '3000']);
+    expect(r.code).toBe(3);
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-001')).toMatchObject({ severity: 'error', platforms: ['claude', 'chatgpt'] });
+    expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
+    expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
+    const text = await cli([url, '--no-local', '--timeout', '3000']);
+    expect(text.stdout).toMatch(/Claude: INCOMPLETE[^\n]* · ChatGPT: INCOMPLETE[^\n]* · Result: FAIL \(could not connect\)/);
+    expect(text.stdout).not.toContain('BLOCKED');
+  });
+
+  it('D-4: the score is one number per server whatever --target; the findings and the exit code follow --target', async () => {
+    // A destructive tool without openWorldHint: TOOL-012 is a ChatGPT error, and Claude has nothing against it.
+    const s = track(await startBridge(() => {
+      const server = createGoodServer();
+      server.registerTool(
+        'delete_tag',
+        { title: 'Delete tag', description: 'Delete one tag from the user\'s Acme Notes workspace by its name.', annotations: { readOnlyHint: false, destructiveHint: true } },
+        async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+      );
+      return server;
+    }, { rejectForeignOrigin: true }));
+    const [all, claude, chatgpt] = await Promise.all(['all', 'claude', 'chatgpt'].map((t) => cli([s.url, '--format', 'json', '--target', t])));
+    expect(chatgpt.json.findings.filter((f: any) => f.ruleId === 'TOOL-012')).toMatchObject([{ severity: 'error', tool: 'delete_tag' }]);
+    expect(claude.json.findings.filter((f: any) => f.ruleId === 'TOOL-012')).toEqual([]);
+    expect(all.json.summary.score).toBeLessThan(100);
+    expect(claude.json.summary.score).toBe(all.json.summary.score);
+    expect(chatgpt.json.summary.score).toBe(all.json.summary.score);
+    expect([all.code, claude.code, chatgpt.code]).toEqual([1, 0, 1]);
+  });
+
   it('B3 over Streamable HTTP: the UI capability is declared and the text-only re-list feeds APPS-019', async () => {
     const bridge = track(await startBridge(() => createUiCapServer()));
     const proxy = await recordingProxy(bridge.url);

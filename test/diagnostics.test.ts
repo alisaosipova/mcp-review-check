@@ -52,6 +52,14 @@ describe('connection diagnostics (B7)', () => {
     expect(schemeSuggestion('justaword')).toBeUndefined();
   });
 
+  it('R-19: schemeSuggestion reads <label>:<digits> as a local host and port (http://)', () => {
+    expect(schemeSuggestion('mcp:8080/mcp')).toBe('http://mcp:8080/mcp');
+    expect(schemeSuggestion('app:3000')).toBe('http://app:3000');
+    expect(schemeSuggestion('MCP:8080')).toBe('http://MCP:8080');
+    expect(schemeSuggestion('mcp')).toBeUndefined();
+    expect(schemeSuggestion('mailto:a@b.test')).toBeUndefined();
+  });
+
   it('cleanErrorMessage replaces an HTML page by its title and caps a huge body before regexes (W1-8)', () => {
     const big = `Error POSTing: <!doctype html><html><head><title>Not Found</title></head>${'<script '.repeat(400000)}`;
     const t0 = performance.now();

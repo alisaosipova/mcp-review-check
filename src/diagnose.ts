@@ -90,9 +90,12 @@ export function diagnosisText(d: ConnectDiagnosis): string {
 export function schemeSuggestion(raw: string): string | undefined {
   const t = raw.trim();
   if (!t || /^[a-z][a-z0-9+.-]*:\/\//i.test(t) || /\s/.test(t)) return undefined;
-  const host = t.split(/[/?#]/)[0].replace(/:\d+$/, '').toLowerCase();
+  const hostPort = t.split(/[/?#]/)[0];
+  const host = hostPort.replace(/:\d+$/, '').toLowerCase();
   if (!host || !/^[\w.-]+$|^\[[0-9a-f:]+\]$/i.test(host)) return undefined;
-  const local = host === 'localhost' || host.endsWith('.localhost') || /^127\.|^\[::1\]$|^0\.0\.0\.0$/.test(host);
+  // "mcp:8080/mcp": a name without a dot plus a port is a container or LAN host, checked in local mode (R-19, R-35).
+  const dotless = /^[\w-]+$/.test(host) && /:\d+$/.test(hostPort);
+  const local = dotless || host === 'localhost' || host.endsWith('.localhost') || /^127\.|^\[::1\]$|^0\.0\.0\.0$/.test(host);
   if (!local && !host.includes('.')) return undefined;
   return `${local ? 'http' : 'https'}://${t}`;
 }

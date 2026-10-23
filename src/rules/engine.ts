@@ -17,7 +17,7 @@ function listOk(snap: Snapshot, key: string): boolean {
   return !!m && !m.error;
 }
 
-function authReason(snap: Snapshot): string | undefined {
+export function authReason(snap: Snapshot): string | undefined {
   if (snap.coverage.toolLevel === 'auth-required') return 'server requires auth; pass --bearer <token>';
   if (snap.coverage.toolLevel === 'token-rejected') return 'token rejected (401)';
   if (snap.coverage.toolLevel === 'connect-failed') return 'could not connect';
@@ -60,6 +60,8 @@ export interface EngineResult {
   ignored: Finding[];
   skipped: Array<{ ruleId: string; reason: string }>;
   rulesRun: number;
+  /** Findings (not ignored) over every platform whatever --target: the score basis, one number per server (D-4). */
+  scored?: Finding[];
 }
 
 export interface EngineOptions {
@@ -85,34 +87,33 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
   const ignore = new Set((opts.ignore ?? []).map((s) => s.toUpperCase()));
   const findings: Finding[] = [];
   const ignored: Finding[] = [];
+  const scored: Finding[] = [];
   const skipped: EngineResult['skipped'] = [];
   let rulesRun = 0;
 
   for (const rule of rules) {
     const rulePlatforms = Object.keys(rule.severity) as Platform[];
-    if (!rulePlatforms.some((p) => active.includes(p))) {
-      skipped.push({ ruleId: rule.id, reason: `not applicable to --target ${snap.options.target}` });
-      continue;
-    }
+    // A rule outside --target still runs for the score (D-4), but is reported as skipped and lists no findings.
+    const applies = rulePlatforms.some((p) => active.includes(p));
+    if (!applies) skipped.push({ ruleId: rule.id, reason: `not applicable to --target ${snap.options.target}` });
     const reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);
     if (reason) {
-      skipped.push({ ruleId: rule.id, reason });
+      if (applies) skipped.push({ ruleId: rule.id, reason });
       continue;
     }
-    rulesRun++;
+    if (applies) rulesRun++;
     let raw;
     try {
       raw = rule.check(snap);
     } catch (err) {
-      findings.push({
+      if (applies) findings.push({
         ruleId: 'INTERNAL', title: 'Internal rule error', severity: 'info', platforms: ['spec'],
         message: `${rule.id} threw: ${(err as Error).message}`, fix: 'Please report this bug.', docs: [],
       });
       continue;
     }
     for (const r of raw) {
-      const platforms = (r.platforms ?? rulePlatforms).filter((p) => active.includes(p));
-      if (platforms.length === 0) continue;
+      const platforms = r.platforms ?? rulePlatforms;
       // An explicit finding severity applies to all of its platforms; otherwise each platform keeps the rule's own level.
       const severityByPlatform: Partial<Record<Platform, Severity>> = {};
       for (const p of platforms) severityByPlatform[p] = r.severity ?? rule.severity[p] ?? 'info';
@@ -122,8 +123,12 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
         tool: r.tool, resource: r.resource, path: r.path, evidence: r.evidence,
         fix: r.fix ?? rule.fix, docs: r.docs ?? rule.sources,
       };
-      (ignore.has(rule.id) ? ignored : findings).push(finding);
+      if (!ignore.has(rule.id)) scored.push(finding);
+      const mine = platforms.filter((p) => active.includes(p));
+      if (mine.length === 0) continue;
+      const own: Partial<Record<Platform, Severity>> = Object.fromEntries(mine.map((p) => [p, severityByPlatform[p]]));
+      (ignore.has(rule.id) ? ignored : findings).push({ ...finding, platforms: mine, severityByPlatform: own, severity: maxSeverity(Object.values(own)) ?? 'info' });
     }
   }
-  return { findings: sortFindings(findings), ignored, skipped, rulesRun };
+  return { findings: sortFindings(findings), ignored, skipped, rulesRun, scored };
 }

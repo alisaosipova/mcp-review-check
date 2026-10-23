@@ -122,6 +122,42 @@ describe('exit gating (B5)', () => {
   });
 });
 
+describe('review round 1 (R-11, R-17, D-4)', () => {
+  it('D-4: buildReport scores every platform whatever --target (deepwiki-like: one score); ignored rules do not count', () => {
+    const scoreFor = (target: 'all' | 'claude' | 'chatgpt', ignore: string[] = []) => {
+      const s = loadSnapshot('deepwiki-like');
+      s.options.target = target;
+      return buildReport(s, runRules(s, RULES, { ignore }), [], 'error', new Date('2026-10-22T10:00:00Z'), 1).summary.score;
+    };
+    expect([scoreFor('claude'), scoreFor('chatgpt')]).toEqual([scoreFor('all'), scoreFor('all')]);
+    expect(scoreFor('claude', ['TOOL-012'])).toBe(scoreFor('all', ['TOOL-012']));
+    expect(scoreFor('all', ['TOOL-012'])).toBeGreaterThan(scoreFor('all')!);
+  });
+
+  it('R-11: on FAIL the Result line also names the not-gated spec findings; one a gated platform counted is not among them', () => {
+    const specErr = f('SPEC-004', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
+    const both = f('APPS-003', 'error', { platforms: ['claude', 'spec'], severityByPlatform: { claude: 'error', spec: 'error' } });
+    const g = gate([specErr, both], 'error', ['claude']);
+    expect(g).toMatchObject({ failed: true, reason: 'claude: 1 error (APPS-003)', notGated: 'spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings' });
+    const base = report(loadSnapshot('minimal-http'));
+    const r = { ...base, findings: [specErr, both], summary: { ...base.summary, failed: true, gate: { platforms: g.platforms, reason: g.reason, notGated: g.notGated } } };
+    expect(resultLine(r)).toBe('FAIL (--fail-on error) · claude: 1 error (APPS-003) · spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings');
+  });
+
+  it('R-17: after a failed connect every verdict is INCOMPLETE, even with a directory error (SRV-001 http)', () => {
+    const srv001 = f('SRV-001', 'error', { platforms: ['claude', 'chatgpt'], severityByPlatform: { claude: 'error', chatgpt: 'error' } });
+    expect(verdict([srv001], 'claude', false, true).verdict).toBe('INCOMPLETE');
+    expect(verdict([srv001], 'claude', false).verdict).toBe('BLOCKED');
+    const s = loadSnapshot('minimal-http');
+    s.fatal = 'getaddrinfo ENOTFOUND mcp.acme.test';
+    s.coverage = { ...s.coverage, toolLevel: 'connect-failed', reason: 'hostname mcp.acme.test does not resolve (ENOTFOUND)' };
+    const r = buildReport(s, { ...runRules(s, RULES), findings: [srv001] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
+    expect(r.summary.verdicts).toMatchObject({ claude: { verdict: 'INCOMPLETE', errors: 1 }, chatgpt: { verdict: 'INCOMPLETE', errors: 1 } });
+    expect(resultLine(r)).toBe('FAIL (could not connect)');
+    expect(renderText(r, { color: false, verbose: false, quiet: true })).toContain('Result: FAIL (could not connect: hostname mcp.acme.test does not resolve (ENOTFOUND))');
+  });
+});
+
 describe('text report', () => {
   it('collapses 2 or more findings of the same rule and message (R-28)', () => {
     const list = ['a', 'b', 'c', 'd', 'e'].map((t) => f('TOOL-012', 'error', { tool: t, message: 'missing openWorldHint' }));
