@@ -8,9 +8,13 @@ export interface ModernOptions {
   bad?: boolean;
   /** Extra tools on the first tools/list page (each about 1 KB) to exceed the 256 KB probe read cap. */
   extraTools?: number;
+  /** Dual era: the same endpoint also answers 2025-11-25 clients (initialize, no 2026-07-28 version header). */
+  dual?: boolean;
 }
 
 const VERSION = '2026-07-28';
+const LEGACY_VERSION = '2025-11-25';
+const ALLOWED_ORIGINS = ['https://claude.ai', 'https://chatgpt.com'];
 
 const TOOLS = [
   {
@@ -42,6 +46,8 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
       res.end(JSON.stringify(body));
     };
     if (new URL(req.url ?? '/', 'http://x').pathname !== '/mcp') { res.writeHead(404); return res.end(); }
+    const origin = req.headers.origin;
+    if (opts.dual && origin && !ALLOWED_ORIGINS.includes(origin)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('Forbidden origin'); return; }
     if (req.method === 'GET' || req.method === 'DELETE') {
       res.writeHead(opts.bad ? 200 : 405, opts.bad ? { 'content-type': 'text/plain' } : { allow: 'POST' });
       return res.end();
@@ -52,6 +58,10 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     const err = (status: number, code: number, message: string, data?: unknown) => send(status, { jsonrpc: '2.0', id, error: { code, message, ...(data ? { data } : {}) } });
     const meta = (msg.params?._meta ?? {}) as Record<string, unknown>;
     const version = req.headers['mcp-protocol-version'] ?? meta['io.modelcontextprotocol/protocolVersion'];
+    if (opts.dual && (msg.method === 'initialize' || version !== VERSION)) {
+      if (msg.method === 'initialize' || version === undefined || version === LEGACY_VERSION) return legacy(msg, res);
+      return err(400, -32022, 'Unsupported protocol version', { supported: [VERSION, LEGACY_VERSION] });
+    }
     if (msg.method === 'initialize' || version !== VERSION) return err(400, -32022, 'Unsupported protocol version', { supported: [VERSION] });
     const mh = req.headers['mcp-method'];
     if (mh !== msg.method) return err(400, -32020, 'Mcp-Method header does not match the request body');
@@ -63,7 +73,7 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     switch (msg.method) {
       case 'server/discover':
         return ok({
-          ...cache(), supportedVersions: [VERSION], capabilities: { tools: {}, resources: {} },
+          ...cache(), supportedVersions: opts.dual ? [VERSION, LEGACY_VERSION] : [VERSION], capabilities: { tools: {}, resources: {} },
           instructions: 'Search the Acme documentation.',
           _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'acme-docs', title: 'Acme Docs', version: '2.0.0' } },
         });
@@ -88,4 +98,38 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     }
   };
   return listen(handler);
+}
+
+/** The 2025-11-25 side of a dual-era server: stateless JSON responses, same tools, no 2026-07-28 cache fields. */
+function legacy(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, res: ServerResponse): void {
+  if (msg.id === undefined) { res.writeHead(202); return void res.end(); } // notifications
+  const id = msg.id;
+  const send = (body: Record<string, unknown>) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id, ...body }));
+  };
+  switch (msg.method) {
+    case 'initialize':
+      return send({ result: {
+        protocolVersion: LEGACY_VERSION, capabilities: { tools: {}, resources: {} },
+        serverInfo: { name: 'acme-docs', title: 'Acme Docs', version: '2.0.0' }, instructions: 'Search the Acme documentation.',
+      } });
+    case 'ping':
+      return send({ result: {} });
+    case 'tools/list':
+      return send({ result: { tools: TOOLS } });
+    case 'resources/list':
+      return send({ result: { resources: [] } });
+    case 'resources/templates/list':
+      return send({ result: { resourceTemplates: [] } });
+    case 'resources/read':
+      return send({ error: { code: -32602, message: `Resource not found: ${String(msg.params?.uri)}` } });
+    case 'tools/call': {
+      const name = msg.params?.name;
+      if (!TOOLS.some((t) => t.name === name)) return send({ error: { code: -32602, message: `Unknown tool: ${String(name)}` } });
+      return send({ result: { content: [{ type: 'text', text: 'ok' }] } });
+    }
+    default:
+      return send({ error: { code: -32601, message: `Method not found: ${String(msg.method)}` } });
+  }
 }

@@ -1,7 +1,8 @@
 // End-to-end: the built CLI against the GOOD and BAD stdio fixture servers.
-import { existsSync, readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
@@ -43,6 +44,53 @@ describe('e2e stdio', () => {
     expect(ruleIds(r.json)).toEqual(BAD_STDIO_RULES);
     const srv018 = r.json.findings.find((f: any) => f.ruleId === 'SRV-018');
     expect(srv018.message).toContain('Bad MCP server v0.0.1 starting...');
+  });
+
+  it('U-5: no tools/call without --active (BAD, --verbose: trace and stderr)', async () => {
+    // Without --active the only tools/call is the documented probe of a non-existent tool (README «What the tool sends»).
+    // A preload logs every JSON-RPC method the server reads (with the tool name for tools/call) to a file and to the
+    // server's stderr, which --verbose prints.
+    const PROBE = 'tools/call mcp_review_check_nonexistent_tool';
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-u5-'));
+    try {
+      const spy = join(dir, 'spy.mjs');
+      const log = join(dir, 'methods.log');
+      writeFileSync(spy, [
+        "import { appendFileSync } from 'node:fs';",
+        'const emit = process.stdin.emit;',
+        "let buf = '';",
+        'process.stdin.emit = function (ev, chunk, ...rest) {',
+        "  if (ev === 'data') {",
+        '    buf += chunk.toString();',
+        "    let i; while ((i = buf.indexOf('\\n')) >= 0) {",
+        '      const line = buf.slice(0, i); buf = buf.slice(i + 1);',
+        '      try {',
+        '        const msg = JSON.parse(line);',
+        "        const m = msg.method === 'tools/call' ? `tools/call ${msg.params?.name}` : msg.method;",
+        "        if (m) { appendFileSync(process.env.MRC_SPY_LOG, m + '\\n'); process.stderr.write('[spy] ' + m + '\\n'); }",
+        '      } catch {}',
+        '    }',
+        '  }',
+        '  return emit.call(this, ev, chunk, ...rest);',
+        '};',
+      ].join('\n'));
+      const cmd = `node --import ${pathToFileURL(spy).href} ${BAD.slice('node '.length)}`;
+      const calls = () => readFileSync(log, 'utf8').split('\n').filter((m) => m.startsWith('tools/call'));
+      const r = await cli(['--stdio', cmd, '--env', `MRC_SPY_LOG=${log}`, '--format', 'json', '--verbose']);
+      expect(r.code, r.stderr).toBe(1);
+      const methods = readFileSync(log, 'utf8').split('\n').filter(Boolean);
+      expect(methods).toContain('initialize');
+      expect(methods).toContain('tools/list');
+      expect(calls().filter((m) => m !== PROBE)).toEqual([]);
+      expect(r.stderr).toContain('[spy] tools/list');
+      expect(r.stderr.split('\n').filter((l) => l.includes('tools/call') && !l.includes(PROBE))).toEqual([]);
+      // control: the spy does see calls of real tools once --active is given
+      rmSync(log, { force: true });
+      await cli(['--stdio', cmd, '--env', `MRC_SPY_LOG=${log}`, '--format', 'json', '--active']);
+      expect(calls().filter((m) => m !== PROBE).length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('--target claude drops chatgpt-only findings', async () => {

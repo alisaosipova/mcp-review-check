@@ -1,0 +1,24 @@
+{
+  "source": "mcp-review-check 0.1.0 at main d6100a9: --help (specs evidence/0/recon-baseline-help.txt); --stdio is from the Usage line",
+  "options": [
+    {"flag": "--stdio", "short": null, "value": true, "default": null},
+    {"flag": "--header", "short": null, "value": true, "default": null},
+    {"flag": "--bearer", "short": null, "value": true, "default": null},
+    {"flag": "--target", "short": null, "value": true, "default": "all"},
+    {"flag": "--format", "short": null, "value": true, "default": "text"},
+    {"flag": "--output", "short": null, "value": true, "default": null},
+    {"flag": "--timeout", "short": null, "value": true, "default": "30000"},
+    {"flag": "--fail-on", "short": null, "value": true, "default": "error"},
+    {"flag": "--active", "short": null, "value": false, "default": null},
+    {"flag": "--active-auth", "short": null, "value": false, "default": null},
+    {"flag": "--tool-args", "short": null, "value": true, "default": null},
+    {"flag": "--env", "short": null, "value": true, "default": null},
+    {"flag": "--cwd", "short": null, "value": true, "default": null},
+    {"flag": "--ignore", "short": null, "value": true, "default": null},
+    {"flag": "--list-rules", "short": null, "value": false, "default": null},
+    {"flag": "--no-color", "short": null, "value": false, "default": null},
+    {"flag": "--verbose", "short": null, "value": false, "default": null},
+    {"flag": "--help", "short": "-h", "value": false, "default": null},
+    {"flag": "--version", "short": "-v", "value": false, "default": null}
+  ]
+}

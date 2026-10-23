@@ -149,6 +149,20 @@ describe('e2e http', () => {
     for (const id of ['SPEC-013', 'SPEC-015', 'SPEC-006']) expect(ids, id).toContain(id);
   });
 
+  it('U-11: dual-era server (2026-07-28 and 2025-11-25 on one endpoint): era dual, clean, exit 0', async () => {
+    const s = track(await startModernServer({ dual: true }));
+    const r = await cli([s.url, '--format', 'json']);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.json.server).toMatchObject({ era: 'dual', protocolVersion: '2025-11-25', transport: 'streamable-http' });
+    expect(r.json.server.serverInfo.name).toBe('acme-docs');
+    expect(r.json.coverage.toolLevel).toBe('ok');
+    expect(nonInfo(r.json)).toEqual([]);
+    // --active reaches the tools through the 2025-11-25 side; the 2026-07-28 wire probes find nothing to report
+    const a = await cli([s.url, '--format', 'json', '--active']);
+    expect(a.json.findings.filter((f: any) => f.ruleId.startsWith('SPEC-'))).toEqual([]);
+    expect(ruleIds(a.json)).toContain('RT-002');
+  });
+
   it('unreachable server → exit 3 with a report', async () => {
     const s = await good();
     const url = s.url;
