@@ -57,6 +57,12 @@ const cases: Record<string, Case> = {
   'APPS-016': { pos: ui({ html: `${GOOD_HTML}<script>localStorage.setItem("a","b")</script>` }), neg: ui(), severity: 'info' },
   'APPS-017': { pos: ui({ meta: { ...GOOD_META, ui: { ...GOOD_META.ui, prefersBorder: 'yes' } } }), neg: ui(), severity: 'error' },
   'APPS-018': { pos: ui({ tools: [uiTool({}, { outputSchema: undefined })] }), neg: ui() },
+  // The UI tool is missing from a text-only client's list; the fallback keeps it (without _meta.ui).
+  'APPS-019': {
+    pos: ui({ set: (s) => { s.toolsWithoutUi = []; } }),
+    neg: ui({ set: (s) => { s.toolsWithoutUi = [tool({ name: 'show_board' })]; } }),
+    severity: 'warning', match: /io\.modelcontextprotocol\/ui/,
+  },
 };
 
 describe('APPS rules', () => {
@@ -104,6 +110,14 @@ describe('APPS rules', () => {
     expect(originMatches('https://a.acme.test', 'https://*.acme.test')).toBe(true);
     expect(originMatches('https://acme.test', 'https://*.acme.test')).toBe(false);
     expect(originMatches('https://api.acme.test:8443', 'https://api.acme.test')).toBe(false);
+  });
+
+  it('APPS-019 does not run without the text-only re-list (it failed or no tool links a UI)', () => {
+    const rule = byId('APPS-019');
+    expect(rule, 'APPS-019 is in the catalog').toBeDefined();
+    expect(evaluate(rule, ui())).toEqual([]);
+    // a UI tool that the text-only list keeps is not reported either
+    expect(evaluate(rule, ui({ set: (s) => { s.toolsWithoutUi = [tool({ name: 'show_board' })]; } }))).toEqual([]);
   });
 
   it('extractOrigins and <img> checks stay linear on unterminated tags (W1-8)', () => {

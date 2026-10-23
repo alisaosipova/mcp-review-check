@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
 const GOOD_PATH = fileURLToPath(new URL('./fixtures/good-server.mjs', import.meta.url));
+const UI_CAP = `node ${fileURLToPath(new URL('./fixtures/ui-cap-server.mjs', import.meta.url))}`;
 const HANG = `node ${fileURLToPath(new URL('./fixtures/hang-server.mjs', import.meta.url))}`;
 const HUGE = `node ${fileURLToPath(new URL('./fixtures/huge-server.mjs', import.meta.url))}`;
 const LEAKY = `node ${fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url))}`;
@@ -238,6 +239,19 @@ describe('e2e stdio', () => {
     expect(text.stdout).toContain('1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
     const md = await cli(['--stdio', HUGE, '--format', 'markdown']);
     expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
+  });
+
+  it('MCP Apps capability (B3): UI hidden behind getUiCapability is checked; a missing text-only fallback is APPS-019', async () => {
+    const r = await cli(['--stdio', UI_CAP, '--format', 'json']);
+    const ids = ruleIds(r.json);
+    // the UI resource is seen (it is listed only for clients that declare io.modelcontextprotocol/ui)
+    expect(r.json.findings.filter((f: any) => f.ruleId === 'APPS-003').map((f: any) => f.message)).toEqual([expect.stringMatching(/text\/plain/)]);
+    expect(r.json.skipped.some((x: any) => x.reason === 'no UI resources')).toBe(false);
+    expect(r.json.findings.filter((f: any) => f.ruleId === 'APPS-019')).toEqual([expect.objectContaining({ tool: 'get_weather', severity: 'warning' })]);
+    expect(ids).not.toContain('SRV-019'); // the text-only list is not a "tool set changed between connections" finding
+    const fallback = await cli(['--stdio', `${UI_CAP} --fallback`, '--format', 'json']);
+    expect(ruleIds(fallback.json)).toContain('APPS-003');
+    expect(ruleIds(fallback.json)).not.toContain('APPS-019');
   });
 
   it('--max-duration (W1-8): a server that never answers is stopped at the deadline with a partial report', async () => {

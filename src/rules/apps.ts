@@ -4,7 +4,7 @@ import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiMeta, uiTools, uiUriOf } from './util/access.js';
 import { extractOrigins, originMatches, type OriginKind } from './util/html.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, registrableDomain, SHARED_HOST_SUFFIXES } from './util/net.js';
-import { cspOf, RESOURCE_MIME_TYPE, uiResources } from './util/ui.js';
+import { cspOf, RESOURCE_MIME_TYPE, UI_EXTENSION, uiResources } from './util/ui.js';
 
 const APPS_SPEC = 'https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx';
 const OAI_REF = 'https://developers.openai.com/plugins/reference';
@@ -398,7 +398,25 @@ export const APPS_018 = defineRule(
   (snap) => uiTools(snap).flatMap((t): RawFinding[] => (t.outputSchema === undefined ? [{ tool: toolName(t), message: 'UI tool has no outputSchema' }] : [])),
 );
 
+// APPS-019 is the text-only fallback; the Claude font-CSP rule proposed in the same review gets its own new ID.
+export const APPS_019 = defineRule(
+  {
+    id: 'APPS-019', title: 'UI tools stay callable without MCP Apps (text-only fallback)', severity: { spec: 'warning', chatgpt: 'warning' }, needs: ['ui'],
+    rationale: `MCP Apps asks servers to provide text-only fallback behavior for every UI-enabled tool; a tool listed only for clients that declare ${UI_EXTENSION} disappears in text-only hosts (ChatGPT asks to keep tools useful without UI for clients that do not render components).`,
+    fix: `When the client does not declare ${UI_EXTENSION}, register the same tool without _meta.ui (the else-branch of getUiCapability) instead of omitting it.`,
+    sources: [APPS_SPEC, OAI_UI],
+  },
+  (snap) => {
+    const without = snap.toolsWithoutUi;
+    if (!without) return []; // the text-only re-list did not run or failed
+    const names = new Set(without.map(toolName));
+    return snap.tools.filter((t) => isStr(uiUriOf(t)) && !names.has(toolName(t))).map((t) => ({
+      tool: toolName(t), message: `listed only for clients that declare ${UI_EXTENSION}; a text-only client's tools/list omits it`,
+    }));
+  },
+);
+
 export const appsRules = [
   APPS_001, APPS_002, APPS_003, APPS_004, APPS_005, APPS_006, APPS_007, APPS_008, APPS_009,
-  APPS_010, APPS_011, APPS_012, APPS_013, APPS_014, APPS_015, APPS_016, APPS_017, APPS_018,
+  APPS_010, APPS_011, APPS_012, APPS_013, APPS_014, APPS_015, APPS_016, APPS_017, APPS_018, APPS_019,
 ];

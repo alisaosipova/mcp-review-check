@@ -152,6 +152,8 @@ export interface Snapshot {
   listMeta: Record<string, { pages: number; rawPages: unknown[]; error?: string }>;
   toolsRelist?: string[];
   toolsFreshConnection?: string[];
+  /** tools/list from a connection that did not declare io.modelcontextprotocol/ui (APPS-019). Set only when some tool links a UI. */
+  toolsWithoutUi?: Record<string, unknown>[];
   resourceReads: Record<string, { ok: boolean; raw?: unknown; error?: unknown; durationMs: number }>;
   transport: {
     kind: 'streamable-http' | 'sse' | 'stdio';

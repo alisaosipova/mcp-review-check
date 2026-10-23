@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import tls from 'node:tls';
 import type { DnsResult, HttpExchange } from '../snapshot.js';
 import type { Tracer } from '../protocol/trace.js';
+import { CLIENT_CAPABILITIES } from '../protocol/clientCaps.js';
 import { isTransient, isTransientCode, timedOut } from '../rules/util/obs.js';
 import { VERSION } from '../version.js';
 
@@ -91,7 +92,7 @@ export const LEGACY_VERSION = '2025-11-25';
 export function initializeBody(id: number | string = 0, clientName = 'mcp-review-check') {
   return {
     jsonrpc: '2.0', id, method: 'initialize',
-    params: { protocolVersion: LEGACY_VERSION, capabilities: {}, clientInfo: { name: clientName, version: VERSION } },
+    params: { protocolVersion: LEGACY_VERSION, capabilities: CLIENT_CAPABILITIES, clientInfo: { name: clientName, version: VERSION } },
   };
 }
 

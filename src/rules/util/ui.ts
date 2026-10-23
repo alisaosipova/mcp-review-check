@@ -3,6 +3,8 @@ import type { Snapshot } from '../../snapshot.js';
 import { isObj, isStr, metaOf, toolName, uiUriOf, type Obj } from './access.js';
 
 export const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
+/** The MCP Apps client capability (capabilities.extensions key). */
+export const UI_EXTENSION = 'io.modelcontextprotocol/ui';
 
 export interface UiResource {
   uri: string;

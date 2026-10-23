@@ -6,7 +6,7 @@ const range = (prefix: string, n: number) => Array.from({ length: n }, (_, i) =>
 /** Frozen ID list: IDs are never reused after removal. Append only. */
 const FROZEN = [
   ...range('SRV', 20), ...range('SPEC', 20), ...range('TOOL', 32), ...range('INJ', 10), ...range('DATA', 5),
-  ...range('POL', 5), ...range('APPS', 18), ...range('AUTH', 21), ...range('RT', 12), ...range('MAN', 31),
+  ...range('POL', 5), ...range('APPS', 19), ...range('AUTH', 21), ...range('RT', 12), ...range('MAN', 31),
 ];
 
 describe('rule catalog', () => {

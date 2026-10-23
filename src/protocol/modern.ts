@@ -3,6 +3,7 @@ import type { HttpExchange } from '../snapshot.js';
 import type { Tracer } from './trace.js';
 import { isObj } from '../rules/util/access.js';
 import { VERSION } from '../version.js';
+import { CLIENT_CAPABILITIES } from './clientCaps.js';
 
 export const MODERN_VERSION = '2026-07-28';
 export const CLIENT_INFO = { name: 'mcp-review-check', version: VERSION };
@@ -44,7 +45,10 @@ export class ModernClient {
   private nextId = 1;
   readonly results: Array<{ method: string; result: unknown }> = [];
 
-  constructor(private url: URL, private tracer: Tracer, private headers: Record<string, string>, private timeoutMs = 30000) {}
+  constructor(
+    private url: URL, private tracer: Tracer, private headers: Record<string, string>, private timeoutMs = 30000,
+    private capabilities: Record<string, unknown> = CLIENT_CAPABILITIES,
+  ) {}
 
   async request(method: string, params: Record<string, unknown> = {}, opts: ModernRequestOptions = {}): Promise<ModernResponse> {
     const version = opts.version ?? MODERN_VERSION;
@@ -58,7 +62,7 @@ export class ModernClient {
           ...meta,
           'io.modelcontextprotocol/protocolVersion': version,
           'io.modelcontextprotocol/clientInfo': CLIENT_INFO,
-          'io.modelcontextprotocol/clientCapabilities': {},
+          'io.modelcontextprotocol/clientCapabilities': this.capabilities,
         },
       },
     };

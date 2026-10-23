@@ -2,7 +2,7 @@
 
 Lint an MCP server against the public review criteria of the **Claude connector directory**, the **ChatGPT plugin directory** and the **MCP specification** before you submit it.
 
-`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against 143 automated rules. Every rule links to its public source. Checks that cannot be automated are printed as a manual checklist.
+`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against 144 automated rules. Every rule links to its public source. Checks that cannot be automated are printed as a manual checklist.
 
 - Requires Node 20.19 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
@@ -132,7 +132,7 @@ Targets on `localhost` / `127.0.0.0/8` / `::1` and stdio servers run in **local 
 
 ## What the tool sends
 
-By default about 20 requests, none of which change state: an unauthenticated `initialize`, `server/discover`, the SDK handshake and list calls, a GET on the endpoint (aborted after headers), an unsupported protocol version, an unknown method, a call to a tool named `mcp_review_check_nonexistent_tool`, a read of `mcp-review-check://does-not-exist`, `initialize` with three `Origin` values, a second `tools/list` and one fresh connection, and `GET /.well-known/openai-apps-challenge`. When the server answers 401 it also fetches the OAuth metadata documents and sends one request with an invalid bearer token. Transient failures of these probes are retried (at most 3 attempts, a timeout only once).
+By default about 20 requests, none of which change state: an unauthenticated `initialize`, `server/discover`, the SDK handshake and list calls, a GET on the endpoint (aborted after headers), an unsupported protocol version, an unknown method, a call to a tool named `mcp_review_check_nonexistent_tool`, a read of `mcp-review-check://does-not-exist`, `initialize` with three `Origin` values, a second `tools/list` and one fresh connection, and `GET /.well-known/openai-apps-challenge`. Every connection declares the MCP Apps client capability (`extensions: {"io.modelcontextprotocol/ui": {"mimeTypes": ["text/html;profile=mcp-app"]}}`), so servers that register UI tools only for capable hosts show them; when a tool links a UI, one more connection without that capability lists the tools a text-only host sees (APPS-019). When the server answers 401 it also fetches the OAuth metadata documents and sends one request with an invalid bearer token. Transient failures of these probes are retried (at most 3 attempts, a timeout only once).
 
 ## Rules
 
@@ -251,6 +251,7 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 | APPS-016 | Widget style and accessibility hints | chatgpt: info | [link](https://developers.openai.com/plugins/build/chatgpt-ui) |
 | APPS-017 | UI resource meta field types | spec: error | [link](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) |
 | APPS-018 | UI tools declare outputSchema | chatgpt: warning | [link](https://developers.openai.com/plugins/reference) |
+| APPS-019 | UI tools stay callable without MCP Apps (text-only fallback) | spec: warning, chatgpt: warning | [link](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) |
 | AUTH-001 | Token in the server URL query | claude: error, chatgpt: error, spec: error | [link](https://claude.com/docs/connectors/building/authentication) |
 | AUTH-002 | 401 challenge format | claude: error, chatgpt: error, spec: warning | [link](https://claude.com/docs/connectors/building/authentication) |
 | AUTH-003 | Wrong status for an unauthenticated request | claude: error, chatgpt: error, spec: warning | [link](https://claude.com/docs/connectors/building/authentication) |

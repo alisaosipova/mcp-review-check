@@ -7,6 +7,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeHttpFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
+import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
@@ -78,8 +79,8 @@ export interface BuildResult {
 type Lister = (method: string, key: string) => Promise<{ items: Record<string, unknown>[]; pages: unknown[]; error?: string }>;
 type Reader = (uri: string) => Promise<{ ok: boolean; raw?: unknown; error?: unknown }>;
 
-function newClient(name = 'mcp-review-check'): Client {
-  return new Client({ name, version: VERSION }, { capabilities: {} });
+function newClient(name = 'mcp-review-check', capabilities: Record<string, unknown> = CLIENT_CAPABILITIES): Client {
+  return new Client({ name, version: VERSION }, { capabilities });
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
@@ -182,10 +183,15 @@ function modernErrorBody(tracer: Tracer): boolean {
   return !!err && MODERN_CODES.includes(Number(err.code));
 }
 
-async function connectLegacyHttp(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, clientName?: string, allowSse = true): Promise<LegacyConn> {
+interface ClientVariant {
+  clientName?: string;
+  capabilities?: Record<string, unknown>;
+}
+
+async function connectLegacyHttp(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, variant: ClientVariant = {}, allowSse = true): Promise<LegacyConn> {
   let last: LegacyConn = { ok: false, message: 'not attempted' };
   for (let attempt = 0; attempt < 2; attempt++) {
-    const client = newClient(clientName);
+    const client = newClient(variant.clientName, variant.capabilities);
     const inner = new StreamableHTTPClientTransport(url, { requestInit: { headers }, fetch: tracer.fetch });
     const rec = new RecordingTransport(inner);
     try {
@@ -202,7 +208,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
         cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
-        const sse = await connectSse(url, headers, tracer, timeoutMs, clientName);
+        const sse = await connectSse(url, headers, tracer, timeoutMs, variant);
         if (sse.ok) return sse;
       }
       return last;
@@ -223,8 +229,8 @@ export function cleanErrorMessage(message: string, status?: number): string {
   return status !== undefined && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m;
 }
 
-async function connectSse(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, clientName?: string): Promise<LegacyConn> {
-  const client = newClient(clientName);
+async function connectSse(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, variant: ClientVariant = {}): Promise<LegacyConn> {
+  const client = newClient(variant.clientName, variant.capabilities);
   const inner = new SSEClientTransport(url, { requestInit: { headers }, fetch: tracer.fetch });
   const rec = new RecordingTransport(inner);
   try {
@@ -280,7 +286,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   if (disc.result && disc.exchange.status === 200) snap.discoverRaw = disc.result;
 
   // 3. legacy connect (with SSE fallback)
-  const conn = await connectLegacyHttp(url, authHeaders, tracer, connectTimeout, undefined, !discOk && !discSignal);
+  const conn = await connectLegacyHttp(url, authHeaders, tracer, connectTimeout, {}, !discOk && !discSignal);
   if (progress) progress.close = async () => { await conn.client?.close().catch(() => {}); };
   await tracer.flush();
   const authFailed = conn.status === 401 || (!conn.ok && !discOk && disc.exchange.status === 401);
@@ -334,17 +340,20 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
         http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion },
       })),
     };
+    const fresh = (variant: ClientVariant = {}) => freshTools(url, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant);
     if (!snap.listMeta.tools?.error) {
       checkpoint(progress, 'tools re-list');
       const relist = await lister('tools/list', 'tools');
       if (!relist.error) snap.toolsRelist = relist.items.map(toolName); // a failed re-list (rate limit) is not a different set
-      snap.toolsFreshConnection = await freshToolNames(url, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined);
+      snap.toolsFreshConnection = (await fresh())?.map(toolName);
+      checkpoint(progress, 'text-only tools/list');
+      if (linksUi(snap)) snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES });
     }
     if (opts.active && !snap.listMeta.tools?.error) {
       checkpoint(progress, 'active tool calls');
       snap.active = await runActive({
         snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, modern: conn.ok ? undefined : modern,
-        listWithClientName: conn.ok && conn.kind === 'streamable-http' ? (name) => freshToolNames(url, authHeaders, tracer, connectTimeout, timeoutMs, 'streamable-http', name) : undefined,
+        listWithClientName: conn.ok && conn.kind === 'streamable-http' ? async (name) => (await fresh({ clientName: name }))?.map(toolName) : undefined,
       });
     }
   }
@@ -357,17 +366,23 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   return { snap, tracer };
 }
 
-async function freshToolNames(url: URL, headers: Record<string, string>, tracer: Tracer, connectTimeout: number, timeoutMs: number, kind: 'streamable-http' | 'sse' | undefined, clientName?: string): Promise<string[] | undefined> {
+/** Some listed tool links a UI resource (the text-only re-list for APPS-019 is needed). */
+function linksUi(snap: Snapshot): boolean {
+  return snap.tools.some((t) => isStr(uiUriOf(t)));
+}
+
+/** tools/list on a new connection, optionally with another clientInfo.name or without the UI extension. */
+async function freshTools(url: URL, headers: Record<string, string>, tracer: Tracer, connectTimeout: number, timeoutMs: number, kind: 'streamable-http' | 'sse' | undefined, variant: ClientVariant = {}): Promise<Record<string, unknown>[] | undefined> {
   if (!kind) {
-    const fresh = new ModernClient(url, tracer, headers, timeoutMs);
+    const fresh = new ModernClient(url, tracer, headers, timeoutMs, variant.capabilities);
     const r = await fresh.listAll('tools/list', 'tools');
-    return r.error ? undefined : r.items.map(toolName);
+    return r.error ? undefined : r.items;
   }
-  const conn = kind === 'sse' ? await connectSse(url, headers, tracer, connectTimeout, clientName) : await connectLegacyHttp(url, headers, tracer, connectTimeout, clientName, false);
+  const conn = kind === 'sse' ? await connectSse(url, headers, tracer, connectTimeout, variant) : await connectLegacyHttp(url, headers, tracer, connectTimeout, variant, false);
   if (!conn.ok) return undefined;
   try {
     const r = await listAll(conn.client!, 'tools/list', 'tools', timeoutMs);
-    return r.error ? undefined : r.items.map(toolName);
+    return r.error ? undefined : r.items;
   } finally {
     await conn.client!.close().catch(() => {});
   }
@@ -396,7 +411,7 @@ export function stderrSummary(tail: string): string {
   return picked.join(' | ');
 }
 
-async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, clientName?: string): Promise<StdioConn> {
+async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, variant: ClientVariant = {}): Promise<StdioConn> {
   const inner = new StdioClientTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
   inner.stderr?.on('data', (c: Buffer) => { stderrTail = (stderrTail + c.toString('utf8')).slice(-4096); });
@@ -415,7 +430,7 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
     });
   };
   const rec = new RecordingTransport(inner as Transport, tap);
-  const client = newClient(clientName);
+  const client = newClient(variant.clientName, variant.capabilities);
   try {
     await withTimeout(client.connect(rec, { timeout: timeoutMs }), timeoutMs + 1000, 'initialize');
   } catch (e) {
@@ -453,20 +468,27 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   await readUiResources(snap, legacyReader(conn.client, timeoutMs), deps.now);
   checkpoint(progress, 'wire probes');
   snap.transport.probes = await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client });
-  const freshNames = async (name?: string) => {
+  const fresh = async (variant: ClientVariant = {}) => {
     try {
-      const fresh = await connectStdio(t, connectTimeout, name);
-      try { const r = await listAll(fresh.client, 'tools/list', 'tools', timeoutMs); return r.error ? undefined : r.items.map(toolName); }
-      finally { await fresh.client.close().catch(() => {}); }
+      const c = await connectStdio(t, connectTimeout, variant);
+      try { const r = await listAll(c.client, 'tools/list', 'tools', timeoutMs); return r.error ? undefined : r.items; }
+      finally { await c.client.close().catch(() => {}); }
     } catch { return undefined; }
   };
   if (!snap.listMeta.tools?.error) {
     checkpoint(progress, 'tools re-list');
     const relist = await lister('tools/list', 'tools');
     if (!relist.error) snap.toolsRelist = relist.items.map(toolName);
-    snap.toolsFreshConnection = await freshNames();
+    snap.toolsFreshConnection = (await fresh())?.map(toolName);
+    checkpoint(progress, 'text-only tools/list');
+    if (linksUi(snap)) snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES });
     checkpoint(progress, 'active tool calls');
-    if (opts.active) snap.active = await runActive({ snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, listWithClientName: freshNames });
+    if (opts.active) {
+      snap.active = await runActive({
+        snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client,
+        listWithClientName: async (name) => (await fresh({ clientName: name }))?.map(toolName),
+      });
+    }
   }
   await new Promise((r) => setTimeout(r, 50)); // let trailing stdout/stderr arrive
   snap.transport.stdio = { nonJsonStdout: conn.nonJson, stderrTail: conn.stderr() };

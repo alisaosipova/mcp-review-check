@@ -10,12 +10,39 @@ import { startModernServer } from './fixtures/modern-server.js';
 import { createGoodServer } from './fixtures/good-server.mjs';
 // @ts-expect-error untyped .mjs fixture
 import { createBadServer } from './fixtures/bad-server.mjs';
+// @ts-expect-error untyped .mjs fixture
+import { createUiCapServer } from './fixtures/ui-cap-server.mjs';
 import { cli, nonInfo, ruleIds } from './cli-runner.js';
 
 let servers: Started[] = [];
 afterEach(async () => { await Promise.all(servers.map((s) => s.close())); servers = []; });
 const track = (s: Started) => (servers.push(s), s);
 const good = (opts: BridgeOptions = {}) => startBridge(createGoodServer, { rejectForeignOrigin: true, ...opts }).then(track);
+
+interface Recorded { body: any; headers: Record<string, string | string[] | undefined> }
+
+/** Forwards each POST to `target` and records its JSON-RPC body and headers; GET and DELETE get 405 (no stream to relay). */
+async function recordingProxy(target: string): Promise<Started & { seen: Recorded[] }> {
+  const seen: Recorded[] = [];
+  const hop = ['host', 'content-length', 'connection', 'transfer-encoding', 'content-encoding', 'keep-alive'];
+  const s = await listen(async (req, res) => {
+    if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }).end(); return; }
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    const body = Buffer.concat(chunks).toString('utf8');
+    try { seen.push({ body: JSON.parse(body), headers: req.headers }); } catch { /* not JSON: forwarded unrecorded */ }
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string' && !hop.includes(k)) headers[k] = v;
+    const up = await fetch(new URL(req.url ?? '/', target), { method: 'POST', headers, body, redirect: 'manual' });
+    const out: Record<string, string> = {};
+    up.headers.forEach((v, k) => { if (!hop.includes(k)) out[k] = v; });
+    res.writeHead(up.status, out);
+    res.end(Buffer.from(await up.arrayBuffer()));
+  });
+  return Object.assign(s, { seen });
+}
+
+const UI_EXT = { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } };
 
 describe('e2e http', () => {
   it('GOOD server over Streamable HTTP: zero errors and zero warnings', async () => {
@@ -272,5 +299,41 @@ describe('e2e http', () => {
     expect(r.code).toBe(2);
     expect(r.stderr).toMatch(/did you mean https:\/\/mcp\.example\.com\/mcp\?/);
     expect((await cli(['localhost:3000/mcp'])).stderr).toMatch(/did you mean http:\/\/localhost:3000\/mcp\?/);
+  });
+
+  it('B3 over Streamable HTTP: the UI capability is declared and the text-only re-list feeds APPS-019', async () => {
+    const bridge = track(await startBridge(() => createUiCapServer()));
+    const proxy = await recordingProxy(bridge.url);
+    track(proxy);
+    const r = await cli([proxy.url, '--format', 'json']);
+    expect(r.code, r.stderr).not.toBe(3);
+    // R-5: every initialize declares the extension (raw probes and the SDK handshake) except the one text-only re-list
+    const inits = proxy.seen.filter((x) => x.body?.method === 'initialize');
+    const declares = (x: Recorded) => JSON.stringify(x.body.params?.capabilities?.extensions ?? null) === JSON.stringify(UI_EXT);
+    const raw = inits.filter((x) => x.headers.origin !== undefined); // the Origin probes are raw initialize requests
+    expect(raw.length).toBeGreaterThan(0);
+    expect(raw.every(declares), JSON.stringify(raw.map((x) => x.body.params?.capabilities))).toBe(true);
+    const textOnly = inits.filter((x) => !declares(x));
+    expect(textOnly.map((x) => x.body.params?.capabilities)).toEqual([{}]);
+    expect(inits.filter(declares).length).toBeGreaterThanOrEqual(3);
+    // R-6: the UI hidden behind getUiCapability is seen and the missing text-only fallback is reported
+    const ids = ruleIds(r.json);
+    expect(ids).toContain('APPS-003');
+    expect(r.json.findings.filter((f: any) => f.ruleId === 'APPS-019')).toEqual([expect.objectContaining({ tool: 'get_weather', severity: 'warning' })]);
+    const ok = track(await startBridge(() => createUiCapServer({ fallback: true })));
+    const withFallback = ruleIds((await cli([ok.url, '--format', 'json'])).json);
+    expect(withFallback).toContain('APPS-003');
+    expect(withFallback).not.toContain('APPS-019');
+  });
+
+  it('B3 on a 2026-07-28 server: _meta clientCapabilities declares the UI extension', async () => {
+    const modern = track(await startModernServer());
+    const proxy = await recordingProxy(modern.url);
+    track(proxy);
+    const r = await cli([proxy.url, '--format', 'json']);
+    expect(r.code, r.stderr).not.toBe(3);
+    const caps = proxy.seen.map((x) => x.body?.params?._meta?.['io.modelcontextprotocol/clientCapabilities']).filter((c) => c !== undefined);
+    expect(caps.length).toBeGreaterThan(0);
+    expect(caps).toEqual(caps.map(() => ({ extensions: UI_EXT })));
   });
 });
