@@ -1,6 +1,6 @@
 // Release lifecycle: single-source version and catalog date, JSON schema version.
 // Imports only modules that exist on the baseline, so R-61 and R-63 fail on an assertion there, not on import.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -44,10 +44,14 @@ describe('catalog date', () => {
     const hits = sourceFiles().flatMap((f) => (readFileSync(join(SRC, f), 'utf8').match(new RegExp(CATALOG_DATE, 'g')) ?? []).map(() => f));
     expect(hits, `files spelling out ${CATALOG_DATE}`).toHaveLength(1);
     expect(DISCLAIMER).toContain(`as of ${CATALOG_DATE}.`);
-    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-    const marked = [...readme.matchAll(/<!-- CATALOG_DATE -->([^<]*)<!-- \/CATALOG_DATE -->/g)].map((m) => m[1]);
-    expect(marked.length, 'README has CATALOG_DATE markers (npm run readme:rules fills them)').toBeGreaterThan(0);
-    for (const d of marked) expect(d).toBe(CATALOG_DATE);
+    // README and docs/RULES.md (the generated rule table, S-19) carry the date in markers that npm run readme:rules fills.
+    for (const doc of ['README.md', 'docs/RULES.md']) {
+      const file = new URL(`../${doc}`, import.meta.url);
+      expect(existsSync(file), `${doc} exists`).toBe(true);
+      const marked = [...readFileSync(file, 'utf8').matchAll(/<!-- CATALOG_DATE -->([^<]*)<!-- \/CATALOG_DATE -->/g)].map((m) => m[1]);
+      expect(marked.length, `${doc} has CATALOG_DATE markers (npm run readme:rules fills them)`).toBeGreaterThan(0);
+      for (const d of marked) expect(d, doc).toBe(CATALOG_DATE);
+    }
   });
 
   it('R-63: the JSON report carries schemaVersion first and tool.catalogAgeDays', () => {

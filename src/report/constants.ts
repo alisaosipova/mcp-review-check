@@ -29,7 +29,8 @@ export function ctaLine(r: Report, env: NodeJS.ProcessEnv = process.env, url: st
 }
 
 export const AUTH_NOTICE =
-  'Server requires OAuth. Auth checks ran; tool, resource and UI checks need `--bearer <token>` (obtain a token via your OAuth flow or a test account).';
+  'Server requires OAuth. Auth checks ran; tool, resource and UI checks need `--bearer <token>` (or MCP_REVIEW_CHECK_TOKEN): ' +
+  'an access token for a test account, issued for this server. How to get one: "Token recipe" in the mcp-review-check README.';
 export const LIST_FAILED_NOTICE =
   'Tool, injection, data and policy checks could not run (see SPEC-020).';
 export const TOKEN_REJECTED_NOTICE =
