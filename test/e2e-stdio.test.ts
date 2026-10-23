@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
 const GOOD_PATH = fileURLToPath(new URL('./fixtures/good-server.mjs', import.meta.url));
+const HUGE = `node ${fileURLToPath(new URL('./fixtures/huge-server.mjs', import.meta.url))}`;
 const LEAKY = `node ${fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url))}`;
 const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
@@ -224,6 +225,18 @@ describe('e2e stdio', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('R-59: an 80 000-character description is truncated and reported (JSON limits, text notice)', async () => {
+    const r = await cli(['--stdio', HUGE, '--format', 'json']);
+    expect(r.code, r.stderr).not.toBe(3);
+    expect(r.json.limits?.truncated).toEqual([{ where: 'tool run_sql', length: 80000, cap: 16384 }]);
+    const tool8 = r.json.findings.find((f: any) => f.ruleId === 'TOOL-008' && /characters/.test(f.message));
+    expect(tool8?.message).toMatch(/description is over 16384 characters/);
+    const text = await cli(['--stdio', HUGE]);
+    expect(text.stdout).toContain('1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
+    const md = await cli(['--stdio', HUGE, '--format', 'markdown']);
+    expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
   });
 
   it('exit code follows --target (B5): a spec-only error passes unless --fail-on-spec, and the Result line says why', async () => {

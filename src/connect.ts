@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontex
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt } from './snapshot.js';
 import { describeCause, describeHttpFailure, diagnosisText, networkCause } from './diagnose.js';
+import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
@@ -191,7 +192,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
 
 /** Replace an HTML page in an SDK error message by its title, cap the length and show the HTTP status. */
 export function cleanErrorMessage(message: string, status?: number): string {
-  let m = message;
+  let m = message.length > ERROR_BODY_CAP ? message.slice(0, ERROR_BODY_CAP) : message;
   const html = /<(!doctype|html|head|body)\b/i.exec(m);
   if (html) {
     const title = /<title[^<>]{0,200}>([^<]{1,200})<\/title>/i.exec(m)?.[1].replace(/\s+/g, ' ').trim();
@@ -451,12 +452,13 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     target: opts.platforms ?? 'all', active: !!opts.active, activeAuth: !!opts.activeAuth,
     authenticated: !!opts.bearer || Object.keys(opts.headers ?? {}).length > 0,
   };
-  if (opts.target.kind === 'http') {
-    const snap = emptySnapshot({ kind: 'http', urlAsEntered: opts.target.url, url: new URL(opts.target.url) }, options);
-    snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-    return buildHttp(snap, opts.target.url, opts, deps);
-  }
-  const snap = emptySnapshot({ kind: 'stdio', command: opts.target.command, args: opts.target.args }, options);
-  return buildStdio(snap, opts.target, opts, deps);
+  const t = opts.target;
+  const snap = t.kind === 'http'
+    ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
+    : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
+  if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
+  const result = await (t.kind === 'http' ? buildHttp(snap, t.url, opts, deps) : buildStdio(snap, t, opts, deps));
+  capSnapshot(result.snap);
+  return result;
 }
 

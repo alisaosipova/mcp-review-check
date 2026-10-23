@@ -2,6 +2,7 @@
 import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, ctaLine, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
+import { limitsNotice } from '../limits.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
 
 export interface TextOptions {
@@ -61,6 +62,8 @@ export function renderText(r: Report, opts: TextOptions): string {
   if (snap.coverage.toolLevel === 'token-rejected') out.push('', c('yellow', TOKEN_REJECTED_NOTICE));
   if (snap.coverage.toolLevel === 'list-failed') out.push('', c('red', `${snap.coverage.reason ?? 'tools/list failed'}. ${LIST_FAILED_NOTICE}`));
   if (snap.coverage.toolLevel === 'connect-failed') out.push('', c('red', `Could not connect: ${snap.coverage.reason ?? snap.fatal ?? 'unknown error'}`));
+  const limits = limitsNotice(snap);
+  if (limits) out.push('', c('yellow', limits));
 
   for (const sev of ['error', 'warning', 'info'] as Severity[]) {
     const list = r.findings.filter((f) => f.severity === sev);

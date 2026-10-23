@@ -41,7 +41,8 @@ export function extractOrigins(html: string): ExtractedOrigin[] {
     out.push({ kind, origin, evidence: evidence.slice(0, 160), confidence });
   };
 
-  const tagRe = /<(script|link|img|source|video|audio|iframe|base)\b[^>]*>/gi;
+  // [^<>] keeps the scan linear on unterminated tags ("<img<img<img..."); HTML allows '<' in attribute values, rarely used.
+  const tagRe = /<(script|link|img|source|video|audio|iframe|base)\b[^<>]*>/gi;
   for (const m of html.matchAll(tagRe)) {
     const tag = m[0];
     const name = m[1].toLowerCase();

@@ -320,7 +320,7 @@ export const APPS_014 = defineRule(
     if (!r.html) return [];
     const out: RawFinding[] = [];
     if (/@modelcontextprotocol\/ext-apps|new App\(/.test(r.html) && !/\.connect\s*\(/.test(r.html) && !/useApp\s*\(/.test(r.html)) out.push({ resource: r.uri, message: 'uses the ext-apps App but never calls connect()' });
-    if (/sendSizeChanged\s*\([^)]*height\s*:\s*0\b/.test(r.html)) out.push({ resource: r.uri, message: 'sendSizeChanged reports height 0' });
+    if (/sendSizeChanged\s*\([^)]{0,500}height\s*:\s*0\b/.test(r.html)) out.push({ resource: r.uri, message: 'sendSizeChanged reports height 0' });
     return out;
   }),
 );
@@ -354,7 +354,7 @@ export const APPS_016 = defineRule(
     const out: RawFinding[] = [];
     if (/\b(localStorage|sessionStorage)\b/.test(h)) out.push({ resource: r.uri, message: 'uses localStorage/sessionStorage (avoid for core state)' });
     if (/@font-face|fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net/.test(h)) out.push({ resource: r.uri, message: 'loads custom fonts' });
-    if ([...h.matchAll(/<img\b[^>]*>/gi)].some((m) => !/\balt\s*=/i.test(m[0]))) out.push({ resource: r.uri, message: '<img> without alt' });
+    if ([...h.matchAll(/<img\b[^<>]*>/gi)].some((m) => !/\balt\s*=/i.test(m[0]))) out.push({ resource: r.uri, message: '<img> without alt' });
     const tr = TRACKERS.filter((t) => h.includes(t));
     if (tr.length) out.push({ resource: r.uri, severity: 'warning', message: `ad or tracker origins: ${tr.join(', ')}` });
     return out;

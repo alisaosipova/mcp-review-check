@@ -5,6 +5,7 @@ import { isObj, isNonEmptyStr, isStr, toolName } from './util/access.js';
 import { corpus } from './util/text.js';
 import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_SUFFIXES } from './util/net.js';
 import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
+import { TEXT_CAP } from '../limits.js';
 
 const DEPLOY = 'Deploy-time check: ';
 const SUBMISSION = 'https://claude.com/docs/connectors/building/submission';
@@ -331,7 +332,7 @@ export const SRV_014 = defineRule(
     if (!isStr(ins)) return [];
     const out: RawFinding[] = [];
     if (ins === '') out.push({ platforms: ['spec'], message: 'instructions is an empty string; omit it instead' });
-    if (ins.length > 512) out.push({ platforms: ['chatgpt'], severity: 'info', message: `instructions are ${ins.length} characters; key guidance belongs in the first 512` });
+    if (ins.length > 512) out.push({ platforms: ['chatgpt'], severity: 'info', message: `instructions are ${ins.length >= TEXT_CAP ? `over ${TEXT_CAP}` : ins.length} characters; key guidance belongs in the first 512` });
     const dup = snap.tools.filter((t) => isStr(t.description) && t.description.length > 40 && ins.includes(t.description)).map(toolName);
     if (dup.length >= 3) {
       const msg = `instructions repeat ${dup.length} tool descriptions verbatim (${dup.slice(0, 3).join(', ')}${dup.length > 3 ? ', …' : ''})`;

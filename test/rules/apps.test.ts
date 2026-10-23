@@ -106,6 +106,16 @@ describe('APPS rules', () => {
     expect(originMatches('https://api.acme.test:8443', 'https://api.acme.test')).toBe(false);
   });
 
+  it('extractOrigins and <img> checks stay linear on unterminated tags (W1-8)', () => {
+    // 400 000 characters each: a quadratic scan takes seconds here (about 10 s per pass on the baseline).
+    const tags = '<img'.repeat(100000);
+    const t0 = performance.now();
+    extractOrigins(tags);
+    evaluate(byId('APPS-016'), ui({ html: tags }));
+    evaluate(byId('APPS-014'), ui({ html: 'sendSizeChanged('.repeat(25000) }));
+    expect(performance.now() - t0).toBeLessThan(2000);
+  }, 180000);
+
   it('normalizeMime lowercases type and trims around ;', () => {
     expect(normalizeMime('Text/HTML ; profile=mcp-app')).toBe(MIME);
   });

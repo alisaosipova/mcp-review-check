@@ -29,6 +29,7 @@ export function toJson(r: Report): Record<string, unknown> {
       localMode: snap.localMode,
     },
     coverage: snap.connectDiagnosis ? { ...snap.coverage, diagnosis: snap.connectDiagnosis } : snap.coverage,
+    limits: snap.limits ?? null,
     summary: r.summary,
     findings: r.findings.map(findingJson),
     skipped: r.skipped,

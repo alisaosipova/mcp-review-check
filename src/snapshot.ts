@@ -85,6 +85,11 @@ export interface ConnectDiagnosis {
   hint?: string;
 }
 
+/** Input caps applied before the regex rules (W1-8). */
+export interface Limits {
+  truncated: Array<{ where: string; length: number; cap: number }>;
+}
+
 export interface AsObservation {
   issuer: string;
   attempts: HttpExchange[];
@@ -155,6 +160,7 @@ export interface Snapshot {
   /** Set when no transport worked (SRV-003 fatal, exit code 3). */
   fatal?: string;
   connectDiagnosis?: ConnectDiagnosis;
+  limits?: Limits;
   env?: { nodeExtraCaCerts?: boolean };
   options: { target: TargetOpt; active: boolean; activeAuth: boolean; authenticated?: boolean };
 }

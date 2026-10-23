@@ -5,6 +5,7 @@ import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
 import { deref, walkSchema } from './util/schemaWalk.js';
 import { firstVerb, tokenize, toolKind, words } from './util/text.js';
+import { TEXT_CAP } from '../limits.js';
 
 const MCP_TOOLS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools';
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -157,7 +158,7 @@ export const TOOL_008 = defineRule(
     else if (descToks.length && descToks.flatMap((x) => tokenize(x)).every((x) => nameToks.has(x) || STOP.has(x))) { reasons.push('only restates the name'); platforms.add('claude'); platforms.add('chatgpt'); }
     if (/^(makes? a request|calls? the api|does stuff|utility|helper|tool)\.?$/i.test(d)) { reasons.push('generic wording'); platforms.add('claude'); platforms.add('chatgpt'); }
     if (reasons.length) out.push({ platforms: [...platforms], message: `description is too thin: ${reasons.join(', ')}` });
-    if (d.length > 1024) out.push({ platforms: ['claude'], severity: 'info', message: `description is ${d.length} characters; it may be mixing purposes` });
+    if (d.length > 1024) out.push({ platforms: ['claude'], severity: 'info', message: `description is ${d.length >= TEXT_CAP ? `over ${TEXT_CAP}` : d.length} characters; it may be mixing purposes` });
     const kind = toolKind(t);
     if (kind !== 'read' && !SIDE_EFFECT.test(d)) {
       const what = annotations(t).readOnlyHint === false || annotations(t).destructiveHint === true ? 'write tool' : 'tool without readOnlyHint';
@@ -300,7 +301,8 @@ export const TOOL_025 = defineRule(
 const RAW_QUERY = /^(endpoint|query_?string|body|request_?body|payload|graphql|gql|sql|jql|soql|cql|kql|spl|promql|filter_expression)$/i;
 const RAW_TARGET = /^(path|url|uri|route)$/i;
 const METHOD_PROP = /^(method|http_?method|verb|request_?method)$/i;
-const API_NAMED = /\b[A-Z][\w.&-]*( [A-Z][\w.&-]*)*\s+(Web |REST |GraphQL |Admin )?API\b/;
+// At most 6 capitalized words before "API": an unbounded repeat is quadratic on long capitalized text.
+const API_NAMED = /\b[A-Z][\w.&-]{0,40}( [A-Z][\w.&-]{0,40}){0,5}\s+(Web |REST |GraphQL |Admin )?API\b/;
 
 const GENERIC_NAME_TOKENS = new Set(['mcp', 'server', 'api', 'tools', 'tool', 'the', 'remote', 'connector', 'plugin', 'app', 'official', 'docs']);
 

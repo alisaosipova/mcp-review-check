@@ -99,6 +99,8 @@ A failed connect names its cause instead of `fetch failed`: the hostname does no
 
 **Redaction.** One redactor covers the whole report in every format (messages, evidence, target, SARIF URI, fatal message, stdio stderr, `--verbose` trace): `--bearer`, `--header` values, `--env` values, secret query parameters (`api_key`, `token`, ...) and the password in `user:pass@`, and stdio arguments that follow a secret-looking flag (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `"Authorization: Bearer X"`), including when the server echoes them on stdout, on stderr or in what it lists. Usage errors never repeat option values. Values shorter than 4 characters, `true`, `false`, `yes`, `no`, `on`, `off`, `null`, `undefined`, `none` and numbers with up to 6 digits before an optional decimal part are not treated as secrets: they would blank out unrelated report text.
 
+**Input caps.** Before the pattern rules run, metadata strings over 16 KB and UI resources over 2 MB are truncated and the report lists what was cut (JSON `limits.truncated`); SDK error bodies are capped at 64 KB.
+
 Findings that apply to several platforms carry a severity per platform (for example `[spec, chatgpt: warning]`), and each platform verdict counts that platform's own severity.
 
 ### Example output
