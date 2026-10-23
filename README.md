@@ -113,20 +113,24 @@ Transport streamable-http · era legacy (2025-11-25) · auth none
 Checked 3 tools · 0 resources · 0 prompts · 0 UI resources · 90 rules run · 52 skipped (...)
 
 ERRORS (6)
-  x TOOL-006 [claude] ask_question: no title
+  x TOOL-006 [claude] 3 tools: no title: ask_question, read_wiki_contents, read_wiki_structure
       fix  Add `title` (top level, or in `annotations.title`).
       docs https://claude.com/docs/connectors/building/review-criteria
-  x TOOL-011 [claude] ask_question: neither readOnlyHint nor destructiveHint is set
+  x TOOL-011 [claude] 3 tools: neither readOnlyHint nor destructiveHint is set: ask_question, read_wiki_contents, read_wiki_structure
   ...
 WARNINGS (2)
   ! SPEC-009 [spec] server: tools/call for a non-existent tool returned a result with isError instead of a JSON-RPC error
   ...
 
-Score 20/100 · 6 errors · 2 warnings · 4 info
+FIX SNIPPETS (add to each tool definition; check the guessed hint values)
+  ask_question: {"title":"Ask question","annotations":{"readOnlyHint":false,"destructiveHint":true,"openWorldHint":true}}
+  ...
+
+Score 68/100 · 4 root causes · 6 errors · 2 warnings · 4 info
 Claude: BLOCKED (6 errors) · ChatGPT: NO AUTOMATED BLOCKERS · Result: FAIL (--fail-on error) · claude: 6 errors (TOOL-006, TOOL-011, ...)
 ```
 
-The score (`100 − 12·errors − 4·warnings`, at most 3 penalized findings per rule) is provisional. Per-platform verdicts are `BLOCKED`, `NEEDS ATTENTION` or `NO AUTOMATED BLOCKERS`. When tool-level checks cannot run (OAuth without `--bearer`, a failed connect or a failed `tools/list`), the score is `n/a` and a verdict without errors is `INCOMPLETE`, never a pass.
+Findings with the same rule and message are collapsed into one line with a count (`--verbose` lists each one), and every tool without a title or annotation hints gets a JSON fragment to paste in. The score counts root causes, not findings: `100 − 12` per rule with an error `− 4` per rule with only warnings, not below 0 (JSON `summary.scoreVersion: 2`); it is provisional. Per-platform verdicts are `BLOCKED`, `NEEDS ATTENTION` or `NO AUTOMATED BLOCKERS`. When tool-level checks cannot run (OAuth without `--bearer`, a failed connect or a failed `tools/list`), the score is `n/a` and a verdict without errors is `INCOMPLETE`, never a pass.
 
 Targets on `localhost` / `127.0.0.0/8` / `::1` and stdio servers run in **local mode**: deploy-time checks (HTTPS, public DNS, tunnel domains) are reported as info so you can lint before deploying.
 

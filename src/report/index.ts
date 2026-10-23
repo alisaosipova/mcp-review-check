@@ -8,7 +8,7 @@ import { displayUrl } from '../rules/util/net.js';
 import { hasUi, isStr } from '../rules/util/access.js';
 import { uiResources } from '../rules/util/ui.js';
 import type { Snapshot } from '../snapshot.js';
-import { gate, gatedPlatforms, score, verdict, type FailOn, type Gate, type Verdict } from './score.js';
+import { gate, gatedPlatforms, score, SCORE_VERSION, verdict, type FailOn, type Gate, type Verdict } from './score.js';
 
 export interface Report {
   tool: { name: string; version: string; catalogDate: string; catalogAgeDays: number };
@@ -27,6 +27,8 @@ export interface Report {
     info: number;
     /** null when the check is partial (coverage.toolLevel is not 'ok'). */
     score: number | null;
+    /** Version of the score formula (2: per unique broken rule, R-31). */
+    scoreVersion: number;
     verdicts: Partial<Record<'claude' | 'chatgpt', { verdict: Verdict; errors: number; warnings: number }>>;
     failed: boolean;
     /** Which platforms decided `failed` and why (B5: spec is gated only with --fail-on-spec). */
@@ -48,7 +50,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
-      score: complete ? score(f) : null, verdicts, failed, gate: g,
+      score: complete ? score(f) : null, scoreVersion: SCORE_VERSION, verdicts, failed, gate: g,
     },
   };
 }

@@ -5,19 +5,20 @@ import type { Platform, Severity, TargetOpt } from '../snapshot.js';
 export type Verdict = 'BLOCKED' | 'NEEDS ATTENTION' | 'NO AUTOMATED BLOCKERS' | 'INCOMPLETE';
 export type FailOn = 'error' | 'warning' | 'never';
 
+/** Version of the score formula in JSON summary.scoreVersion; the baseline (up to 3 findings per rule) is 1. */
+export const SCORE_VERSION = 2;
+
+/** Rules with an error finding, and rules with warnings only: one root cause each, however many findings (R-31). */
+export function rootCauses(findings: Finding[]): { errors: number; warnings: number } {
+  const errors = new Set(findings.filter((f) => f.severity === 'error').map((f) => f.ruleId));
+  const warnings = new Set(findings.filter((f) => f.severity === 'warning' && !errors.has(f.ruleId)).map((f) => f.ruleId));
+  return { errors: errors.size, warnings: warnings.size };
+}
+
+/** 100 - 12 per rule with an error - 4 per rule with warnings only, not below 0. */
 export function score(findings: Finding[]): number {
-  const byRule = new Map<string, Finding[]>();
-  for (const f of findings) {
-    if (f.severity === 'info') continue;
-    byRule.set(f.ruleId, [...(byRule.get(f.ruleId) ?? []), f]);
-  }
-  let e = 0;
-  let w = 0;
-  for (const list of byRule.values()) {
-    const top = [...list].sort((a, b) => (a.severity === 'error' ? -1 : 1) - (b.severity === 'error' ? -1 : 1)).slice(0, 3);
-    for (const f of top) f.severity === 'error' ? e++ : w++;
-  }
-  return Math.max(0, Math.round(100 - 12 * e - 4 * w));
+  const { errors, warnings } = rootCauses(findings);
+  return Math.max(0, 100 - 12 * errors - 4 * warnings);
 }
 
 /** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass. */

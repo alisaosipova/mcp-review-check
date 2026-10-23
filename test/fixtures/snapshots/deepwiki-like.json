@@ -1,0 +1,41 @@
+{
+  "target": { "kind": "http", "urlAsEntered": "https://mcp.wiki.example/mcp" },
+  "localMode": false,
+  "era": "legacy",
+  "protocolVersion": "2025-11-25",
+  "serverInfo": { "name": "repo-wiki", "version": "0.1.0" },
+  "capabilities": { "tools": {} },
+  "initializeRaw": { "protocolVersion": "2025-11-25", "capabilities": { "tools": {} }, "serverInfo": { "name": "repo-wiki", "version": "0.1.0" } },
+  "tools": [
+    {
+      "name": "read_wiki_structure",
+      "description": "Get a list of documentation topics for a GitHub repository.",
+      "inputSchema": { "type": "object", "properties": { "repoName": { "type": "string", "description": "GitHub repository in owner/repo format" } }, "required": ["repoName"] }
+    },
+    {
+      "name": "read_wiki_contents",
+      "description": "View the documentation about a GitHub repository.",
+      "inputSchema": { "type": "object", "properties": { "repoName": { "type": "string", "description": "GitHub repository in owner/repo format" } }, "required": ["repoName"] }
+    },
+    {
+      "name": "ask_question",
+      "description": "Ask any question about a GitHub repository and get an answer grounded in its documentation.",
+      "inputSchema": { "type": "object", "properties": { "repoName": { "type": "string", "description": "GitHub repository in owner/repo format" }, "question": { "type": "string", "description": "The question to ask about the repository" } }, "required": ["repoName", "question"] }
+    }
+  ],
+  "resources": [],
+  "resourceTemplates": [],
+  "prompts": [],
+  "listMeta": { "tools": { "pages": 1, "rawPages": [] } },
+  "resourceReads": {},
+  "transport": {
+    "kind": "streamable-http",
+    "exchanges": [],
+    "dns": { "host": "mcp.wiki.example", "a": ["93.184.216.34"], "aaaa": [] },
+    "tls": [{ "host": "mcp.wiki.example", "ok": true }],
+    "probes": {},
+    "timings": {}
+  },
+  "coverage": { "toolLevel": "ok" },
+  "options": { "target": "all", "active": false, "activeAuth": false }
+}

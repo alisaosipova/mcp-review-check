@@ -25,9 +25,10 @@ function report(s: Snapshot) {
 }
 
 describe('score and verdicts', () => {
-  it('caps each rule at 3 penalized findings', () => {
+  it('R-31: each broken rule counts once (scoreVersion 2), an error rule outranks its warnings', () => {
     const many = Array.from({ length: 10 }, () => f('TOOL-012', 'error'));
-    expect(score(many)).toBe(100 - 36);
+    expect(score(many)).toBe(100 - 12);
+    expect(score([f('A', 'warning'), f('A', 'error'), f('A', 'warning')])).toBe(88);
     expect(score([f('A', 'error'), f('B', 'warning'), f('C', 'info')])).toBe(84);
     expect(score(Array.from({ length: 20 }, (_, i) => f(`R-${i}`, 'error')))).toBe(0);
   });
@@ -122,12 +123,14 @@ describe('exit gating (B5)', () => {
 });
 
 describe('text report', () => {
-  it('collapses more than 3 findings of the same rule and message', () => {
+  it('collapses 2 or more findings of the same rule and message (R-28)', () => {
     const list = ['a', 'b', 'c', 'd', 'e'].map((t) => f('TOOL-012', 'error', { tool: t, message: 'missing openWorldHint' }));
     expect(groupFindings(list, false)).toHaveLength(1);
     expect(groupFindings(list, true)).toHaveLength(5);
     const text = renderText({ ...report(loadSnapshot('minimal-http')), findings: list }, { color: false, verbose: false });
     expect(text).toContain('TOOL-012 [claude] 5 tools: missing openWorldHint: a, b, c, +2 more');
+    expect(groupFindings(list.slice(0, 2), false)).toHaveLength(1);
+    expect(groupFindings([list[0]], false)).toHaveLength(1);
   });
 
   it('renders header, groups, checklist, verdicts, disclaimer and CTA without ANSI when color is off', () => {

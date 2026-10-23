@@ -2,6 +2,7 @@
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { rootCauses } from './score.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
@@ -24,7 +25,8 @@ export function renderMarkdown(r: Report, opts: { cta?: string } = {}): string {
   out.push(`| Target | ${cell(targetLabel(snap))} |`);
   out.push(`| Transport | ${snap.transport.kind} · era ${eraLine(snap)} · auth ${cell(authSummary(snap))} |`);
   out.push(`| Checked | ${counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);
-  out.push(`| Score | ${scoreLabel(r)} |`);
+  const rc = rootCauses(r.findings);
+  out.push(`| Score | ${scoreLabel(r)} · ${rc.errors + rc.warnings} root cause${rc.errors + rc.warnings === 1 ? '' : 's'} |`);
   out.push(`| Findings | ${s.errors} errors · ${s.warnings} warnings · ${s.info} info |`);
   if (s.verdicts.claude) out.push(`| Claude | ${s.verdicts.claude.verdict} |`);
   if (s.verdicts.chatgpt) out.push(`| ChatGPT | ${s.verdicts.chatgpt.verdict} |`);

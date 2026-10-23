@@ -57,7 +57,7 @@ after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: B
 Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect.
 The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
 findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
-The score (100 - 12/error - 4/warning, max 3 per rule) is provisional.
+The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
 

@@ -3,6 +3,9 @@ import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
+import { tokenize, toolKind } from '../rules/util/text.js';
+import { rootCauses } from './score.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
 
 export interface TextOptions {
@@ -23,7 +26,7 @@ function subject(f: Finding): string {
   return f.path && !f.message.includes(f.path) ? `${s} (${f.path})` : s;
 }
 
-/** Collapse more than 3 findings of the same rule and message into one line. */
+/** Collapse 2 or more findings of the same rule and message into one line with a count (R-28). */
 export function groupFindings(list: Finding[], verbose: boolean): Group[] {
   if (verbose) return list.map((f) => ({ first: f, items: [f] }));
   const map = new Map<string, Group>();
@@ -35,7 +38,7 @@ export function groupFindings(list: Finding[], verbose: boolean): Group[] {
   }
   const out: Group[] = [];
   for (const g of map.values()) {
-    if (g.items.length > 3) out.push(g);
+    if (g.items.length > 1) out.push(g);
     else for (const f of g.items) out.push({ first: f, items: [f] });
   }
   return out;
@@ -47,7 +50,28 @@ function line(g: Group): string {
   const subjects = g.items.map((x) => x.tool ?? x.resource ?? 'server');
   const shown = subjects.slice(0, 3).join(', ');
   const kind = g.items.every((x) => x.tool) ? 'tools' : 'items';
-  return `${f.ruleId} [${platformLabel(f)}] ${g.items.length} ${kind}: ${f.message}: ${shown}, +${subjects.length - 3} more`;
+  return `${f.ruleId} [${platformLabel(f)}] ${g.items.length} ${kind}: ${f.message}: ${shown}${subjects.length > 3 ? `, +${subjects.length - 3} more` : ''}`;
+}
+
+const HINTS = ['readOnlyHint', 'destructiveHint', 'openWorldHint'];
+
+/**
+ * R-29: a JSON fragment to paste into each tool reported by TOOL-006 (no title), TOOL-011 or TOOL-012: the missing
+ * title from the name, and the annotations with missing hints guessed from the name (read-only for read verbs).
+ */
+export function fixSnippets(r: Report): string[] {
+  const flagged = new Set(r.findings.filter((f) => ['TOOL-011', 'TOOL-012'].includes(f.ruleId) || (f.ruleId === 'TOOL-006' && f.message === 'no title')).map((f) => f.tool));
+  return r.snap.tools.filter((t) => flagged.has(toolName(t))).map((t) => {
+    const a = annotations(t);
+    const read = toolKind(t) === 'read';
+    const guess: Record<string, boolean> = { readOnlyHint: read, destructiveHint: !read, openWorldHint: true };
+    const fix: Record<string, unknown> = {};
+    const words = tokenize(toolName(t)).join(' ') || toolName(t);
+    if (!isNonEmptyStr(t.title ?? a.title)) fix.title = words.charAt(0).toUpperCase() + words.slice(1);
+    const missing = HINTS.filter((h) => typeof a[h] !== 'boolean');
+    if (missing.length) fix.annotations = { ...a, ...Object.fromEntries(missing.map((h) => [h, guess[h]])) };
+    return `${toolName(t)}: ${JSON.stringify(fix)}`;
+  });
 }
 
 export function renderText(r: Report, opts: TextOptions): string {
@@ -78,6 +102,11 @@ export function renderText(r: Report, opts: TextOptions): string {
       }
     }
   }
+  const snippets = fixSnippets(r);
+  if (snippets.length) {
+    out.push('', c('bold', 'FIX SNIPPETS (add to each tool definition; check the guessed hint values)'));
+    for (const x of snippets) out.push(`  ${x}`);
+  }
   if (r.ignored.length) out.push('', c('dim', `Ignored ${r.ignored.length} finding(s) via --ignore.`));
 
   if (r.manual.length) {
@@ -91,7 +120,9 @@ export function renderText(r: Report, opts: TextOptions): string {
   }
 
   const s = r.summary;
-  out.push('', `Score ${scoreLabel(r)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info`);
+  const rc = rootCauses(r.findings);
+  const causes = rc.errors + rc.warnings;
+  out.push('', `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info`);
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);

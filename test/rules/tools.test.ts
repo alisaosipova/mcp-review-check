@@ -201,8 +201,24 @@ describe('TOOL rules', () => {
     expect(evaluate(byId('TOOL-011'), ann({ readOnlyHint: false }))[0].severity).toBe('warning');
   });
 
-  it('TOOL-012 emits one finding per missing hint', () => {
-    expect(evaluate(byId('TOOL-012'), ann({}))).toHaveLength(3);
+  // D-11 (a): replaces the baseline 'TOOL-012 emits one finding per missing hint' (3 findings)
+  it('R-27: TOOL-012 is one finding per tool listing the missing hints', () => {
+    expect(evaluate(byId('TOOL-012'), ann({})).map((f) => f.message)).toEqual(['missing readOnlyHint, destructiveHint, openWorldHint']);
+    expect(evaluate(byId('TOOL-012'), ann({ readOnlyHint: true })).map((f) => f.message)).toEqual(['missing destructiveHint, openWorldHint']);
+    const two = snap({ tools: [tool({ annotations: undefined }), tool({ name: 'get_note', annotations: { destructiveHint: false } })] });
+    expect(evaluate(byId('TOOL-012'), two).map((f) => [f.tool, f.message])).toEqual([
+      ['get_note', 'missing readOnlyHint, openWorldHint'],
+      ['search_notes', 'missing readOnlyHint, destructiveHint, openWorldHint'],
+    ]);
+  });
+
+  it('R-30: TOOL-014 at spec level is not reported without an annotations object', () => {
+    const t = byId('TOOL-014');
+    expect(evaluate(t, one(tool({ name: 'get_note', annotations: undefined })))).toEqual([]);
+    // with an annotations object the absent readOnlyHint is still reported
+    expect(evaluate(t, one(tool({ name: 'get_note', annotations: { openWorldHint: false } })))).toMatchObject([{ platforms: ['spec'], message: expect.stringMatching(/readOnlyHint is absent/) }]);
+    // the write-verb checks still run without annotations
+    expect(evaluate(t, one(tool({ name: 'delete_note', annotations: undefined }))).map((f) => f.message)).toEqual(['"delete" tool without destructiveHint: true']);
   });
 
   it('TOOL-013 idempotentHint on read-only tool is spec info', () => {

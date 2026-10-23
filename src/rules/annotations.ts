@@ -53,7 +53,9 @@ export const TOOL_012 = defineRule(
   },
   (snap) => perTool(snap, (t) => {
     const a = annotations(t);
-    return ['readOnlyHint', 'destructiveHint', 'openWorldHint'].filter((h) => typeof a[h] !== 'boolean').map((h) => ({ message: `missing ${h}` }));
+    const missing = ['readOnlyHint', 'destructiveHint', 'openWorldHint'].filter((h) => typeof a[h] !== 'boolean');
+    // One finding per tool: the hints share one root cause and one fix (R-27).
+    return missing.length ? { message: `missing ${missing.join(', ')}` } : undefined;
   }),
 );
 
@@ -109,7 +111,8 @@ export const TOOL_014 = defineRule(
     if (a.readOnlyHint === false && a.destructiveHint === false && (tokenize(name).some((x) => IRREVERSIBLE.has(x)) || IRREV_DESC.test(d))) {
       out.push({ platforms: ['chatgpt'], message: 'destructiveHint: false on a tool that looks irreversible' });
     }
-    if (v && READ_VERBS.has(v) && a.readOnlyHint === undefined) out.push({ platforms: ['spec'], message: `read verb "${v}" but readOnlyHint is absent (treated as destructive and open-world by default)` });
+    // Without an annotations object TOOL-011 and TOOL-012 already report the missing hints (R-30).
+    if (v && READ_VERBS.has(v) && isObj(t.annotations) && a.readOnlyHint === undefined) out.push({ platforms: ['spec'], message: `read verb "${v}" but readOnlyHint is absent (treated as destructive and open-world by default)` });
     return out;
   }),
 );

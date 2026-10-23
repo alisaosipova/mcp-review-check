@@ -25,6 +25,7 @@ First public release, planned as 0.1.0.
 - The linter declares the MCP Apps client capability (`io.modelcontextprotocol/ui`) on every connection (SDK handshake, raw `initialize` probes, 2026-07-28 `_meta`), so UI tools registered with the ext-apps `getUiCapability` pattern are checked by the APPS rules. When a tool links a UI, one more connection without the capability lists the tools a text-only host sees.
 - Regression fixtures frozen from public servers' listings (`test/fixtures/real/`, refreshed with `scripts/capture-real.mjs`) guard the heuristic rules against known false positives and against new warnings compared with the baseline findings.
 - `--max-duration <ms>`: an overall deadline; the report covers what ran and names the phase where it stopped (text, markdown, JSON `limits.stopped`). Without a handshake by then the run exits 3; after it, the verdicts read `INCOMPLETE` and JSON `coverage.toolLevel` is `stopped`.
+- The text report prints a ready JSON fragment (title and annotation hints) for each tool that lacks them, and text and markdown show "N root causes" next to the score.
 
 #### Rules added
 
@@ -57,9 +58,12 @@ First public release, planned as 0.1.0.
 - SRV-002: the ChatGPT finding has its own fix and OpenAI docs link instead of the Claude plugin advice.
 - SRV-020 cites the 2026-07-28 versioning page.
 - SRV-004 says "does not resolve (NXDOMAIN)" instead of "no A record; Connectors are IPv4-only" when a hostname does not exist, and a failed DNS lookup is `inconclusive (network)` (info).
+- TOOL-012 reports one finding per tool listing every missing hint, instead of one per hint.
+- TOOL-014 no longer reports a read verb without `readOnlyHint` (spec) when the tool has no `annotations` object at all; TOOL-011 and TOOL-012 already cover it.
 
 ### Changed
 
+- The score counts root causes, not findings: 100 − 12 per rule with an error − 4 per rule with only warnings, not below 0 (it counted up to 3 findings per rule), so most scores change; JSON `summary.scoreVersion` is 2. Findings with the same rule and message collapse into one text line with a count from two up (it was from four; `--verbose` lists each).
 - The exit code follows `--target`: each finding counts at its Claude or ChatGPT severity for the chosen directories (`all` = both), and MCP spec findings count only with the new `--fail-on-spec` flag. Previously a spec-only error (for example SPEC-004) failed `--target claude`. The `Result:` line, the `--output` summary line and JSON `summary.gate` name the findings that failed the run, and a pass notes spec findings that were not counted. A run that could not connect (exit 3) reads `Result: FAIL (could not connect)`, never `PASS`.
 - Timeouts, connection resets, 5xx and 429 (with `Retry-After` up to 5 s) are retried (at most 3 attempts, a timeout only once) in the preflight, Origin, challenge, OAuth metadata, invalid-token and TLS probes. Probes that still fail only for network reasons give `inconclusive (network)` info findings in AUTH-004, AUTH-007, AUTH-010, AUTH-016 and SRV-001 instead of errors, and AUTH-004 and AUTH-007 list the status of every attempt.
 - Requires Node 20.19 or newer. The development dependencies moved to vitest 4 and `@types/node` 20, and `npm audit` reports no known vulnerabilities.
