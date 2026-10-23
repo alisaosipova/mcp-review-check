@@ -18,6 +18,7 @@ import type { FailOn } from './report/score.js';
 import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
+import { displayUrl, REDACTED_MARK } from './rules/util/net.js';
 import type { TargetOpt } from './snapshot.js';
 import { VERSION } from './version.js';
 
@@ -134,16 +135,25 @@ function render(r: Report, format: string, opts: TextOptions, rerun: string): st
   }
 }
 
-/** R-48: the command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out (D-3). */
+/** R-48: the command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out (D-3).
+ *  SEC-1: --bearer, --header and --env values masked by position at any length, the URL through displayUrl, then scrub. */
 function rerunCommand(argv: string[], redactor: Redactor): string {
   const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
-  const args = argv.filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
+  // Header and variable names stay ("X-Api-Key:«redacted»", "API_KEY=«redacted»"); a --bearer value goes whole.
+  const masked = (opt: string, v: string) => (opt === '--bearer' ? '' : v.slice(0, v.indexOf(opt === '--header' ? ':' : '=') + 1)) + REDACTED_MARK;
+  const args = argv.map((a, i) => {
+    if (i >= end) return a;
+    const eq = /^(--(?:bearer|header|env))=(.*)$/s.exec(a);
+    if (eq) return `${eq[1]}=${masked(eq[1], eq[2])}`;
+    if (i > 0 && ['--bearer', '--header', '--env'].includes(argv[i - 1])) return masked(argv[i - 1], a);
+    return /^https?:\/\//i.test(a) ? displayUrl(a) : a;
+  }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(' ');
 }
 
-/** A URL for a usage error: query and fragment hidden (they may carry credentials). */
+/** A URL for a usage error: userinfo up to the last "@" of the authority, query and fragment hidden (they may carry credentials). */
 function shownUrl(raw: string): string {
-  return raw.replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q)).replace(/\/\/[^/@]*@/, '//…@');
+  return raw.replace(/\/\/[^/?#]*@/, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
 }
 
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY): Promise<CliResult> {
@@ -158,7 +168,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
     if (values['list-rules']) {
       if (positionals.length > 1) throw new UsageError('--list-rules takes at most one rule ID prefix');
-      const prefix = (positionals[0] ?? '').toUpperCase();
+      // Only an ID-like prefix filters; anything else (a URL with a token, a path) lists the whole catalog, as the baseline did, unrepeated.
+      const prefix = /^[A-Z]+(-\d*)?$/i.test(positionals[0] ?? '') ? positionals[0].toUpperCase() : '';
       const rules = RULES.filter((r) => r.id.startsWith(prefix));
       const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
       if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);

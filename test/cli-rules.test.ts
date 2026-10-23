@@ -143,3 +143,23 @@ describe('R-41: did you mean, --help examples', () => {
     expect(examples).toMatch(/^ {2}mcp-review-check --list-rules \S+ --format json$/m);
   });
 });
+
+describe('SEC-1 review (S-22): --list-rules never repeats a positional that is not an ID prefix', () => {
+  it('SEC-1 review: --list-rules with a URL lists the whole catalog (as the baseline did) without echoing the URL', async () => {
+    const all = await cli(['--list-rules']);
+    expect(all.code, all.stderr).toBe(0);
+    for (const args of [
+      ['https://mcp.example.com/mcp?token=SKLIVE1234SECRET', '--list-rules'],
+      ['--list-rules', 'https://user:p4ssw0rdSECRET@mcp.example.com/mcp'],
+      ['--list-rules', './server.js'],
+    ]) {
+      const r = await cli(args);
+      expect(r.code, `${args.join(' ')}: ${r.stderr}`).toBe(0);
+      expect(r.stdout, args.join(' ')).toBe(all.stdout);
+      expect((r.stdout + r.stderr).toUpperCase()).not.toMatch(/SKLIVE1234SECRET|P4SSW0RDSECRET|MCP\.EXAMPLE\.COM/);
+    }
+    // an ID-like prefix still filters, and an unknown one is still a usage error
+    expect(rows((await cli(['--list-rules', 'TOOL-01'])).stdout).every((l) => l.startsWith('TOOL-01'))).toBe(true);
+    expect((await cli(['--list-rules', 'XYZ'])).code).toBe(2);
+  });
+});

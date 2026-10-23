@@ -51,3 +51,42 @@ describe('redactor (B2)', () => {
     expect(redactDeep(input, buildRedactor({}))).toBe(input);
   });
 });
+
+// Review round 1 (S-22): the secret sign in any segment of a name, raw query values, deep data.
+describe('SEC-1 review (S-22): redactor units', () => {
+  it('SEC-1 review: a secret sign in any segment of a flag, KEY= or query name; pointers to a secret are not secrets', () => {
+    expect(argvSecrets(['--auth-header', 'Bearer sk-AUTHHDR13', '--api-key-value', 'sk-APIVAL14', '--client-secret-value=sk-CSVAL15', 'AUTH_TOKEN_VALUE=sk-ATVAL16']))
+      .toEqual(['Bearer sk-AUTHHDR13', 'sk-AUTHHDR13', 'sk-APIVAL14', 'sk-CSVAL15', 'sk-ATVAL16']);
+    // false positives: a file, a path, a directory, an id, a URL, a limit or a look-alike word is not the secret itself
+    expect(argvSecrets([
+      '--token-file', 't.txt', '--password-file=p.txt', '--auth-dir', '/etc/auth', '--key-id', 'k1', '--secret-path', '/run/s',
+      '--auth-url', 'https://as.test/authorize', '--max-tokens', '4096', '--keyword', 'cats', '--monkey-patch', 'enabled',
+      '--sessionId', 'abc-123', 'TOKEN_LIMIT=500000', '--tokenizer', 'cl100k',
+    ])).toEqual([]);
+    const all = urlSecrets('https://x.test/mcp?api-key=sk-QAK1&credential=sk-QCR2&client_secret=sk-QCS3&access-token=sk-QAT4&auth_token=sk-QAU5&apiKey=sk-QCA6&q=plain1&key_id=kid7');
+    for (const v of ['sk-QAK1', 'sk-QCR2', 'sk-QCS3', 'sk-QAT4', 'sk-QAU5', 'sk-QCA6']) expect(all, v).toContain(v);
+    expect(all).not.toContain('plain1');
+    expect(all).not.toContain('kid7');
+  });
+
+  it('SEC-1 review: urlSecrets keeps the raw query value too ("+", lowercase %2f), not only the decoded one', () => {
+    const raw = urlSecrets('https://x.test/mcp?api_key=sk-PLUS+SECRET11&token=sk-abc%2fLOWER12');
+    expect(raw).toContain('sk-PLUS+SECRET11');
+    expect(raw).toContain('sk-abc%2fLOWER12');
+    expect(raw).toContain('sk-PLUS SECRET11');
+    expect(raw).toContain('sk-abc/LOWER12');
+  });
+
+  it('SEC-1 review: redactDeep walks data 20 000 levels deep without overflowing the stack and redacts the bottom', () => {
+    const r = buildRedactor({ bearer: 'tok-DEEPSECRET' });
+    let deep: any = { leaf: 'uses tok-DEEPSECRET' };
+    for (let i = 0; i < 20000; i++) deep = { a: deep, list: [i, 'tok-DEEPSECRET'] };
+    let out: any;
+    expect(() => { out = redactDeep(deep, r); }, 'redactDeep throws on deep data').not.toThrow();
+    let depth = 0;
+    let x = out;
+    while (x.a) { expect(x.list[1]).toBe('«redacted»'); x = x.a; depth++; }
+    expect(depth).toBe(20000);
+    expect(x.leaf).toBe('uses «redacted»');
+  });
+});

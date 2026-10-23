@@ -1,27 +1,27 @@
 // Secret redaction: one Redactor per run covers HTTP credentials and stdio argv/env secrets, and the
 // finished Report is scrubbed in one place before any format renders it.
 import { createRedactor, scrub, type Redactor } from './protocol/trace.js';
-import { isSecretQueryParam } from './rules/util/net.js';
+import { isSecretName } from './rules/util/net.js';
 
 export type { Redactor } from './protocol/trace.js';
 export { scrub } from './protocol/trace.js';
+export { isSecretName } from './rules/util/net.js';
 
-/** A flag (or KEY=) name whose value is a credential: --api-key, --token, --client-secret, --accessToken, DB_PASSWORD, ... */
-const SECRET_NAME = /(^|[-_.])(api[-_]?key|apikey|key|token|secret|password|passwd|pwd|pass|auth|authorization|bearer|credentials?|cookie|session|private[-_]?key|signature|dsn)$/i;
 /** Header names whose value is a credential when they appear as "Name: value" in argv (mcp-remote --header ...). */
 const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-key|x-auth-token|[\w-]*(token|secret|key))$/i;
 /** Values never treated as secrets on their own: they would blank out unrelated report text. */
 const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?)$/i;
 
-export function isSecretName(name: string): boolean {
-  return SECRET_NAME.test(name.replace(/^-+/, '').replace(/([a-z0-9])([A-Z])/g, '$1-$2'));
-}
-
-/** Credentials inside a URL: the password of user:pass@ and secret query parameter values. */
+/** Credentials inside a URL: the password of user:pass@ and secret query parameter values, decoded and as written ("+", %2f). */
 export function urlSecrets(raw: string): string[] {
   try {
     const u = new URL(raw);
-    const out = [...u.searchParams.entries()].filter(([k]) => isSecretQueryParam(k)).map(([, v]) => v);
+    // searchParams has one entry per non-empty "&" part; the raw value differs from the decoded one on "+" or %2f.
+    const parts = u.search.slice(1).split('&').filter(Boolean);
+    const out = [...u.searchParams].flatMap(([k, v], i) => {
+      const raw = parts[i]?.split(/=(.*)/s)[1] ?? '';
+      return !isSecretName(k) ? [] : raw && raw !== v ? [v, raw] : [v];
+    });
     if (u.password) out.push(u.password, decodeURIComponent(u.password));
     return out;
   } catch {
@@ -29,12 +29,16 @@ export function urlSecrets(raw: string): string[] {
   }
 }
 
+/** A secret value, plus the token after an auth scheme ("Bearer X"). */
+function withSchemeToken(value: string): string[] {
+  const v = value.trim();
+  const token = /^(bearer|basic|token|dpop)\s+(.+)$/is.exec(v)?.[2];
+  return token ? [v, token] : [v];
+}
+
 /** The secret part of a "Name: value" header string, plus the token after an auth scheme. */
 function headerSecrets(name: string, value: string): string[] {
-  if (!SECRET_HEADER.test(name.trim())) return [];
-  const v = value.trim();
-  const token = /^(bearer|basic|token|dpop)\s+(.+)$/i.exec(v)?.[2];
-  return token ? [v, token] : [v];
+  return SECRET_HEADER.test(name.trim()) ? withSchemeToken(value) : [];
 }
 
 /**
@@ -46,8 +50,8 @@ export function argvSecrets(args: string[]): string[] {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const eq = /^(-{1,2}[\w.-]+|[A-Za-z_][\w.-]*)=(.+)$/s.exec(a);
-    if (eq && isSecretName(eq[1])) out.push(eq[2]);
-    else if (/^-{1,2}[\w.-]+$/.test(a) && isSecretName(a) && i + 1 < args.length && !args[i + 1].startsWith('--')) out.push(args[++i]);
+    if (eq && isSecretName(eq[1])) out.push(...withSchemeToken(eq[2]));
+    else if (/^-{1,2}[\w.-]+$/.test(a) && isSecretName(a) && i + 1 < args.length && !args[i + 1].startsWith('--')) out.push(...withSchemeToken(args[++i]));
     const header = /^([\w-]+)\s*:\s*(.+)$/s.exec(a.replace(/^-{1,2}[\w.-]+=/, ''));
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
     if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, '')));
@@ -82,11 +86,13 @@ const isPlain = (v: object) => {
   return proto === Object.prototype || proto === null;
 };
 
-/** A deep copy of `value` with every secret replaced in strings (keys included) and URL objects. */
+/** A deep copy of `value` with every secret replaced in strings (keys included) and URL objects; no recursion, so any depth works. */
 export function redactDeep<T>(value: T, r: Redactor): T {
   if (!r.values.size) return value;
   const seen = new Map<object, unknown>();
-  const walk = (v: unknown): unknown => {
+  const pending: (() => void)[] = [];
+  // Copies one level: containers come back empty and are filled from `pending`, so deep data never grows the call stack.
+  const copy = (v: unknown): unknown => {
     if (typeof v === 'string') return scrub(v, r);
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return seen.get(v);
@@ -99,14 +105,16 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     if (Array.isArray(v)) {
       const out: unknown[] = [];
       seen.set(v, out);
-      for (const x of v) out.push(walk(x));
+      pending.push(() => { for (const x of v) out.push(copy(x)); });
       return out;
     }
     if (!isPlain(v)) return v;
     const out: Record<string, unknown> = {};
     seen.set(v, out);
-    for (const [k, x] of Object.entries(v)) out[scrub(k, r)] = walk(x);
+    pending.push(() => { for (const [k, x] of Object.entries(v)) out[scrub(k, r)] = copy(x); });
     return out;
   };
-  return walk(value) as T;
+  const root = copy(value);
+  while (pending.length) pending.pop()!();
+  return root as T;
 }

@@ -76,10 +76,22 @@ export function registrableDomain(host: string): string {
   return lastTwo;
 }
 
+/** AUTH-001: query parameter names that put a credential in the server URL. */
 const SECRET_PARAM = /^(token|access_token|api_?key|apikey|key|secret|auth|password|bearer)$/i;
 
 export function isSecretQueryParam(name: string): boolean {
   return SECRET_PARAM.test(name);
+}
+
+/** SEC-1: a secret sign in any kebab, snake, dotted or camelCase segment of a name (--auth-header, client_secret, accessToken). */
+const SECRET_SIGN = /(^|[-_.])(api[-_]?key|apikey|key|token|secret|password|passwd|pwd|pass|auth|authorization|bearer|credentials?|cookie|session|private[-_]?key|signature|dsn)([-_.]|$)/i;
+/** Names that point to or describe a secret rather than hold it: --token-file, --key-id, --auth-url, TOKEN_LIMIT. */
+const NOT_SECRET = /[-_.](file|path|dir|directory|id|name|url|uri|endpoint|type|mode|format|max|min|limit|count|size|length|timeout|ttl|expiry|expires)$/i;
+
+/** Whether the value of a flag, KEY= or query parameter with this name is a credential (redaction, fail-closed). */
+export function isSecretName(name: string): boolean {
+  const n = name.replace(/^-+/, '').replace(/([a-z0-9])([A-Z])/g, '$1-$2');
+  return SECRET_SIGN.test(n) && !NOT_SECRET.test(n);
 }
 
 export const REDACTED_MARK = '«redacted»';
@@ -91,7 +103,7 @@ export function displayUrl(raw: string): string {
     let changed = false;
     if (u.username || u.password) { u.username = ''; u.password = ''; changed = true; }
     const marker = 'MCPREVIEWCHECKREDACTED';
-    for (const k of [...u.searchParams.keys()]) if (isSecretQueryParam(k)) { u.searchParams.set(k, marker); changed = true; }
+    for (const k of [...u.searchParams.keys()]) if (isSecretName(k)) { u.searchParams.set(k, marker); changed = true; }
     return changed ? u.href.split(marker).join(REDACTED_MARK) : raw;
   } catch {
     return raw;

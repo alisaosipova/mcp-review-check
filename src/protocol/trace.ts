@@ -1,6 +1,6 @@
 // Tracing fetch wrapper: records every HTTP exchange (redacted) for the rules.
 import type { HttpExchange } from '../snapshot.js';
-import { isSecretQueryParam } from '../rules/auth.js';
+import { isSecretName } from '../rules/util/net.js';
 
 export const REDACTED = '«redacted»';
 const SNIPPET = 4096;
@@ -38,7 +38,7 @@ export function redactUrl(raw: string, r: Redactor): string {
     const u = new URL(raw);
     let changed = false;
     for (const k of [...u.searchParams.keys()]) {
-      if (isSecretQueryParam(k)) { u.searchParams.set(k, 'REDACTED'); changed = true; }
+      if (isSecretName(k)) { u.searchParams.set(k, 'REDACTED'); changed = true; }
     }
     return scrub(changed ? u.href.replace(/=REDACTED/g, '=' + REDACTED) : raw, r);
   } catch {
