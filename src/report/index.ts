@@ -1,6 +1,6 @@
 // Report model shared by all formats.
 import { VERSION } from '../version.js';
-import { CATALOG_DATE } from '../rules/index.js';
+import { CATALOG_DATE, catalogAgeDays } from '../catalog.js';
 import { activePlatforms, type EngineResult } from '../rules/engine.js';
 import type { ManualItem } from '../rules/manual.js';
 import { platformSeverity, type Finding } from '../rules/types.js';
@@ -11,7 +11,7 @@ import type { Snapshot } from '../snapshot.js';
 import { failed, score, verdict, type FailOn, type Verdict } from './score.js';
 
 export interface Report {
-  tool: { name: string; version: string; catalogDate: string };
+  tool: { name: string; version: string; catalogDate: string; catalogAgeDays: number };
   startedAt: string;
   durationMs: number;
   snap: Snapshot;
@@ -38,7 +38,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   const verdicts: Report['summary']['verdicts'] = {};
   for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete);
   return {
-    tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE },
+    tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
     startedAt: startedAt.toISOString(), durationMs, snap,
     findings: f, ignored: result.ignored, skipped: result.skipped, rulesRun: result.rulesRun, manual, failOn,
     summary: {

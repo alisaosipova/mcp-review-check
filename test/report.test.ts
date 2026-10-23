@@ -91,8 +91,9 @@ describe('text report', () => {
 describe('other formats', () => {
   it('json has the documented shape and uncollapsed findings', () => {
     const j = toJson(report(loadSnapshot('minimal-http'))) as Record<string, any>;
-    for (const k of ['tool', 'target', 'startedAt', 'durationMs', 'server', 'coverage', 'summary', 'findings', 'skipped', 'ignored', 'manual', 'disclaimer', 'contact']) expect(j).toHaveProperty(k);
-    expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: '2026-10-22' });
+    for (const k of ['schemaVersion', 'tool', 'target', 'startedAt', 'durationMs', 'server', 'coverage', 'summary', 'findings', 'skipped', 'ignored', 'manual', 'disclaimer', 'contact']) expect(j).toHaveProperty(k);
+    expect(j.schemaVersion).toBe(1);
+    expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: '2026-10-22', catalogAgeDays: 0 });
     expect(j.summary).toHaveProperty('verdicts.claude');
     expect(j.findings[0]).toHaveProperty('docs');
     expect(j.contact).toBeNull();

@@ -1,4 +1,6 @@
 // Report constants (§5.4).
+import { CATALOG_DATE } from '../catalog.js';
+
 // Set to a real absolute https URL before release; empty leaves the call to action out. No brand or URL is invented here.
 export const CONTACT_URL = '';
 export const CTA_TEXT = 'Need help getting your connector approved?';
@@ -15,7 +17,7 @@ export function contactUrl(raw: string = CONTACT_URL): string | undefined {
 
 export const DISCLAIMER =
   'Passing these automated checks does not guarantee approval. Directory reviews include manual\n' +
-  'testing and policy judgment, and requirements change. Rules reflect public docs as of 2026-10-22.\n' +
+  `testing and policy judgment, and requirements change. Rules reflect public docs as of ${CATALOG_DATE}.\n` +
   'mcp-review-check is independent and not affiliated with Anthropic or OpenAI.';
 
 export function ctaLine(): string | undefined {

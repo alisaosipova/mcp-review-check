@@ -34,6 +34,20 @@ describe('e2e stdio', () => {
     });
   });
 
+  it('R-63: JSON has schemaVersion and tool.catalogAgeDays', async () => {
+    const before = Date.now();
+    const r = await cli(['--stdio', GOOD, '--format', 'json']);
+    const after = Date.now();
+    expect(r.code, r.stderr).toBe(0);
+    expect(Object.keys(r.json)[0]).toBe('schemaVersion');
+    expect(r.json.schemaVersion).toBe(1);
+    const born = Date.parse(`${r.json.tool.catalogDate}T00:00:00Z`);
+    const age = (t: number) => Math.max(0, Math.floor((t - born) / 86_400_000));
+    expect(Number.isInteger(r.json.tool.catalogAgeDays)).toBe(true);
+    expect(r.json.tool.catalogAgeDays).toBeGreaterThanOrEqual(age(before));
+    expect(r.json.tool.catalogAgeDays).toBeLessThanOrEqual(age(after));
+  });
+
   it('GOOD server with --active: read-only tools are called and still clean', async () => {
     const r = await cli(['--stdio', GOOD, '--format', 'json', '--active']);
     expect(r.code, r.stderr).toBe(0);

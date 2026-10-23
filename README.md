@@ -313,20 +313,20 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 
 ## Stability policy
 
-The rule catalog is dated 2026-10-22 (shown as `rules <date>` in every report header and as `tool.catalogDate` in JSON). Directory requirements change, so check the date before you rely on a result.
+The rule catalog is dated <!-- CATALOG_DATE -->2026-10-22<!-- /CATALOG_DATE --> (shown as `rules <date>` in every report header and as `tool.catalogDate` in JSON, with `tool.catalogAgeDays`). A check run prints a warning on stderr when the catalog is more than 90 days old, because directory requirements change.
 
 While the version is 0.x:
 
 - **Patch releases** (0.1.x) only fix bugs and false positives, lower a severity, or improve messages. They never add a rule or raise a severity, so they cannot turn a passing CI run red.
 - **Minor releases** (0.2.0, ...) may add rules, raise severities and change defaults. Each one is listed in [CHANGELOG.md](CHANGELOG.md).
 - **Rule IDs are never reused.** A retired rule's ID stays retired, so `--ignore` lists and saved reports keep their meaning.
-- **JSON output** gains new fields at any time; a renamed, removed or retyped field is listed in [CHANGELOG.md](CHANGELOG.md).
+- **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear at any time.
 
 In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.1 <url>`.
 
 ## Limitations and disclaimer
 
-- Passing these automated checks **does not guarantee approval**. Directory reviews include manual testing and policy judgment, and requirements change. Rules reflect public documentation as of 2026-10-22.
+- Passing these automated checks **does not guarantee approval**. Directory reviews include manual testing and policy judgment, and requirements change. Rules reflect public documentation as of <!-- CATALOG_DATE -->2026-10-22<!-- /CATALOG_DATE -->.
 - Heuristic rules (word lists and regexes for injection, data collection, policy topics and tool shapes) can produce false positives and miss real problems. They are capped at warning; only deterministic markers (hidden characters, explicit "ignore previous instructions" or "don't tell the user", conversation-history and secret parameter names) are errors.
 - Tool-level checks on OAuth-protected servers need a valid `--bearer` token; without one only the auth checks run.
 - `--stdio` launches the server with your local Node. A server whose `engines` needs a newer Node fails at startup (exit 3); run the check under that Node version, or pass `--env NODE_OPTIONS=...` when a flag is enough.

@@ -12,7 +12,7 @@ import { specRules } from './spec.js';
 import { toolRules } from './tools.js';
 import type { Rule } from './types.js';
 
-export const CATALOG_DATE = '2026-10-22';
+export { CATALOG_DATE } from '../catalog.js';
 
 const byId = (a: Rule, b: Rule) => a.id.localeCompare(b.id, 'en', { numeric: true });
 

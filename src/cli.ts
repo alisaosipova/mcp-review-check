@@ -12,7 +12,8 @@ import { renderMarkdown } from './report/markdown.js';
 import { renderSarif } from './report/sarif.js';
 import type { FailOn } from './report/score.js';
 import { renderText } from './report/text.js';
-import { CATALOG_DATE, manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
+import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
+import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import type { TargetOpt } from './snapshot.js';
 import { VERSION } from './version.js';
 
@@ -178,6 +179,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     };
     redactor = opts.redactor = redactorFor(opts);
     const started = new Date();
+    stderr += staleCatalogWarning(started) ?? '';
     const t0 = performance.now();
     const { snap: observed, stderrTail, tracer } = await buildSnapshot(opts);
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so what

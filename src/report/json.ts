@@ -8,9 +8,13 @@ const findingJson = (f: Finding) => ({
   tool: f.tool, resource: f.resource, path: f.path, evidence: f.evidence, fix: f.fix, docs: f.docs,
 });
 
+/** Bumped on any breaking change to the JSON shape (renamed or removed fields, changed types). */
+export const JSON_SCHEMA_VERSION = 1;
+
 export function toJson(r: Report): Record<string, unknown> {
   const snap = r.snap;
   return {
+    schemaVersion: JSON_SCHEMA_VERSION,
     tool: r.tool,
     target: snap.options.target,
     startedAt: r.startedAt,

@@ -63,4 +63,4 @@ jobs:
           test "$(npx mcp-review-check --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
           cd "$GITHUB_WORKSPACE"
           "$RUNNER_TEMP/smoke/node_modules/.bin/mcp-review-check" --stdio "node test/fixtures/good-server.mjs" --format json > "$RUNNER_TEMP/report.json"
-          node -e "const r=require(process.argv[1]); if (r.summary.errors!==0) { console.error(r.summary); process.exit(1) }" "$RUNNER_TEMP/report.json"
+          node -e "const r=require(process.argv[1]); if (r.schemaVersion!==1||r.summary.errors!==0) { console.error(r.summary); process.exit(1) }" "$RUNNER_TEMP/report.json"
