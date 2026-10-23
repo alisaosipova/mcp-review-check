@@ -14,9 +14,13 @@ export interface CliRun {
   json?: any;
 }
 
+/** The CI switches a run inherits from a GitHub Actions job: removed from the child's env unless a test passes them (S-18). */
+const CI_ENV = ['GITHUB_ACTIONS', 'GITHUB_STEP_SUMMARY', 'FORCE_COLOR'];
+
 export function cli(args: string[], env: Record<string, string> = {}): Promise<CliRun> {
+  const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !CI_ENV.includes(k)));
   return new Promise((resolve) => {
-    execFile(process.execPath, [CLI, ...args], { cwd: ROOT, env: { ...process.env, NO_COLOR: '1', ...env }, maxBuffer: 32 * 1024 * 1024, timeout: 90000 }, (err, stdout, stderr) => {
+    execFile(process.execPath, [CLI, ...args], { cwd: ROOT, env: { ...base, NO_COLOR: '1', ...env }, maxBuffer: 32 * 1024 * 1024, timeout: 90000 }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0;
       let json: unknown;
       try { json = JSON.parse(stdout); } catch { /* not JSON */ }

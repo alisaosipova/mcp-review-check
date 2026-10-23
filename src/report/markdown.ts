@@ -10,7 +10,11 @@ import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, se
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
 
-export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean } = {}): string {
+/** Evidence as a code span (R-48): quoted server text is shown, not rendered as markdown or HTML. */
+const code = (s: string | undefined) => (s ? `\`\` ${cell(s)} \`\`` : '');
+
+/** `rerun` is the redacted command line that reproduces the report (R-48). */
+export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean; rerun?: string } = {}): string {
   const snap = r.snap;
   const s = r.summary;
   const out: string[] = [];
@@ -36,14 +40,15 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
   if (s.verdicts.claude) out.push(`| Claude | ${s.verdicts.claude.verdict} |`);
   if (s.verdicts.chatgpt) out.push(`| ChatGPT | ${s.verdicts.chatgpt.verdict} |`);
   out.push(`| Result | ${cell(resultLine(r))} |`, '');
+  if (opts.rerun) out.push(`\`\` rerun: ${opts.rerun.replace(/\r?\n/g, ' ')} \`\``, '');
 
   for (const sev of ['error', 'warning', 'info'] as Severity[]) {
     const list = visibleFindings(r.findings, opts).filter((f) => f.severity === sev);
     if (!list.length) continue;
-    out.push(`## ${HEAD[sev]} (${list.length})`, '', '| Rule | Platforms | Subject | Message | Fix | Docs |', '|---|---|---|---|---|---|');
+    out.push(`## ${HEAD[sev]} (${list.length})`, '', '| Rule | Platforms | Subject | Message | Fix | Docs | Evidence |', '|---|---|---|---|---|---|---|');
     for (const f of list) {
       const subject = `${f.tool ?? f.resource ?? 'server'}${f.path ? ` (${f.path})` : ''}`;
-      out.push(`| ${f.ruleId} | ${platformLabel(f)} | ${cell(subject)} | ${cell(f.message)} | ${cell(f.fix)} | ${cell(f.docs[0])} |`);
+      out.push(`| ${f.ruleId} | ${platformLabel(f)} | ${cell(subject)} | ${cell(f.message)} | ${cell(f.fix)} | ${cell(f.docs[0])} | ${code(f.evidence)} |`);
     }
     out.push('');
   }

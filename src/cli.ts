@@ -13,8 +13,9 @@ import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif } from './report/sarif.js';
+import { annotations, appendStepSummary } from './report/github.js';
 import type { FailOn } from './report/score.js';
-import { localBanner, renderText } from './report/text.js';
+import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import type { TargetOpt } from './snapshot.js';
@@ -48,7 +49,7 @@ Options:
   --cwd <dir>             Working directory for --stdio.
   --ignore <RULE-ID>      Ignore a rule (repeatable); an ID that is not a rule or MAN item is a usage error.
   --list-rules [prefix]   Print the rule catalog (--format text, json or markdown; IDs starting with prefix) and exit.
-  --no-color              Disable colors (also off when not a TTY or NO_COLOR is set).
+  --no-color              Disable colors (also off when not a TTY or NO_COLOR is set; FORCE_COLOR=1 forces them on).
   --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
   --quiet                 Text only: print just error and warning findings, the Score and Result lines and the disclaimer.
   --checklist             Text only: print the manual checklist in full (default: one line with the item count).
@@ -71,6 +72,8 @@ Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or 
 The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
 findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
 The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
+With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
+severity) and the markdown report is appended to $GITHUB_STEP_SUMMARY when it is set.
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
 
@@ -122,13 +125,20 @@ function parseHeader(raw: string): [string, string] {
   return [k, v];
 }
 
-function render(r: Report, format: string, opts: Parameters<typeof renderText>[1]): string {
+function render(r: Report, format: string, opts: TextOptions, rerun: string): string {
   switch (format) {
     case 'json': return renderJson(r);
-    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose }); // --quiet and --checklist are text only (D-3)
+    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose, rerun }); // --quiet and --checklist are text only (D-3)
     case 'sarif': return renderSarif(r);
     default: return renderText(r, opts);
   }
+}
+
+/** R-48: the command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out (D-3). */
+function rerunCommand(argv: string[], redactor: Redactor): string {
+  const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
+  const args = argv.filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
+  return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(' ');
 }
 
 /** A URL for a usage error: query and fragment hidden (they may carry credentials). */
@@ -245,10 +255,18 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
 
-    const color = isTty && !values['no-color'] && !env.NO_COLOR && format === 'text' && !values.output;
+    // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off (R-47).
+    const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;
+    const color = tty && !values['no-color'] && format === 'text' && !values.output;
     const banner = localBanner(report);
     if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document (U-12)
-    const body = render(report, format, { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist });
+    const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
+    const rerun = rerunCommand(argv, redactor);
+    const body = render(report, format, textOpts, rerun);
+    if (env.GITHUB_ACTIONS === 'true') { // R-46: annotations go to stderr, so stdout stays the document (U-12)
+      for (const a of annotations(report)) stderr += `${a}\n`;
+      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, renderMarkdown(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }));
+    }
     if (values.verbose) {
       for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;

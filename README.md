@@ -87,7 +87,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `explain <RULE-ID>` | | Prints a rule's severity per directory, rationale, sources and fix, and how to `--ignore` it; also takes `MAN` IDs. An unknown ID exits 2. |
 | `--quiet` | off | Text only: prints just the error and warning findings, the Score and Result lines and the disclaimer. A failed connect or missing auth is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
 | `--checklist` | off | Text only: prints the manual checklist in full. By default the text report shows one line, `N manual items: --checklist to show`; markdown and JSON always list every item. |
-| `--no-color`, `--verbose`, `--help`, `--version` | | `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
+| `--no-color`, `--verbose`, `--help`, `--version` | | `--no-color` turns colours off (they are also off without a TTY or with `NO_COLOR`; `FORCE_COLOR=1` turns them on without a TTY, see [GitHub Actions](#github-actions)). `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
 
 ### Exit codes
 
@@ -106,7 +106,7 @@ If the server declares tools but `tools/list` fails (error, crash, timeout, or m
 
 A failed connect names its cause instead of `fetch failed`: the hostname does not resolve, the connection was refused or timed out, the TLS certificate is not trusted (`CERT_*`, self-signed), or the URL answered 404/405/an HTML page and is not an MCP endpoint, with a suggested URL (`<url>/mcp`, or `/mcp` instead of the deprecated `/sse`). A URL without a scheme is rejected with a suggestion (`https://…`, or `http://` for localhost). Timeouts, connection resets, 5xx and 429 (honouring `Retry-After` up to 5 s) are retried (at most 3 attempts, a timeout only once) in the preflight, Origin, challenge, OAuth metadata, invalid-token and TLS probes; a probe that still fails only for network reasons is reported as `inconclusive (network)` (info), not as an error.
 
-**Redaction.** One redactor covers the whole report in every format (messages, evidence, target, SARIF URI, fatal message, stdio stderr, `--verbose` trace): `--bearer`, `--header` values, `--env` values, secret query parameters (`api_key`, `token`, ...) and the password in `user:pass@`, and stdio arguments that follow a secret-looking flag (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `"Authorization: Bearer X"`), including when the server echoes them on stdout, on stderr or in what it lists. Usage errors never repeat option values. Values shorter than 4 characters, `true`, `false`, `yes`, `no`, `on`, `off`, `null`, `undefined`, `none` and numbers with up to 6 digits before an optional decimal part are not treated as secrets: they would blank out unrelated report text.
+**Redaction.** One redactor covers the whole report in every format (messages, evidence, target, SARIF URI, the markdown `rerun:` line, GitHub annotations and job summary, fatal message, stdio stderr, `--verbose` trace): `--bearer`, `--header` values, `--env` values, secret query parameters (`api_key`, `token`, ...) and the password in `user:pass@`, and stdio arguments that follow a secret-looking flag (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `"Authorization: Bearer X"`), including when the server echoes them on stdout, on stderr or in what it lists. Usage errors never repeat option values. Values shorter than 4 characters, `true`, `false`, `yes`, `no`, `on`, `off`, `null`, `undefined`, `none` and numbers with up to 6 digits before an optional decimal part are not treated as secrets: they would blank out unrelated report text.
 
 **Input caps.** Before the pattern rules run, metadata strings over 16 KB and UI resources over 2 MB are truncated and the report lists what was cut (JSON `limits.truncated`); SDK error bodies are capped at 64 KB.
 
@@ -146,6 +146,12 @@ The protocol revision is in the header (the SRV-020 finding stays in JSON and SA
 ### Local mode
 
 Stdio servers and HTTP targets on a host without a dot (`localhost`, a container name such as `http://mcp:8080`) or whose every address is non-public (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`, …, counting both public DNS and the system resolver, so `/etc/hosts` and container DNS names count) run in **local mode**: deploy-time checks (HTTPS, public DNS, tunnel domains) are reported as info so you can lint before deploying. A banner names the rules that were made informational (on stderr for `json` and `sarif`); `--no-local` keeps them strict and `--local` forces local mode for any host. SRV-004 tells a name that "resolves only locally" (the system resolver answers, public DNS has no A record) from one with no A record at all.
+
+### GitHub Actions
+
+When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
+
+The markdown report (and so the job summary) has an Evidence column with the text a rule matched, and a `rerun: npx mcp-review-check …` line with the options of the run, secrets redacted, to reproduce it locally (`--quiet` and `--checklist` are left out: they change only the text report).
 
 ## What the tool sends
 
