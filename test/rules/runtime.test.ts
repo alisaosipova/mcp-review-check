@@ -105,11 +105,19 @@ describe('RT rules', () => {
     const t = byId('RT-005');
     // --active cuts calls off one second after Claude's limit, so a call still running then exceeds it.
     const cut = evaluate(t, active([call({ transportError: 'McpError: Request timed out', durationMs: 241000 })]));
-    expect(cut).toMatchObject([{ severity: 'error', platforms: ['claude'], message: expect.stringMatching(/exceeds Claude's 240 s tool call timeout/) }]);
+    expect(cut.find((x) => x.platforms.includes('claude'))).toMatchObject({ severity: 'error', platforms: ['claude'], message: expect.stringMatching(/exceeds Claude's 240 s tool call timeout/) });
     const slow = evaluate(t, active([call({ durationMs: 240500, result: text('ok') })]));
     expect(slow.find((x) => x.platforms.includes('claude'))).toMatchObject({ severity: 'error', message: expect.stringMatching(/exceeds Claude's 240 s/) });
     const mid = evaluate(t, active([call({ durationMs: 61000, result: text('ok') })]));
     expect(mid.map((x) => x.message).sort()).toEqual(['call took 61000 ms (> 5 s, linter-defined threshold)', 'call took 61000 ms (> 60 s, linter-defined threshold)']);
+  });
+
+  it('R-52: a call cut off at 241 s still exceeds ChatGPT\'s 5 s linter-defined threshold, as in the baseline', () => {
+    const cut = evaluate(byId('RT-005'), active([call({ transportError: 'McpError: Request timed out', durationMs: 241000 })]));
+    expect(cut.find((x) => x.platforms.includes('chatgpt'))).toMatchObject({
+      severity: 'warning', platforms: ['chatgpt'], message: expect.stringMatching(/no answer within 241000 ms \(> 5 s, linter-defined threshold\)/),
+    });
+    expect(cut.find((x) => x.platforms.includes('claude'))).toMatchObject({ severity: 'error', platforms: ['claude'] });
   });
 
   it('runActive cuts a call off at 241 s even with a larger --timeout', async () => {

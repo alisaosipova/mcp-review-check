@@ -3,12 +3,13 @@ import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
 import { rootCauses } from './score.js';
+import { visibleFindings } from './text.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
 
-export function renderMarkdown(r: Report, opts: { cta?: string } = {}): string {
+export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean } = {}): string {
   const snap = r.snap;
   const s = r.summary;
   const out: string[] = [];
@@ -24,6 +25,8 @@ export function renderMarkdown(r: Report, opts: { cta?: string } = {}): string {
   out.push('| Item | Value |', '|---|---|');
   out.push(`| Target | ${cell(targetLabel(snap))} |`);
   out.push(`| Transport | ${snap.transport.kind} · era ${eraLine(snap)} · auth ${cell(authSummary(snap))} |`);
+  const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
+  if (rev) out.push(`| Revision | ${cell(rev)} |`);
   out.push(`| Checked | ${counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);
   const rc = rootCauses(r.findings);
   out.push(`| Score | ${scoreLabel(r)} · ${rc.errors + rc.warnings} root cause${rc.errors + rc.warnings === 1 ? '' : 's'} |`);
@@ -33,7 +36,7 @@ export function renderMarkdown(r: Report, opts: { cta?: string } = {}): string {
   out.push(`| Result | ${cell(resultLine(r))} |`, '');
 
   for (const sev of ['error', 'warning', 'info'] as Severity[]) {
-    const list = r.findings.filter((f) => f.severity === sev);
+    const list = visibleFindings(r.findings, opts).filter((f) => f.severity === sev);
     if (!list.length) continue;
     out.push(`## ${HEAD[sev]} (${list.length})`, '', '| Rule | Platforms | Subject | Message | Fix | Docs |', '|---|---|---|---|---|---|');
     for (const f of list) {

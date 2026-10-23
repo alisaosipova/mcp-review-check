@@ -12,6 +12,8 @@ export interface TextOptions {
   color: boolean;
   verbose: boolean;
   cta?: string; // ctaLine(), printed above the disclaimer
+  checklist?: boolean; // R-32: the manual checklist in full
+  quiet?: boolean; // R-33: findings (no info), Score, Result and the disclaimer
 }
 
 const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', cyan: '\x1b[36m', bold: '\x1b[1m', dim: '\x1b[2m', reset: '\x1b[0m' };
@@ -53,6 +55,11 @@ function line(g: Group): string {
   return `${f.ruleId} [${platformLabel(f)}] ${g.items.length} ${kind}: ${f.message}: ${shown}${subjects.length > 3 ? `, +${subjects.length - 3} more` : ''}`;
 }
 
+/** Text and markdown list no SRV-020 (it is in the header), TOOL-013 info only with --verbose; text drops info with --quiet. */
+export function visibleFindings(list: Finding[], opts: { verbose?: boolean; quiet?: boolean }): Finding[] {
+  return list.filter((f) => f.ruleId !== 'SRV-020' && !(f.severity === 'info' && (opts.quiet || (f.ruleId === 'TOOL-013' && !opts.verbose))));
+}
+
 const HINTS = ['readOnlyHint', 'destructiveHint', 'openWorldHint'];
 
 /**
@@ -81,6 +88,8 @@ export function renderText(r: Report, opts: TextOptions): string {
   out.push(c('bold', `${r.tool.name} ${r.tool.version} · rules ${r.tool.catalogDate} · target: ${snap.options.target}`));
   out.push(`Server  ${serverName(snap)} · ${targetLabel(snap)}`);
   out.push(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`);
+  const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
+  if (rev) out.push(c('dim', `          ${rev}`));
   out.push(`Checked ${counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`);
   if (snap.localMode) out.push(c('dim', 'Local target: deploy-time checks are informational.'));
   if (snap.coverage.toolLevel === 'auth-required') out.push('', c('yellow', AUTH_NOTICE));
@@ -89,19 +98,21 @@ export function renderText(r: Report, opts: TextOptions): string {
   if (snap.coverage.toolLevel === 'connect-failed') out.push('', c('red', `Could not connect: ${snap.coverage.reason ?? snap.fatal ?? 'unknown error'}`));
   const limits = limitsNotice(snap);
   if (limits) out.push('', c('yellow', limits));
+  if (opts.quiet) out.length = 0;
 
   for (const sev of ['error', 'warning', 'info'] as Severity[]) {
-    const list = r.findings.filter((f) => f.severity === sev);
+    const list = visibleFindings(r.findings, opts).filter((f) => f.severity === sev);
     if (!list.length) continue;
-    out.push('', c(COLOR[sev], `${HEAD[sev]} (${list.length})`));
+    if (!opts.quiet) out.push('', c(COLOR[sev], `${HEAD[sev]} (${list.length})`));
     for (const g of groupFindings(list, opts.verbose)) {
       out.push(`  ${c(COLOR[sev], MARK[sev])} ${line(g)}`);
-      if (sev !== 'info' || opts.verbose) {
+      if (!opts.quiet && (sev !== 'info' || opts.verbose)) {
         out.push(c('dim', `      fix  ${g.first.fix}`));
         if (g.first.docs[0]) out.push(c('dim', `      docs ${g.first.docs[0]}`));
       }
     }
   }
+  const findingsEnd = out.length;
   const snippets = fixSnippets(r);
   if (snippets.length) {
     out.push('', c('bold', 'FIX SNIPPETS (add to each tool definition; check the guessed hint values)'));
@@ -109,25 +120,26 @@ export function renderText(r: Report, opts: TextOptions): string {
   }
   if (r.ignored.length) out.push('', c('dim', `Ignored ${r.ignored.length} finding(s) via --ignore.`));
 
-  if (r.manual.length) {
+  if (r.manual.length && opts.checklist) {
     out.push('', c('bold', 'MANUAL CHECKLIST (not verified automatically)'));
     for (const m of r.manual) out.push(`  [ ] ${m.id} [${m.platforms.join(', ')}] ${m.text}`);
-  }
+  } else if (r.manual.length) out.push('', c('dim', `${r.manual.length} manual item${r.manual.length === 1 ? '' : 's'}: --checklist to show`));
 
   if (opts.verbose && r.skipped.length) {
     out.push('', c('bold', 'SKIPPED RULES'));
     for (const s of r.skipped) out.push(`  - ${s.ruleId}: ${s.reason}`);
   }
 
+  if (opts.quiet) out.length = findingsEnd; // no fix snippets, ignored count, checklist or skipped rules
   const s = r.summary;
   const rc = rootCauses(r.findings);
   const causes = rc.errors + rc.warnings;
-  out.push('', `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info`);
+  out.push(...(out.length ? [''] : []), `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info`);
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
   out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x))}`].join(' · '));
-  if (opts.cta) out.push('', opts.cta);
+  if (opts.cta && !opts.quiet) out.push('', opts.cta);
   out.push('', DISCLAIMER);
   return out.join('\n') + '\n';
 }

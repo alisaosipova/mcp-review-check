@@ -2,7 +2,7 @@
 
 Lint an MCP server against the public review criteria of the **Claude connector directory**, the **ChatGPT plugin directory** and the **MCP specification** before you submit it.
 
-`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against 144 automated rules. Every rule links to its public source. Checks that cannot be automated are printed as a manual checklist.
+`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against 144 automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
 
 - Requires Node 20.19 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
@@ -68,7 +68,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--target claude\|chatgpt\|all` | `all` | `spec` rules always run and are reported; the exit code counts only the chosen directories (see [Exit codes](#exit-codes)). |
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
-| `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 241000)`. RT-005 reports a call that runs past Claude's documented 240 s tool timeout as an error (use `--timeout 241000` to measure it); its 60 s (Claude) and 5 s (ChatGPT) thresholds are linter-defined. A call that gets no answer before a shorter `--timeout` is an RT-005 warning. The GET probe uses 5 s and the TLS check 10 s. |
+| `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 241000)`. RT-005 reports a call that runs past Claude's documented 240 s tool timeout as an error for Claude and a warning for ChatGPT (use `--timeout 241000` to measure it); its 60 s (Claude) and 5 s (ChatGPT) thresholds are linter-defined. A call that gets no answer before a shorter `--timeout` is an RT-005 warning. The GET probe uses 5 s and the TLS check 10 s. |
 | `--max-duration <ms>` | no limit | Overall deadline for the whole check. When it runs out, the report covers what ran, says in which phase it stopped, and the verdicts read `INCOMPLETE` (exit 3 if no handshake completed). |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
@@ -79,7 +79,9 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--env K=V`, `--cwd <dir>` | | stdio only. `--env` values are redacted in every output format (see Redaction below). |
 | `--ignore <RULE-ID>` | | Repeatable. Ignored findings stay visible in JSON under `ignored`. |
 | `--list-rules` | | Prints the catalog and exits. |
-| `--no-color`, `--verbose`, `--help`, `--version` | | `--verbose` expands collapsed findings and prints the redacted HTTP trace. |
+| `--quiet` | off | Text only: prints just the error and warning findings, the Score and Result lines and the disclaimer. A failed connect or missing auth is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
+| `--checklist` | off | Text only: prints the manual checklist in full. By default the text report shows one line, `N manual items: --checklist to show`; markdown and JSON always list every item. |
+| `--no-color`, `--verbose`, `--help`, `--version` | | `--verbose` expands collapsed findings, shows TOOL-013 info, and prints the redacted HTTP trace. |
 
 ### Exit codes
 
@@ -110,6 +112,7 @@ Findings that apply to several platforms carry a severity per platform (for exam
 mcp-review-check 0.1.0 · rules 2026-10-22 · target: all
 Server  Acme Docs 1.4.2 · https://mcp.acme.example/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth none
+          2026-07-28 clients fall back to initialize. Not a defect.
 Checked 3 tools · 0 resources · 0 prompts · 0 UI resources · 90 rules run · 52 skipped (...)
 
 ERRORS (6)
@@ -126,11 +129,13 @@ FIX SNIPPETS (add to each tool definition; check the guessed hint values)
   ask_question: {"title":"Ask question","annotations":{"readOnlyHint":false,"destructiveHint":true,"openWorldHint":true}}
   ...
 
+22 manual items: --checklist to show
+
 Score 68/100 · 4 root causes · 6 errors · 2 warnings · 4 info
 Claude: BLOCKED (6 errors) · ChatGPT: NO AUTOMATED BLOCKERS · Result: FAIL (--fail-on error) · claude: 6 errors (TOOL-006, TOOL-011, ...)
 ```
 
-Findings with the same rule and message are collapsed into one line with a count (`--verbose` lists each one), and every tool without a title or annotation hints gets a JSON fragment to paste in. The score counts root causes, not findings: `100 − 12` per rule with an error `− 4` per rule with only warnings, not below 0 (JSON `summary.scoreVersion: 2`); it is provisional. Per-platform verdicts are `BLOCKED`, `NEEDS ATTENTION` or `NO AUTOMATED BLOCKERS`. When tool-level checks cannot run (OAuth without `--bearer`, a failed connect or a failed `tools/list`), the score is `n/a` and a verdict without errors is `INCOMPLETE`, never a pass.
+The protocol revision is in the header (the SRV-020 finding stays in JSON and SARIF only), and the TOOL-013 info about `idempotentHint` on a read-only tool is shown only with `--verbose`. Findings with the same rule and message are collapsed into one line with a count (`--verbose` lists each one), and every tool without a title or annotation hints gets a JSON fragment to paste in. The score counts root causes, not findings: `100 − 12` per rule with an error `− 4` per rule with only warnings, not below 0 (JSON `summary.scoreVersion: 2`); it is provisional. Per-platform verdicts are `BLOCKED`, `NEEDS ATTENTION` or `NO AUTOMATED BLOCKERS`. When tool-level checks cannot run (OAuth without `--bearer`, a failed connect or a failed `tools/list`), the score is `n/a` and a verdict without errors is `INCOMPLETE`, never a pass.
 
 Targets on `localhost` / `127.0.0.0/8` / `::1` and stdio servers run in **local mode**: deploy-time checks (HTTPS, public DNS, tunnel domains) are reported as info so you can lint before deploying.
 
@@ -317,7 +322,7 @@ Generated from the catalog (`npm run build && npm run readme:rules`). Severity i
 | MAN-021 | chatgpt | Demo recording URL covering web, iOS and Android |
 | MAN-022 | chatgpt | Works on desktop and mobile, including UI; light and dark themes; WCAG AA contrast |
 | MAN-023 | chatgpt | Package: no test_credentials/reviewer_instructions, no clientSecret, no non-empty server headers, no `.app.json`/apps/hooks |
-| MAN-024 | chatgpt [ui] | Screenshots only with UI: one per starter prompt, 706 px wide, 400–860 px tall (note: guidelines say they're no longer shown) |
+| MAN-024 | chatgpt [ui] | Screenshots are optional and allowed only with custom UI: one PNG or JPEG per starter prompt, exactly 706 px wide, 400–860 px tall |
 | MAN-025 | chatgpt | Privacy policy discloses categories, purposes, recipients, retention, user controls; covers every user field tools return |
 | MAN-026 | chatgpt [oauth] | Reviewer test account: works externally, no MFA/SMS/magic link, doesn't expire, seeded data |
 | MAN-027 | chatgpt | Be ready to justify each tool's three hints (`justification_required` may still appear) |

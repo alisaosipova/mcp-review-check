@@ -26,6 +26,7 @@ First public release, planned as 0.1.0.
 - Regression fixtures frozen from public servers' listings (`test/fixtures/real/`, refreshed with `scripts/capture-real.mjs`) guard the heuristic rules against known false positives and against new warnings compared with the baseline findings.
 - `--max-duration <ms>`: an overall deadline; the report covers what ran and names the phase where it stopped (text, markdown, JSON `limits.stopped`). Without a handshake by then the run exits 3; after it, the verdicts read `INCOMPLETE` and JSON `coverage.toolLevel` is `stopped`.
 - The text report prints a ready JSON fragment (title and annotation hints) for each tool that lacks them, and text and markdown show "N root causes" next to the score.
+- `--quiet` (text only): just the error and warning findings, the Score and Result lines and the disclaimer. `--checklist` (text only) prints the manual checklist in full.
 
 #### Rules added
 
@@ -53,7 +54,8 @@ First public release, planned as 0.1.0.
 
 #### Other rule changes
 
-- RT-005: `--active` tool calls are cut off at 241 s, so a call past Claude's documented 240 s timeout is an error ("exceeds Claude's 240 s tool call timeout"); the 60 s and 5 s thresholds are labelled linter-defined.
+- RT-005: `--active` tool calls are cut off at 241 s, so a call past Claude's documented 240 s timeout is an error ("exceeds Claude's 240 s tool call timeout") and, as before, a ChatGPT warning (5 s threshold); the 60 s and 5 s thresholds are labelled linter-defined.
+- MAN-024 states the ChatGPT screenshot rules as published: optional, only with custom UI, one PNG or JPEG per starter prompt, 706 px wide and 400–860 px tall (the "no longer shown" note is gone).
 - TOOL-006 reports a tool title longer than 60 characters as info for Claude (linter-defined limit; a title is a UI label), and long titles are shown as snippets in its messages.
 - SRV-002: the ChatGPT finding has its own fix and OpenAI docs link instead of the Claude plugin advice.
 - SRV-020 cites the 2026-07-28 versioning page.
@@ -63,6 +65,7 @@ First public release, planned as 0.1.0.
 
 ### Changed
 
+- The text report shows the manual checklist as one line (`N manual items: --checklist to show`); markdown and JSON still list every item. The protocol revision and its note are in the header of text and markdown instead of an SRV-020 line (JSON and SARIF keep the finding), and the TOOL-013 info about `idempotentHint` on a read-only tool is shown only with `--verbose`.
 - The score counts root causes, not findings: 100 − 12 per rule with an error − 4 per rule with only warnings, not below 0 (it counted up to 3 findings per rule), so most scores change; JSON `summary.scoreVersion` is 2. Findings with the same rule and message collapse into one text line with a count from two up (it was from four; `--verbose` lists each).
 - The exit code follows `--target`: each finding counts at its Claude or ChatGPT severity for the chosen directories (`all` = both), and MCP spec findings count only with the new `--fail-on-spec` flag. Previously a spec-only error (for example SPEC-004) failed `--target claude`. The `Result:` line, the `--output` summary line and JSON `summary.gate` name the findings that failed the run, and a pass notes spec findings that were not counted. A run that could not connect (exit 3) reads `Result: FAIL (could not connect)`, never `PASS`.
 - Timeouts, connection resets, 5xx and 429 (with `Retry-After` up to 5 s) are retried (at most 3 attempts, a timeout only once) in the preflight, Origin, challenge, OAuth metadata, invalid-token and TLS probes. Probes that still fail only for network reasons give `inconclusive (network)` info findings in AUTH-004, AUTH-007, AUTH-010, AUTH-016 and SRV-001 instead of errors, and AUTH-004 and AUTH-007 list the status of every attempt.

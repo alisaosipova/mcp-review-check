@@ -45,7 +45,9 @@ Options:
   --ignore <RULE-ID>      Ignore a rule (repeatable).
   --list-rules            Print the rule catalog and exit.
   --no-color              Disable colors (also off when not a TTY or NO_COLOR is set).
-  --verbose               Expand collapsed findings; print the redacted HTTP trace and stdio stderr.
+  --verbose               Expand collapsed findings and show TOOL-013 info; print the redacted HTTP trace and stdio stderr.
+  --quiet                 Text only: print just error and warning findings, the Score and Result lines and the disclaimer.
+  --checklist             Text only: print the manual checklist in full (default: one line with the item count).
   -h, --help              Show this help.
   -v, --version           Show the version.
 
@@ -92,12 +94,12 @@ function listRules(): string {
   return lines.join('\n') + '\n';
 }
 
-function render(r: Report, format: string, color: boolean, verbose: boolean, cta?: string): string {
+function render(r: Report, format: string, opts: Parameters<typeof renderText>[1]): string {
   switch (format) {
     case 'json': return renderJson(r);
-    case 'markdown': return renderMarkdown(r, { cta });
+    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose }); // --quiet and --checklist are text only (D-3)
     case 'sarif': return renderSarif(r);
-    default: return renderText(r, { color, verbose, cta });
+    default: return renderText(r, opts);
   }
 }
 
@@ -120,6 +122,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
         env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
         'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
+        quiet: { type: 'boolean' }, checklist: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
       },
     });
@@ -206,7 +209,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const report = redactDeep(built, redactor);
 
     const color = isTty && !values['no-color'] && !env.NO_COLOR && format === 'text' && !values.output;
-    const body = render(report, format, color, !!values.verbose, ctaLine(report, env));
+    const body = render(report, format, { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist });
     if (values.verbose) {
       for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;

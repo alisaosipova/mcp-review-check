@@ -134,7 +134,8 @@ describe('text report', () => {
   });
 
   it('renders header, groups, checklist, verdicts, disclaimer and CTA without ANSI when color is off', () => {
-    const text = renderText(report(loadSnapshot('minimal-http')), { color: false, verbose: false });
+    // The full checklist needs checklist: true (--checklist); by default it is one line (R-32, D-11 (b)).
+    const text = renderText(report(loadSnapshot('minimal-http')), { color: false, verbose: false, checklist: true });
     expect(text.startsWith(`mcp-review-check ${VERSION} · rules 2026-10-22 · target: all`)).toBe(true);
     expect(text).toContain('Server  Acme Notes 1.4.2 · https://mcp.acme.test/mcp');
     expect(text).toMatch(/ERRORS \(\d+\)/);

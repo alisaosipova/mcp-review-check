@@ -50,7 +50,7 @@ export const MANUAL_ITEMS: ManualItem[] = [
   m('MAN-021', 'chatgpt', 'Demo recording URL covering web, iOS and Android', O_ERRORS),
   m('MAN-022', 'chatgpt', 'Works on desktop and mobile, including UI; light and dark themes; WCAG AA contrast', [O_UI, O_GUIDE]),
   m('MAN-023', 'chatgpt', 'Package: no test_credentials/reviewer_instructions, no clientSecret, no non-empty server headers, no `.app.json`/apps/hooks', O_SUBMIT),
-  m('MAN-024', 'chatgpt', "Screenshots only with UI: one per starter prompt, 706 px wide, 400–860 px tall (note: guidelines say they're no longer shown)", O_ERRORS, 'ui'),
+  m('MAN-024', 'chatgpt', 'Screenshots are optional and allowed only with custom UI: one PNG or JPEG per starter prompt, exactly 706 px wide, 400–860 px tall', O_ERRORS, 'ui'),
   m('MAN-025', 'chatgpt', 'Privacy policy discloses categories, purposes, recipients, retention, user controls; covers every user field tools return', O_GUIDE),
   m('MAN-026', 'chatgpt', "Reviewer test account: works externally, no MFA/SMS/magic link, doesn't expire, seeded data", [O_SUBMIT, O_GUIDE], 'oauth'),
   m('MAN-027', 'chatgpt', "Be ready to justify each tool's three hints (`justification_required` may still appear)", O_ERRORS),
