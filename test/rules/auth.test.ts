@@ -222,6 +222,38 @@ describe('AUTH rules', () => {
     expect(f[0].message).toMatch(/CERT_HAS_EXPIRED/);
   });
 
+  it('AUTH-010 (B6/B7): a TLS timeout after retries is inconclusive; the MCP host itself is left to SRV-001', () => {
+    const f = evaluate(byId('AUTH-010'), authSnap({ set: (s) => {
+      s.transport.tls = [
+        { host: 'mcp.acme.test', role: 'mcp', ok: false, code: 'DEPTH_ZERO_SELF_SIGNED_CERT' },
+        { host: 'auth.acme.test', role: 'as', ok: false, code: 'ETIMEDOUT', attempts: ['ETIMEDOUT', 'ETIMEDOUT', 'ETIMEDOUT'], transient: true },
+      ];
+    } }));
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('info');
+    expect(f[0].message).toBe('inconclusive (network): TLS handshake with auth.acme.test did not complete: ETIMEDOUT (attempts: ETIMEDOUT, ETIMEDOUT, ETIMEDOUT)');
+  });
+
+  it('AUTH-016 (B6): an invalid-token probe that keeps answering 503 is inconclusive', () => {
+    const f = evaluate(byId('AUTH-016'), authSnap({ probe: { invalidToken: exchange({ status: 503 }) } }));
+    expect(f[0]).toMatchObject({ severity: 'info', message: 'inconclusive (network): invalid bearer token got 503 after retries' });
+  });
+
+  it('AUTH-007 (B6): lists every attempt; a definitive 404 everywhere stays an error', () => {
+    const s = authSnap({ set: (x) => {
+      const as = x.authProbe!.as[0];
+      as.json = undefined;
+      as.attempts = [
+        exchange({ url: `${ISSUER}/.well-known/oauth-authorization-server`, status: 503 }),
+        exchange({ url: `${ISSUER}/.well-known/oauth-authorization-server`, status: 404 }),
+        exchange({ url: `${ISSUER}/.well-known/openid-configuration`, status: 404 }),
+      ];
+    } });
+    const f = evaluate(byId('AUTH-007'), s);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].message).toMatch(/oauth-authorization-server: 503, 404; .*openid-configuration: 404\)$/);
+  });
+
   it('local loopback AS over http is accepted', () => {
     const local = 'http://127.0.0.1:4000';
     const s = authSnap({ url: `${local}/mcp`, as: { issuer: local, authorization_endpoint: `${local}/authorize`, token_endpoint: `${local}/token`, registration_endpoint: `${local}/register` }, prm: { authorization_servers: [local] }, set: (x) => { x.localMode = true; x.authProbe!.as[0].issuer = local; } });

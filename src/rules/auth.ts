@@ -3,6 +3,7 @@ import type { AsObservation, Platform, Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, isStrArray, type Obj } from './util/access.js';
 import { displayUrl, isLoopbackHost, isSecretQueryParam } from './util/net.js';
+import { describeAttempts, endedTransient, INCONCLUSIVE, isTransient } from './util/obs.js';
 import { parseWwwAuthenticate } from './util/wwwAuth.js';
 
 const CLAUDE_AUTH = 'https://claude.com/docs/connectors/building/authentication';
@@ -129,7 +130,9 @@ export const AUTH_004 = defineRule(
   (snap) => {
     const a = snap.authProbe!;
     if (!a.prm) {
-      const message = `no Protected Resource Metadata found (tried ${a.prmAttempts.map((e) => e.url).join(', ') || 'nothing'})`;
+      const message = `no Protected Resource Metadata found (tried ${describeAttempts(a.prmAttempts) || 'nothing'})`;
+      // A candidate that kept timing out or answering 5xx/429 may still hold the metadata: not a verdict.
+      if (endedTransient(a.prmAttempts)) return [{ severity: 'info', message: `${INCONCLUSIVE}: ${message}` }];
       if (!a.legacyDiscovery) return [{ message }];
       return [
         { platforms: ['chatgpt', 'spec'], message },
@@ -216,8 +219,12 @@ export const AUTH_007 = defineRule(
     fix: 'Serve /.well-known/oauth-authorization-server (or openid-configuration) for the issuer.',
     sources: [AS_DISCOVERY],
   },
-  (snap) => (snap.authProbe?.as ?? []).slice(0, 3).flatMap((as, i): RawFinding[] =>
-    as.json ? [] : [{ platforms: i === 0 ? undefined : ['chatgpt'], message: `no authorization server metadata for ${as.issuer} (tried ${as.attempts.map((e) => e.url).join(', ')})` }]),
+  (snap) => (snap.authProbe?.as ?? []).slice(0, 3).flatMap((as, i): RawFinding[] => {
+    if (as.json) return [];
+    const message = `no authorization server metadata for ${as.issuer} (tried ${describeAttempts(as.attempts) || 'nothing'})`;
+    const platforms: Platform[] | undefined = i === 0 ? undefined : ['chatgpt'];
+    return [endedTransient(as.attempts) ? { platforms, severity: 'info', message: `${INCONCLUSIVE}: ${message}` } : { platforms, message }];
+  }),
 );
 
 function sameOriginOnlyIssuer(a: string, b: string): boolean {
@@ -277,7 +284,15 @@ export const AUTH_010 = defineRule(
   },
   (snap) => {
     const out = forEachAs(snap, (_as, m) => ENDPOINT_KEYS.filter((k) => isStr(m[k]) && !httpsOrLocal(snap, m[k] as string)).map((k) => ({ message: `${k} ${String(m[k])} is not https` })));
-    for (const t of snap.transport.tls ?? []) if (!t.ok) out.push({ message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}` });
+    // The MCP host's own certificate is SRV-001 (it runs without a 401).
+    const mcpHost = snap.target.kind === 'http' ? snap.target.url.host : undefined;
+    for (const t of snap.transport.tls ?? []) {
+      if (t.ok || (t.role ? t.role !== 'as' : t.host === mcpHost)) continue;
+      const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
+      out.push(t.transient
+        ? { severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }
+        : { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}` });
+    }
     if (snap.env?.nodeExtraCaCerts) out.push({ severity: 'info', message: 'NODE_EXTRA_CA_CERTS is set; certificate checks may pass here but fail for hosts' });
     return out;
   },
@@ -399,6 +414,7 @@ export const AUTH_016 = defineRule(
   (snap) => {
     const ex = snap.authProbe?.invalidToken;
     if (!ex?.status) return [];
+    if (isTransient(ex)) return [{ severity: 'info', message: `${INCONCLUSIVE}: invalid bearer token got ${ex.status} after retries` }];
     if (ex.status !== 401) return [{ message: `invalid bearer token got ${ex.status}, expected 401` }];
     const ch = parseWwwAuthenticate(ex.headers?.['www-authenticate']).find((c) => c.scheme === 'bearer');
     return ch?.params.resource_metadata ? [] : [{ severity: 'warning', message: '401 for an invalid token lacks a WWW-Authenticate resource_metadata' }];

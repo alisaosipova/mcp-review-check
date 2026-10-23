@@ -56,5 +56,52 @@ export function probeRpc(snap: Snapshot, name: WireProbeName): RpcView | undefin
   return rpcView(snap.transport.probes[name]);
 }
 
+// ---------- transient failures (retried probes) ----------
+
+const TRANSIENT_CODES = new Set([
+  'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ECONNABORTED', 'ESOCKETTIMEDOUT',
+  'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CLOSED',
+]);
+/** A network-level code that says nothing about the server's configuration (timeouts, resets, temporary DNS). */
+export function isTransientCode(code: string | number | undefined): boolean {
+  return TRANSIENT_CODES.has(String(code ?? ''));
+}
+
+export const timedOut = (ex: HttpExchange) => ex.error?.name === 'AbortError' || ex.error?.name === 'TimeoutError' || /timed? ?out/i.test(String(ex.error?.causeCode ?? ''));
+
+/** A failure worth retrying: timeout, reset, 429, or a 5xx other than 501/505. */
+export function isTransient(ex: HttpExchange): boolean {
+  if (ex.error) return timedOut(ex) || isTransientCode(ex.error.causeCode ?? ex.error.code);
+  return ex.status === 429 || (ex.status !== undefined && ex.status >= 500 && ex.status !== 501 && ex.status !== 505);
+}
+
+/** "503, 503, ETIMEDOUT": one status (or error code) per attempt. */
+export function attemptStatus(ex: HttpExchange): string {
+  if (ex.status !== undefined) return String(ex.status);
+  if (timedOut(ex)) return 'timeout';
+  return String(ex.error?.causeCode ?? ex.error?.code ?? ex.error?.name ?? 'error');
+}
+
+/** Attempts grouped by URL in request order (retries of one URL are consecutive). */
+export function attemptsByUrl(attempts: HttpExchange[]): Array<{ url: string; attempts: HttpExchange[] }> {
+  const out: Array<{ url: string; attempts: HttpExchange[] }> = [];
+  for (const e of attempts) {
+    const g = out[out.length - 1];
+    if (g && g.url === e.url) g.attempts.push(e);
+    else out.push({ url: e.url, attempts: [e] });
+  }
+  return out;
+}
+
+/** "https://a/x: 503, 503, timeout; https://a/y: 404". */
+export function describeAttempts(attempts: HttpExchange[]): string {
+  return attemptsByUrl(attempts).map((g) => `${g.url}: ${g.attempts.map(attemptStatus).join(', ')}`).join('; ');
+}
+
+/** Some URL's final attempt failed transiently: its absence is not established. */
+export function endedTransient(attempts: HttpExchange[]): boolean {
+  return attemptsByUrl(attempts).some((g) => isTransient(g.attempts[g.attempts.length - 1]));
+}
+
 export const INCONCLUSIVE = 'inconclusive (network)';
 

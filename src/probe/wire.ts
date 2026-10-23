@@ -16,6 +16,8 @@ export interface WireContext {
   now: () => number;
   client?: Client; // legacy SDK client (any transport)
   modern?: ModernClient; // when era is modern or dual
+  /** Wait between retries of the HTTP probes (tests inject a no-op). */
+  sleep?: (ms: number) => Promise<void>;
   http?: {
     tracer: Tracer;
     url: URL;
@@ -68,8 +70,8 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     if (modernOnly) {
       p.delete = (await tracer.request('delete', url, { method: 'DELETE', headers: { ...authHeaders }, timeoutMs })).exchange;
     }
-    if (snap.transport.kind !== 'sse') Object.assign(p, await originProbes(tracer, url, authHeaders, modernOnly, timeoutMs));
-    p.challenge = await challengeProbe(tracer, url, timeoutMs);
+    if (snap.transport.kind !== 'sse') Object.assign(p, await originProbes(tracer, url, authHeaders, modernOnly, timeoutMs, ctx.sleep));
+    p.challenge = await challengeProbe(tracer, url, timeoutMs, ctx.sleep);
   }
   return p;
 }

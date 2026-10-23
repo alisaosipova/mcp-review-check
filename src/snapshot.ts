@@ -76,6 +76,17 @@ export interface DnsResult {
   code?: string;
 }
 
+export interface TlsObservation {
+  host: string;
+  ok: boolean;
+  code?: string;
+  /** 'mcp': the server URL itself (SRV-001); 'as': an OAuth host (AUTH-010). */
+  role?: 'mcp' | 'as';
+  attempts?: string[];
+  /** Every attempt failed with a timeout or reset: inconclusive, not a certificate verdict. */
+  transient?: boolean;
+}
+
 /** Why an HTTP handshake failed (B7): the network cause or "not an MCP endpoint", with a hint. */
 export interface ConnectDiagnosis {
   kind: 'dns' | 'refused' | 'timeout' | 'reset' | 'tls' | 'not-mcp' | 'http' | 'other';
@@ -147,7 +158,7 @@ export interface Snapshot {
     exchanges: HttpExchange[];
     preflight?: HttpExchange;
     dns?: DnsResult;
-    tls?: Array<{ host: string; ok: boolean; code?: string }>;
+    tls?: TlsObservation[];
     probes: Partial<Record<WireProbeName, ProbeObservation>>;
     timings: Record<string, number[]>;
     sessionId?: string;

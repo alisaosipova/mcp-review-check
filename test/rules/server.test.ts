@@ -193,4 +193,17 @@ describe('SRV rules', () => {
     const servfail = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...nx, error: 'queryA ESERVFAIL', code: 'ESERVFAIL' }; } }));
     expect(servfail[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^inconclusive \(network\): DNS lookup/) });
   });
+
+  it('SRV-001 (B7): the MCP host certificate is checked without auth; timeouts are inconclusive', () => {
+    const tls = (t: Record<string, unknown>) => snap({ url: URL_OK, set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, ...t }]; } });
+    const self = evaluate(byId('SRV-001'), tls({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }));
+    expect(self[0]).toMatchObject({ severity: 'error', message: expect.stringMatching(/TLS handshake with mcp\.acme\.test failed: DEPTH_ZERO_SELF_SIGNED_CERT/) });
+    const slow = evaluate(byId('SRV-001'), tls({ code: 'ETIMEDOUT', transient: true, attempts: ['ETIMEDOUT', 'ETIMEDOUT', 'ETIMEDOUT'] }));
+    expect(slow[0].severity).toBe('info');
+    expect(slow[0].message).toMatch(/^inconclusive \(network\)/);
+    expect(evaluate(byId('SRV-001'), snap({ url: URL_OK, set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: true }]; } }))).toEqual([]);
+    // a host that does not resolve or refuses the connection says nothing about its certificate
+    expect(evaluate(byId('SRV-001'), tls({ code: 'ENOTFOUND' }))).toEqual([]);
+    expect(evaluate(byId('SRV-001'), tls({ code: 'ECONNREFUSED' }))).toEqual([]);
+  });
 });

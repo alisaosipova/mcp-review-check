@@ -28,6 +28,8 @@ First public release, planned as 0.1.0.
 
 #### Severity raised
 
+- SRV-001 checks the MCP server's own TLS certificate, also when the server does not answer 401 (it was only reported by AUTH-010 on OAuth servers): an untrusted certificate is an error. AUTH-010 now covers the authorization server hosts only.
+
 #### Severity lowered / false positives fixed
 
 - SRV-013: a problem in both `initialize` and `server/discover` is reported once, naming both; an empty `serverInfo.version` is a warning (missing stays an error).
@@ -39,6 +41,7 @@ First public release, planned as 0.1.0.
 ### Changed
 
 - The exit code follows `--target`: each finding counts at its Claude or ChatGPT severity for the chosen directories (`all` = both), and MCP spec findings count only with the new `--fail-on-spec` flag. Previously a spec-only error (for example SPEC-004) failed `--target claude`. The `Result:` line, the `--output` summary line and JSON `summary.gate` name the findings that failed the run, and a pass notes spec findings that were not counted. A run that could not connect (exit 3) reads `Result: FAIL (could not connect)`, never `PASS`.
+- Timeouts, connection resets, 5xx and 429 (with `Retry-After` up to 5 s) are retried (at most 3 attempts, a timeout only once) in the preflight, Origin, challenge, OAuth metadata, invalid-token and TLS probes. Probes that still fail only for network reasons give `inconclusive (network)` info findings in AUTH-004, AUTH-007, AUTH-010, AUTH-016 and SRV-001 instead of errors, and AUTH-004 and AUTH-007 list the status of every attempt.
 - Requires Node 20.19 or newer. The development dependencies moved to vitest 4 and `@types/node` 20, and `npm audit` reports no known vulnerabilities.
 - The version in `--version`, the report header, JSON `tool.version` and the `clientInfo` sent to the server is read from `package.json` (one place).
 - In `--stdio "<command>"`, a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. Use quotes (or the `--` form) for arguments with spaces.

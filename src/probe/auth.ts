@@ -4,7 +4,7 @@ import type { AsObservation, AuthProbe, HttpExchange } from '../snapshot.js';
 import type { Tracer } from '../protocol/trace.js';
 import { isObj, isStr } from '../rules/util/access.js';
 import { parseWwwAuthenticate } from '../rules/util/wwwAuth.js';
-import { initializeBody, JSON_HEADERS, lookupHost, type Deps } from './network.js';
+import { initializeBody, JSON_HEADERS, lookupHost, requestRetried, requestWithRetry, type Deps } from './network.js';
 
 export interface AuthProbeInput {
   tracer: Tracer;
@@ -46,6 +46,13 @@ async function get(tracer: Tracer, label: string, url: string, timeoutMs: number
   return (await tracer.request(label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs })).exchange;
 }
 
+/** A metadata GET retried on timeouts, resets, 5xx and 429: every attempt, the last one being the result. */
+function getRetried(input: AuthProbeInput, label: string, url: string): Promise<HttpExchange[]> {
+  return requestWithRetry(input.tracer, label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs: input.timeoutMs }, input.deps.sleep);
+}
+
+const last = <T>(xs: T[]): T => xs[xs.length - 1];
+
 async function sample(tracer: Tracer, label: string, url: string, first: number, timeoutMs: number): Promise<number[]> {
   const xs = [first];
   for (let i = 0; i < 2; i++) xs.push((await get(tracer, `${label} (timing)`, url, timeoutMs)).durationMs);
@@ -67,8 +74,9 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
 
   // PRM discovery
   for (const cand of prmCandidates(url, bearer?.params.resource_metadata)) {
-    const ex = await get(tracer, `auth prm ${cand.via}`, cand.url, timeoutMs);
-    probe.prmAttempts.push(ex);
+    const tries = await getRetried(input, `auth prm ${cand.via}`, cand.url);
+    probe.prmAttempts.push(...tries);
+    const ex = last(tries);
     if (isJsonObject(ex)) {
       probe.prm = { url: cand.url, via: cand.via, json: ex.json as Record<string, unknown>, contentType: ex.contentType };
       probe.timings['protected resource metadata'] = await sample(tracer, 'auth prm', cand.url, ex.durationMs, timeoutMs);
@@ -79,10 +87,11 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
   // Legacy (2025-03-26) fallback, as the MCP SDK client does: without PRM the MCP origin acts as the authorization server.
   if (!probe.prm) {
     const legacyUrl = `${url.origin}/.well-known/oauth-authorization-server`;
-    const ex = await get(tracer, 'auth as-metadata (legacy origin)', legacyUrl, timeoutMs);
+    const tries = await getRetried(input, 'auth as-metadata (legacy origin)', legacyUrl);
+    const ex = last(tries);
     if (isJsonObject(ex)) {
       probe.legacyDiscovery = true;
-      probe.as.push({ issuer: url.origin, attempts: [ex], discoveryUrl: legacyUrl, json: ex.json as Record<string, unknown> });
+      probe.as.push({ issuer: url.origin, attempts: tries, discoveryUrl: legacyUrl, json: ex.json as Record<string, unknown> });
       probe.timings['authorization server metadata'] = await sample(tracer, 'auth as-metadata', legacyUrl, ex.durationMs, timeoutMs);
     }
   }
@@ -95,8 +104,9 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
     let urls: string[];
     try { urls = asDiscoveryUrls(issuer); } catch { continue; }
     for (const u of urls) {
-      const ex = await get(tracer, `auth as-metadata #${i + 1}`, u, timeoutMs);
-      as.attempts.push(ex);
+      const tries = await getRetried(input, `auth as-metadata #${i + 1}`, u);
+      as.attempts.push(...tries);
+      const ex = last(tries);
       if (isJsonObject(ex)) {
         as.discoveryUrl = u;
         as.json = ex.json as Record<string, unknown>;
@@ -107,9 +117,9 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
   }
 
   // Invalid token
-  probe.invalidToken = (await tracer.request('auth invalid-token', url, {
+  probe.invalidToken = await requestRetried(tracer, 'auth invalid-token', url, {
     method: 'POST', headers: { ...JSON_HEADERS, authorization: 'Bearer mcp-review-check-invalid-token' }, body: JSON.stringify(initializeBody()), timeoutMs,
-  })).exchange;
+  }, input.deps.sleep);
 
   // DNS and TLS for the authorization server
   const tlsHosts = new Map<string, TlsHost>();

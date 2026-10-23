@@ -17,6 +17,9 @@ export interface AuthServerOptions {
   clientCredentialsOnly?: boolean;
   invalidToken200?: boolean;
   delayMs?: number;
+  /** The first N requests for AS metadata (and for the PRM) answer 503 with Retry-After: 0 (B6: transient failures). */
+  asFailures?: number;
+  prmFailures?: number;
   /** Token accepted at /mcp; requests carrying it are bridged to `mcp`. */
   validToken?: string;
   mcp?: () => { connect(t: never): Promise<void> };
@@ -31,6 +34,8 @@ export async function startAuthServer(opts: AuthServerOptions = {}): Promise<Sta
   let base = '';
   const bridge = opts.mcp ? createBridgeHandler(opts.mcp as never) : undefined;
   const delay = () => new Promise((r) => setTimeout(r, opts.delayMs ?? 0));
+  const failures = { as: opts.asFailures ?? 0, prm: opts.prmFailures ?? 0 };
+  const unavailable = (res: ServerResponse) => json(res, 503, { error: 'temporarily_unavailable' }, { 'retry-after': '0' });
 
   const handler = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', base);
@@ -43,6 +48,7 @@ export async function startAuthServer(opts: AuthServerOptions = {}): Promise<Sta
       return json(res, 401, { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized' } }, headers);
     }
     if (url.pathname === '/.well-known/oauth-protected-resource/mcp' && !opts.legacyOnly) {
+      if (failures.prm > 0) { failures.prm--; return unavailable(res); }
       await delay();
       return json(res, 200, {
         resource: `${base}/mcp${opts.resourceTrailingSlash ? '/' : ''}`,
@@ -52,6 +58,7 @@ export async function startAuthServer(opts: AuthServerOptions = {}): Promise<Sta
       });
     }
     if (url.pathname === '/.well-known/oauth-authorization-server') {
+      if (failures.as > 0) { failures.as--; return unavailable(res); }
       await delay();
       const meta: Record<string, unknown> = {
         issuer: opts.issuerMismatch ? `${issuer}/tenant` : opts.issuerTrailingSlash ? `${issuer}/` : issuer,

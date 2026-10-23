@@ -4,7 +4,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt } from './snapshot.js';
+import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeHttpFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
@@ -13,7 +13,7 @@ import { RecordingTransport } from './protocol/recording.js';
 import { createTracer, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
-import { defaultDeps, lookupHost, preflight, type Deps } from './probe/network.js';
+import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
 import { runWireProbes } from './probe/wire.js';
 import { buildRedactor } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
@@ -250,15 +250,6 @@ function collectErrors(tracer: Tracer | undefined, rec: RecordingTransport | und
   return out;
 }
 
-/** TLS check that strips IPv6 brackets ([2001:db8::1]) and never throws. */
-async function safeTlsCheck(deps: Deps, hostname: string, port: number): Promise<{ ok: boolean; code?: string }> {
-  try {
-    return await deps.tlsCheck(hostname.replace(/^\[|\]$/g, ''), port);
-  } catch (e) {
-    return { ok: false, code: (e as { code?: string }).code ?? (e as Error).message };
-  }
-}
-
 async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
   const url = new URL(urlAsEntered);
   const timeoutMs = opts.timeoutMs ?? 30000;
@@ -271,11 +262,12 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
 
   snap.localMode = isLoopbackHost(url.hostname);
   snap.transport.dns = await lookupHost(url.hostname, deps);
-  const tls: NonNullable<Snapshot['transport']['tls']> = [];
-  if (url.protocol === 'https:') tls.push({ host: url.host, ...(await safeTlsCheck(deps, url.hostname, Number(url.port || 443))) });
+  const tls: TlsObservation[] = [];
+  snap.transport.tls = tls;
+  if (url.protocol === 'https:') tls.push({ host: url.host, role: 'mcp', ...(await tlsCheckWithRetry(deps, url.hostname, Number(url.port || 443))) });
 
   // 1. preflight
-  const pf = await preflight(tracer, url, connectTimeout);
+  const pf = await preflight(tracer, url, connectTimeout, deps.sleep);
   snap.transport.preflight = pf;
   let trigger: AuthProbe['trigger'] | undefined = pf.status === 401 ? 'preflight-401' : pf.status === 403 && pf.headers?.['www-authenticate'] ? 'preflight-403' : undefined;
 
@@ -313,9 +305,8 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     const challengeExchange = pf.status === 401 || pf.status === 403 ? pf : [...tracer.exchanges].reverse().find((e) => e.status === 401) ?? pf;
     const { probe, tlsHosts } = await runAuthProbe({ tracer, url, trigger, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
     snap.authProbe = probe;
-    for (const h of tlsHosts) tls.push({ host: h.host, ...(await safeTlsCheck(deps, h.hostname, h.port)) });
+    for (const h of tlsHosts) tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port)) });
   }
-  snap.transport.tls = tls;
 
   const connected = conn.ok || snap.era === 'modern';
   if (!connected && !authFailed) {
@@ -339,7 +330,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     snap.transport.probes = {
       ...snap.transport.probes,
       ...(await runWireProbes({
-        snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined,
+        snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
         http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion },
       })),
     };

@@ -1,6 +1,10 @@
-// B7 connection diagnostics: pure helpers.
+// B6 retries and B7 connection diagnostics: pure helpers.
 import { describe, expect, it } from 'vitest';
 import { describeCause, describeHttpFailure, networkCause, schemeSuggestion, suggestedEndpoint } from '../src/diagnose.js';
+import { requestWithRetry, retryDelayMs, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
+import type { Tracer } from '../src/protocol/trace.js';
+import { attemptStatus, describeAttempts, endedTransient, isTransient } from '../src/rules/util/obs.js';
+import { exchange } from './helpers.js';
 
 const U = new URL('https://mcp.acme.test/');
 
@@ -45,5 +49,66 @@ describe('connection diagnostics (B7)', () => {
     expect(schemeSuggestion('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
     expect(schemeSuggestion('https://a.test/mcp')).toBeUndefined();
     expect(schemeSuggestion('justaword')).toBeUndefined();
+  });
+});
+
+describe('transient failures and retries (B6)', () => {
+  it('classifies timeouts, resets, 5xx and 429 as transient; 4xx, 501 and TLS errors are not', () => {
+    expect(isTransient(exchange({ error: { name: 'AbortError', message: 'aborted' } }))).toBe(true);
+    expect(isTransient(exchange({ error: { name: 'TypeError', causeCode: 'ECONNRESET', message: 'fetch failed' } }))).toBe(true);
+    expect(isTransient(exchange({ status: 503 }))).toBe(true);
+    expect(isTransient(exchange({ status: 429 }))).toBe(true);
+    expect(isTransient(exchange({ status: 404 }))).toBe(false);
+    expect(isTransient(exchange({ status: 501 }))).toBe(false);
+    expect(isTransient(exchange({ error: { name: 'TypeError', causeCode: 'CERT_HAS_EXPIRED', message: 'fetch failed' } }))).toBe(false);
+    expect(attemptStatus(exchange({ error: { name: 'AbortError', message: 'x' } }))).toBe('timeout');
+  });
+
+  it('retryDelayMs honours Retry-After (seconds or date, capped at 5 s) and backs off otherwise', () => {
+    expect(retryDelayMs(exchange({ status: 429, headers: { 'retry-after': '2' } }), 0)).toBe(2000);
+    expect(retryDelayMs(exchange({ status: 429, headers: { 'retry-after': '120' } }), 0)).toBe(5000);
+    expect(retryDelayMs(exchange({ status: 503, headers: { 'retry-after': new Date(10_000).toUTCString() } }), 0, 9_000)).toBe(1000);
+    expect([0, 1].map((i) => retryDelayMs(exchange({ status: 503 }), i))).toEqual([250, 750]);
+  });
+
+  const fakeTracer = (statuses: Array<number | 'timeout'>) => {
+    const labels: string[] = [];
+    const tracer = {
+      request: async (label: string) => {
+        labels.push(label);
+        const s = statuses.shift()!;
+        return { exchange: s === 'timeout' ? exchange({ label, error: { name: 'AbortError', message: 'aborted' } }) : exchange({ label, status: s }) };
+      },
+    } as unknown as Tracer;
+    return { tracer, labels };
+  };
+  const noWait = async () => {};
+
+  it('requestWithRetry: up to 3 attempts on 5xx, one retry after a timeout, none on a definitive answer', async () => {
+    const a = fakeTracer([503, 502, 200]);
+    expect((await requestWithRetry(a.tracer, 'p', 'https://x', {}, noWait)).map((e) => e.status)).toEqual([503, 502, 200]);
+    expect(a.labels).toEqual(['p', 'p (retry 1)', 'p (retry 2)']);
+    expect((await requestWithRetry(fakeTracer([503, 503, 503, 200]).tracer, 'p', 'https://x', {}, noWait))).toHaveLength(3);
+    expect((await requestWithRetry(fakeTracer(['timeout', 'timeout', 200]).tracer, 'p', 'https://x', {}, noWait))).toHaveLength(2);
+    expect((await requestWithRetry(fakeTracer([404, 200]).tracer, 'p', 'https://x', {}, noWait))).toHaveLength(1);
+  });
+
+  it('describeAttempts / endedTransient group attempts by URL', () => {
+    const xs = [exchange({ url: 'https://a/x', status: 503 }), exchange({ url: 'https://a/x', status: 503 }), exchange({ url: 'https://a/y', status: 404 })];
+    expect(describeAttempts(xs)).toBe('https://a/x: 503, 503; https://a/y: 404');
+    expect(endedTransient(xs)).toBe(true);
+    expect(endedTransient([exchange({ url: 'https://a/x', status: 503 }), exchange({ url: 'https://a/x', status: 404 })])).toBe(false);
+  });
+
+  it('tlsCheckWithRetry retries timeouts and resets, not certificate errors', async () => {
+    const deps = (codes: Array<string | undefined>): Deps => ({
+      resolve4: async () => [], resolve6: async () => [], now: () => 0, sleep: async () => {},
+      tlsCheck: async () => { const c = codes.shift(); return c ? { ok: false, code: c } : { ok: true }; },
+    });
+    expect(await tlsCheckWithRetry(deps(['ETIMEDOUT', undefined]), 'h', 443)).toEqual({ ok: true, attempts: ['ETIMEDOUT', 'ok'] });
+    expect(await tlsCheckWithRetry(deps(['ECONNRESET', 'ECONNRESET', 'ETIMEDOUT']), 'h', 443)).toEqual({ ok: false, code: 'ETIMEDOUT', attempts: ['ECONNRESET', 'ECONNRESET', 'ETIMEDOUT'], transient: true });
+    expect(await tlsCheckWithRetry(deps(['ETIMEDOUT', 'ETIMEDOUT', undefined]), 'h', 443)).toEqual({ ok: false, code: 'ETIMEDOUT', attempts: ['ETIMEDOUT', 'ETIMEDOUT'], transient: true });
+    expect(await tlsCheckWithRetry(deps(['CERT_HAS_EXPIRED']), 'h', 443)).toEqual({ ok: false, code: 'CERT_HAS_EXPIRED' });
+    expect(await tlsCheckWithRetry(deps([]), '[::1]', 443)).toEqual({ ok: true });
   });
 });

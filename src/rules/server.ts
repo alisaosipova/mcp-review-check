@@ -19,7 +19,7 @@ function localize(snap: Snapshot, f: RawFinding): RawFinding {
 export const SRV_001 = defineRule(
   {
     id: 'SRV-001', title: 'Remote server served over HTTPS', severity: { claude: 'error', chatgpt: 'error' }, needs: ['http'],
-    rationale: 'Both directories accept only https:// URLs.',
+    rationale: 'Both directories accept only https:// URLs, and hosts reject certificates that are not publicly trusted.',
     fix: 'Deploy behind TLS with a publicly trusted certificate.',
     sources: [SUBMISSION, OAI_MCP],
   },
@@ -27,7 +27,15 @@ export const SRV_001 = defineRule(
     if (snap.target.kind !== 'http') return [];
     let proto: string;
     try { proto = new URL(snap.target.urlAsEntered).protocol; } catch { proto = snap.target.url.protocol; }
-    return proto === 'https:' ? [] : [localize(snap, { message: `URL uses ${proto.replace(':', '')}, not https` })];
+    if (proto !== 'https:') return [localize(snap, { message: `URL uses ${proto.replace(':', '')}, not https` })];
+    // The MCP host's certificate (checked even when the server does not ask for auth).
+    const host = snap.target.url.host;
+    const t = (snap.transport.tls ?? []).find((x) => (x.role ? x.role === 'mcp' : x.host === host));
+    // A plain network error (ENOTFOUND, ECONNREFUSED, ...) is not a certificate verdict: SRV-003/SRV-004 report it.
+    if (!t || t.ok || (/^E[A-Z_]+$/.test(t.code ?? '') && t.code !== 'EPROTO' && !t.transient)) return [];
+    const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
+    if (t.transient) return [{ severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }];
+    return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}; hosts reject this certificate` })];
   },
 );
 
