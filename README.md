@@ -82,7 +82,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--tool-args <file>` | | JSON `{ "toolName": { ...args } }` for `--active`. Otherwise arguments are synthesized from the schema. |
 | `--stdio "<command>"`, `--stdio -- <command> [args...]` | | Launch a local server over stdio. The string form splits on whitespace and honours single and double quotes; a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. The `--` form passes every argument verbatim (no quoting rules) and must come last. |
 | `--env K=V`, `--cwd <dir>` | | stdio only. `--env` values are redacted in every output format (see Redaction below). |
-| `--ignore <RULE-ID>` | | Repeatable. Ignored findings stay visible in JSON under `ignored`. |
+| `--ignore <RULE-ID>` | | Repeatable, any case. Ignored findings stay visible in JSON under `ignored`. An ID that is neither a rule nor a `MAN` item is a usage error (exit 2), so a typo does not silently ignore nothing. |
 | `--list-rules [prefix]` | | Prints the catalog and exits: `--format text` (default; with `--verbose`, each rule's rationale), `json` or `markdown` (the table below). A prefix such as `TOOL` or `MAN` keeps the IDs that start with it. |
 | `explain <RULE-ID>` | | Prints a rule's severity per directory, rationale, sources and fix, and how to `--ignore` it; also takes `MAN` IDs. An unknown ID exits 2. |
 | `--quiet` | off | Text only: prints just the error and warning findings, the Score and Result lines and the disclaimer. A failed connect or missing auth is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
@@ -95,7 +95,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
 | 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`) |
-| 2 | Usage or configuration error, or `--output` could not be written |
+| 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID), or `--output` could not be written |
 | 3 | Could not reach the server or complete any handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist) |
 
 The exit code follows `--target`: a finding counts at the severity it has for Claude or ChatGPT, so a check for the Claude directory does not fail on a ChatGPT-only error or on an MCP spec error the directory does not check. Spec findings fail the run only with `--fail-on-spec`. The `Result:` line (and the `--output` summary line, and `summary.gate` in JSON) names what failed the run, for example `Result: FAIL (--fail-on error) · claude: 2 errors (TOOL-006, TOOL-011)`; on a pass it notes spec findings that were not counted. A run that could not connect (exit 3) reads `Result: FAIL (could not connect)`, never `PASS`.

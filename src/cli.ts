@@ -46,7 +46,7 @@ Options:
   --tool-args <file>      JSON {toolName: args} for --active calls.
   --env K=V               Environment variable for --stdio (repeatable). Values are redacted in output.
   --cwd <dir>             Working directory for --stdio.
-  --ignore <RULE-ID>      Ignore a rule (repeatable).
+  --ignore <RULE-ID>      Ignore a rule (repeatable); an ID that is not a rule or MAN item is a usage error.
   --list-rules [prefix]   Print the rule catalog (--format text, json or markdown; IDs starting with prefix) and exit.
   --no-color              Disable colors (also off when not a TTY or NO_COLOR is set).
   --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
@@ -54,6 +54,13 @@ Options:
   --checklist             Text only: print the manual checklist in full (default: one line with the item count).
   -h, --help              Show this help.
   -v, --version           Show the version.
+
+Examples:
+  mcp-review-check https://mcp.example.com/mcp --target claude
+  mcp-review-check --env API_BASE=http://localhost:4000 --stdio -- node dist/server.js
+  mcp-review-check https://staging.example.com/mcp --format markdown --output report.md
+  mcp-review-check explain TOOL-011
+  mcp-review-check --list-rules TOOL --format json
 
 --stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash outside quotes is literal
 (Windows paths work); the "-- <command> [args...]" form passes arguments verbatim, with options before --.
@@ -68,6 +75,33 @@ No telemetry is sent. Passing these checks does not guarantee directory approval
 `;
 
 class UsageError extends Error {}
+
+const OPTIONS = {
+  stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
+  target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
+  timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
+  active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
+  env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
+  'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
+  quiet: { type: 'boolean' }, checklist: { type: 'boolean' }, local: { type: 'boolean' }, 'no-local': { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
+} as const;
+
+/** The known option nearest to an unknown one (Levenshtein distance at most 2), for "did you mean" (R-41). */
+function closestOption(name: string): string | undefined {
+  let best: string | undefined;
+  let bestDistance = 3;
+  for (const option of Object.keys(OPTIONS).map((k) => `--${k}`)) {
+    let prev = Array.from({ length: option.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= name.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= option.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (name[i - 1] === option[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    if (prev[option.length] < bestDistance) [best, bestDistance] = [option, prev[option.length]];
+  }
+  return best;
+}
 
 /** Largest --timeout: 2^31-1 ms (the setTimeout limit) minus the 1000 ms margin used in withTimeout. */
 export const MAX_TIMEOUT_MS = 2 ** 31 - 1 - 1000;
@@ -108,17 +142,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
   try {
     const split = splitStdioArgv(argv);
     const { values, positionals } = parseArgs({
-      args: split.args, allowPositionals: true, strict: true,
-      options: {
-        stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
-        target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
-        timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
-        active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
-        env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
-        'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
-        quiet: { type: 'boolean' }, checklist: { type: 'boolean' }, local: { type: 'boolean' }, 'no-local': { type: 'boolean' },
-        help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
-      },
+      args: split.args, allowPositionals: true, strict: true, options: OPTIONS,
     });
     if (values.help) return { code: 0, stdout: HELP, stderr };
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
@@ -160,6 +184,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
 
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
+    const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
+    const unknownId = values.ignore?.find((id) => !known.has(id.toUpperCase()));
+    if (unknownId !== undefined) throw new UsageError(`--ignore ${/^[a-z]+-\d+$/i.test(unknownId) ? unknownId : 'value'} is not a rule or MAN ID; --list-rules prints the catalog`);
     const headers: Record<string, string> = {};
     for (const h of values.header ?? []) { const [k, v] = parseHeader(h); headers[k] = v; }
     const bearer = values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;
@@ -242,7 +269,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     return { code, stdout: body, stderr };
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
-      return { code: 2, stdout: '', stderr: `${stderr}error: ${(e as Error).message}\nRun with --help for usage.\n` };
+      // parseArgs names an unknown option without its "=value"; the rest of its message is not repeated.
+      const unknown = (e as { code?: string }).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION' ? /'(-[^'=]*)/.exec((e as Error).message)?.[1] : undefined;
+      const near = unknown && closestOption(unknown);
+      const message = unknown ? `unknown option ${unknown}${near ? `; did you mean ${near}?` : ''}` : (e as Error).message;
+      return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
     }
     const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\n`;
     return { code: 3, stdout: '', stderr: redactor ? scrub(fatal, redactor) : fatal };

@@ -1,8 +1,10 @@
-// Rule explainability (W1-4): `explain <ID>` (R-38), --list-rules formats, prefix filter and the rationale in
-// reports (R-39). Black-box: the built CLI (cli()); the catalog is read from src/rules/index.ts.
+// Rule explainability and CLI hygiene (W1-4): `explain <ID>` (R-38), --list-rules formats, prefix filter and the
+// rationale in reports (R-39), --ignore checked against the catalog (R-40), "did you mean" and --help examples (R-41).
+// Black-box: the built CLI (cli()) and runCli in process; the catalog is read from src/rules/index.ts.
 import { describe, expect, it } from 'vitest';
+import { runCli } from '../src/cli.js';
 import { MANUAL_ITEMS, RULES } from '../src/rules/index.js';
-import { BAD, cli } from './cli-runner.js';
+import { BAD, cli, GOOD } from './cli-runner.js';
 
 const rule = (id: string) => RULES.find((r) => r.id === id)!;
 /** Catalog lines of the text listing (the header line starts with "ID"). */
@@ -97,5 +99,47 @@ describe('R-39: --list-rules formats and filter, rationale in reports', () => {
       expect(badMd.stdout, id).toContain(why.replace(/\|/g, '\\|'));
       expect(badText.stdout, id).not.toContain(why);
     }
+  });
+});
+
+describe('R-40: --ignore is checked against the catalog', () => {
+  it('R-40: --ignore with an unknown ID exits 2; MAN IDs are accepted', async () => {
+    const unknown = await cli(['--stdio', GOOD, '--ignore', 'TOOL-011', '--ignore', 'TOOL-999']);
+    expect(unknown.code).toBe(2);
+    expect(unknown.stdout).toBe('');
+    expect(unknown.stderr).toMatch(/TOOL-999/);
+    expect(unknown.stderr).not.toMatch(/TOOL-011/);
+    // checked before connecting: an unreachable URL still gives the usage error, not exit 3
+    expect((await cli(['http://localhost:1/mcp', '--ignore', 'NOPE-1'])).code).toBe(2);
+    const man = await cli(['--stdio', GOOD, '--ignore', 'MAN-024', '--ignore', 'tool-011']);
+    expect(man.code, man.stderr).toBe(0);
+    expect(man.stderr).not.toMatch(/error:/);
+  });
+});
+
+describe('R-41: did you mean, --help examples', () => {
+  it('R-41: an unknown option suggests the closest one; --help has examples', async () => {
+    const typo = await runCli(['--formt', 'json', '--stdio', 'node x.mjs']);
+    expect(typo.code).toBe(2);
+    expect(typo.stdout).toBe('');
+    expect(typo.stderr).toMatch(/unknown option --formt; did you mean --format\?/i);
+    expect(typo.stderr).not.toMatch(/To specify a positional argument/);
+    expect((await runCli(['--verbos', '--list-rules'])).stderr).toMatch(/did you mean --verbose\?/);
+    expect((await runCli(['--no-colr', '--list-rules'])).stderr).toMatch(/did you mean --no-color\?/);
+    // nothing close: no suggestion; the value after "=" is never shown (it may be a credential)
+    const far = await runCli(['--zzzzzzzz=s3cr3t-value-123', '--list-rules']);
+    expect(far.code).toBe(2);
+    expect(far.stderr).toMatch(/unknown option --zzzzzzzz/i);
+    expect(far.stderr).not.toMatch(/did you mean/);
+    expect(far.stderr).not.toContain('s3cr3t-value-123');
+
+    const help = await cli(['--help']);
+    expect(help.code).toBe(0);
+    const examples = help.stdout.split(/^Examples:$/m)[1];
+    expect(examples, 'an "Examples:" section').toBeDefined();
+    expect(examples).toMatch(/^ {2}mcp-review-check https:\/\/\S+/m);
+    expect(examples).toMatch(/^ {2}mcp-review-check .*--stdio -- node /m);
+    expect(examples).toMatch(/^ {2}mcp-review-check explain TOOL-011$/m);
+    expect(examples).toMatch(/^ {2}mcp-review-check --list-rules \S+ --format json$/m);
   });
 });
