@@ -52,6 +52,9 @@ npx mcp-review-check https://mcp.example.com/mcp --bearer "$TOKEN" --active --to
 
 # CI: fail on warnings too
 npx mcp-review-check https://staging.example.com/mcp --fail-on warning
+
+# CI: gate on the Claude directory and on MCP spec conformance
+npx mcp-review-check https://staging.example.com/mcp --target claude --fail-on-spec
 ```
 
 This version is not published to npm yet. From a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`.
@@ -62,11 +65,12 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 |---|---|---|
 | `--header "K: V"` | | Repeatable. Values are redacted in every output format. |
 | `--bearer <token>` | `$MCP_REVIEW_CHECK_TOKEN` | Sent as `Authorization: Bearer`. Prefer the env var to keep tokens out of shell history. |
-| `--target claude\|chatgpt\|all` | `all` | `spec` rules always run. |
+| `--target claude\|chatgpt\|all` | `all` | `spec` rules always run and are reported; the exit code counts only the chosen directories (see [Exit codes](#exit-codes)). |
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
 | `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 240000)`. RT-005's 60 s and 240 s Claude thresholds need a larger `--timeout`; a call that gets no answer is reported by RT-005 as a warning. The GET probe uses 5 s and the TLS check 10 s. |
-| `--fail-on error\|warning\|never` | `error` | Controls exit code 1. |
+| `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
+| `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
 | `--active` | off | Runs the RT rules by calling read-only tools. |
 | `--active-auth` | off | Probes DCR, `/authorize` and `/token`. **Creates a DCR client** on your authorization server. |
 | `--tool-args <file>` | | JSON `{ "toolName": { ...args } }` for `--active`. Otherwise arguments are synthesized from the schema. |
@@ -81,9 +85,11 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | Code | Meaning |
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
-| 1 | Completed, threshold reached |
+| 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`) |
 | 2 | Usage or configuration error, or `--output` could not be written |
 | 3 | Could not reach the server or complete any handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist) |
+
+The exit code follows `--target`: a finding counts at the severity it has for Claude or ChatGPT, so a check for the Claude directory does not fail on a ChatGPT-only error or on an MCP spec error the directory does not check. Spec findings fail the run only with `--fail-on-spec`. The `Result:` line (and the `--output` summary line, and `summary.gate` in JSON) names what failed the run, for example `Result: FAIL (--fail-on error) · claude: 2 errors (TOOL-006, TOOL-011)`; on a pass it notes spec findings that were not counted. A run that could not connect (exit 3) reads `Result: FAIL (could not connect)`, never `PASS`.
 
 A `401` without `--bearer` is not fatal: the auth probe runs and the report says which checks need a token.
 
@@ -114,7 +120,7 @@ WARNINGS (2)
   ...
 
 Score 20/100 · 6 errors · 2 warnings · 4 info
-Claude: BLOCKED (6 errors) · ChatGPT: NO AUTOMATED BLOCKERS · Result: FAIL (--fail-on error)
+Claude: BLOCKED (6 errors) · ChatGPT: NO AUTOMATED BLOCKERS · Result: FAIL (--fail-on error) · claude: 6 errors (TOOL-006, TOOL-011, ...)
 ```
 
 The score (`100 − 12·errors − 4·warnings`, at most 3 penalized findings per rule) is provisional. Per-platform verdicts are `BLOCKED`, `NEEDS ATTENTION` or `NO AUTOMATED BLOCKERS`. When tool-level checks cannot run (OAuth without `--bearer`, a failed connect or a failed `tools/list`), the score is `n/a` and a verdict without errors is `INCOMPLETE`, never a pass.

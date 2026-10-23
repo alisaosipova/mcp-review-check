@@ -1,7 +1,7 @@
 // Markdown report (§5.3).
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, ctaLine, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
-import { authSummary, counts, eraLine, platformLabel, scoreLabel, serverName, targetLabel, type Report } from './index.js';
+import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
@@ -25,7 +25,7 @@ export function renderMarkdown(r: Report): string {
   out.push(`| Findings | ${s.errors} errors · ${s.warnings} warnings · ${s.info} info |`);
   if (s.verdicts.claude) out.push(`| Claude | ${s.verdicts.claude.verdict} |`);
   if (s.verdicts.chatgpt) out.push(`| ChatGPT | ${s.verdicts.chatgpt.verdict} |`);
-  out.push(`| Result | ${s.failed ? 'FAIL' : 'PASS'} (--fail-on ${r.failOn}) |`, '');
+  out.push(`| Result | ${cell(resultLine(r))} |`, '');
 
   for (const sev of ['error', 'warning', 'info'] as Severity[]) {
     const list = r.findings.filter((f) => f.severity === sev);

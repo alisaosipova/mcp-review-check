@@ -2,7 +2,7 @@
 import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, ctaLine, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
-import { authSummary, counts, eraLine, platformLabel, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
+import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
 
 export interface TextOptions {
   color: boolean;
@@ -91,7 +91,7 @@ export function renderText(r: Report, opts: TextOptions): string {
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
-  out.push([...verdicts, `Result: ${s.failed ? c('red', 'FAIL') : 'PASS'} (--fail-on ${r.failOn})`].join(' · '));
+  out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x))}`].join(' · '));
   out.push('', DISCLAIMER);
   const cta = ctaLine();
   if (cta) out.push('', cta);

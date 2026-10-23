@@ -7,7 +7,7 @@ import { buildSnapshot, redactorFor, type BuildOptions, type TargetSpec } from '
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
-import { buildReport, scoreLabel, type Report } from './report/index.js';
+import { buildReport, resultLine, scoreLabel, type Report } from './report/index.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif } from './report/sarif.js';
@@ -33,7 +33,8 @@ Options:
   --format <f>            text | json | markdown | sarif (default: text)
   --output <file>         Write the report to a file; print a summary line to stderr.
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
-  --fail-on <level>       error | warning | never (default: error)
+  --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
+  --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
   --active-auth           Probe DCR, /authorize and /token. CREATES A DCR CLIENT on your authorization server.
   --tool-args <file>      JSON {toolName: args} for --active calls.
@@ -52,6 +53,8 @@ Secrets are redacted in every format: --bearer, --header and --env values, URL c
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
 Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect.
+The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
+findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
 The score (100 - 12/error - 4/warning, max 3 per rule) is provisional.
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
@@ -111,7 +114,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       options: {
         stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
         target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
-        timeout: { type: 'string', default: '30000' }, 'fail-on': { type: 'string', default: 'error' },
+        timeout: { type: 'string', default: '30000' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
         active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
         env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
         'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -191,7 +194,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const snap = { ...redactDeep(observed, redactor), target: observed.target };
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
-    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap), failOn, started, performance.now() - t0);
+    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
 
@@ -204,7 +207,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     const code = snap.fatal ? 3 : report.summary.failed ? 1 : 0;
     const s = report.summary;
-    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info · ${s.failed ? 'FAIL' : 'PASS'}`;
+    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info · ${resultLine(report)}`;
     if (values.output) {
       try {
         writeFileSync(values.output, body);

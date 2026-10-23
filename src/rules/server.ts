@@ -274,6 +274,16 @@ export const SRV_012 = defineRule(
   },
 );
 
+/** serverInfo problems as "<field> <problem>" keys; an empty version string is a warning, a missing one an error. */
+export function serverInfoProblems(si: unknown): Array<{ key: string; severity?: 'warning' }> {
+  if (!isObj(si)) return [{ key: 'is not an object' }];
+  const out: Array<{ key: string; severity?: 'warning' }> = [];
+  if (!isNonEmptyStr(si.name)) out.push({ key: '.name is not a non-empty string' });
+  if (si.version === '' || (isStr(si.version) && !si.version.trim())) out.push({ key: '.version is an empty string', severity: 'warning' });
+  else if (!isStr(si.version)) out.push({ key: '.version is missing or not a string' });
+  return out;
+}
+
 export const SRV_013 = defineRule(
   {
     id: 'SRV-013', title: 'serverInfo present with name and version', severity: { spec: 'error' }, needs: [],
@@ -283,20 +293,27 @@ export const SRV_013 = defineRule(
   },
   (snap) => {
     const out: RawFinding[] = [];
+    // The same problem in initialize and server/discover is one finding naming both sources.
+    const seen = new Map<string, { where: string[]; severity?: 'warning' }>();
     const check = (si: unknown, where: string) => {
-      if (!isObj(si)) return out.push({ message: `${where} is not an object` });
-      for (const k of ['name', 'version']) if (!isNonEmptyStr(si[k])) out.push({ message: `${where}.${k} is not a non-empty string` });
-      return 0;
+      for (const p of serverInfoProblems(si)) {
+        const prev = seen.get(p.key);
+        if (prev) prev.where.push(where);
+        else seen.set(p.key, { where: [where], severity: p.severity });
+      }
     };
     if (isObj(snap.initializeRaw)) {
       if (snap.initializeRaw.serverInfo === undefined) out.push({ message: 'initialize result has no serverInfo' });
-      else check(snap.initializeRaw.serverInfo, 'serverInfo');
+      else check(snap.initializeRaw.serverInfo, 'initialize');
     }
     if ((snap.era === 'modern' || snap.era === 'dual') && isObj(snap.discoverRaw)) {
       const meta = isObj(snap.discoverRaw._meta) ? snap.discoverRaw._meta : {};
       const si = meta['io.modelcontextprotocol/serverInfo'];
       if (si === undefined) out.push({ severity: 'warning', message: 'server/discover result has no _meta["io.modelcontextprotocol/serverInfo"]' });
-      else check(si, 'server/discover serverInfo');
+      else check(si, 'server/discover');
+    }
+    for (const [key, v] of seen) {
+      out.push({ severity: v.severity, message: `serverInfo${key} (${v.where.join(' and ')})${v.severity ? '; set the server version' : ''}` });
     }
     return out;
   },

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
 const GOOD_PATH = fileURLToPath(new URL('./fixtures/good-server.mjs', import.meta.url));
+const LEAKY = `node ${fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url))}`;
 const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 /** Snapshot of the rule IDs the BAD fixture must trigger (frozen; update deliberately). */
@@ -151,7 +152,7 @@ describe('e2e stdio', () => {
       const r = await cli(['--stdio', GOOD, '--format', 'markdown', '--output', out]);
       expect(r.code).toBe(0);
       expect(r.stdout).toBe('');
-      expect(r.stderr).toMatch(/score 100\/100 .* PASS · report written to/);
+      expect(r.stderr).toMatch(/score 100\/100 .* PASS \(--fail-on error\) · report written to/);
       expect(existsSync(out)).toBe(true);
       expect(readFileSync(out, 'utf8')).toMatch(/^# Acme Notes 1\.4\.2/);
     } finally {
@@ -203,6 +204,44 @@ describe('e2e stdio', () => {
     expect(r.json.manual).toEqual([]); // no manual checklist when nothing connected
   });
 
+  it('R-12: a stdio server that cannot start never reads PASS (text, markdown, --output summary line)', async () => {
+    const DEAD = 'node -e "process.exit(1)"';
+    const text = await cli(['--stdio', DEAD, '--no-color']);
+    expect(text.code).toBe(3);
+    expect(text.stdout).toMatch(/Result: FAIL\b/);
+    expect(text.stdout).not.toMatch(/Result: PASS/);
+    const md = await cli(['--stdio', DEAD, '--format', 'markdown']);
+    expect(md.code).toBe(3);
+    expect(md.stdout).toMatch(/\| Result \| FAIL\b/);
+    expect(md.stdout).not.toMatch(/\| Result \| PASS/);
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-r12-'));
+    try {
+      const out = await cli(['--stdio', DEAD, '--output', join(dir, 'report.txt')]);
+      expect(out.code).toBe(3);
+      const summary = out.stderr.split('\n').find((l) => l.startsWith('mcp-review-check: score'));
+      expect(summary).toMatch(/ · FAIL\b/);
+      expect(summary).not.toMatch(/PASS/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exit code follows --target (B5): a spec-only error passes unless --fail-on-spec, and the Result line says why', async () => {
+    // leaky-server writes a log line to stdout: SRV-018, a spec-only error. Nothing fails Claude or ChatGPT.
+    for (const target of ['claude', 'chatgpt', 'all']) {
+      const r = await cli(['--stdio', LEAKY, '--target', target, '--no-color']);
+      expect(r.code, target).toBe(0);
+      expect(r.stdout).toContain('Result: PASS (--fail-on error) · spec: 1 error (SRV-018) not gated; add --fail-on-spec to fail on spec findings');
+    }
+    const strict = await cli(['--stdio', LEAKY, '--target', 'claude', '--fail-on-spec', '--format', 'json']);
+    expect(strict.code).toBe(1);
+    expect(strict.json.summary).toMatchObject({ failed: true, gate: { platforms: ['claude', 'spec'], reason: 'spec: 1 error (SRV-018)', notGated: null } });
+    // the BAD server fails on its directory findings, and the reason names them
+    const bad = await cli(['--stdio', BAD, '--target', 'claude', '--no-color']);
+    expect(bad.code).toBe(1);
+    expect(bad.stdout).toMatch(/Result: FAIL \(--fail-on error\) · claude: \d+ errors \((INJ|TOOL|DATA|APPS)-\d+/);
+  });
+
   it('--list-rules, --help and --version exit 0', async () => {
     const list = await cli(['--list-rules']);
     expect(list.code).toBe(0);
@@ -211,5 +250,6 @@ describe('e2e stdio', () => {
     expect((await cli(['--help'])).stdout).toMatch(/provisional/);
     expect((await cli(['--version'])).stdout.trim()).toBe(PKG_VERSION);
     expect((await cli(['--help'])).stdout).toMatch(/--stdio -- <command>/);
+    expect((await cli(['--help'])).stdout).toMatch(/--fail-on-spec {10}Also fail on MCP spec findings/);
   });
 });

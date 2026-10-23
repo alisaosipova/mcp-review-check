@@ -121,6 +121,28 @@ describe('SRV rules', () => {
     expect(f[0].severity).toBe('info');
   });
 
+  it('SRV-013 reports a problem shared by initialize and server/discover once; an empty version is a warning', () => {
+    // Kiwi: serverInfo { name, version: "" } in both initialize and the server/discover _meta.
+    const kiwi = snap({ set: (s) => {
+      s.era = 'dual';
+      s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'kiwicom-flight-search', version: '' } };
+      s.discoverRaw = { supportedVersions: ['2026-07-28'], capabilities: {}, _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'kiwicom-flight-search', version: '' } } };
+    } });
+    const f = evaluate(byId('SRV-013'), kiwi);
+    expect(f).toHaveLength(1);
+    expect(f[0]).toMatchObject({ severity: 'warning', message: expect.stringMatching(/version is an empty string \(initialize and server\/discover\)/) });
+    // a missing version or name stays an error
+    const missing = evaluate(byId('SRV-013'), snap({ set: (s) => { s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'acme' } }; } }));
+    expect(missing).toMatchObject([{ severity: 'error', message: expect.stringMatching(/version is missing/) }]);
+    // different problems in the two places stay separate
+    const mixed = evaluate(byId('SRV-013'), snap({ set: (s) => {
+      s.era = 'dual';
+      s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: '', version: '1' } };
+      s.discoverRaw = { supportedVersions: ['2026-07-28'], capabilities: {}, _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'acme', version: '' } } };
+    } }));
+    expect(mixed.map((x) => x.message).sort()).toEqual(['serverInfo.name is not a non-empty string (initialize)', 'serverInfo.version is an empty string (server/discover); set the server version']);
+  });
+
   it('SRV-013 modern: missing serverInfo meta is a warning', () => {
     const f = evaluate(byId('SRV-013'), snap({ set: (s) => { s.era = 'modern'; s.initializeRaw = undefined; s.discoverRaw = { supportedVersions: ['2026-07-28'], capabilities: {} }; } }));
     expect(f[0].severity).toBe('warning');

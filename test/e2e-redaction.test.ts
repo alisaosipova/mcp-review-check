@@ -50,8 +50,8 @@ describe('secret redaction (stdio)', () => {
     for (const crash of [false, true]) {
       const r = await run(format, crash);
       expectNoLeak(r, STDIO_SECRETS, `${format}${crash ? ' --crash' : ''}`);
-      // Without --crash the exit code depends on how spec-only findings count (B5); a crash is always exit 3.
-      if (crash) expect(r.code).toBe(3);
+      // SRV-018 (stdout noise) is spec-only, so it does not fail the run without --fail-on-spec (B5).
+      expect(r.code).toBe(crash ? 3 : 0);
     }
   });
 
@@ -69,7 +69,7 @@ describe('secret redaction (stdio)', () => {
     for (const crash of [false, true]) {
       const r = await cli(['--stdio', `${CAMEL_CMD}${crash ? ' --crash' : ''}`, '--format', format, '--verbose']);
       expectNoLeak(r, [CAMEL, CAMEL_EQ, DASHED], `${format}${crash ? ' --crash' : ''} (camelCase)`);
-      if (crash) expect(r.code).toBe(3);
+      expect(r.code).toBe(crash ? 3 : 0);
     }
   });
 

@@ -4,13 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { runRules } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
 import type { Finding } from '../src/rules/types.js';
-import { buildReport } from '../src/report/index.js';
+import { buildReport, resultLine } from '../src/report/index.js';
 import { contactUrl } from '../src/report/constants.js';
 import { targetLabel } from '../src/report/index.js';
 import { toJson } from '../src/report/json.js';
 import { renderMarkdown } from '../src/report/markdown.js';
 import { toSarif } from '../src/report/sarif.js';
-import { failed, score, verdict } from '../src/report/score.js';
+import { failed, gate, gatedPlatforms, score, verdict } from '../src/report/score.js';
 import { groupFindings, renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { loadSnapshot } from './helpers.js';
@@ -57,6 +57,67 @@ describe('score and verdicts', () => {
     expect(failed([f('A', 'warning')], 'error')).toBe(false);
     expect(failed([f('A', 'warning')], 'warning')).toBe(true);
     expect(failed([f('A', 'error')], 'never')).toBe(false);
+  });
+});
+
+describe('exit gating (B5)', () => {
+  // Hugging Face with --target claude: one spec-only error (SPEC-004) and Claude warnings.
+  const specErr = f('SPEC-004', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
+  const claudeWarn = f('INJ-006', 'warning', { platforms: ['claude'], severityByPlatform: { claude: 'warning' } });
+  const mixed = f('AUTH-016', 'error', { platforms: ['spec', 'chatgpt'], severityByPlatform: { spec: 'error', chatgpt: 'warning' } });
+
+  it('gated platforms follow --target; spec only with --fail-on-spec', () => {
+    expect(gatedPlatforms('claude')).toEqual(['claude']);
+    expect(gatedPlatforms('chatgpt')).toEqual(['chatgpt']);
+    expect(gatedPlatforms('all')).toEqual(['claude', 'chatgpt']);
+    expect(gatedPlatforms('all', true)).toEqual(['claude', 'chatgpt', 'spec']);
+  });
+
+  it('a spec-only error does not fail a Claude check, and the pass names it as not gated', () => {
+    const g = gate([specErr, claudeWarn], 'error', ['claude']);
+    expect(g).toEqual({ failed: false, platforms: ['claude'], reason: null, notGated: 'spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings' });
+    expect(gate([specErr, claudeWarn], 'error', ['claude', 'spec'])).toMatchObject({ failed: true, reason: 'spec: 1 error (SPEC-004)', notGated: null });
+  });
+
+  it('each platform counts at its own severity, and the reason lists counts and rule IDs', () => {
+    // AUTH-016 is a spec error but only a ChatGPT warning
+    expect(gate([mixed], 'error', ['chatgpt']).failed).toBe(false);
+    expect(gate([mixed], 'warning', ['chatgpt'])).toMatchObject({ failed: true, reason: 'chatgpt: 1 warning (AUTH-016)' });
+    const many = ['A', 'B', 'C', 'D', 'E', 'F'].map((id) => f(`R-${id}`, 'error', { platforms: ['claude', 'chatgpt'] }));
+    expect(gate([...many, claudeWarn], 'warning', ['claude', 'chatgpt']).reason).toBe('claude: 6 errors, 1 warning (R-A, R-B, R-C, R-D, R-E, +2 more); chatgpt: 6 errors (R-A, R-B, R-C, R-D, R-E, +1 more)');
+    expect(gate(many, 'never', ['claude'])).toMatchObject({ failed: false, reason: null, notGated: null });
+  });
+
+  it('the report and every format carry the gate: text, markdown and JSON', () => {
+    const s = loadSnapshot('minimal-http');
+    s.options.target = 'claude';
+    const base = report(s);
+    const r = { ...base, findings: [specErr, claudeWarn] };
+    r.summary = { ...base.summary, failed: false, gate: { platforms: ['claude'], reason: null, notGated: gate(r.findings, 'error', ['claude']).notGated } };
+    expect(resultLine(r)).toBe('PASS (--fail-on error) · spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings');
+    expect(renderText(r, { color: false, verbose: false })).toContain('Result: PASS (--fail-on error) · spec: 1 error (SPEC-004) not gated');
+    expect(renderMarkdown(r)).toContain('| Result | PASS (--fail-on error) · spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings |');
+    // buildReport: minimal-http has a Claude error (TOOL-011 on delete_invoice), named in the reason
+    const built = report(s);
+    expect(built.summary.failed).toBe(true);
+    expect(built.summary.gate.platforms).toEqual(['claude']);
+    expect(built.summary.gate.reason).toMatch(/^claude: \d+ errors? \(.*TOOL-011/);
+    expect(toJson(built).summary).toMatchObject({ failed: true, gate: { platforms: ['claude'], reason: expect.stringMatching(/TOOL-011/) } });
+    const withSpec = buildReport(s, runRules(s, RULES), [], 'error', new Date('2026-10-22T10:00:00Z'), 1, true);
+    expect(withSpec.summary.gate.platforms).toEqual(['claude', 'spec']);
+    expect(resultLine(withSpec)).toMatch(/^FAIL \(--fail-on error, --fail-on-spec\) · claude: /);
+  });
+
+  it('R-12: a failed connect (exit 3) reads FAIL (could not connect) in text and markdown, never PASS', () => {
+    // A connect failure is a spec-only SRV-003 error: the gate alone would call it a pass.
+    const s = loadSnapshot('minimal-http');
+    s.fatal = 'connect ECONNREFUSED 127.0.0.1:1';
+    const srv003 = f('SRV-003', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
+    const r = buildReport(s, { ...runRules(s, RULES), findings: [srv003] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
+    expect(r.summary.failed).toBe(false);
+    expect(resultLine(r)).toBe('FAIL (could not connect)');
+    expect(renderText(r, { color: false, verbose: false })).toMatch(/Result: FAIL \(could not connect\)\n/);
+    expect(renderMarkdown(r)).toContain('| Result | FAIL (could not connect) |');
   });
 });
 

@@ -1,4 +1,7 @@
 // End-to-end: the built CLI against in-process HTTP fixtures (bridge, legacy SSE, OAuth, 2026-07-28).
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startAuthServer } from './fixtures/auth-server.js';
 import { listen, startBridge, type BridgeOptions, type Started } from './fixtures/http-bridge.js';
@@ -181,6 +184,28 @@ describe('e2e http', () => {
     const text = await cli([url, '--timeout', '3000']);
     expect(text.stdout).toMatch(/Could not connect: connection refused by .*nothing is listening there/);
     expect(text.stdout).not.toMatch(/MANUAL CHECKLIST/);
+  });
+
+  it('R-12: a failed connect (http://localhost:1/mcp) never reads PASS (text, markdown, --output summary line)', async () => {
+    const URL1 = 'http://localhost:1/mcp';
+    const text = await cli([URL1, '--timeout', '3000', '--no-color']);
+    expect(text.code).toBe(3);
+    expect(text.stdout).toMatch(/Result: FAIL\b/);
+    expect(text.stdout).not.toMatch(/Result: PASS/);
+    const md = await cli([URL1, '--timeout', '3000', '--format', 'markdown']);
+    expect(md.code).toBe(3);
+    expect(md.stdout).toMatch(/\| Result \| FAIL\b/);
+    expect(md.stdout).not.toMatch(/\| Result \| PASS/);
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-r12-'));
+    try {
+      const out = await cli([URL1, '--timeout', '3000', '--output', join(dir, 'report.md'), '--format', 'markdown']);
+      expect(out.code).toBe(3);
+      const summary = out.stderr.split('\n').find((l) => l.startsWith('mcp-review-check: score'));
+      expect(summary).toMatch(/ · FAIL\b/);
+      expect(summary).not.toMatch(/PASS/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('B7: an HTML 404 page is "not an MCP endpoint" with a /mcp suggestion and no HTML in the report', async () => {
