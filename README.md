@@ -40,6 +40,8 @@ npx mcp-review-check https://mcp.example.com/mcp --header "X-Tenant: acme"
 
 # Local stdio server (spawned without a shell)
 npx mcp-review-check --stdio "node dist/server.js --port 0" --env API_BASE=http://localhost:4000
+# Same, with the command passed verbatim after `--` (options go before `--`)
+npx mcp-review-check --env API_BASE=http://localhost:4000 --stdio -- node dist/server.js --port 0
 
 # Only one directory, machine-readable output
 npx mcp-review-check https://mcp.example.com/mcp --target claude --format json
@@ -68,6 +70,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--active` | off | Runs the RT rules by calling read-only tools. |
 | `--active-auth` | off | Probes DCR, `/authorize` and `/token`. **Creates a DCR client** on your authorization server. |
 | `--tool-args <file>` | | JSON `{ "toolName": { ...args } }` for `--active`. Otherwise arguments are synthesized from the schema. |
+| `--stdio "<command>"`, `--stdio -- <command> [args...]` | | Launch a local server over stdio. The string form splits on whitespace and honours single and double quotes; a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. The `--` form passes every argument verbatim (no quoting rules) and must come last. |
 | `--env K=V`, `--cwd <dir>` | | stdio only. |
 | `--ignore <RULE-ID>` | | Repeatable. Ignored findings stay visible in JSON under `ignored`. |
 | `--list-rules` | | Prints the catalog and exits. |

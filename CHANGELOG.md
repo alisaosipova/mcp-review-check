@@ -16,6 +16,7 @@ First public release, planned as 0.1.0.
 - `npm pack` and `npm publish` build `dist/` themselves (`prepack`), so a package made from a clean clone ships a working `mcp-review-check` binary.
 - CI on Node 20.19, 22 and 24 on Linux, macOS and Windows (build, typecheck of sources and tests, tests, a packed-tarball smoke run), a release workflow that publishes a version tag to npm with provenance through trusted publishing (OIDC), and Dependabot updates for npm and GitHub Actions.
 - A stability policy in the README.
+- `--stdio -- <command> [args...]` passes the server command verbatim, without quoting rules.
 
 #### Rules added
 
@@ -29,3 +30,4 @@ First public release, planned as 0.1.0.
 
 - Requires Node 20.19 or newer. The development dependencies moved to vitest 4 and `@types/node` 20, and `npm audit` reports no known vulnerabilities.
 - The version in `--version`, the report header, JSON `tool.version` and the `clientInfo` sent to the server is read from `package.json` (one place).
+- In `--stdio "<command>"`, a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. Use quotes (or the `--` form) for arguments with spaces.

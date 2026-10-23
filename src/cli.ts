@@ -4,7 +4,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, type BuildOptions, type TargetSpec } from './connect.js';
-import { tokenizeCommand } from './protocol/stdioArgs.js';
+import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, scoreLabel, type Report } from './report/index.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
@@ -21,6 +21,7 @@ Lint an MCP server against the Claude connector directory, ChatGPT plugin direct
 Usage:
   mcp-review-check <url> [options]
   mcp-review-check --stdio "<command> [args...]" [options]
+  mcp-review-check [options] --stdio -- <command> [args...]
 
 Options:
   --header "K: V"         Extra request header (repeatable). Values are redacted in output.
@@ -41,6 +42,9 @@ Options:
   --verbose               Expand collapsed findings; print the redacted HTTP trace and stdio stderr.
   -h, --help              Show this help.
   -v, --version           Show the version.
+
+--stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash outside quotes is literal
+(Windows paths work); the "-- <command> [args...]" form passes arguments verbatim, with options before --.
 
 Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect.
 The score (100 - 12/error - 4/warning, max 3 per rule) is provisional.
@@ -89,8 +93,9 @@ function render(r: Report, format: string, color: boolean, verbose: boolean): st
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY): Promise<CliResult> {
   let stderr = '';
   try {
+    const split = splitStdioArgv(argv);
     const { values, positionals } = parseArgs({
-      args: argv, allowPositionals: true, strict: true,
+      args: split.args, allowPositionals: true, strict: true,
       options: {
         stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
         target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
@@ -105,8 +110,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
     if (values['list-rules']) return { code: 0, stdout: listRules(), stderr };
 
+    if (split.command && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
-    if ((positionals.length === 1) === (values.stdio !== undefined)) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
+    const isStdio = values.stdio !== undefined || split.command !== undefined;
+    if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
     const target = values.target as TargetOpt;
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
     const format = values.format!;
@@ -124,9 +131,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (bearer !== undefined && /[\r\n]/.test(bearer)) throw new UsageError('--bearer must not contain CR or LF');
 
     let spec: TargetSpec;
-    if (values.stdio !== undefined) {
+    if (isStdio) {
       let parts: string[];
-      try { parts = tokenizeCommand(values.stdio); } catch (e) { throw new UsageError(`--stdio: ${(e as Error).message}`); }
+      if (split.command) parts = split.command;
+      else try { parts = tokenizeCommand(values.stdio!); } catch (e) { throw new UsageError(`--stdio: ${(e as Error).message}`); }
       if (!parts.length) throw new UsageError('--stdio needs a command');
       const envVars: Record<string, string> = {};
       for (const kv of values.env ?? []) {

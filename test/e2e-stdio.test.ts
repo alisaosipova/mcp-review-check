@@ -2,10 +2,11 @@
 import { existsSync, readFileSync, rmSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BAD, cli, GOOD, nonInfo, ruleIds } from './cli-runner.js';
 
+const GOOD_PATH = fileURLToPath(new URL('./fixtures/good-server.mjs', import.meta.url));
 const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 /** Snapshot of the rule IDs the BAD fixture must trigger (frozen; update deliberately). */
@@ -155,6 +156,17 @@ describe('e2e stdio', () => {
     expect(quote.stderr).toMatch(/unterminated/);
     expect(quote.stderr).not.toMatch(/\n\s+at /); // no stack trace
     expect((await cli(['https://a.test/mcp', '--timeout', '3000000000'])).code).toBe(2);
+    const both = await cli(['--stdio', 'node x.js', '--stdio', '--', 'node', 'y.js']);
+    expect(both.code).toBe(2);
+    expect((await cli(['--stdio', '--'])).stderr).toMatch(/--stdio needs a command/);
+    expect((await cli(['https://a.test/mcp', '--stdio', '--', 'node', 'x.js'])).code).toBe(2);
+  });
+
+  it('--stdio -- <command> [args...]: argv after -- is passed verbatim, options go before --', async () => {
+    const r = await cli(['--format', 'json', '--stdio', '--', process.execPath, GOOD_PATH]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.json.server.serverInfo.name).toBe('acme-notes');
+    expect(r.json.server.command).toBe(`${process.execPath} ${GOOD_PATH}`);
   });
 
   it('unwritable --output: exit 2 with a clear message, report printed instead', async () => {
@@ -183,5 +195,6 @@ describe('e2e stdio', () => {
     expect(list.stdout).toContain('MAN-031');
     expect((await cli(['--help'])).stdout).toMatch(/provisional/);
     expect((await cli(['--version'])).stdout.trim()).toBe(PKG_VERSION);
+    expect((await cli(['--help'])).stdout).toMatch(/--stdio -- <command>/);
   });
 });

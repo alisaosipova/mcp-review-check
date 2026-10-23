@@ -1,6 +1,6 @@
 import { extractWWWAuthenticateParams } from '@modelcontextprotocol/sdk/client/auth.js';
 import { describe, expect, it } from 'vitest';
-import { tokenizeCommand } from '../src/protocol/stdioArgs.js';
+import { splitStdioArgv, tokenizeCommand } from '../src/protocol/stdioArgs.js';
 import { parseSseMessages, createRedactor, redactUrl, scrub } from '../src/protocol/trace.js';
 import { asDiscoveryUrls, prmCandidates } from '../src/probe/auth.js';
 import { cleanErrorMessage, stderrSummary } from '../src/connect.js';
@@ -111,9 +111,24 @@ describe('discovery URL construction', () => {
 });
 
 describe('protocol helpers', () => {
-  it('tokenizeCommand handles quotes and escapes', () => {
-    expect(tokenizeCommand(`node "my server.js" --name 'a b' c\\ d`)).toEqual(['node', 'my server.js', '--name', 'a b', 'c d']);
+  it('tokenizeCommand handles quotes and escapes inside double quotes', () => {
+    expect(tokenizeCommand(`node "my server.js" --name 'a b' "say \\"hi\\""`)).toEqual(['node', 'my server.js', '--name', 'a b', 'say "hi"']);
     expect(() => tokenizeCommand('node "oops')).toThrow(/unterminated/);
+  });
+  it('tokenizeCommand keeps backslashes outside quotes literal (Windows paths)', () => {
+    expect(tokenizeCommand('node C:\\Users\\me\\server\\index.js --flag')).toEqual(['node', 'C:\\Users\\me\\server\\index.js', '--flag']);
+    expect(tokenizeCommand('node \\\\host\\share\\s.js')).toEqual(['node', '\\\\host\\share\\s.js']);
+    expect(tokenizeCommand('"C:\\Program Files\\nodejs\\node.exe" D:\\srv\\a.js')).toEqual(['C:\\Program Files\\nodejs\\node.exe', 'D:\\srv\\a.js']);
+    expect(tokenizeCommand('node a\\ b')).toEqual(['node', 'a\\', 'b']);
+  });
+  it('splitStdioArgv takes the command after `--stdio --` verbatim', () => {
+    expect(splitStdioArgv(['--format', 'json', '--stdio', '--', 'node', 'my server.js', '--port', '0'])).toEqual({ args: ['--format', 'json'], command: ['node', 'my server.js', '--port', '0'] });
+    expect(splitStdioArgv(['--stdio', '--verbose', '--', 'node', 's.js'])).toEqual({ args: ['--verbose'], command: ['node', 's.js'] });
+    expect(splitStdioArgv(['--stdio', '--'])).toEqual({ args: [], command: [] });
+    // --stdio with its own value, or no --stdio at all: argv is untouched.
+    expect(splitStdioArgv(['--stdio', 'node s.js', '--', 'x'])).toEqual({ args: ['--stdio', 'node s.js', '--', 'x'] });
+    expect(splitStdioArgv(['https://a.test/mcp', '--', 'x'])).toEqual({ args: ['https://a.test/mcp', '--', 'x'] });
+    expect(splitStdioArgv(['--stdio', 'node s.js'])).toEqual({ args: ['--stdio', 'node s.js'] });
   });
   it('parseSseMessages reads data lines', () => {
     expect(parseSseMessages('event: message\ndata: {"id":1}\n\ndata: {"id":2}\n\n')).toEqual([{ id: 1 }, { id: 2 }]);
