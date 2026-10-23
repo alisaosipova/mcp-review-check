@@ -11,16 +11,21 @@ const CLAUDE_REVIEW = 'https://claude.com/docs/connectors/building/review-criter
 export interface Pattern {
   re: RegExp;
   severity?: Severity;
+  /** Appended to the finding message (e.g. why a match is only informational). */
+  note?: string;
   /** INJ-007: skip when every referenced identifier is one of the server's own tools. */
   ownToolExempt?: boolean;
   /** Skip the match when this tests true on the matched text plus the next 40 characters. */
   unless?: RegExp;
+  /** Skip the match when this tests true on the matched text alone (e.g. the object between a verb and "the user"). */
+  unlessInMatch?: RegExp;
 }
 
 /** Run one pattern, honoring `unless`. */
 export function matchPattern(p: Pattern, text: string): RegExpExecArray | null {
   const m = p.re.exec(text);
   if (!m || (p.unless && p.unless.test(text.slice(m.index, m.index + m[0].length + 40)))) return null;
+  if (p.unlessInMatch?.test(m[0])) return null;
   return m;
 }
 
@@ -28,15 +33,21 @@ function finding(e: CorpusEntry, text: string, m: RegExpExecArray, extra: Partia
   return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"`, evidence: m[0].slice(0, 120), ...extra };
 }
 
-/** Run patterns over the NFKC-normalized corpus; one finding per entry and pattern. */
-export function scanCorpus(snap: Snapshot, patterns: Pattern[], filter?: (e: CorpusEntry, m: RegExpExecArray, p: Pattern) => boolean): RawFinding[] {
+/** Run patterns over the NFKC-normalized corpus; one finding per entry (the first matching pattern wins). */
+export function scanCorpus(
+  snap: Snapshot, patterns: Pattern[],
+  filter?: (e: CorpusEntry, m: RegExpExecArray, p: Pattern) => boolean,
+  decorate?: (e: CorpusEntry) => Partial<RawFinding>,
+): RawFinding[] {
   const out: RawFinding[] = [];
   for (const e of corpus(snap)) {
     const text = nfkc(e.text);
     for (const p of patterns) {
       const m = matchPattern(p, text);
       if (!m || (filter && !filter(e, m, p))) continue;
-      out.push(finding(e, text, m, p.severity ? { severity: p.severity } : {}));
+      const f = finding(e, text, m, { ...decorate?.(e), ...(p.severity ? { severity: p.severity } : {}) });
+      if (p.note) f.message += ` (${p.note})`;
+      out.push(f);
       break; // one finding per entry
     }
   }
@@ -134,6 +145,20 @@ export const INJ_003 = defineRule(
   },
 );
 
+/**
+ * A base64 run that decodes to mostly printable text. Decoded JSON (a pagination cursor, a JWT segment) is data,
+ * not a payload, unless it carries instruction-like text.
+ */
+export function encodedPayload(run: string): boolean {
+  const decoded = Buffer.from(run, 'base64').toString('latin1');
+  if (!decoded.length) return false;
+  const printable = [...decoded].filter((c) => c >= ' ' && c <= '~').length;
+  if (printable / decoded.length < 0.7) return false;
+  // Unpadded base64 may cut the last characters, so a JSON object or array prefix is enough.
+  if (/^\s*(\{\s*"|\[\s*[{"\d\]])/.test(decoded)) return INJ_005_PATTERNS.some((p) => matchPattern(p, decoded));
+  return true;
+}
+
 export const INJ_004 = defineRule(
   {
     id: 'INJ-004', title: 'Encoded payloads', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
@@ -147,9 +172,7 @@ export const INJ_004 = defineRule(
       const text = nfkc(e.text);
       let hit: RegExpExecArray | null = null;
       for (const m of text.matchAll(/[A-Za-z0-9+/]{40,}={0,2}/g)) {
-        const decoded = Buffer.from(m[0], 'base64').toString('latin1');
-        const printable = [...decoded].filter((c) => c >= ' ' && c <= '~').length;
-        if (decoded.length && printable / decoded.length >= 0.7) { hit = m as RegExpExecArray; break; }
+        if (encodedPayload(m[0])) { hit = m as RegExpExecArray; break; }
       }
       hit ??= /(\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|%[0-9a-f]{2}){8,}/i.exec(text);
       if (hit) out.push(finding(e, text, hit));
@@ -160,6 +183,8 @@ export const INJ_004 = defineRule(
 
 // Protecting the user's secrets is not hiding behavior ("Never reveal the user's password hash").
 const SECRET_OBJECT = /\b(passwords?|passphrases?|secrets?|tokens?|api[ _-]?keys?|keys?|credentials?|hash(es)?|pii|ssn|card numbers?)\b/i;
+// Neither is presentation guidance about raw data ("Never show raw note IDs to the user; show titles instead").
+const RAW_DATA_OBJECT = /\b(raw|ids?|identifiers?|uuids?|json|stack ?traces?|debug|error codes?|fields?|metadata|urls?|markup|html|markdown)\b/i;
 
 // Only explicit markers are errors (§1.2, C9): "ignore previous instructions", attacks on system/platform/safety
 // instructions, and "don't tell the user". Broader wording is a regex heuristic, so it is a warning.
@@ -168,7 +193,7 @@ export const INJ_005_PATTERNS: Pattern[] = [
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b((system|platform|host|assistant'?s?|model'?s?) (instructions|prompts?|rules|message|safeguards|guardrails)|safety (instructions|rules|guidelines|guardrails|filters|policies)|(your|all|any|previous|prior|earlier) instructions)\b/i },
   { re: /\b(do not|don't|never) (tell|inform|notify|alert) the user\b/i, unless: SECRET_OBJECT },
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b(instructions|system prompt|guardrails)\b/i, severity: 'warning' },
-  { re: /\b(do not|don't|never) (tell|inform|mention|reveal|show|disclose)[^.]{0,30}\b(the )?user\b/i, severity: 'warning', unless: SECRET_OBJECT },
+  { re: /\b(do not|don't|never) (tell|inform|mention|reveal|show|disclose)[^.]{0,30}\b(the )?user\b/i, severity: 'warning', unless: SECRET_OBJECT, unlessInMatch: RAW_DATA_OBJECT },
   { re: /\bwithout (asking|telling|confirming with) the user\b/i, severity: 'warning' },
   { re: /\b(you are now|from now on,? you)\b/i, severity: 'warning' },
   { re: /\b(system prompt|developer message)\b/i, severity: 'warning' },
@@ -184,21 +209,38 @@ export const INJ_005 = defineRule(
   (snap) => scanCorpus(snap, INJ_005_PATTERNS),
 );
 
+const SELF = String.raw`(this|these|our)(\s+(tool|skill|server|plugin|connector|app|resource|prompt|function)s?)?`;
+
 export const INJ_006_PATTERNS: Pattern[] = [
-  { re: /\b(do not|don't|never|avoid)\b[^.]{0,40}\b(use|call|invoke|trust)\b[^.]{0,40}\b(other|any other|another|competing|third[- ]party)\b[^.]{0,20}\b(tools?|servers?|connectors?|plugins?|apps?|mcp)/i },
+  // "Do NOT use it for other MCP servers" restricts this tool's own scope (Kiwi): the object after the verb must not be a self reference.
+  { re: /\b(do not|don't|never|avoid)\b[^.]{0,40}\b(use|call|invoke|trust)\b(?!\s+(it|this|me|these|them)\b)[^.]{0,40}\b(other|any other|another|competing|third[- ]party)\b[^.]{0,20}\b(tools?|servers?|connectors?|plugins?|apps?|mcp)/i },
   { re: /\b(instead of|rather than)\b[^.]{0,40}\b(other|built-?in|default|any)\b[^.]{0,20}(tools?|search|web|plugins?)/i },
   { re: /\bonly (use|call) this (tool|server|plugin)\b(?!\s+(when|if|for|to)\b)/i },
+  // "Always use this tool when/to/for ..." says when the tool applies (MS Learn, Hugging Face skills): informational.
+  { re: new RegExp(String.raw`\balways (use|call|prefer) ${SELF}(\s+first)?\s+(when(ever)?|if|for|to|before|after|whenever)\b`, 'i'), severity: 'info', note: 'conditional: fine when it describes when this applies' },
   { re: /\b(always (use|call|prefer) (this|these|our)\b|prefer (this|our) (tool|plugin|server)|better than|superior to|unlike (other|competitor))/i },
 ];
+
+/** The fix for the kind of object that was flagged: a tool, a skill (skill:// resource), another resource, a prompt or the instructions. */
+export function steeringFix(e: CorpusEntry): string {
+  if (e.where.startsWith('resource')) {
+    return e.subject?.startsWith('skill://')
+      ? 'Describe when this skill applies; do not tell the model to always load it or to avoid other tools.'
+      : 'Describe what this resource contains; do not tell the model to prefer it over other sources.';
+  }
+  if (e.where.startsWith('prompt')) return 'Describe what this prompt does; do not steer the model away from other tools.';
+  if (e.where === 'instructions') return 'Describe how your own tools work together; do not tell the model to avoid other tools or servers.';
+  return 'Describe when to use this tool without steering the model away from other tools.';
+}
 
 export const INJ_006 = defineRule(
   {
     id: 'INJ-006', title: 'Steering the model away from other tools', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
     rationale: 'Servers must not interfere with other tools or disparage competitors.',
-    fix: 'Describe when to use this tool without referring to other tools.',
+    fix: 'Describe when to use this tool without steering the model away from other tools.',
     sources: [CLAUDE_POLICY, OAI_GUIDE],
   },
-  (snap) => scanCorpus(snap, INJ_006_PATTERNS),
+  (snap) => scanCorpus(snap, INJ_006_PATTERNS, undefined, (e) => ({ fix: steeringFix(e) })),
 );
 
 export const INJ_007_PATTERNS: Pattern[] = [

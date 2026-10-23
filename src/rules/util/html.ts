@@ -95,9 +95,14 @@ export function originMatches(origin: string, entry: string): boolean {
   }
 }
 
-/** All href targets in the HTML (POL-004). */
+/** A URL built at runtime from a template: `${v}`, `{{v}}`, `<%= v %>` or a `$1` regex back-reference. */
+export function isTemplated(url: string): boolean {
+  return /\$\{|\{\{|<%|\$\d/.test(url);
+}
+
+/** All literal href targets in the HTML (POL-004); templated URLs are not real links and are skipped. */
 export function extractLinks(html: string): string[] {
-  return [...html.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+  return [...html.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]).filter((u) => !isTemplated(u));
 }
 
 /**

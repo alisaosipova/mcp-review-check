@@ -1,0 +1,97 @@
+{
+ "note": "Warning and error findings of the baseline rules on test/fixtures/real/ (U-15): [ruleId, severity, tool or resource].",
+ "commit": "d6100a9",
+ "target": "all",
+ "findings": {
+  "kiwi": [
+   ["INJ-006", "warning", "feedback-to-devs"],
+   ["SRV-013", "error", null]
+  ],
+  "huggingface": [
+   ["INJ-006", "warning", "skill://hf-cloud-aws-context-discovery/SKILL.md"],
+   ["INJ-006", "warning", "skill://huggingface-best/SKILL.md"]
+  ],
+  "mslearn": [
+   ["INJ-006", "warning", "microsoft_docs_search"],
+   ["TOOL-012", "error", "microsoft_code_sample_search"],
+   ["TOOL-012", "error", "microsoft_docs_fetch"],
+   ["TOOL-012", "error", "microsoft_docs_search"]
+  ],
+  "exa": [
+   ["TOOL-014", "warning", "web_search_exa"]
+  ],
+  "svelte": [
+   ["APPS-008", "warning", "ui://svelte/playground-link"],
+   ["APPS-012", "error", "ui://svelte/playground-link"],
+   ["APPS-014", "warning", "ui://svelte/playground-link"],
+   ["TOOL-014", "warning", "playground-link"],
+   ["TOOL-014", "warning", "svelte-autofixer"]
+  ],
+  "openzeppelin": [
+   ["APPS-005", "error", "ui://openzeppelin/solidity-account.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-custom.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-erc1155.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-erc20.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-erc721.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-governor.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-rwa.html"],
+   ["APPS-005", "error", "ui://openzeppelin/solidity-stablecoin.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-account.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-custom.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-erc1155.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-erc20.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-erc721.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-governor.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-rwa.html"],
+   ["APPS-012", "error", "ui://openzeppelin/solidity-stablecoin.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-account.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-custom.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-erc1155.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-erc20.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-erc721.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-governor.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-rwa.html"],
+   ["APPS-015", "warning", "ui://openzeppelin/solidity-stablecoin.html"],
+   ["APPS-018", "warning", "solidity-account"],
+   ["APPS-018", "warning", "solidity-custom"],
+   ["APPS-018", "warning", "solidity-erc1155"],
+   ["APPS-018", "warning", "solidity-erc20"],
+   ["APPS-018", "warning", "solidity-erc721"],
+   ["APPS-018", "warning", "solidity-governor"],
+   ["APPS-018", "warning", "solidity-rwa"],
+   ["APPS-018", "warning", "solidity-stablecoin"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-account.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-custom.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-erc1155.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-erc20.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-erc721.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-governor.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-rwa.html"],
+   ["POL-004", "warning", "ui://openzeppelin/solidity-stablecoin.html"],
+   ["TOOL-011", "error", "solidity-account"],
+   ["TOOL-011", "error", "solidity-custom"],
+   ["TOOL-011", "error", "solidity-erc1155"],
+   ["TOOL-011", "error", "solidity-erc20"],
+   ["TOOL-011", "error", "solidity-erc721"],
+   ["TOOL-011", "error", "solidity-governor"],
+   ["TOOL-011", "error", "solidity-rwa"],
+   ["TOOL-011", "error", "solidity-stablecoin"],
+   ["TOOL-012", "error", "solidity-account"],
+   ["TOOL-012", "error", "solidity-custom"],
+   ["TOOL-012", "error", "solidity-erc1155"],
+   ["TOOL-012", "error", "solidity-erc20"],
+   ["TOOL-012", "error", "solidity-erc721"],
+   ["TOOL-012", "error", "solidity-governor"],
+   ["TOOL-012", "error", "solidity-rwa"],
+   ["TOOL-012", "error", "solidity-stablecoin"]
+  ],
+  "aws-knowledge": [
+   ["TOOL-006", "error", "aws___get_regional_availability"],
+   ["TOOL-006", "error", "aws___list_regions"],
+   ["TOOL-006", "error", "aws___read_documentation"],
+   ["TOOL-006", "error", "aws___retrieve_skill"],
+   ["TOOL-006", "error", "aws___search_documentation"],
+   ["TOOL-015", "warning", "aws___read_documentation"]
+  ]
+ }
+}

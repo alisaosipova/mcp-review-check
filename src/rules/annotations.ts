@@ -74,6 +74,16 @@ export const TOOL_013 = defineRule(
 );
 
 const WRITE_DESC = /\b(creates?|updates?|deletes?|removes?|sends?|posts?|uploads?|writes?|saves?|submits?|schedules?|triggers?|enqueues?|persists?|modif(y|ies)|overwrites?|permanently)\b/i;
+
+/**
+ * Description text with quoted strings and example clauses removed: "blog post comparing React and Vue" in a query
+ * tip (Exa) or "e.g. create a note" describes input, not what the tool does.
+ */
+export function behaviorText(d: string): string {
+  return d
+    .replace(/"[^"\n]{0,300}"|“[^”\n]{0,300}”|`[^`\n]{0,300}`|(^|[\s(])'[^'\n]{0,300}'(?=[\s.,;:)!?]|$)/g, '$1 ')
+    .replace(/\b(e\.g\.|i\.e\.|for example|for instance|such as|like|examples?:)[^.;\n]{0,200}/gi, ' ');
+}
 const IRREV_DESC = /\b(irreversibl|permanent|cannot be undone|overwrite|send(s)? (an? )?(email|message|sms))/i;
 
 export const TOOL_014 = defineRule(
@@ -88,7 +98,12 @@ export const TOOL_014 = defineRule(
     const v = firstVerb(name);
     const d = isStr(t.description) ? t.description : '';
     const out: RawFinding[] = [];
-    if (a.readOnlyHint === true && ((v && WRITE_VERBS.has(v)) || WRITE_DESC.test(d))) out.push({ message: `marked readOnlyHint but ${v && WRITE_VERBS.has(v) ? `name starts with write verb "${v}"` : 'description describes a write'}` });
+    if (a.readOnlyHint === true) {
+      const w = v && WRITE_VERBS.has(v) ? undefined : WRITE_DESC.exec(behaviorText(d));
+      // The name is a strong signal; a word in the description alone is a weak one (informational).
+      if (v && WRITE_VERBS.has(v)) out.push({ message: `marked readOnlyHint but name starts with write verb "${v}"` });
+      else if (w) out.push({ severity: 'info', message: `marked readOnlyHint but the description says "${w[0]}"; check that the tool does not write` });
+    }
     if (v && HARD_DESTRUCTIVE.has(v) && a.destructiveHint !== true) out.push({ message: `"${v}" tool without destructiveHint: true` });
     if (v && READ_VERBS.has(v) && a.destructiveHint === true) out.push({ message: `read verb "${v}" but destructiveHint: true` });
     if (a.readOnlyHint === false && a.destructiveHint === false && (tokenize(name).some((x) => IRREVERSIBLE.has(x)) || IRREV_DESC.test(d))) {

@@ -254,13 +254,18 @@ export const RT_011 = defineRule(
     sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy'],
   },
   (snap) => {
-    const patterns = [...INJ_005_PATTERNS, ...INJ_006_PATTERNS, ...INJ_007_PATTERNS, ...INJ_009_PATTERNS];
+    const groups = [INJ_005_PATTERNS, INJ_006_PATTERNS, INJ_007_PATTERNS, INJ_009_PATTERNS];
     const own = ownToolFilter(snap);
     return calls(snap).filter(isSuccess).flatMap((c): RawFinding[] => {
       const text = nfkc(textOf(resultObj(c)));
-      for (const p of patterns) {
-        const m = matchPattern(p, text);
-        if (m && own({ text, where: 'tool.description' }, m, p)) return [{ tool: c.tool, message: `output contains "${snippet(text, m.index, m[0].length)}"` }];
+      for (const patterns of groups) {
+        // As in scanCorpus, the first matching pattern of a group decides; an informational match is not injection.
+        for (const p of patterns) {
+          const m = matchPattern(p, text);
+          if (!m || !own({ text, where: 'tool.description' }, m, p)) continue;
+          if (p.severity === 'info') break;
+          return [{ tool: c.tool, message: `output contains "${snippet(text, m.index, m[0].length)}"` }];
+        }
       }
       return [];
     });

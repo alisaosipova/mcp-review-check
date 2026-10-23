@@ -77,8 +77,30 @@ export const POL_003 = defineRule(
 // Digital-goods and subscription upsell only. Checkout and cart are not upsell: physical-goods commerce must link to an
 // external, merchant-hosted checkout.
 const UPSELL = /\b(buy (more )?credits|purchase (more )?tokens|pricing plans?|upgrade (now|your (plan|subscription|account))|subscribe (now|to (our|a|the) (plan|subscription|premium))|premium (plan|subscription))\b/i;
-const UPSELL_PATH = /(billing|upgrade|subscribe|subscription|pricing)/i;
-const CHECKOUT_PATH = /(checkout|cart)/i;
+const UPSELL_WORDS = new Set(['billing', 'upgrade', 'subscribe', 'subscription', 'subscriptions', 'pricing', 'plans']);
+const CHECKOUT_WORDS = new Set(['checkout', 'cart']);
+// Source-code hosts: a path such as /OpenZeppelin/contracts-upgradeable/blob/... names a repository, not a store page.
+const CODE_HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org', 'codeberg.org', 'raw.githubusercontent.com', 'gist.github.com', 'sourcegraph.com', 'npmjs.com', 'www.npmjs.com'];
+
+/** The first word of `words` that is a whole path segment or a whole -/_/. separated part of one ("upgradeable" is not "upgrade"). */
+export function pathWord(path: string, words: Set<string>): string | undefined {
+  for (const seg of path.toLowerCase().split('/')) {
+    if (words.has(seg)) return seg;
+    const part = seg.split(/[-_.]/).find((x) => words.has(x));
+    if (part) return part;
+  }
+  return undefined;
+}
+
+/** The upsell or checkout word in a widget link, or undefined (code hosts and unparsable links are skipped). */
+export function linkKind(link: string): 'upsell' | 'checkout' | undefined {
+  let u: URL;
+  try { u = new URL(link, 'https://widget.invalid'); } catch { return undefined; }
+  if (CODE_HOSTS.includes(u.hostname.toLowerCase())) return undefined;
+  if (pathWord(u.pathname, UPSELL_WORDS)) return 'upsell';
+  if (pathWord(u.pathname, CHECKOUT_WORDS)) return 'checkout';
+  return undefined;
+}
 
 export const POL_004 = defineRule(
   {
@@ -99,10 +121,9 @@ export const POL_004 = defineRule(
       const m = UPSELL.exec(r.html);
       if (m) out.push({ resource: r.uri, message: `widget HTML: "${snippet(r.html, m.index, m[0].length)}"` });
       for (const link of extractLinks(r.html)) {
-        let path = link;
-        try { path = new URL(link, 'https://x.invalid').pathname; } catch { /* keep raw */ }
-        if (UPSELL_PATH.test(path)) { out.push({ resource: r.uri, message: `widget links to ${link}` }); break; }
-        if (CHECKOUT_PATH.test(path)) {
+        const kind = linkKind(link);
+        if (kind === 'upsell') { out.push({ resource: r.uri, message: `widget links to ${link}` }); break; }
+        if (kind === 'checkout') {
           out.push({ resource: r.uri, severity: 'info', message: `widget links to ${link}: fine for physical goods (external checkout); digital goods and subscriptions may not be sold` });
           break;
         }

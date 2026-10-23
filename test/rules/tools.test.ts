@@ -39,7 +39,11 @@ const cases: Record<string, Case> = {
     pos: ann({ readOnlyHint: true, destructiveHint: true, openWorldHint: false }), severity: 'error',
     neg: one(tool({ name: 'update_note', description: 'Replace the body of a note.', annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } })),
   },
-  'TOOL-014': { pos: one(tool({ name: 'delete_note', description: 'Deletes a note forever from the workspace.' })), neg: ok, severity: 'warning' },
+  'TOOL-014': {
+    pos: one(tool({ name: 'delete_note', description: 'Deletes a note forever from the workspace.' })), severity: 'warning',
+    // Exa: a quoted example query ("blog post ...") is input, not behavior
+    neg: one(tool({ name: 'web_search', description: 'Search the web. Query tips: describe the ideal page, e.g. "blog post comparing React and Vue performance".', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true } })),
+  },
   'TOOL-015': {
     pos: one(toolWithProps('get_page', { url: prop('Page URL') }, { annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })),
     neg: one(toolWithProps('get_page', { url: { type: 'string', description: 'Docs URL', pattern: '^https://docs\\.acme\\.test/' } })),
@@ -159,6 +163,16 @@ describe('TOOL rules', () => {
   it('TOOL-007 missing description is a Claude error too', () => {
     const f = evaluate(byId('TOOL-007'), one(tool({ description: undefined })));
     expect(f[0].severityByPlatform).toMatchObject({ claude: 'error', chatgpt: 'error', spec: 'info' });
+  });
+
+  it('TOOL-014 description-only matches are info and name the word; quotes and examples are ignored (Exa, Svelte)', () => {
+    const t = byId('TOOL-014');
+    const svelte = evaluate(t, one(tool({ name: 'playground_link', description: 'Generates a Playground link given a Svelte code snippet. Once you have the final code you want to send to the user, ask the user if they want a link.' })));
+    expect(svelte).toMatchObject([{ severity: 'info', message: expect.stringMatching(/description says "send"/) }]);
+    expect(evaluate(t, one(tool({ description: "Search notes, for example 'create a meeting note' or 'update the plan'." })))).toEqual([]);
+    expect(evaluate(t, one(tool({ description: 'Search notes. Example: “delete old drafts”.' })))).toEqual([]);
+    // a write verb in the name stays a warning
+    expect(evaluate(t, one(tool({ name: 'create_note', description: 'Create a note.' })))[0]).toMatchObject({ severity: 'warning' });
   });
 
   it('TOOL-027 limit-like parameters and no "query"/"all" triggers (AWS, MS Learn)', () => {

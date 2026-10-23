@@ -23,6 +23,7 @@ First public release, planned as 0.1.0.
 - Connection diagnostics: DNS (NXDOMAIN), refused, timed-out and TLS-certificate failures are named, and a URL that answers 404/405 or an HTML page is reported as "not an MCP endpoint" with a suggested URL (`<url>/mcp`, or `/mcp` instead of `/sse`). A URL without a scheme is rejected (exit 2) with a `https://` suggestion (`http://` for localhost).
 - JSON reports gain `coverage.diagnosis` on a failed connect.
 - The linter declares the MCP Apps client capability (`io.modelcontextprotocol/ui`) on every connection (SDK handshake, raw `initialize` probes, 2026-07-28 `_meta`), so UI tools registered with the ext-apps `getUiCapability` pattern are checked by the APPS rules. When a tool links a UI, one more connection without the capability lists the tools a text-only host sees.
+- Regression fixtures frozen from public servers' listings (`test/fixtures/real/`, refreshed with `scripts/capture-real.mjs`) guard the heuristic rules against known false positives and against new warnings compared with the baseline findings.
 - `--max-duration <ms>`: an overall deadline; the report covers what ran and names the phase where it stopped (text, markdown, JSON `limits.stopped`). Without a handshake by then the run exits 3; after it, the verdicts read `INCOMPLETE` and JSON `coverage.toolLevel` is `stopped`.
 
 #### Rules added
@@ -41,6 +42,12 @@ First public release, planned as 0.1.0.
 - TOOL-027: more limit-like parameters count (`max_length`, `start_index`, `max_tokens`, `maxCharacters`, `numResults`, `page_token`, `top_k`, …); `query` and `all` no longer trigger it, and the description is used only when the tool name has no verb.
 - APPS-014: ext-apps mentions in comments do not count, and a widget that sends `ui/initialize` itself has connected.
 - RT-*: a 2026-07-28 `resultType: "input_required"` interim result is neither a success nor an error (RT-005 still measures its latency).
+- INJ-006: "Do not use it/this for other …" restricts the tool's own scope and is no longer flagged. "Always use this tool/skill when/to/for …" describes when the tool applies and is info, not a warning; unconditional "always use this tool" and disparaging wording stay warnings. The fix names the flagged object (tool, skill, resource, prompt or instructions).
+- INJ-005: presentation guidance about raw data ("Never show raw note IDs to the user") is not hiding behavior.
+- INJ-004: base64 that decodes to JSON (pagination cursors, JWT segments) is skipped unless the decoded text carries instruction-like wording.
+- TOOL-014: quoted strings and examples (`e.g.`, `for example`, `such as`) are ignored, and a write word found only in the description is info and is named in the message; a write verb in the tool name stays a warning.
+- POL-004: widget links are compared by whole path words (`contracts-upgradeable` is not `upgrade`), source-code hosts (GitHub, GitLab, …) are skipped, and templated links (`${…}`, `{{…}}`, `$1`) are not extracted.
+- RT-011 ignores informational INJ-006 wording in tool output.
 - SRV-013: a problem in both `initialize` and `server/discover` is reported once, naming both; an empty `serverInfo.version` is a warning (missing stays an error).
 
 #### Other rule changes
