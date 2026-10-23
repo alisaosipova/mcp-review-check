@@ -1,5 +1,5 @@
 // Rule catalog output: `explain <ID>` (R-38), --list-rules as text, JSON or markdown (R-39); rulesMarkdown also
-// writes the README rule table (scripts/rules-table.mjs).
+// writes the rule table in docs/RULES.md (scripts/rules-table.mjs), not in the README.
 import { CATALOG_DATE } from './catalog.js';
 import { MANUAL_ITEMS, RULES } from './rules/index.js';
 import type { ManualItem } from './rules/manual.js';
@@ -34,7 +34,7 @@ export function listRulesJson(rules: RuleMeta[], manual: ManualItem[]): string {
   return JSON.stringify({ catalogDate: CATALOG_DATE, rules, manual }, null, 2) + '\n'; // JSON drops each rule's check()
 }
 
-/** The markdown rule table and manual checklist (README, --list-rules --format markdown). */
+/** The markdown rule table and manual checklist (docs/RULES.md, --list-rules --format markdown). */
 export function rulesMarkdown(rules: RuleMeta[] = RULES, manual: ManualItem[] = MANUAL_ITEMS): string {
   const lines = ['| ID | Title | Severity by platform | Source |', '|---|---|---|---|'];
   for (const r of rules) lines.push(`| ${r.id} | ${r.title.replace(/\|/g, '\\|')} | ${Object.entries(r.severity).map(([p, s]) => `${p}: ${s}`).join(', ')} | [link](${r.sources[0]}) |`);

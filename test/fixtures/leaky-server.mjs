@@ -4,6 +4,7 @@
 // stderr also gets the whole argv, so any other secret flag (--accessToken X, --password -X) is echoed too.
 // With --crash it writes them to stderr and exits, so they land in the SRV-003 fatal message. With --boundary a tool
 // description echoes the --api-key value so that the 16 KB input cap (W1-8) cuts through it, three characters short.
+// With --crash --cut the stderr cuts (the 4096-character tail, the 200-character summary line) go through it.
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createGoodServer } from './good-server.mjs';
 
@@ -15,6 +16,12 @@ const envSecret = process.env.API_TOKEN ?? '';
 
 process.stderr.write(`leaky: starting with key ${argSecret} token ${eqSecret} env ${envSecret}\n`);
 process.stderr.write(`leaky: argv ${argv.join(' ')}\n`);
+if (argv.includes('--crash') && argv.includes('--cut')) {
+  // The stderr tail keeps the last 4096 characters (cut 11 characters before the end of the first echo) and the
+  // start-up error summary cuts a line at 200 (17 characters into the second echo).
+  process.stderr.write(`${argSecret}\n${'y'.repeat(3880)}\n${'Error: authentication failed for key '.padEnd(183, '.')}${argSecret}\n`);
+  process.exit(1);
+}
 if (argv.includes('--crash')) {
   process.stderr.write(`Error: authentication failed for key ${argSecret} / ${eqSecret} / ${envSecret}\n`);
   process.exit(1);

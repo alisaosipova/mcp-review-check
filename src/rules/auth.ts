@@ -2,7 +2,7 @@
 import type { AsObservation, Platform, Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, isStrArray, type Obj } from './util/access.js';
-import { displayUrl, isLoopbackHost, isSecretQueryParam } from './util/net.js';
+import { displayUrl, isLoopbackHost, isNonPublicIp, isSecretQueryParam } from './util/net.js';
 import { describeAttempts, endedTransient, INCONCLUSIVE, isTransient } from './util/obs.js';
 import { parseWwwAuthenticate } from './util/wwwAuth.js';
 
@@ -28,10 +28,13 @@ function forEachAs(snap: Snapshot, fn: (as: AsObservation, meta: Obj, i: number,
   });
 }
 
+/** https, or in local mode plain http on a local host: loopback, a non-public IP, a name without a dot or the MCP host (R-35). */
 function httpsOrLocal(snap: Snapshot, raw: string): boolean {
   try {
     const u = new URL(raw);
-    return u.protocol === 'https:' || (snap.localMode && u.protocol === 'http:' && isLoopbackHost(u.hostname));
+    const h = u.hostname.replace(/^\[|\]$/g, '');
+    const local = isLoopbackHost(h) || isNonPublicIp(h) || !/[.:]/.test(h) || (snap.target.kind === 'http' && u.hostname === snap.target.url.hostname);
+    return u.protocol === 'https:' || (snap.localMode && u.protocol === 'http:' && local);
   } catch {
     return false;
   }

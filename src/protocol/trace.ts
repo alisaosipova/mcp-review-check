@@ -182,7 +182,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   };
 
   const finishBody = (ex: HttpExchange, text: string) => {
-    ex.bodySnippet = scrub(text.slice(0, SNIPPET), redactor);
+    ex.bodySnippet = scrub(text, redactor).slice(0, SNIPPET); // masked before the cut: no secret prefix is left (SEC-1)
     ex.json = parseBody(text, ex.contentType, ex.requestJson);
   };
 

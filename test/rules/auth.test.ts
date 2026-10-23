@@ -260,4 +260,15 @@ describe('AUTH rules', () => {
     expect(evaluate(byId('AUTH-010'), s)).toEqual([]);
     expect(evaluate(byId('AUTH-006'), s)).toEqual([]);
   });
+
+  it('local mode (R-35): an http AS on a private IP, a dotless host or the MCP host is accepted like loopback; a public one is not', () => {
+    const asSnap = (mcp: string, as: string, localMode = true) => authSnap({ url: `${mcp}/mcp`, as: { issuer: as, authorization_endpoint: `${as}/authorize`, token_endpoint: `${as}/token`, registration_endpoint: `${as}/register` }, prm: { authorization_servers: [as] }, set: (x) => { x.localMode = localMode; x.authProbe!.as[0].issuer = as; } });
+    for (const [mcp, as] of [['http://10.0.0.5:8080', 'http://10.0.0.5:4000'], ['http://devbox:8080', 'http://devbox:4000'], ['http://mcp.lan:8080', 'http://mcp.lan:4000'], ['http://10.0.0.5:8080', 'http://[fd00::5]:4000']]) {
+      expect(evaluate(byId('AUTH-010'), asSnap(mcp, as)), as).toEqual([]);
+      expect(evaluate(byId('AUTH-006'), asSnap(mcp, as)), as).toEqual([]);
+    }
+    expect(evaluate(byId('AUTH-010'), asSnap('http://10.0.0.5:8080', 'http://auth.example.com')).length).toBeGreaterThan(0);
+    expect(evaluate(byId('AUTH-006'), asSnap('http://10.0.0.5:8080', 'http://auth.example.com')).length).toBeGreaterThan(0);
+    expect(evaluate(byId('AUTH-010'), asSnap('https://mcp.example.com', 'http://10.0.0.5:4000', false)).length).toBeGreaterThan(0);
+  });
 });

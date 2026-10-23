@@ -11,7 +11,7 @@ import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCa
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
-import { createTracer, type Redactor, type Tracer } from './protocol/trace.js';
+import { createTracer, scrub, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
@@ -206,7 +206,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       const status = e instanceof StreamableHTTPError ? (e as StreamableHTTPError).code : undefined;
       const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
       last = {
-        ok: false, status, message: cleanErrorMessage((e as Error).message, status),
+        ok: false, status, message: cleanErrorMessage(scrub((e as Error).message, tracer.redactor), status), // masked before its cuts (SEC-1)
         cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
@@ -413,10 +413,11 @@ export function stderrSummary(tail: string): string {
   return picked.join(' | ');
 }
 
-async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, variant: ClientVariant = {}): Promise<StdioConn> {
+async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}): Promise<StdioConn> {
   const inner = new StdioClientTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
-  inner.stderr?.on('data', (c: Buffer) => { stderrTail = (stderrTail + c.toString('utf8')).slice(-4096); });
+  // Masked before the 4096-character tail and the 200-character summary lines cut it (SEC-1).
+  inner.stderr?.on('data', (c: Buffer) => { stderrTail = scrub(stderrTail + c.toString('utf8'), r).slice(-4096); });
   const nonJson: string[] = [];
   const tap = () => {
     const proc = (inner as unknown as { _process?: { stdout?: NodeJS.ReadableStream } })._process;
@@ -450,7 +451,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   snap.localMode = opts.local ?? true;
   let conn: StdioConn;
   try {
-    conn = await connectStdio(t, connectTimeout);
+    conn = await connectStdio(t, connectTimeout, redactorFor(opts));
   } catch (e) {
     snap.fatal = `could not start or initialize the stdio server: ${(e as Error).message}`;
     snap.coverage = { toolLevel: 'connect-failed', reason: (e as Error).message };
@@ -472,7 +473,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   snap.transport.probes = await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client });
   const fresh = async (variant: ClientVariant = {}) => {
     try {
-      const c = await connectStdio(t, connectTimeout, variant);
+      const c = await connectStdio(t, connectTimeout, redactorFor(opts), variant);
       try { const r = await listAll(c.client, 'tools/list', 'tools', timeoutMs); return r.error ? undefined : r.items; }
       finally { await c.client.close().catch(() => {}); }
     } catch { return undefined; }
