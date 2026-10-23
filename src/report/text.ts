@@ -3,6 +3,7 @@ import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
 import { rootCauses } from './score.js';
@@ -81,6 +82,13 @@ export function fixSnippets(r: Report): string[] {
   });
 }
 
+/** R-35: the local-mode banner, naming the rules whose deploy-time findings were made informational. */
+export function localBanner(r: Report): string | undefined {
+  if (!r.snap.localMode) return undefined;
+  const ids = [...new Set(r.findings.filter((f) => f.message.startsWith(DEPLOY)).map((f) => f.ruleId))].sort();
+  return `Local target: deploy-time checks are informational${ids.length ? ` (${ids.join(', ')})` : ''}; --no-local for strict checks.`;
+}
+
 export function renderText(r: Report, opts: TextOptions): string {
   const c = (color: keyof typeof ANSI, s: string) => (opts.color ? `${ANSI[color]}${s}${ANSI.reset}` : s);
   const snap = r.snap;
@@ -91,7 +99,8 @@ export function renderText(r: Report, opts: TextOptions): string {
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(c('dim', `          ${rev}`));
   out.push(`Checked ${counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`);
-  if (snap.localMode) out.push(c('dim', 'Local target: deploy-time checks are informational.'));
+  const local = localBanner(r);
+  if (local) out.push(c('dim', local));
   if (snap.coverage.toolLevel === 'auth-required') out.push('', c('yellow', AUTH_NOTICE));
   if (snap.coverage.toolLevel === 'token-rejected') out.push('', c('yellow', TOKEN_REJECTED_NOTICE));
   if (snap.coverage.toolLevel === 'list-failed') out.push('', c('red', `${snap.coverage.reason ?? 'tools/list failed'}. ${LIST_FAILED_NOTICE}`));

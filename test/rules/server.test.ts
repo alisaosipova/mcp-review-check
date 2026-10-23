@@ -165,6 +165,11 @@ describe('SRV rules', () => {
     expect(mixed.map((x) => x.message).sort()).toEqual(['serverInfo.name is not a non-empty string (initialize)', 'serverInfo.version is an empty string (server/discover); set the server version']);
   });
 
+  it('SRV-013: a serverInfo that is not an object reads "serverInfo is not an object"', () => {
+    const f = evaluate(byId('SRV-013'), snap({ set: (s) => { s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: 'acme' }; } }));
+    expect(f.map((x) => x.message)).toEqual(['serverInfo is not an object (initialize)']);
+  });
+
   it('SRV-016 skips an HTML catch-all page (SPA), not a verification file', () => {
     const spa = snap({ url: URL_OK, set: (s) => { s.transport.probes.challenge = exchange({ method: 'GET', status: 200, contentType: 'text/html; charset=utf-8', bodySnippet: '<!doctype html>\n<html><head><title>GitMCP</title></head><body></body></html>' }); } });
     expect(evaluate(byId('SRV-016'), spa)).toEqual([]);
@@ -225,6 +230,17 @@ describe('SRV rules', () => {
     expect(as[0]).toMatchObject({ severity: 'error', message: expect.stringMatching(/auth\.acme\.test does not resolve/) });
     const servfail = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...nx, error: 'queryA ESERVFAIL', code: 'ESERVFAIL' }; } }));
     expect(servfail[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^inconclusive \(network\): DNS lookup/) });
+  });
+
+  it('R-37: SRV-004 tells "resolves only locally" (dns.lookup) from "no A record"', () => {
+    const local = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([]), lookup: ['127.0.0.1'] }; } }));
+    expect(local.map((x) => [x.severity, x.message])).toEqual([['error', 'mcp.acme.test resolves only locally (127.0.0.1), not in public DNS']]);
+    const noA = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([], ['2606:2800:220:1::1']), lookup: ['2606:2800:220:1::1'] }; } }));
+    expect(noA.map((x) => x.message)).toEqual(['mcp.acme.test has no A record; Connectors are IPv4-only (system resolver)', 'mcp.acme.test has no A record (system resolver)']);
+    // a name only /etc/hosts or a container DNS knows: public DNS says NXDOMAIN, the system resolver answers
+    const docker = { host: 'mcp.acme.test', a: [], aaaa: [], error: 'queryA ENOTFOUND mcp.acme.test', code: 'ENOTFOUND', lookup: ['172.18.0.2'] };
+    expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = docker; } })).map((x) => x.message)).toEqual(['mcp.acme.test resolves only locally (172.18.0.2), not in public DNS']);
+    expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...docker, lookup: [] }; } }))[0].message).toMatch(/does not resolve \(NXDOMAIN\)/);
   });
 
   it('SRV-001 (B7): the MCP host certificate is checked without auth; timeouts are inconclusive', () => {

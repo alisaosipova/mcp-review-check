@@ -1,5 +1,6 @@
 // Network helpers (§1.5). Not a full Public Suffix List; only info/warning rules depend on it.
 import { isIP } from 'node:net';
+import type { DnsResult } from '../../snapshot.js';
 
 function v4ToInt(ip: string): number {
   return ip.split('.').reduce((acc, o) => (acc << 8) + Number(o), 0) >>> 0;
@@ -42,6 +43,12 @@ export function isLoopbackHost(host: string): boolean {
   if (isIP(h) === 4) return h.startsWith('127.');
   if (isIP(h) === 6) return h === '::1';
   return false;
+}
+
+/** R-35: local mode for a host without a dot, or one whose every address (DNS and the system resolver) is non-public. */
+export function isLocalTarget(d: DnsResult): boolean {
+  const addrs = [...d.a, ...d.aaaa, ...(d.lookup ?? [])];
+  return (!d.host.includes('.') && !isIP(d.host)) || (addrs.length > 0 && addrs.every(isNonPublicIp));
 }
 
 const MULTI_LABEL = ['co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.au', 'net.au', 'org.au', 'co.jp', 'ne.jp', 'com.br', 'co.nz', 'co.in', 'co.za', 'com.mx', 'com.cn', 'com.tr', 'co.kr', 'com.sg'];

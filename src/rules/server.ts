@@ -1,4 +1,5 @@
 // SRV: endpoint and deployment (§2.1).
+import { isIP } from 'node:net';
 import type { HttpExchange, Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isNonEmptyStr, isStr, toolName } from './util/access.js';
@@ -7,7 +8,8 @@ import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_
 import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
 import { TEXT_CAP } from '../limits.js';
 
-const DEPLOY = 'Deploy-time check: ';
+/** Message prefix of a deploy-time finding made informational in local mode; the local banner lists their rules. */
+export const DEPLOY = 'Deploy-time check: ';
 const SUBMISSION = 'https://claude.com/docs/connectors/building/submission';
 const OAI_MCP = 'https://developers.openai.com/plugins/build/mcp-server';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -92,6 +94,9 @@ export const SRV_004 = defineRule(
     const results = [snap.transport.dns, ...(snap.authProbe?.asDns ?? [])].filter((d) => d !== undefined);
     for (const d of results) {
       const note = ' (system resolver)';
+      // R-37: the system resolver (/etc/hosts, container DNS) answers where public DNS has no A record.
+      const local = d.a.length ? [] : (d.lookup ?? []).filter((ip) => isIP(ip) === 4 || !!d.error);
+      if (local.length) { out.push(localize(snap, { message: `${d.host} resolves only locally (${local.join(', ')}), not in public DNS` })); continue; }
       if (d.a.length === 0 && d.aaaa.length === 0 && d.error) {
         // NXDOMAIN or a failed lookup is not an IPv6-only host. When the MCP host itself does not resolve, the
         // connect failure (SRV-003) carries the verdict and this stays informational.
@@ -289,7 +294,7 @@ export const SRV_012 = defineRule(
 
 /** serverInfo problems as "<field> <problem>" keys; an empty version string is a warning, a missing one an error. */
 export function serverInfoProblems(si: unknown): Array<{ key: string; severity?: 'warning' }> {
-  if (!isObj(si)) return [{ key: 'is not an object' }];
+  if (!isObj(si)) return [{ key: ' is not an object' }];
   const out: Array<{ key: string; severity?: 'warning' }> = [];
   if (!isNonEmptyStr(si.name)) out.push({ key: '.name is not a non-empty string' });
   if (si.version === '' || (isStr(si.version) && !si.version.trim())) out.push({ key: '.version is an empty string', severity: 'warning' });

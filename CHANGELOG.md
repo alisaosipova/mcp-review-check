@@ -19,7 +19,7 @@ First public release, planned as 0.1.0.
 - `--stdio -- <command> [args...]` passes the server command verbatim, without quoting rules.
 - JSON reports carry `schemaVersion` (1) and `tool.catalogAgeDays`.
 - A check run warns on stderr when the rule catalog is more than 90 days old.
-- Secret redaction for stdio as well as HTTP: one redactor per run scrubs every report format and the `--verbose` output of `--bearer`, `--header` and `--env` values, URL credentials, and stdio arguments after secret-looking flags, kebab-case or camelCase (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `Authorization: Bearer X`), including where the server echoes them on stdout, on stderr or in its tool metadata. Usage errors no longer repeat option values.
+- Secret redaction for stdio as well as HTTP: one redactor per run scrubs every report format and the `--verbose` output of `--bearer`, `--header` and `--env` values, URL credentials, and stdio arguments after secret-looking flags, kebab-case or camelCase (`--api-key X`, `--accessToken X`, `--token=X`, `API_KEY=X`, `Authorization: Bearer X`), including where the server echoes them on stdout, on stderr or in its tool metadata (also when an input cap cuts through the echo). Usage errors no longer repeat option values.
 - Connection diagnostics: DNS (NXDOMAIN), refused, timed-out and TLS-certificate failures are named, and a URL that answers 404/405 or an HTML page is reported as "not an MCP endpoint" with a suggested URL (`<url>/mcp`, or `/mcp` instead of `/sse`). A URL without a scheme is rejected (exit 2) with a `https://` suggestion (`http://` for localhost).
 - JSON reports gain `coverage.diagnosis` on a failed connect.
 - The linter declares the MCP Apps client capability (`io.modelcontextprotocol/ui`) on every connection (SDK handshake, raw `initialize` probes, 2026-07-28 `_meta`), so UI tools registered with the ext-apps `getUiCapability` pattern are checked by the APPS rules. When a tool links a UI, one more connection without the capability lists the tools a text-only host sees.
@@ -27,6 +27,7 @@ First public release, planned as 0.1.0.
 - `--max-duration <ms>`: an overall deadline; the report covers what ran and names the phase where it stopped (text, markdown, JSON `limits.stopped`). Without a handshake by then the run exits 3; after it, the verdicts read `INCOMPLETE` and JSON `coverage.toolLevel` is `stopped`.
 - The text report prints a ready JSON fragment (title and annotation hints) for each tool that lacks them, and text and markdown show "N root causes" next to the score.
 - `--quiet` (text only): just the error and warning findings, the Score and Result lines and the disclaimer. `--checklist` (text only) prints the manual checklist in full.
+- Automatic local mode: besides `localhost`, a host without a dot or one whose every address is non-public (public DNS and the system resolver, so `/etc/hosts` and container names count) is checked in local mode. `--local` and `--no-local` force it on or off (`--no-local` also for `--stdio`). The local-mode banner names the rules made informational and goes to stderr with `--format json` and `sarif`.
 
 #### Rules added
 
@@ -59,6 +60,7 @@ First public release, planned as 0.1.0.
 - TOOL-006 reports a tool title longer than 60 characters as info for Claude (linter-defined limit; a title is a UI label), and long titles are shown as snippets in its messages.
 - SRV-002: the ChatGPT finding has its own fix and OpenAI docs link instead of the Claude plugin advice.
 - SRV-020 cites the 2026-07-28 versioning page.
+- SRV-004 also asks the system resolver (`dns.lookup`): a name that only `/etc/hosts` or a container DNS knows "resolves only locally" instead of having "no A record".
 - SRV-004 says "does not resolve (NXDOMAIN)" instead of "no A record; Connectors are IPv4-only" when a hostname does not exist, and a failed DNS lookup is `inconclusive (network)` (info).
 - TOOL-012 reports one finding per tool listing every missing hint, instead of one per hint.
 - TOOL-014 no longer reports a read verb without `readOnlyHint` (spec) when the tool has no `annotations` object at all; TOOL-011 and TOOL-012 already cover it.

@@ -11,6 +11,8 @@ import { VERSION } from '../version.js';
 export interface Deps {
   resolve4(host: string): Promise<string[]>;
   resolve6(host: string): Promise<string[]>;
+  /** The system resolver (dns.lookup), which also sees /etc/hosts and container DNS names. */
+  lookup?(host: string): Promise<string[]>;
   tlsCheck(host: string, port: number): Promise<{ ok: boolean; code?: string }>;
   now(): number;
   /** Wait between retries (tests inject a no-op). */
@@ -68,6 +70,7 @@ export function defaultTlsCheck(host: string, port: number, timeoutMs = 10000): 
 export const defaultDeps: Deps = {
   resolve4: (h) => dns.resolve4(h),
   resolve6: (h) => dns.resolve6(h),
+  lookup: (h) => dns.lookup(h, { all: true }).then((r) => r.map((x) => x.address)),
   tlsCheck: (h, p) => defaultTlsCheck(h, p),
   now: () => performance.now(),
 };
@@ -77,8 +80,9 @@ export async function lookupHost(host: string, deps: Deps): Promise<DnsResult> {
   if (isIP(h) === 4) return { host: h, a: [h], aaaa: [] };
   if (isIP(h) === 6) return { host: h, a: [], aaaa: [h] };
   if (h === 'localhost' || h.endsWith('.localhost')) return { host: h, a: ['127.0.0.1'], aaaa: ['::1'] };
-  const [a, aaaa] = await Promise.allSettled([deps.resolve4(h), deps.resolve6(h)]);
+  const [a, aaaa, sys] = await Promise.allSettled([deps.resolve4(h), deps.resolve6(h), deps.lookup?.(h) ?? []]);
   const res: DnsResult = { host: h, a: a.status === 'fulfilled' ? a.value : [], aaaa: aaaa.status === 'fulfilled' ? aaaa.value : [] };
+  if (sys.status === 'fulfilled' && sys.value.length) res.lookup = sys.value;
   if (a.status === 'rejected' && aaaa.status === 'rejected') {
     res.error = String((a.reason as Error)?.message ?? a.reason);
     const code = (a.reason as { code?: unknown })?.code;

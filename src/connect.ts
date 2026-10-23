@@ -16,9 +16,9 @@ import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
 import { runWireProbes } from './probe/wire.js';
-import { buildRedactor } from './redact.js';
+import { buildRedactor, redactDeep } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
-import { isLoopbackHost } from './rules/util/net.js';
+import { isLocalTarget } from './rules/util/net.js';
 
 export { VERSION } from './version.js';
 import { VERSION } from './version.js';
@@ -40,6 +40,8 @@ export interface BuildOptions {
   redactor?: Redactor;
   /** Overall deadline for the whole check (--max-duration); checks still pending then are skipped. */
   maxDurationMs?: number;
+  /** --local (true) or --no-local (false); unset: detected from the host (R-35, R-36). */
+  local?: boolean;
 }
 
 /** The redactor for these options: --bearer, --header values, URL credentials, stdio argv secrets and --env values. */
@@ -266,8 +268,8 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
 
-  snap.localMode = isLoopbackHost(url.hostname);
   snap.transport.dns = await lookupHost(url.hostname, deps);
+  snap.localMode = opts.local ?? isLocalTarget(snap.transport.dns);
   const tls: TlsObservation[] = [];
   snap.transport.tls = tls;
   if (url.protocol === 'https:') tls.push({ host: url.host, role: 'mcp', ...(await tlsCheckWithRetry(deps, url.hostname, Number(url.port || 443))) });
@@ -445,7 +447,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   const timeoutMs = opts.timeoutMs ?? 30000;
   // A stdio start can include an `npx -y` download, so it gets the full --timeout rather than the 15 s HTTP connect cap.
   const connectTimeout = timeoutMs;
-  snap.localMode = true;
+  snap.localMode = opts.local ?? true;
   let conn: StdioConn;
   try {
     conn = await connectStdio(t, connectTimeout);
@@ -512,8 +514,11 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   const progress: Progress = { phase: 'connect' };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
-  capSnapshot(result.snap);
-  return result;
+  // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises
+  // (SEC-1). The target stays as entered (rules parse and hash it).
+  const masked = { ...redactDeep(result.snap, redactorFor(opts)), target: result.snap.target };
+  capSnapshot(masked);
+  return { ...result, snap: masked };
 }
 
 /** Resolve with whatever was observed when --max-duration runs out; the rest of the run is abandoned. */

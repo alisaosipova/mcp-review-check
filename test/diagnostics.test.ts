@@ -1,5 +1,6 @@
 // B6 retries and B7 connection diagnostics: pure helpers.
 import { describe, expect, it } from 'vitest';
+import { cleanErrorMessage } from '../src/connect.js';
 import { describeCause, describeHttpFailure, networkCause, schemeSuggestion, suggestedEndpoint } from '../src/diagnose.js';
 import { requestWithRetry, retryDelayMs, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
 import type { Tracer } from '../src/protocol/trace.js';
@@ -49,6 +50,13 @@ describe('connection diagnostics (B7)', () => {
     expect(schemeSuggestion('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
     expect(schemeSuggestion('https://a.test/mcp')).toBeUndefined();
     expect(schemeSuggestion('justaword')).toBeUndefined();
+  });
+
+  it('cleanErrorMessage replaces an HTML page by its title and caps a huge body before regexes (W1-8)', () => {
+    const big = `Error POSTing: <!doctype html><html><head><title>Not Found</title></head>${'<script '.repeat(400000)}`;
+    const t0 = performance.now();
+    expect(cleanErrorMessage(big, 404)).toBe('HTTP 404: Error POSTing: HTML page ("Not Found")');
+    expect(performance.now() - t0).toBeLessThan(1000);
   });
 });
 

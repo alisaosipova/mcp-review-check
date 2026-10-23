@@ -74,6 +74,8 @@ export interface DnsResult {
   error?: string;
   /** Resolver error code when both lookups failed (ENOTFOUND = NXDOMAIN, ENODATA, ETIMEOUT, ...). */
   code?: string;
+  /** Addresses from the system resolver (dns.lookup: /etc/hosts, container DNS), when it answered (R-35, R-37). */
+  lookup?: string[];
 }
 
 export interface TlsObservation {

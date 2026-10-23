@@ -3,7 +3,7 @@ import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
 import { rootCauses } from './score.js';
-import { visibleFindings } from './text.js';
+import { localBanner, visibleFindings } from './text.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
@@ -21,7 +21,8 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
   if (snap.coverage.toolLevel === 'connect-failed') out.push(`> Could not connect: ${cell(snap.coverage.reason ?? snap.fatal ?? 'unknown error')}`, '');
   const limits = limitsNotice(snap);
   if (limits) out.push(`> ${cell(limits)}`, '');
-  if (snap.localMode) out.push('> Local target: deploy-time checks are informational.', '');
+  const local = localBanner(r);
+  if (local) out.push(`> ${local}`, '');
   out.push('| Item | Value |', '|---|---|');
   out.push(`| Target | ${cell(targetLabel(snap))} |`);
   out.push(`| Transport | ${snap.transport.kind} · era ${eraLine(snap)} · auth ${cell(authSummary(snap))} |`);

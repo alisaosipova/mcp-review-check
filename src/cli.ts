@@ -13,7 +13,7 @@ import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif } from './report/sarif.js';
 import type { FailOn } from './report/score.js';
-import { renderText } from './report/text.js';
+import { localBanner, renderText } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import type { TargetOpt } from './snapshot.js';
@@ -37,6 +37,8 @@ Options:
   --max-duration <ms>     Stop the whole check after this long and report what ran (default: no limit).
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
+  --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
+  --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
   --active-auth           Probe DCR, /authorize and /token. CREATES A DCR CLIENT on your authorization server.
   --tool-args <file>      JSON {toolName: args} for --active calls.
@@ -122,7 +124,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
         env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
         'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
-        quiet: { type: 'boolean' }, checklist: { type: 'boolean' },
+        quiet: { type: 'boolean' }, checklist: { type: 'boolean' }, local: { type: 'boolean' }, 'no-local': { type: 'boolean' },
         help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
       },
     });
@@ -150,6 +152,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > MAX_TIMEOUT_MS) throw new UsageError(`--max-duration must be a positive number of milliseconds (at most ${MAX_TIMEOUT_MS})`);
     }
 
+    if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const headers: Record<string, string> = {};
     for (const h of values.header ?? []) { const [k, v] = parseHeader(h); headers[k] = v; }
     const bearer = values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;
@@ -193,15 +196,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const opts: BuildOptions = {
       target: spec, headers, bearer, timeoutMs, platforms: target, maxDurationMs,
       active: !!values.active, activeAuth: !!values['active-auth'], toolArgs,
+      local: values.local ? true : values['no-local'] ? false : undefined,
     };
     redactor = opts.redactor = redactorFor(opts);
     const started = new Date();
     stderr += staleCatalogWarning(started) ?? '';
     const t0 = performance.now();
-    const { snap: observed, stderrTail, tracer } = await buildSnapshot(opts);
-    // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so what
-    // the server sent is scrubbed before the rules run; the target stays as entered (rules parse and hash it).
-    const snap = { ...redactDeep(observed, redactor), target: observed.target };
+    // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
+    // buildSnapshot scrubs what the server sent (before the input caps) and the rules see no secret.
+    const { snap, stderrTail, tracer } = await buildSnapshot(opts);
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
     const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
@@ -209,6 +212,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const report = redactDeep(built, redactor);
 
     const color = isTty && !values['no-color'] && !env.NO_COLOR && format === 'text' && !values.output;
+    const banner = localBanner(report);
+    if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document (U-12)
     const body = render(report, format, { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist });
     if (values.verbose) {
       for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
