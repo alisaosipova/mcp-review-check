@@ -1,13 +1,14 @@
 // Default text report (§5.1).
 import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
-import { AUTH_NOTICE, ctaLine, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
+import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
 
 export interface TextOptions {
   color: boolean;
   verbose: boolean;
+  cta?: string; // ctaLine(), printed above the disclaimer
 }
 
 const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', cyan: '\x1b[36m', bold: '\x1b[1m', dim: '\x1b[2m', reset: '\x1b[0m' };
@@ -95,8 +96,7 @@ export function renderText(r: Report, opts: TextOptions): string {
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
   out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x))}`].join(' · '));
+  if (opts.cta) out.push('', opts.cta);
   out.push('', DISCLAIMER);
-  const cta = ctaLine();
-  if (cta) out.push('', cta);
   return out.join('\n') + '\n';
 }

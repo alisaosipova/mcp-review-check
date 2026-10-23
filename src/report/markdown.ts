@@ -1,13 +1,13 @@
 // Markdown report (§5.3).
 import type { Severity } from '../snapshot.js';
-import { AUTH_NOTICE, ctaLine, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
+import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
 const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
 
-export function renderMarkdown(r: Report): string {
+export function renderMarkdown(r: Report, opts: { cta?: string } = {}): string {
   const snap = r.snap;
   const s = r.summary;
   const out: string[] = [];
@@ -45,8 +45,7 @@ export function renderMarkdown(r: Report): string {
     for (const m of r.manual) out.push(`- [ ] **${m.id}** [${m.platforms.join(', ')}] ${m.text} (${m.docs[0]})`);
     out.push('');
   }
+  if (opts.cta) out.push(opts.cta, '');
   out.push(DISCLAIMER.replace(/\n/g, ' '), '');
-  const cta = ctaLine();
-  if (cta) out.push(cta, '');
   return out.join('\n');
 }

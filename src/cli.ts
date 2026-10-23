@@ -8,6 +8,7 @@ import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, resultLine, scoreLabel, type Report } from './report/index.js';
+import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif } from './report/sarif.js';
@@ -91,12 +92,12 @@ function listRules(): string {
   return lines.join('\n') + '\n';
 }
 
-function render(r: Report, format: string, color: boolean, verbose: boolean): string {
+function render(r: Report, format: string, color: boolean, verbose: boolean, cta?: string): string {
   switch (format) {
     case 'json': return renderJson(r);
-    case 'markdown': return renderMarkdown(r);
+    case 'markdown': return renderMarkdown(r, { cta });
     case 'sarif': return renderSarif(r);
-    default: return renderText(r, { color, verbose });
+    default: return renderText(r, { color, verbose, cta });
   }
 }
 
@@ -205,7 +206,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const report = redactDeep(built, redactor);
 
     const color = isTty && !values['no-color'] && !env.NO_COLOR && format === 'text' && !values.output;
-    const body = render(report, format, color, !!values.verbose);
+    const body = render(report, format, color, !!values.verbose, ctaLine(report, env));
     if (values.verbose) {
       for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;

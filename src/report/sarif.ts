@@ -1,7 +1,7 @@
 // SARIF 2.1.0 report (§5.3). Manual items are excluded.
 import { RULES } from '../rules/index.js';
 import type { Severity } from '../snapshot.js';
-import { contactUrl, CTA_TEXT, DISCLAIMER } from './constants.js';
+import { DISCLAIMER } from './constants.js';
 import { targetLabel, type Report } from './index.js';
 import type { Snapshot } from '../snapshot.js';
 
@@ -16,7 +16,6 @@ const LEVEL: Record<Severity, string> = { error: 'error', warning: 'warning', in
 
 export function toSarif(r: Report): Record<string, unknown> {
   const uri = artifactUri(r.snap);
-  const contact = contactUrl();
   return {
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
@@ -26,7 +25,6 @@ export function toSarif(r: Report): Record<string, unknown> {
           driver: {
             name: 'mcp-review-check',
             version: r.tool.version,
-            ...(contact ? { informationUri: contact } : {}),
             rules: RULES.map((rule) => ({
               id: rule.id,
               shortDescription: { text: rule.title },
@@ -49,7 +47,7 @@ export function toSarif(r: Report): Record<string, unknown> {
           ],
           properties: { platforms: f.platforms, severityByPlatform: f.severityByPlatform, fix: f.fix, path: f.path },
         })),
-        properties: { disclaimer: DISCLAIMER.replace(/\n/g, ' '), contact: contact ? `${CTA_TEXT} ${contact}` : undefined, summary: r.summary },
+        properties: { disclaimer: DISCLAIMER.replace(/\n/g, ' '), summary: r.summary },
       },
     ],
   };

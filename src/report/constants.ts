@@ -1,5 +1,6 @@
 // Report constants (§5.4).
 import { CATALOG_DATE } from '../catalog.js';
+import type { Report } from './index.js';
 
 // Set to a real absolute https URL before release; empty leaves the call to action out. No brand or URL is invented here.
 export const CONTACT_URL = '';
@@ -20,9 +21,11 @@ export const DISCLAIMER =
   `testing and policy judgment, and requirements change. Rules reflect public docs as of ${CATALOG_DATE}.\n` +
   'mcp-review-check is independent and not affiliated with Anthropic or OpenAI.';
 
-export function ctaLine(): string | undefined {
-  const url = contactUrl();
-  return url ? `${CTA_TEXT} ${url}` : undefined;
+/** Text and markdown only: a contact URL, no MCP_REVIEW_CHECK_NO_CTA=1, and a BLOCKED verdict, legacy era or auth-required. */
+export function ctaLine(r: Report, env: NodeJS.ProcessEnv = process.env, url: string = CONTACT_URL): string | undefined {
+  const link = contactUrl(url);
+  const due = Object.values(r.summary.verdicts).some((v) => v?.verdict === 'BLOCKED') || r.snap.era.includes('legacy') || r.snap.coverage.toolLevel === 'auth-required';
+  return link && due && env.MCP_REVIEW_CHECK_NO_CTA !== '1' ? `${CTA_TEXT} ${link}` : undefined;
 }
 
 export const AUTH_NOTICE =
