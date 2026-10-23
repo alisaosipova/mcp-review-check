@@ -3,6 +3,7 @@ import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { RULES } from '../rules/index.js';
 import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
@@ -118,6 +119,8 @@ export function renderText(r: Report, opts: TextOptions): string {
       if (!opts.quiet && (sev !== 'info' || opts.verbose)) {
         out.push(c('dim', `      fix  ${g.first.fix}`));
         if (g.first.docs[0]) out.push(c('dim', `      docs ${g.first.docs[0]}`));
+        const why = opts.verbose && RULES.find((x) => x.id === g.first.ruleId)?.rationale;
+        if (why) out.push(c('dim', `      why  ${why}`));
       }
     }
   }

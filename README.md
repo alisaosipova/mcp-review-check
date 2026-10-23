@@ -55,6 +55,10 @@ npx mcp-review-check https://staging.example.com/mcp --fail-on warning
 
 # CI: gate on the Claude directory and on MCP spec conformance
 npx mcp-review-check https://staging.example.com/mcp --target claude --fail-on-spec
+
+# Why does a rule exist? Severity per directory, rationale, sources and the fix
+npx mcp-review-check explain TOOL-011
+npx mcp-review-check --list-rules TOOL --format json
 ```
 
 This version is not published to npm yet. From a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`.
@@ -79,10 +83,11 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--stdio "<command>"`, `--stdio -- <command> [args...]` | | Launch a local server over stdio. The string form splits on whitespace and honours single and double quotes; a backslash outside quotes is literal, so Windows paths such as `C:\Users\me\server.js` work. The `--` form passes every argument verbatim (no quoting rules) and must come last. |
 | `--env K=V`, `--cwd <dir>` | | stdio only. `--env` values are redacted in every output format (see Redaction below). |
 | `--ignore <RULE-ID>` | | Repeatable. Ignored findings stay visible in JSON under `ignored`. |
-| `--list-rules` | | Prints the catalog and exits. |
+| `--list-rules [prefix]` | | Prints the catalog and exits: `--format text` (default; with `--verbose`, each rule's rationale), `json` or `markdown` (the table below). A prefix such as `TOOL` or `MAN` keeps the IDs that start with it. |
+| `explain <RULE-ID>` | | Prints a rule's severity per directory, rationale, sources and fix, and how to `--ignore` it; also takes `MAN` IDs. An unknown ID exits 2. |
 | `--quiet` | off | Text only: prints just the error and warning findings, the Score and Result lines and the disclaimer. A failed connect or missing auth is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
 | `--checklist` | off | Text only: prints the manual checklist in full. By default the text report shows one line, `N manual items: --checklist to show`; markdown and JSON always list every item. |
-| `--no-color`, `--verbose`, `--help`, `--version` | | `--verbose` expands collapsed findings, shows TOOL-013 info, and prints the redacted HTTP trace. |
+| `--no-color`, `--verbose`, `--help`, `--version` | | `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
 
 ### Exit codes
 

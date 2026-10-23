@@ -2,6 +2,7 @@
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { RULES } from '../rules/index.js';
 import { rootCauses } from './score.js';
 import { localBanner, visibleFindings } from './text.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
@@ -46,6 +47,8 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
     }
     out.push('');
   }
+  const why = RULES.filter((x) => visibleFindings(r.findings, opts).some((f) => f.ruleId === x.id));
+  if (why.length) out.push('## Why these rules', '', ...why.map((x) => `- **${x.id}**: ${cell(x.rationale)}`), '');
   if (r.manual.length) {
     out.push('## Manual checklist', '');
     for (const m of r.manual) out.push(`- [ ] **${m.id}** [${m.platforms.join(', ')}] ${m.text} (${m.docs[0]})`);

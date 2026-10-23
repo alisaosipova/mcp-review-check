@@ -28,6 +28,7 @@ First public release, planned as 0.1.0.
 - The text report prints a ready JSON fragment (title and annotation hints) for each tool that lacks them, and text and markdown show "N root causes" next to the score.
 - `--quiet` (text only): just the error and warning findings, the Score and Result lines and the disclaimer. `--checklist` (text only) prints the manual checklist in full.
 - Automatic local mode: besides `localhost`, a host without a dot or one whose every address is non-public (public DNS and the system resolver, so `/etc/hosts` and container names count) is checked in local mode. `--local` and `--no-local` force it on or off (`--no-local` also for `--stdio`). The local-mode banner names the rules made informational and goes to stderr with `--format json` and `sarif`.
+- `explain <RULE-ID>` prints a rule's severity per directory, rationale, sources and fix, and the `--ignore` hint (unknown ID: exit 2). `--list-rules` takes `--format json` or `markdown` and an ID prefix (`--list-rules TOOL`); `--list-rules --verbose`, the `--verbose` text report and the markdown report ("Why these rules") show each rule's rationale. The README rule table and `--list-rules --format markdown` come from one generator.
 
 #### Rules added
 

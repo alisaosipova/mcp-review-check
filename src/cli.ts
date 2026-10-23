@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules.
+// CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
+import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
@@ -26,6 +27,7 @@ Usage:
   mcp-review-check <url> [options]
   mcp-review-check --stdio "<command> [args...]" [options]
   mcp-review-check [options] --stdio -- <command> [args...]
+  mcp-review-check explain <RULE-ID>
 
 Options:
   --header "K: V"         Extra request header (repeatable). Values are redacted in output.
@@ -45,9 +47,9 @@ Options:
   --env K=V               Environment variable for --stdio (repeatable). Values are redacted in output.
   --cwd <dir>             Working directory for --stdio.
   --ignore <RULE-ID>      Ignore a rule (repeatable).
-  --list-rules            Print the rule catalog and exit.
+  --list-rules [prefix]   Print the rule catalog (--format text, json or markdown; IDs starting with prefix) and exit.
   --no-color              Disable colors (also off when not a TTY or NO_COLOR is set).
-  --verbose               Expand collapsed findings and show TOOL-013 info; print the redacted HTTP trace and stdio stderr.
+  --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
   --quiet                 Text only: print just error and warning findings, the Score and Result lines and the disclaimer.
   --checklist             Text only: print the manual checklist in full (default: one line with the item count).
   -h, --help              Show this help.
@@ -86,16 +88,6 @@ function parseHeader(raw: string): [string, string] {
   return [k, v];
 }
 
-function listRules(): string {
-  const lines = [`${'ID'.padEnd(9)} ${'SEVERITY BY PLATFORM'.padEnd(46)} TITLE  (SOURCE)`];
-  for (const r of RULES) {
-    const plats = Object.entries(r.severity).map(([p, s]) => `${p}=${s}`).join(', ');
-    lines.push(`${r.id.padEnd(9)} ${plats.padEnd(46)} ${r.title}  (${r.sources[0]})`);
-  }
-  for (const m of MANUAL_ITEMS) lines.push(`${m.id.padEnd(9)} ${`${m.platforms[0]}=manual`.padEnd(46)} ${m.text}  (${m.docs[0]})`);
-  return lines.join('\n') + '\n';
-}
-
 function render(r: Report, format: string, opts: Parameters<typeof renderText>[1]): string {
   switch (format) {
     case 'json': return renderJson(r);
@@ -130,7 +122,22 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     });
     if (values.help) return { code: 0, stdout: HELP, stderr };
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
-    if (values['list-rules']) return { code: 0, stdout: listRules(), stderr };
+    if (values['list-rules']) {
+      if (positionals.length > 1) throw new UsageError('--list-rules takes at most one rule ID prefix');
+      const prefix = (positionals[0] ?? '').toUpperCase();
+      const rules = RULES.filter((r) => r.id.startsWith(prefix));
+      const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
+      if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);
+      if (!['text', 'json', 'markdown'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');
+      const list = values.format === 'json' ? listRulesJson(rules, manual) : values.format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
+      return { code: 0, stdout: list, stderr };
+    }
+    if (positionals[0] === 'explain') {
+      if (positionals.length !== 2) throw new UsageError('usage: mcp-review-check explain <RULE-ID>');
+      const text = explainRule(positionals[1]);
+      if (!text) throw new UsageError(`unknown rule ID ${positionals[1]}; --list-rules prints the catalog`);
+      return { code: 0, stdout: text, stderr };
+    }
 
     if (split.command && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
