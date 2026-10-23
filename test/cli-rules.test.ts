@@ -163,3 +163,17 @@ describe('SEC-1 review (S-22): --list-rules never repeats a positional that is n
     expect((await cli(['--list-rules', 'XYZ'])).code).toBe(2);
   });
 });
+
+describe('SEC-1 review round 2 (S-25): explain never repeats a value that is not an ID', () => {
+  it('S-25: explain with a URL, user:pass@ or a bare token says «value not shown»; an ID-like value is still named', async () => {
+    for (const v of ['https://mcp.example.com/mcp?api_key=SuperSecret123', 'https://bob:SuperSecret123@mcp.example.com/mcp', 'SuperSecret123']) {
+      const r = await runCli(['explain', v]);
+      expect(r.code, v).toBe(2);
+      expect(r.stderr, v).toContain('unknown rule ID (value not shown)');
+      expect(r.stdout + r.stderr, v).not.toContain('SuperSecret123');
+    }
+    const id = await runCli(['explain', 'TOOL-999']);
+    expect(id.code).toBe(2);
+    expect(id.stderr).toContain('unknown rule ID TOOL-999');
+  });
+});

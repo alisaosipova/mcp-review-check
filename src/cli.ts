@@ -151,9 +151,9 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(' ');
 }
 
-/** A URL for a usage error: userinfo up to the last "@" of the authority, query and fragment hidden (they may carry credentials). */
+/** A URL for a usage error: everything up to the last "@" after the scheme (a password may hold "/", "?" or "#"), query and fragment hidden. */
 function shownUrl(raw: string): string {
-  return raw.replace(/\/\/[^/?#]*@/, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
+  return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
 }
 
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY): Promise<CliResult> {
@@ -180,7 +180,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (positionals[0] === 'explain') {
       if (positionals.length !== 2) throw new UsageError('usage: mcp-review-check explain <RULE-ID>');
       const text = explainRule(positionals[1]);
-      if (!text) throw new UsageError(`unknown rule ID ${positionals[1]}; --list-rules prints the catalog`);
+      if (!text) throw new UsageError(`unknown rule ID ${/^[a-z]+-\d+$/i.test(positionals[1]) ? positionals[1] : '(value not shown)'}; --list-rules prints the catalog`);
       return { code: 0, stdout: text, stderr };
     }
 

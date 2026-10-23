@@ -1,5 +1,6 @@
 // Connection diagnostics (B7): turn "fetch failed" and HTML error pages into a cause and a next step.
 import type { ConnectDiagnosis } from './snapshot.js';
+import { displayUrl } from './rules/util/net.js';
 
 const TLS_CODE = /^(CERT_|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_(GET|VERIFY)|ERR_TLS_|ERR_SSL_|HOSTNAME_MISMATCH)/;
 
@@ -76,7 +77,7 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
     const hint = sse
       ? `/sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve ${next}`
       : next ? `try ${next}` : 'check the path the server mounts MCP on';
-    return { kind: 'not-mcp', status: f.status, summary: `${what}: ${url.href} is not an MCP endpoint`, hint };
+    return { kind: 'not-mcp', status: f.status, summary: `${what}: ${displayUrl(url.href)} is not an MCP endpoint`, hint };
   }
   return { kind: 'http', status: f.status, summary: f.message ?? (f.status !== undefined ? `HTTP ${f.status}` : 'unknown error'), ...(sse && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}) };
 }

@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { cli, GOOD, type CliRun } from './cli-runner.js';
+import { BAD, cli, GOOD, type CliRun } from './cli-runner.js';
 import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 
@@ -320,5 +320,61 @@ describe('SEC-1 review (S-22)', () => {
     expect([0, 1], `exit ${r.code}`).toContain(r.code);
     expect(r.json?.server?.serverInfo?.name).toBe('deep');
     expect(r.stdout + r.stderr).not.toContain(ENV);
+  });
+});
+
+// ---- review round 2 (S-25) ----
+
+describe('SEC-1 review round 2 (S-25)', () => {
+  it.each(FORMATS)('S-25: %s: a short secret query value is redacted in the «not an MCP endpoint» diagnosis', async (format) => {
+    const s = track(await listen((_req: IncomingMessage, res: ServerResponse) => {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('Not Found');
+    }));
+    const r = await cli([`http://127.0.0.1:${s.port}/x?token=Zq1`, '--format', format, '--timeout', '5000']);
+    expect(r.code).toBe(3);
+    expect(r.stdout + r.stderr, 'the diagnosis channel is there').toContain('is not an MCP endpoint');
+    expect(r.stdout + r.stderr, `${format} leaks the token`).not.toContain('Zq1');
+  });
+
+  it('S-25: a usage error hides userinfo whose password holds "/", "?" or "#"', async () => {
+    for (const pw of ['Sk/9xQ2pLmPWSECRET31', 'Sk9x?Q2pLmPWSECRET32', 'Sk9x#Q2pLmPWSECRET33']) {
+      const r = await cli([`https://bob:${pw}@mcp.example.com/mcp`]);
+      expect(r.code, pw).toBe(2);
+      expect(r.stderr, pw).toContain('invalid URL');
+      expect(r.stderr, pw).not.toMatch(/Sk\/?9x|PWSECRET/);
+    }
+  });
+
+  const AUTHTOK = 'sk-live-AUTHTOKEN34';
+  const APITOK = 'sk-live-APITOKEN35';
+  it.each(FORMATS)('S-25: %s: a secret sign written as one word (--authtoken, --apitoken=, ?authtoken=) is redacted', async (format) => {
+    const stdio = await cli(['--format', format, '--verbose', '--stdio', `${LEAKY} --authtoken ${AUTHTOK} --apitoken=${APITOK} --crash`]);
+    expectNoLeak(stdio, [AUTHTOK, APITOK], `${format} (one-word flags)`);
+    if (format === 'json') expect(stdio.json.server.command).toBe(`${LEAKY} --authtoken «redacted» --apitoken=«redacted» --crash`);
+    const http = await cli([`http://127.0.0.1:1/mcp?authtoken=${AUTHTOK}`, '--format', format, '--timeout', '3000']);
+    expectNoLeak(http, [AUTHTOK], `${format} (?authtoken=)`);
+  });
+
+  it('S-25: an --env or --bearer value equal to a report field name leaves the report intact', async () => {
+    const plain = await cli(['--stdio', BAD, '--format', 'json', '--fail-on', 'warning']);
+    expect(plain.code).toBe(1);
+    const r = await cli(['--stdio', BAD, '--env', 'LOG_LEVEL=error', '--env', 'MODE=summary', '--env', 'STATE=failed', '--format', 'json', '--fail-on', 'warning']);
+    expect(r.stderr, 'no fatal error').not.toMatch(/fatal|TypeError/);
+    expect(r.code, 'exit follows --fail-on warning').toBe(1);
+    expect(Object.keys(r.json.summary)).toEqual(Object.keys(plain.json.summary));
+    expect(typeof r.json.summary.errors).toBe('number');
+    expect(r.json.summary.failed).toBe(true);
+    const errors = r.json.findings.filter((f: any) => f.severity === 'error').length;
+    expect(errors, 'severities keep their values').toBeGreaterThan(0);
+    expect(r.json.summary.errors).toBe(errors);
+    const text = await cli(['--stdio', BAD, '--env', 'LOG_LEVEL=error', '--fail-on', 'warning']);
+    expect(text.stdout).toMatch(/^ERRORS \(\d+\)$/m);
+    expect(text.stdout).toContain('(--fail-on warning)');
+    const s = track(await echoServer());
+    const h = await cli([`http://127.0.0.1:${s.port}/mcp`, '--bearer', 'findings', '--format', 'json', '--timeout', '5000']);
+    expect(h.stderr, 'no fatal error').not.toMatch(/fatal|TypeError/);
+    expect(h.code).not.toBe(3);
+    expect(Array.isArray(h.json.findings), 'the findings field keeps its name').toBe(true);
   });
 });

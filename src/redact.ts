@@ -38,7 +38,7 @@ function withSchemeToken(value: string): string[] {
 
 /** The secret part of a "Name: value" header string, plus the token after an auth scheme. */
 function headerSecrets(name: string, value: string): string[] {
-  return SECRET_HEADER.test(name.trim()) ? withSchemeToken(value) : [];
+  return SECRET_HEADER.test(name.trim()) || isSecretName(name.trim()) ? withSchemeToken(value) : [];
 }
 
 /**
@@ -86,14 +86,28 @@ const isPlain = (v: object) => {
   return proto === Object.prototype || proto === null;
 };
 
-/** A deep copy of `value` with every secret replaced in strings (keys included) and URL objects; no recursion, so any depth works. */
+/**
+ * Fields that hold what the server sent: it may echo a secret into a key there, so keys below them are masked too.
+ * Not capabilities, initializeRaw or discoverRaw: their keys are protocol names the rules look up and never quote.
+ */
+const SERVER_DATA = new Set(['serverInfo', 'instructions', 'tools', 'resources', 'resourceTemplates', 'prompts', 'toolsWithoutUi', 'rawPages', 'raw', 'json', 'result', 'jsonRpcError', 'args', 'headers', 'parsed', 'data']);
+/** Maps keyed by a value the server chose (resource URIs): their keys are masked, their entries are the snapshot's own. */
+const SERVER_KEYED = new Set(['resourceReads']);
+/** The report's own vocabulary (severities, platforms, verdicts): never a secret, and renderers compare these values. */
+const OWN_VOCABULARY = new Set(['ruleId', 'severity', 'platforms', 'severityByPlatform', 'verdict', 'failOn', 'toolLevel', 'era', 'kind', 'role']);
+
+/**
+ * A deep copy of `value` with every secret replaced in strings and URL objects; no recursion, so any depth works.
+ * Field names of the snapshot and the report and their own vocabulary stay (a secret like "error" must not rename
+ * summary.errors or a severity); keys are masked only inside server data (keys: 0 none, 1 this object's own, 2 the subtree).
+ */
 export function redactDeep<T>(value: T, r: Redactor): T {
   if (!r.values.size) return value;
   const seen = new Map<object, unknown>();
   const pending: (() => void)[] = [];
   // Copies one level: containers come back empty and are filled from `pending`, so deep data never grows the call stack.
-  const copy = (v: unknown): unknown => {
-    if (typeof v === 'string') return scrub(v, r);
+  const copy = (v: unknown, keys = 0, own = false): unknown => {
+    if (typeof v === 'string') return own ? v : scrub(v, r);
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return seen.get(v);
     if (v instanceof URL) {
@@ -105,13 +119,17 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     if (Array.isArray(v)) {
       const out: unknown[] = [];
       seen.set(v, out);
-      pending.push(() => { for (const x of v) out.push(copy(x)); });
+      pending.push(() => { for (const x of v) out.push(copy(x, keys, own)); });
       return out;
     }
     if (!isPlain(v)) return v;
     const out: Record<string, unknown> = {};
     seen.set(v, out);
-    pending.push(() => { for (const [k, x] of Object.entries(v)) out[scrub(k, r)] = copy(x); });
+    pending.push(() => {
+      for (const [k, x] of Object.entries(v)) {
+        out[keys ? scrub(k, r) : k] = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, own || (keys < 2 && OWN_VOCABULARY.has(k)));
+      }
+    });
     return out;
   };
   const root = copy(value);

@@ -37,10 +37,10 @@ describe('redactor (B2)', () => {
     expect(scrub(`stdio:${encodeURIComponent('run ab"c/d e')}`, r)).toBe('stdio:run%20«redacted»');
   });
 
-  it('redactDeep copies the report: strings, keys and URL objects are scrubbed, the input is untouched', () => {
+  it('redactDeep copies the report: strings, keys of server data and URL objects are scrubbed, the input is untouched', () => {
     const r = buildRedactor({ bearer: 'tok-SECRET' });
     const shared = { m: 'uses tok-SECRET' };
-    const input = { a: [shared, shared], u: new URL('https://x.test/?k=tok-SECRET'), ['tok-SECRET']: 1, n: 3, d: new Date(0) };
+    const input = { a: [shared, shared], u: new URL('https://x.test/?k=tok-SECRET'), serverInfo: { ['tok-SECRET']: 1 }, n: 3, d: new Date(0) };
     const out = redactDeep(input, r);
     expect(JSON.stringify(out)).not.toContain('tok-SECRET');
     expect(out.a[0]).toBe(out.a[1]); // shared references stay shared
@@ -88,5 +88,54 @@ describe('SEC-1 review (S-22): redactor units', () => {
     while (x.a) { expect(x.list[1]).toBe('«redacted»'); x = x.a; depth++; }
     expect(depth).toBe(20000);
     expect(x.leaf).toBe('uses «redacted»');
+  });
+});
+
+// Review round 2 (S-25): one-word secret names, header names, the --flag= forms, keys of the report's own structure.
+describe('SEC-1 review round 2 (S-25): redactor units', () => {
+  it('S-25: a secret sign written as one word with what precedes it is a secret (authtoken, apitoken, secretkey, GITHUBTOKEN, X-Auth:); look-alikes are not', () => {
+    expect(argvSecrets(['--authtoken', 'v1-AUTHTOK', '--apitoken=v2-APITOK', '--accesstoken', 'v3-ACCTOK', '--secretkey', 'v4-SECKEY', '--authkey', 'v5-AUTHKEY', 'GITHUBTOKEN=v6-GHTOK', 'X-Auth: v7-XAUTH']))
+      .toEqual(['v1-AUTHTOK', 'v2-APITOK', 'v3-ACCTOK', 'v4-SECKEY', 'v5-AUTHKEY', 'v6-GHTOK', 'v7-XAUTH']);
+    expect(argvSecrets([
+      '--keyboard', 'us', '--monkey', 'george', '--author', 'Ann', '--tokenizer-path', '/t', '--tokenizer', 'cl100k',
+      '--maxtokens', '512', '--secretkey-file', 'k.pem', '--authtoken-path', '/a', 'X-Author: Ann',
+    ])).toEqual([]);
+    const q = urlSecrets('https://x.test/mcp?authtoken=v8-QAUTHTOK&apitoken=v9-QAPITOK&keyboard=us');
+    expect(q).toContain('v8-QAUTHTOK');
+    expect(q).toContain('v9-QAPITOK');
+    expect(q).not.toContain('us');
+  });
+
+  it('S-25: the --flag=Header: value and --flag=URL forms in argv give the header token and the URL credentials', () => {
+    expect(argvSecrets(['--header=Authorization: Bearer v10-HDREQ'])).toContain('v10-HDREQ');
+    const url = argvSecrets(['--server-url=https://u:pw12@h.test/mcp?token=abcd']);
+    expect(url).toContain('pw12');
+    expect(url).toContain('abcd');
+  });
+
+  it('S-25: redactDeep keeps the field names and the own vocabulary of the snapshot and the report; keys are masked only inside what the server sent', () => {
+    const r = buildRedactor({ env: { LOG_LEVEL: 'error', MODE: 'summary', STATE: 'failed' } });
+    const input = {
+      summary: { errors: 1, warnings: 2, failed: true, gate: { failed: 'x' } },
+      failOn: 'error',
+      findings: [{ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, message: 'an error' }],
+      snap: {
+        serverInfo: { name: 's', 'x-error-hint': 'an error' },
+        tools: [{ name: 't', inputSchema: { properties: { error_code: { type: 'string' } } } }],
+        resourceReads: { 'ui://error/w': { ok: false, error: 'boom' } },
+      },
+    };
+    const out = redactDeep(input, r) as any;
+    expect(Object.keys(out)).toEqual(['summary', 'failOn', 'findings', 'snap']);
+    expect(out.failOn).toBe('error');
+    expect(out.findings[0]).toEqual({ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, message: 'an «redacted»' });
+    expect(Object.keys(out.summary)).toEqual(['errors', 'warnings', 'failed', 'gate']);
+    expect(out.summary.failed).toBe(true);
+    expect(Object.keys(out.summary.gate)).toEqual(['failed']);
+    expect(Object.keys(out.snap)).toEqual(['serverInfo', 'tools', 'resourceReads']);
+    expect(out.snap.serverInfo).toEqual({ name: 's', 'x-«redacted»-hint': 'an «redacted»' });
+    expect(Object.keys(out.snap.tools[0].inputSchema.properties)).toEqual(['«redacted»_code']);
+    // a map keyed by what the server chose: its keys are masked, its entries keep their field names
+    expect(out.snap.resourceReads).toEqual({ 'ui://«redacted»/w': { ok: false, error: 'boom' } });
   });
 });
