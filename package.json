@@ -1,0 +1,42 @@
+{
+  "name": "mcp-review-check",
+  "version": "0.1.0",
+  "description": "Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec review criteria.",
+  "type": "module",
+  "bin": {
+    "mcp-review-check": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/postbuild.mjs",
+    "test": "vitest run",
+    "readme:rules": "node scripts/rules-table.mjs --write"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "lint",
+    "claude",
+    "chatgpt",
+    "connector"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "~1.32.1",
+    "ajv": "^8.20.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "typescript": "~5.9",
+    "vitest": "^3.2.7"
+  }
+}
