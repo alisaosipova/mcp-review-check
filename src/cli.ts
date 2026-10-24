@@ -3,7 +3,7 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { buildSnapshot, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
+import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
 import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
@@ -324,6 +324,14 @@ const isMain = (() => {
 })();
 
 if (isMain) {
+  // The stdio servers lead their own process group (R-5), so a terminal's Ctrl+C reaches only the CLI: end them, then
+  // die by the same signal (130, 143), also when the run finishes first and exits.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    process.once(signal, () => {
+      process.once('exit', () => process.kill(process.pid, signal));
+      void endAllNow().finally(() => process.exit());
+    });
+  }
   runCli(process.argv.slice(2)).then(({ code, stdout, stderr }) => {
     // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB (R-7).
     process.stderr.write(stderr, () => process.stdout.write(stdout, () => process.exit(code)));

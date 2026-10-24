@@ -2,7 +2,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
@@ -417,7 +417,7 @@ export function stderrSummary(tail: string): string {
 }
 
 async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}, progress?: Progress): Promise<StdioConn> {
-  const inner = new StdioClientTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
+  const inner = new GroupStdioTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
   // Masked before the 4096-character tail and the 200-character summary lines cut it (SEC-1).
   inner.stderr?.on('data', (c: Buffer) => { stderrTail = scrub(stderrTail + c.toString('utf8'), r).slice(-4096); });
@@ -425,8 +425,9 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
     if (proc && progress?.children) {
-      if (progress.stopped) proc.kill('SIGKILL'); // spawned while the deadline was ending the others
-      else { progress.children.add(proc); proc.once('exit', () => progress.children?.delete(proc)); }
+      if (progress.stopped) endTree(proc, 'SIGKILL'); // spawned while the deadline was ending the others
+      // On POSIX the entry stays while the server's process group outlives its wrapper (R-5).
+      else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
     let buf = '';
     proc?.stdout?.on('data', (c: Buffer) => {
@@ -560,10 +561,68 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
 /** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait (R-60). */
 async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 1000): Promise<void> {
   for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-    const live = [...(children ?? [])]; // a process leaves the set on 'exit'
+    const live = [...(children ?? [])].filter(running); // a process leaves the set on 'exit' unless its group lives on
     if (!live.length) return;
-    for (const c of live) c.kill(signal);
-    await Promise.race([Promise.all(live.map((c) => new Promise((done) => c.once('exit', done)))), new Promise((done) => setTimeout(done, graceMs).unref())]);
+    for (const c of live) endTree(c, signal);
+    for (const until = Date.now() + graceMs; live.some(running) && Date.now() < until;) await new Promise((done) => setTimeout(done, 25));
+  }
+}
+
+/** Every stdio server of every run in this process, for the CLI's signal handler (endAllNow). */
+const everyChild = new Set<ChildProcess>();
+
+/** A stdio server still running: the process itself or, on POSIX, anything left in its process group (R-5). */
+function running(c: ChildProcess): boolean {
+  if (c.exitCode === null && c.signalCode === null) return true;
+  try { return process.platform !== 'win32' && !!c.pid && process.kill(-c.pid, 0); } catch { return false; }
+}
+
+/** Send `signal` to a stdio server and everything it started: its process group on POSIX, its tree on Windows (R-5). */
+function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
+  // Windows: before the wrapper (cmd.exe for npx, .cmd and .bat) dies, as /T finds only the children of a live pid.
+  if (process.platform === 'win32') { if (c.pid) spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); }
+  else if (c.pid) { try { process.kill(-c.pid, signal); return; } catch { /* no group (any more): the process alone */ } }
+  c.kill(signal);
+}
+
+/** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM and SIGHUP (R-5). */
+export function endAllNow(): Promise<void> {
+  return endChildren(everyChild);
+}
+
+/** The SDK 1.32.1 transport's private state that GroupStdioTransport works on (client/stdio.js). */
+type SdkStdio = { _process?: ChildProcess; _serverParams: ConstructorParameters<typeof StdioClientTransport>[0]; _readBuffer: { append(chunk: Buffer): void }; _stderrStream: NodeJS.WritableStream | null; processReadBuffer(): void };
+
+/** The SDK's stdio transport, but a server started through a wrapper (npx, .cmd, .bat, sh -c) ends with everything it
+ *  started (R-5): on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
+class GroupStdioTransport extends StdioClientTransport {
+  /** The SDK's start (client/stdio.js:60-107) with detached: true; Windows keeps it as is (no groups there). */
+  override async start(): Promise<void> {
+    if (process.platform === 'win32') return super.start();
+    const self = this as unknown as SdkStdio;
+    if (self._process) throw new Error('StdioClientTransport already started!');
+    const p = self._serverParams;
+    return new Promise((resolve, reject) => {
+      const proc = self._process = spawn(p.command, p.args ?? [], { env: { ...getDefaultEnvironment(), ...p.env }, stdio: ['pipe', 'pipe', p.stderr ?? 'inherit'], shell: false, cwd: p.cwd, detached: true });
+      proc.on('error', (e) => { reject(e); this.onerror?.(e); });
+      proc.on('spawn', () => resolve());
+      proc.on('close', () => { self._process = undefined; this.onclose?.(); });
+      proc.stdin?.on('error', (e) => this.onerror?.(e));
+      proc.stdout?.on('data', (chunk: Buffer) => { try { self._readBuffer.append(chunk); self.processReadBuffer(); } catch (e) { this.onerror?.(e as Error); this.close().catch(() => {}); } });
+      proc.stdout?.on('error', (e) => this.onerror?.(e));
+      if (self._stderrStream && proc.stderr) proc.stderr.pipe(self._stderrStream);
+    });
+  }
+
+  /** As the SDK's close (stdin EOF, up to 2 s), then the group or tree gets SIGTERM before the SDK ends the wrapper. */
+  override async close(): Promise<void> {
+    const proc = (this as unknown as SdkStdio)._process;
+    if (proc && proc.exitCode === null && proc.signalCode === null) {
+      proc.stdin?.end();
+      await Promise.race([new Promise((done) => proc.once('exit', done)), new Promise((done) => setTimeout(done, 2000).unref())]);
+      if (proc.exitCode === null && proc.signalCode === null) endTree(proc, 'SIGTERM');
+    }
+    return super.close();
   }
 }
 
