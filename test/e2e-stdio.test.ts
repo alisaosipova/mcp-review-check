@@ -144,7 +144,7 @@ describe('e2e stdio', () => {
       expect(res).toHaveProperty('ruleId');
       expect(res).toHaveProperty('message.text');
       expect(['error', 'warning', 'note']).toContain(res.level);
-      expect(res.locations[0].physicalLocation.artifactLocation.uri).toMatch(/^stdio:/);
+      expect(res.locations[0].physicalLocation.artifactLocation.uri).toBe('.mcp-review-check');
     }
   });
 

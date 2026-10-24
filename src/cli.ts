@@ -12,7 +12,7 @@ import { buildReport, resultLine, scoreLabel, type Report } from './report/index
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
-import { renderSarif } from './report/sarif.js';
+import { renderSarif, SARIF_LOCATION } from './report/sarif.js';
 import { annotations, appendStepSummary } from './report/github.js';
 import type { FailOn } from './report/score.js';
 import { localBanner, renderText, type TextOptions } from './report/text.js';
@@ -37,6 +37,7 @@ Options:
   --target <t>            claude | chatgpt | all (default: all)
   --format <f>            text | json | markdown | sarif (default: text)
   --output <file>         Write the report to a file; print a summary line to stderr.
+  --sarif-location <path> Repository-relative path the SARIF results point at (default: .mcp-review-check).
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
   --max-duration <ms>     Stop the whole check after this long and report what ran (default: no limit).
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
@@ -82,7 +83,7 @@ class UsageError extends Error {}
 
 const OPTIONS = {
   stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
-  target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' },
+  target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
   timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
@@ -126,11 +127,11 @@ function parseHeader(raw: string): [string, string] {
   return [k, v];
 }
 
-function render(r: Report, format: string, opts: TextOptions, rerun: string): string {
+function render(r: Report, format: string, opts: TextOptions, rerun: string, sarifLocation: string): string {
   switch (format) {
     case 'json': return renderJson(r);
     case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose, rerun }); // --quiet and --checklist are text only (D-3)
-    case 'sarif': return renderSarif(r);
+    case 'sarif': return renderSarif(r, sarifLocation);
     default: return renderText(r, opts);
   }
 }
@@ -192,6 +193,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
     const format = values.format!;
     if (!['text', 'json', 'markdown', 'sarif'].includes(format)) throw new UsageError('--format must be text, json, markdown or sarif');
+    const sarifLocation = values['sarif-location'] ?? SARIF_LOCATION;
+    // Code scanning takes repository-relative paths only: no scheme (C: included), no leading / or \, no "..".
+    if (!sarifLocation || /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(sarifLocation) || sarifLocation.split(/[\\/]/).includes('..')) throw new UsageError('--sarif-location must be a relative path without a scheme or ".." (the value is not shown)');
     const failOn = values['fail-on'] as FailOn;
     if (!['error', 'warning', 'never'].includes(failOn)) throw new UsageError('--fail-on must be error, warning or never');
     const timeoutMs = Number(values.timeout);
@@ -273,7 +277,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document (U-12)
     const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
     const rerun = rerunCommand(argv, redactor);
-    const body = render(report, format, textOpts, rerun);
+    const body = render(report, format, textOpts, rerun, sarifLocation);
     if (env.GITHUB_ACTIONS === 'true') { // R-46: annotations go to stderr, so stdout stays the document (U-12)
       for (const a of annotations(report)) stderr += `${a}\n`;
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, renderMarkdown(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }));

@@ -272,7 +272,7 @@ describe('other formats', () => {
     for (const l of levels) expect(['error', 'warning', 'note']).toContain(l);
     const withTool = run.results.find((r: any) => r.ruleId === 'TOOL-011');
     expect(withTool.locations[0].logicalLocations).toEqual([{ name: 'delete_invoice', kind: 'function' }]);
-    expect(withTool.locations[0].physicalLocation.artifactLocation.uri).toBe('https://mcp.acme.test/mcp');
+    expect(withTool.locations[0].physicalLocation.artifactLocation.uri).toBe('.mcp-review-check');
     expect(run.results.some((r: any) => String(r.ruleId).startsWith('MAN-'))).toBe(false);
   });
 });
