@@ -20,6 +20,46 @@ describe('redactor (B2)', () => {
     expect(urlSecrets('not a url')).toEqual([]);
   });
 
+  // R-9 (D-sec-2, D-sec-7, D-sec-8): sources without a flag sign; synthetic values only.
+  const PATH_TOK = 'sk-live-PATHSYNTH0123456789';
+  const QUERY_TOK = 'ghp_QUERYSYNTHabcdefghijklmnopqrstuvwxyz';
+  const USER_TOK = 'ghp_USERSYNTHabcdefghijklmnopqrstuvwxyz01';
+
+  it('R-9: urlSecrets: known-format tokens in query values under any name and in path segments, secret-named fragment parameters, the username', () => {
+    expect(urlSecrets(`https://${USER_TOK}@h.test/api/s/${PATH_TOK}/mcp?sig=${QUERY_TOK}&page=2#access_token=FRAGSYNTH0001&state=open`))
+      .toEqual([QUERY_TOK, 'FRAGSYNTH0001', PATH_TOK, USER_TOK, USER_TOK]);
+    // user:pass@: the username is masked too, a short one is left out as everywhere (under 4 characters)
+    expect(urlSecrets(`https://${USER_TOK}:pw-PASSSYNTH01@h.test/mcp`)).toEqual(['pw-PASSSYNTH01', 'pw-PASSSYNTH01', USER_TOK, USER_TOK]);
+    // a malformed percent-escape in the userinfo keeps every other value (fail-closed)
+    expect(urlSecrets(`https://bad%zzuser:pw-PASSSYNTH02@h.test/mcp?token=abcd`)).toEqual(['abcd', 'pw-PASSSYNTH02', 'pw-PASSSYNTH02', 'bad%zzuser', 'bad%zzuser']);
+    // no known-format token: plain path segments, query values and fragments stay
+    expect(urlSecrets('https://h.test/mcp/v1/tools?sig=abc&page=2#section-2')).toEqual([]);
+  });
+
+  it('R-9: argvSecrets: a positional argument that is a known-format token, once, after the flag-taken values', () => {
+    expect(argvSecrets(['server.js', 'sk-live-POSITIONALSYNTH01', '--api-key', QUERY_TOK, '--model', 'gpt-4o-mini-2024-07-18', '@scope/pkg@latest', `https://x.test/s/${PATH_TOK}/mcp`]))
+      .toEqual(['sk-live-POSITIONALSYNTH01', QUERY_TOK, PATH_TOK]);
+  });
+
+  it('R-9: known token formats are recognized whole (D-sec-2-heuristic), ordinary arguments are not', () => {
+    for (const t of ['sk-live-SYNTHabcdefghijklmnop0123', 'sk-proj-SYNTHAbCdEfGhIjKlMnOpQrStUv012345', 'sk_live_SYNTH0123456789abcdefABCD', 'ghp_SYNTHabcdefghijklmnopqrstuvwxyz0123',
+      'github_pat_11SYNTH0abcdefghijkl_mnopqrstuvwxyzABCDEF0123456789', 'glpat-SYNTHabcdefghij0123456', 'xoxb-1234567890-SYNTH-abcdefghij', 'AKIASYNTH0EXAMPLE123',
+      'npm_SYNTHabcdefghijklmnopqrstuvwxyz01234', 'hf_SYNTHabcdefghijklmnopqrstuvwxyz01', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.SYNTHsigABCdef0123']) expect(argvSecrets([t]), t).toEqual([t]);
+    for (const a of ['/home/user/project/dist/server.js', 'C:\\Users\\me\\mcp\\server.js', './node_modules/.bin/mcp-server', '@modelcontextprotocol/server-filesystem', 'mcp-server-git@1.2.3',
+      '@scope/pkg@latest', '-y', '--directory', 'mcp_server_fetch', 'claude-sonnet-4-5-20250929', 'gpt-4o-mini-2024-07-18', '123e4567-e89b-12d3-a456-426614174000',
+      'da39a3ee5e6b4b0d3255bfef95601890afd80709', '2026-10-24T11:11:07.869Z', 'ghcr.io/org/mcp-image:1.4.2', 'db.internal.example.com', 'skeleton-loader-component-v2', 'sk-SK', 'AKIA',
+      'eyJhbGciOiJIUzI1NiJ9', 'node_modules_cache_v2_LinuxX64_Node20', 'Dockerfile.production-build-2026', 'x sk-live-SYNTHabcdefghijklmnop0123']) expect(argvSecrets([a]), a).toEqual([]);
+  });
+
+  it('R-9: buildRedactor: the URL username and the parts of a composite --env value are strong values', () => {
+    expect([...buildRedactor({ url: `http://${USER_TOK}@h.test/mcp` }, true).values]).toContain(USER_TOK);
+    const v = [...buildRedactor({ env: { DATABASE_URL: 'postgres://app:pw-DBSYNTH0001@db.test:5432/app', UPSTREAM_AUTH: 'Bearer sk-live-UPSYNTH0002' } }, true).values];
+    expect(v).toContain('pw-DBSYNTH0001');
+    expect(v).toContain('sk-live-UPSYNTH0002');
+    // the whole value under a plain name stays weak (R-8)
+    expect(v).not.toContain('postgres://app:pw-DBSYNTH0001@db.test:5432/app');
+  });
+
   it('buildRedactor: bearer, header values, env values; trivial values are never redacted', () => {
     const r = buildRedactor({
       bearer: 'bearer-SECRET', headers: { 'X-Api-Key': 'hdr-SECRET', Authorization: 'Bearer tok-SECRET' },

@@ -96,17 +96,30 @@ export function isSecretName(name: string): boolean {
   return (SECRET_SIGN.test(n) || SECRET_TAIL.test(n)) && !NOT_SECRET.test(n);
 }
 
+/** R-9: a whole value in a known token format (OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face keys, a JWT); no entropy guess. */
+const KNOWN_TOKEN = /^(sk-(live|test|proj|ant|or)?[-_]?[A-Za-z0-9_-]{16,}|[sr]k_(live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[abprse]-[A-Za-z0-9-]{10,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|npm_[A-Za-z0-9]{36}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})$/;
+
+/** Whether a value is a credential by its form alone (a positional argument, a path segment, a query value under any name). */
+export function isKnownToken(value: string): boolean {
+  return KNOWN_TOKEN.test(value);
+}
+
 export const REDACTED_MARK = '«redacted»';
 
-/** The URL for display in reports: secret query values redacted, userinfo (user:pass@) removed. */
+/** The URL for display in reports: userinfo (user:pass@) removed; secret query and fragment values and known-format tokens (R-9) redacted. */
 export function displayUrl(raw: string): string {
   try {
     const u = new URL(raw);
     let changed = false;
     if (u.username || u.password) { u.username = ''; u.password = ''; changed = true; }
     const marker = 'MCPREVIEWCHECKREDACTED';
-    for (const k of [...u.searchParams.keys()]) if (isSecretName(k)) { u.searchParams.set(k, marker); changed = true; }
-    return changed ? u.href.split(marker).join(REDACTED_MARK) : raw;
+    for (const [k, v] of [...u.searchParams]) if (isSecretName(k) || isKnownToken(v)) { u.searchParams.set(k, marker); changed = true; }
+    const path = u.pathname.replace(/[^/]+/g, (s) => (isKnownToken(s) ? marker : s));
+    const hash = u.hash.slice(1).replace(/(^|&)([^&=]+)=([^&]*)/g, (m, sep, k, v) => (isSecretName(k) || isKnownToken(v) ? `${sep}${k}=${marker}` : m));
+    if (path !== u.pathname) { u.pathname = path; changed = true; }
+    if (hash !== u.hash.slice(1)) { u.hash = hash; changed = true; }
+    // A mark the report redaction already put into the path or query comes back percent-encoded: keep it readable.
+    return changed ? u.href.split(marker).join(REDACTED_MARK).split(encodeURIComponent(REDACTED_MARK)).join(REDACTED_MARK) : raw;
   } catch {
     return raw;
   }

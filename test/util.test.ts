@@ -170,6 +170,13 @@ describe('review fixes: helpers', () => {
     expect(displayUrl('https://a.test')).toBe('https://a.test');
   });
 
+  it('R-9: displayUrl redacts secret-named fragment parameters, known-format tokens in path segments and query values', () => {
+    expect(displayUrl('http://h.test/mcp#access_token=FRAGSYNTH0001&state=open')).toBe('http://h.test/mcp#access_token=«redacted»&state=open');
+    expect(displayUrl('https://h.test/api/s/sk-live-PATHSYNTH0123456789/mcp?sig=ghp_QUERYSYNTHabcdefghijklmnopqrstuvwxyz&page=2'))
+      .toBe('https://h.test/api/s/«redacted»/mcp?sig=«redacted»&page=2');
+    expect(displayUrl('https://h.test/mcp/v1?page=2#section-2')).toBe('https://h.test/mcp/v1?page=2#section-2');
+  });
+
   it('stderrSummary keeps the cause line of a stack trace, not only the bottom frames', () => {
     const tail = 'file:///x/index.js:22\nError running script: ReferenceError: crypto is not defined\n    at run (file:///x/index.js:22:46)\n    at async ModuleLoader.import (node:internal/modules/esm/loader:336:24)';
     expect(stderrSummary(tail)).toMatch(/^Error running script: ReferenceError: crypto is not defined \| at async ModuleLoader/);

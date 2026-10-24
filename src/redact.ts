@@ -1,7 +1,7 @@
 // Secret redaction: one Redactor per run covers HTTP credentials and stdio argv/env secrets, and the
 // finished Report is scrubbed in one place before any format renders it.
 import { createRedactor, scrub, type Redactor } from './protocol/trace.js';
-import { isSecretName } from './rules/util/net.js';
+import { isKnownToken, isSecretName } from './rules/util/net.js';
 
 export type { Redactor } from './protocol/trace.js';
 export { scrub } from './protocol/trace.js';
@@ -12,17 +12,28 @@ const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-
 /** Values never treated as secrets on their own: they would blank out unrelated report text, or, as protocol and schema words, server data (R-8). */
 const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|object|string|number|integer|array|boolean|type|title|name|description|properties|required|items|enum|const|default|format|pattern|anyOf|oneOf|allOf|\$ref|\$schema|\$defs|uri|mimeType|text|image|audio|resource|resource_link|json|html|plain|xml|application)$/i;
 
-/** Credentials inside a URL: the password of user:pass@ and secret query parameter values, decoded and as written ("+", %2f). */
+/** A percent-decoded URL part, or the part as written when its escapes are malformed. */
+const decoded = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
+
+/**
+ * Credentials inside a URL, decoded and as written ("+", %2f): query and fragment parameters with a secret name or a
+ * value in a known token format, path segments in a known token format, the password and the username of user:pass@ (R-9).
+ */
 export function urlSecrets(raw: string): string[] {
   try {
     const u = new URL(raw);
-    // searchParams has one entry per non-empty "&" part; the raw value differs from the decoded one on "+" or %2f.
-    const parts = u.search.slice(1).split('&').filter(Boolean);
-    const out = [...u.searchParams].flatMap(([k, v], i) => {
-      const raw = parts[i]?.split(/=(.*)/s)[1] ?? '';
-      return !isSecretName(k) ? [] : raw && raw !== v ? [v, raw] : [v];
+    // URLSearchParams has one entry per non-empty "&" part; the raw value differs from the decoded one on "+" or %2f.
+    const out = [u.search, u.hash].flatMap((s) => {
+      const parts = s.slice(1).split('&').filter(Boolean);
+      return [...new URLSearchParams(s.slice(1))].flatMap(([k, v], i) => {
+        const raw = parts[i]?.split(/=(.*)/s)[1] ?? '';
+        return !isSecretName(k) && !isKnownToken(v) ? [] : raw && raw !== v ? [v, raw] : [v];
+      });
     });
-    if (u.password) out.push(u.password, decodeURIComponent(u.password));
+    out.push(...u.pathname.split('/').filter(isKnownToken));
+    if (u.password) out.push(u.password, decoded(u.password));
+    // A username shorter than 4 characters is never a secret (createRedactor); TRIVIAL values are dropped in buildRedactor.
+    if (u.username.length >= 4) out.push(u.username, decoded(u.username));
     return out;
   } catch {
     return [];
@@ -55,6 +66,7 @@ export function argvSecrets(args: string[]): string[] {
     const header = /^([\w-]+)\s*:\s*(.+)$/s.exec(a.replace(/^-{1,2}[\w.-]+=/, ''));
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
     if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, '')));
+    else if (isKnownToken(a)) out.push(a);
   }
   return out;
 }
@@ -76,6 +88,7 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   if (input.bearer) values.push(input.bearer);
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
   if (input.url) values.push(...urlSecrets(input.url));
+  for (const v of Object.values(input.env ?? {})) values.push(...withSchemeToken(v).slice(1), ...urlSecrets(v));
   if (input.argv) values.push(...argvSecrets(input.argv));
   for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k)) values.push(v);
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
