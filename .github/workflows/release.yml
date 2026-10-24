@@ -4,6 +4,8 @@ name: Release
 # Publishing uses npm trusted publishing (OIDC): configure it on npmjs.com for this repository,
 # workflow file "release.yml" and environment "npm". No long-lived npm token is needed;
 # provenance is attached automatically (publishConfig.provenance is also set).
+# Only the publish job can mint the OIDC token and only gh-release can write to the repository; neither installs
+# dependencies, builds or runs tests: the build job does that without write permissions and hands over the tarball.
 on:
   push:
     tags: ['v*.*.*']
@@ -12,20 +14,18 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment: npm
+    timeout-minutes: 20
     permissions:
-      contents: write # create the GitHub release
-      id-token: write # npm trusted publishing and provenance
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
-          registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or newer.
-      - run: npm install -g npm@^11.5.1
       - run: npm ci
       - name: Tag matches package.json version
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
@@ -34,14 +34,47 @@ jobs:
       - run: npm test
         env:
           MCP_REVIEW_CHECK_SKIP_BUILD: '1'
+      - run: npm pack
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: package
+          path: mcp-review-check-*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer; an exact version, so the release does not pick up whatever is newest.
+      - run: npm install -g npm@11.21.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: package
       - name: Publish to npm
         # Pre-release tags (v0.2.0-rc.1) go to the "next" dist-tag.
-        run: npm publish $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
+        run: npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
         env:
           # Only for the very first publish (a trusted publisher can be configured only once the package exists):
           # a short-lived granular token in the NPM_TOKEN secret. Delete the secret afterwards; OIDC is used when it is empty.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  gh-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create the GitHub release
+    steps:
       - name: Create GitHub release
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--prerelease")
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--prerelease")
         env:
           GH_TOKEN: ${{ github.token }}

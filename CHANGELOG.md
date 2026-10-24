@@ -14,7 +14,7 @@ First public release, planned as 0.1.0.
 - Checks remote Streamable HTTP, legacy HTTP+SSE and stdio servers, including OAuth discovery probes and opt-in runtime checks (`--active`, `--active-auth`).
 - Text, JSON, Markdown and SARIF reports with per-platform verdicts for the Claude connector directory and ChatGPT plugins.
 - `npm pack` and `npm publish` build `dist/` themselves (`prepack`), so a package made from a clean clone ships a working `mcp-review-check` binary.
-- CI on Node 20.19, 22 and 24 on Linux, macOS and Windows (build, typecheck of sources and tests, tests, a packed-tarball smoke run), a release workflow that publishes a version tag to npm with provenance through trusted publishing (OIDC), and Dependabot updates for npm and GitHub Actions.
+- CI on Node 20.19, 22 and 24 on Linux, macOS and Windows (build, typecheck of sources and tests, tests, a packed-tarball smoke run), a release workflow that publishes a version tag to npm with provenance through trusted publishing (OIDC), and Dependabot updates for npm and GitHub Actions. The release builds, tests and packs in a job without write permissions; only the job that publishes the packed tarball gets `id-token: write` and only the one that creates the GitHub release gets `contents: write`, neither installs dependencies or runs tests, and npm is installed at an exact version. Every action is pinned to a commit SHA, `actions/checkout` keeps no token, and every job has `timeout-minutes`.
 - A stability policy in the README.
 - `--stdio -- <command> [args...]` passes the server command verbatim, without quoting rules.
 - JSON reports carry `schemaVersion` (1) and `tool.catalogAgeDays`.
