@@ -181,3 +181,34 @@ describe('SEC-1 review round 2 (S-25): explain never repeats a value that is not
     expect(id.stderr).toContain('unknown rule ID TOOL-999');
   });
 });
+
+describe('R-12: --ignore MAN-xxx and one-line parseArgs errors (D-rules-4, CRIT-5)', () => {
+  it('R-12: --ignore man-001 hides MAN-001 from JSON manual and the text checklist', async () => {
+    const [json, text] = await Promise.all([
+      cli(['--ignore', 'man-001', '--format', 'json', '--stdio', GOOD]),
+      cli(['--ignore', 'man-001', '--checklist', '--stdio', GOOD]),
+    ]);
+    expect(json.code, json.stderr).toBe(0);
+    const ids = JSON.parse(json.stdout).manual.map((m: any) => m.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids).not.toContain('MAN-001');
+    expect(text.code, text.stderr).toBe(0);
+    expect(text.stdout).toMatch(/MAN-002/);
+    expect(text.stdout).not.toMatch(/MAN-001/);
+  }, 60000);
+
+  it('R-12: a parseArgs error is exactly the lines "error: …" and "Run with --help…", without the value', async () => {
+    for (const args of [['http://127.0.0.1:9/mcp', '--bearer', '-SYNTHVALUE'], ['http://127.0.0.1:9/mcp', '--timeout'], ['http://127.0.0.1:9/mcp', '--no-color=SYNTHVALUE']]) {
+      const r = await runCli(args);
+      expect(r.code, args.join(' ')).toBe(2);
+      const lines = r.stderr.trimEnd().split('\n');
+      expect(lines, args.join(' ')).toHaveLength(2);
+      expect(lines[0]).toMatch(/^error: --[a-z-]+ /);
+      expect(lines[1]).toBe('Run with --help for usage.');
+      expect(r.stderr).not.toContain('SYNTHVALUE');
+    }
+    expect((await runCli(['http://127.0.0.1:9/mcp', '--bearer', '-x'])).stderr).toBe('error: --bearer needs a value; write --bearer=<value> for a value that starts with "-"\nRun with --help for usage.\n');
+    expect((await runCli(['http://127.0.0.1:9/mcp', '--timeout'])).stderr).toBe('error: --timeout needs a value\nRun with --help for usage.\n');
+    expect((await runCli(['http://127.0.0.1:9/mcp', '--no-color=1'])).stderr).toBe('error: --no-color takes no value\nRun with --help for usage.\n');
+  });
+});

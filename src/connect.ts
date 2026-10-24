@@ -234,7 +234,7 @@ export function cleanErrorMessage(message: string, status: number | undefined, r
     m = `${m.slice(0, html.index).trim()} HTML page${title ? ` ("${title}")` : ''}`.trim();
   }
   if (m.length > 200) m = `${m.slice(0, 200)}…`;
-  return status !== undefined && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m;
+  return status !== undefined && status >= 100 && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m; // the SDK's -1 is no HTTP status (R-12)
 }
 
 async function connectSse(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, variant: ClientVariant = {}): Promise<LegacyConn> {

@@ -7,7 +7,6 @@ import { RULES } from '../rules/index.js';
 import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
-import { rootCauses } from './score.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
 
 export interface TextOptions {
@@ -144,9 +143,10 @@ export function renderText(r: Report, opts: TextOptions): string {
 
   if (opts.quiet) out.length = findingsEnd; // no fix snippets, ignored count, checklist or skipped rules
   const s = r.summary;
-  const rc = rootCauses(r.findings);
+  const rc = r.rootCauses;
   const causes = rc.errors + rc.warnings;
-  out.push(...(out.length ? [''] : []), `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info`);
+  // --quiet hides the info findings, so it does not count them either (R-12).
+  out.push(...(out.length ? [''] : []), `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings${opts.quiet ? '' : ` · ${s.info} info`}`);
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);

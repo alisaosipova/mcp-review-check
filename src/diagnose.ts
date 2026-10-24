@@ -35,6 +35,11 @@ export function describeCause(url: URL, cause: { code?: string; message?: string
     case 'EPIPE':
     case 'UND_ERR_SOCKET':
       return { kind: 'reset', code, summary: `connection to ${hostPort} was reset (${code})`, hint: 'retry; a proxy, WAF or TLS terminator may be dropping the request' };
+    case 'EHOSTUNREACH':
+    case 'ENETUNREACH':
+    case 'EHOSTDOWN':
+    case 'EADDRNOTAVAIL': // kind stays 'other': JSON coverage.diagnosis.kind does not change (R-12)
+      return { kind: 'other', code, summary: `no route to ${hostPort} (${code})`, hint: 'check the address, VPN and firewall; on macOS 15+ allow Local Network access for your terminal app (System Settings > Privacy & Security > Local Network)' };
   }
   if (isTlsCode(code)) {
     return {

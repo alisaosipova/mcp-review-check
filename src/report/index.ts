@@ -8,7 +8,7 @@ import { displayUrl } from '../rules/util/net.js';
 import { hasUi, isStr } from '../rules/util/access.js';
 import { uiResources } from '../rules/util/ui.js';
 import type { Snapshot } from '../snapshot.js';
-import { gate, gatedPlatforms, score, SCORE_VERSION, verdict, type FailOn, type Gate, type Verdict } from './score.js';
+import { gate, gatedPlatforms, rootCauses, score, SCORE_VERSION, verdict, type FailOn, type Gate, type Verdict } from './score.js';
 
 export interface Report {
   tool: { name: string; version: string; catalogDate: string; catalogAgeDays: number };
@@ -17,6 +17,8 @@ export interface Report {
   snap: Snapshot;
   findings: Finding[];
   ignored: Finding[];
+  /** Root causes on the score's basis, every platform (D-4), not the --target findings (R-12); not in JSON. */
+  rootCauses: { errors: number; warnings: number };
   skipped: EngineResult['skipped'];
   rulesRun: number;
   manual: ManualItem[];
@@ -46,7 +48,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   return {
     tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
     startedAt: startedAt.toISOString(), durationMs, snap,
-    findings: f, ignored: result.ignored, skipped: result.skipped, rulesRun: result.rulesRun, manual, failOn,
+    findings: f, ignored: result.ignored, rootCauses: rootCauses(result.scored ?? f), skipped: result.skipped, rulesRun: result.rulesRun, manual, failOn,
     summary: {
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,

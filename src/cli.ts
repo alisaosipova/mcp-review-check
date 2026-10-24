@@ -109,6 +109,20 @@ function closestOption(name: string): string | undefined {
   return best;
 }
 
+/** One line for a parseArgs error: the option and what it needs, never its value or Node's multi-line advice (R-12). */
+function usageMessage(e: Error & { code?: string }): string {
+  const option = /'(?:-\w, )?(-[^'=\s,]*)/.exec(e.message)?.[1];
+  if (option && e.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
+    const near = closestOption(option);
+    return `unknown option ${option}${near ? `; did you mean ${near}?` : ''}`;
+  }
+  if (option && e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') {
+    if (/ambiguous/.test(e.message)) return `${option} needs a value; write ${option}=<value> for a value that starts with "-"`;
+    return /does not take an argument/.test(e.message) ? `${option} takes no value` : `${option} needs a value`;
+  }
+  return e.message.split('\n')[0];
+}
+
 /** Largest --timeout: 2^31-1 ms (the setTimeout limit) minus the 1000 ms margin used in withTimeout. */
 export const MAX_TIMEOUT_MS = 2 ** 31 - 1 - 1000;
 
@@ -271,7 +285,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
-    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
+    const ignoredIds = new Set((values.ignore ?? []).map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item (R-12)
+    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
 
@@ -307,10 +322,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     return { code, stdout: body, stderr };
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
-      // parseArgs names an unknown option without its "=value"; the rest of its message is not repeated.
-      const unknown = (e as { code?: string }).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION' ? /'(-[^'=]*)/.exec((e as Error).message)?.[1] : undefined;
-      const near = unknown && closestOption(unknown);
-      const message = unknown ? `unknown option ${unknown}${near ? `; did you mean ${near}?` : ''}` : (e as Error).message;
+      // parseArgs names an option without its "=value"; the rest of its message is not repeated.
+      const message = e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string });
       return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
     }
     // R-3: in GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.

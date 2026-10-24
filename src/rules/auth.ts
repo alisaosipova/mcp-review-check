@@ -1,6 +1,7 @@
 // AUTH: OAuth and authorization (§2.8).
 import type { AsObservation, Platform, Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding } from './types.js';
+import { describeCause, isTlsCode } from '../diagnose.js';
 import { isObj, isStr, isStrArray, type Obj } from './util/access.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, isSecretQueryParam } from './util/net.js';
 import { describeAttempts, endedTransient, INCONCLUSIVE, isTransient } from './util/obs.js';
@@ -292,6 +293,12 @@ export const AUTH_010 = defineRule(
     for (const t of snap.transport.tls ?? []) {
       if (t.ok || (t.role ? t.role !== 'as' : t.host === mcpHost)) continue;
       const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
+      // A plain network error (ENOTFOUND, ECONNREFUSED) is no certificate verdict, as in SRV-001: name the cause (R-12).
+      if (!t.transient && /^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && t.code !== 'EPROTO') {
+        const d = describeCause(new URL(`https://${t.host}`), { code: t.code });
+        out.push({ message: `${/^fetch failed/.test(d.summary) ? `${t.host} could not be reached (${t.code})` : d.summary}; TLS not checked${tries}`, fix: 'Publish public DNS records for every OAuth endpoint host and serve it over https.' });
+        continue;
+      }
       out.push(t.transient
         ? { severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }
         : { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}` });

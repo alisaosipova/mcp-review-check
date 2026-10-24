@@ -292,3 +292,21 @@ describe('R-12: AUTH-001 by the shared secret-name list (D-rules-3, D-6)', () =>
     expect(evaluate(auth001, snap({ url: 'https://mcp.acme.test/sse?sessionId=abc&token_type=x&key_id=k' }))).toEqual([]);
   });
 });
+
+describe('R-12: AUTH-010 names a network failure instead of a TLS verdict (D-rules-2)', () => {
+  const auth010 = authRules.find((r) => r.id === 'AUTH-010')!;
+  const asTls = (code: string) => evaluate(auth010, authSnap({ set: (s) => { s.transport.tls = [{ host: 'auth.acme.test', role: 'as', ok: false, code }]; } }));
+
+  it("R-12: AUTH-010 for tls {role:'as', code:'ENOTFOUND'} says the host does not resolve, not that the TLS handshake failed", () => {
+    const f = asTls('ENOTFOUND');
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].message).not.toMatch(/TLS handshake/);
+    expect(f[0].message).toMatch(/does not resolve/);
+    expect(f[0].message).toBe('hostname auth.acme.test does not resolve (ENOTFOUND); TLS not checked');
+    expect(f[0].fix).toMatch(/^Publish public DNS records/);
+    expect(asTls('ECONNREFUSED')[0].message).toBe('connection refused by auth.acme.test:443 (ECONNREFUSED); TLS not checked');
+    // a certificate code is still a TLS verdict with the rule's fix
+    expect(asTls('CERT_HAS_EXPIRED')[0]).toMatchObject({ message: 'TLS handshake with auth.acme.test failed: CERT_HAS_EXPIRED', fix: auth010.fix });
+  });
+});

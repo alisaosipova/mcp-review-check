@@ -40,7 +40,9 @@ export const SRV_001 = defineRule(
     if (!t || t.ok || (/^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && !tlsProto && !t.transient)) return [];
     const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
     if (t.transient) return [{ severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }];
-    if (tlsProto) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (not a TLS endpoint?)${tries}` })];
+    // Only a non-TLS answer reads as "not a TLS endpoint"; other ERR_SSL_* codes are a version or cipher mismatch (R-12).
+    if (/^(EPROTO|ERR_SSL_WRONG_VERSION_NUMBER|ERR_SSL_PACKET_LENGTH_TOO_LONG)$/.test(t.code ?? '')) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (not a TLS endpoint?)${tries}` })];
+    if (tlsProto) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (TLS version or cipher mismatch; hosts need TLS 1.2+ with common ciphers)${tries}` })];
     return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}; hosts reject this certificate` })];
   },
 );
@@ -208,7 +210,7 @@ export const SRV_008 = defineRule(
     }
     const evil = probeExchange(snap, 'originEvil');
     if (is2xx(evil)) {
-      if (snap.localMode) out.push({ platforms: ['spec'], severity: 'error', message: 'loopback server accepts a foreign Origin (DNS rebinding risk)' });
+      if (snap.localMode) out.push({ platforms: ['spec'], severity: 'error', message: 'local server (loopback, private address or dotless name) accepts a foreign Origin (DNS rebinding risk)' });
       else out.push({ platforms: ['spec'], severity: 'info', message: 'server accepts any Origin (acceptable for a public server)' });
     }
     return out;

@@ -135,3 +135,20 @@ describe('transient failures and retries (B6)', () => {
     expect(await tlsCheckWithRetry(deps([]), '[::1]', 443)).toEqual({ ok: true });
   });
 });
+
+describe('R-12: unreachable-network codes and no "HTTP -1" (X-mac-3, D-rules-5)', () => {
+  it.each(['EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'EADDRNOTAVAIL'])('R-12: describeCause %s → no route to, kind other', (code) => {
+    const d = describeCause(U, { code });
+    expect(d.kind).toBe('other');
+    expect(d.summary).toMatch(/no route to/);
+    expect(d.summary).toBe(`no route to mcp.acme.test:443 (${code})`);
+    expect(d.hint).toMatch(/Local Network/);
+  });
+
+  it('R-12: cleanErrorMessage drops the SDK status -1, and a real status keeps its prefix', () => {
+    const msg = 'Streamable HTTP error: Unexpected content type: text/plain';
+    expect(cleanErrorMessage(msg, -1, createRedactor())).not.toContain('HTTP -1');
+    expect(cleanErrorMessage(msg, -1, createRedactor())).toBe(msg);
+    expect(cleanErrorMessage(msg, 500, createRedactor())).toBe(`HTTP 500: ${msg}`);
+  });
+});

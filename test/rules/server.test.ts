@@ -271,3 +271,27 @@ describe('SRV rules', () => {
     expect(proto[0].message).not.toMatch(/certificate/);
   });
 });
+
+describe('R-12: SRV-001 and SRV-008 texts (CRIT-1, CRIT-2)', () => {
+  const byId = (id: string) => serverRules.find((r) => r.id === id)!;
+
+  it('R-12: SRV-001 ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE is a version or cipher mismatch, not "not a TLS endpoint?"', () => {
+    const f = evaluate(byId('SRV-001'), snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, code: 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE' }]; } }));
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].message).not.toMatch(/not a TLS endpoint/);
+    expect(f[0].message).toBe('TLS handshake with mcp.acme.test failed: ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE (TLS version or cipher mismatch; hosts need TLS 1.2+ with common ciphers)');
+    for (const code of ['ERR_SSL_WRONG_VERSION_NUMBER', 'ERR_SSL_PACKET_LENGTH_TOO_LONG']) {
+      const g = evaluate(byId('SRV-001'), snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, code }]; } }));
+      expect(g[0].message, code).toBe(`TLS handshake with mcp.acme.test failed: ${code} (not a TLS endpoint?)`);
+    }
+  });
+
+  it('R-12: SRV-008 on 10.0.0.5 in local mode does not call the server loopback; severity stays error', () => {
+    const f = evaluate(byId('SRV-008'), snap({ url: 'http://10.0.0.5:8080/mcp', set: (s) => { s.localMode = true; s.transport.probes.originEvil = exchange({ status: 200 }); } }));
+    expect(f).toHaveLength(1);
+    expect(f[0].severity).toBe('error');
+    expect(f[0].message).not.toMatch(/^loopback server/);
+    expect(f[0].message).toBe('local server (loopback, private address or dotless name) accepts a foreign Origin (DNS rebinding risk)');
+  });
+});
