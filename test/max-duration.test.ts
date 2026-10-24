@@ -78,3 +78,23 @@ describe('--max-duration ends the stdio servers it started (R-60)', () => {
     expect(pids.filter(alive)).toEqual([]);
   });
 });
+
+// R-4: a server that never answers initialize is left to the SDK's `void close()` (EOF, then SIGTERM after 2 s),
+// which the CLI exit cuts short; without --max-duration the check ends every child itself before returning.
+describe('R-4: no stdio server outlives the CLI', () => {
+  it('main connection: a server that never answers initialize and ignores EOF is gone', async () => {
+    const { r, pids } = await run(['--mute'], ['--timeout', '1500']);
+    expect(r.code, r.stderr).toBe(3);
+    expect(r.json?.coverage?.toolLevel).toBe('connect-failed');
+    expect(pids).toHaveLength(1);
+    expect(pids.filter(alive)).toEqual([]);
+  });
+
+  it('fresh connection: a re-list child that never answers initialize is gone', async () => {
+    const { r, pids } = await run(['--mute-fresh'], ['--timeout', '1500']);
+    expect(r.json?.coverage?.toolLevel, r.stderr).toBe('ok');
+    expect(r.json?.limits?.stopped).toBeUndefined();
+    expect(pids).toHaveLength(2);
+    expect(pids.filter(alive)).toEqual([]);
+  });
+});

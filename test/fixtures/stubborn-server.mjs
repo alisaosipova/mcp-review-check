@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // A stdio server that does not quit when its stdin closes (a timer keeps it alive), for the --max-duration
-// cleanup test (R-60). Usage: stubborn-server.mjs <pid-file> [--mute] [--hang-fresh] [--ignore-term] [--slow-active]
+// cleanup test (R-60). Usage: stubborn-server.mjs <pid-file> [--mute] [--hang-fresh] [--mute-fresh] [--ignore-term] [--slow-active]
 //   default        answers initialize only: every later request hangs
 //   --mute         answers nothing (no handshake)
 //   --hang-fresh   the first process answers the listing; every later process (a fresh connection) hangs after initialize
+//   --mute-fresh   the first process answers the listing and quits on stdin EOF; every later process (a fresh
+//                  connection) answers nothing
 //   --ignore-term  ignores SIGTERM, so only SIGKILL ends it
 //   --slow-active  answers everything: 30 read-only tools, each tools/call after 300 ms; exits 800 ms after SIGTERM
 // Each process appends its pid to <pid-file> and exits by itself after 30 s, so a failed test leaves nothing behind.
@@ -19,7 +21,9 @@ if (slow) process.on('SIGTERM', () => setTimeout(() => process.exit(0), 800));
 setInterval(() => {}, 1000);
 setTimeout(() => process.exit(0), 30000);
 
-const answerAll = (flags.includes('--hang-fresh') && first) || slow;
+const answerAll = ((flags.includes('--hang-fresh') || flags.includes('--mute-fresh')) && first) || slow;
+const mute = flags.includes('--mute') || (flags.includes('--mute-fresh') && !first);
+if (flags.includes('--mute-fresh') && first) process.stdin.on('end', () => process.exit(0));
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 const results = {
   'tools/list': { tools: slow
@@ -32,7 +36,7 @@ const results = {
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
-  if (flags.includes('--mute')) return;
+  if (mute) return;
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m?.id === undefined || typeof m.method !== 'string') return;

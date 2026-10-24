@@ -522,6 +522,7 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   const progress: Progress = { phase: 'connect', children: new Set() };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
+  await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close() (R-4)
   // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises
   // (SEC-1). The target stays as entered (rules parse and hash it).
   const masked = { ...redactDeep(result.snap, redactorFor(opts)), target: result.snap.target };
