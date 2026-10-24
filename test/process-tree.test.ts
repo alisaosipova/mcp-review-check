@@ -94,13 +94,14 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
 });
 
 describe('R-5 on Windows (process.platform emulated): the tree is ended before the wrapper', () => {
-  it('taskkill /PID <pid> /T /F runs before the wrapper is killed at --max-duration', async () => {
+  /** runCli as on win32 with the stubborn server (`flags` after the server); taskkill /T must come before the first kill of its pid. */
+  async function taskkillFirst(flags: string[]): Promise<void> {
     const pids = pidFile();
     const kill = vi.spyOn(ChildProcess.prototype, 'kill');
     const platform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32' });
     try {
-      await runCli(['--stdio', `node "${STUBBORN}" "${pids}"`, '--format', 'json', '--timeout', '20000', '--max-duration', '1500'], {}, false);
+      await runCli(['--stdio', `node "${STUBBORN}" "${pids}"`, '--format', 'json', ...flags], {}, false);
     } finally {
       Object.defineProperty(process, 'platform', { value: platform });
     }
@@ -110,5 +111,14 @@ describe('R-5 on Windows (process.platform emulated): the tree is ended before t
     const firstKill = kill.mock.contexts.findIndex((c) => (c as ChildProcess).pid === pid);
     expect(firstKill, 'the wrapper is killed after taskkill').toBeGreaterThanOrEqual(0);
     expect(vi.mocked(spawnSync).mock.invocationCallOrder[taskkill]).toBeLessThan(kill.mock.invocationCallOrder[firstKill]);
+  }
+
+  it('taskkill /PID <pid> /T /F runs before the wrapper is killed at --max-duration', async () => {
+    await taskkillFirst(['--timeout', '20000', '--max-duration', '1500']);
+  });
+
+  it('without a deadline, the normal close of a server that ignores EOF runs taskkill /PID <pid> /T /F before it kills the wrapper', async () => {
+    vi.mocked(spawnSync).mockClear(); // the call order is per pid, but the earlier run's calls are no evidence for this one
+    await taskkillFirst(['--timeout', '1500']);
   });
 });

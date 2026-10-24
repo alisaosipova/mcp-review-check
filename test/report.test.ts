@@ -308,4 +308,19 @@ describe('R-11: server text is not markdown', () => {
     const rerun = md.split('\n').find((l) => l.includes('rerun:'))!;
     expect(rerun).toBe('``` rerun: npx mcp-review-check --stdio "npx -y @scope/pkg ``x``" ```');
   });
+
+  it('R-11: the connect failure, Target, Revision and the Transport line show server text as written', () => {
+    const s = loadSnapshot('minimal-http');
+    s.target = { kind: 'stdio', command: 'node', args: ['[t](https://e.test/target)', '<u>arg</u>'] };
+    s.coverage = { toolLevel: 'connect-failed', reason: 'stderr: <b>down</b> [c](https://e.test/cause)' };
+    s.protocolVersion = '<b>1</b> [v](https://e.test/version)';
+    const srv020 = f('SRV-020', 'info', { message: 'era: legacy. <img src="https://e.test/rev.png"> [r](https://e.test/rev)' });
+    const md = renderMarkdown({ ...report(s), findings: [srv020] });
+    for (const raw of ['<b>', '<u>', '<img src=']) expect(md, raw).not.toContain(raw);
+    expect(md).not.toMatch(/(?<!\\)\]\(https:\/\/e\.test/);
+    expect(md).toContain('> Could not connect: stderr: &lt;b&gt;down&lt;/b&gt; \\[c\\](https://e.test/cause)');
+    expect(md).toContain('| Target | stdio:node \\[t\\](https://e.test/target) &lt;u&gt;arg&lt;/u&gt; |');
+    expect(md).toContain('| Revision | &lt;img src="https://e.test/rev.png"&gt; \\[r\\](https://e.test/rev) |');
+    expect(md).toContain('era legacy (&lt;b&gt;1&lt;/b&gt; \\[v\\](https://e.test/version)) · auth');
+  });
 });

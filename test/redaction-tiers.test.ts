@@ -80,3 +80,48 @@ describe('U-2 with R-8: a weak --env value never reaches a channel', () => {
     }
   });
 });
+
+describe('R-8 with R-9: the parts of an --env value under a plain name', () => {
+  // A raw stdio server whose free-form "sql" tool names its database only in the description. Masked before the rules,
+  // "postgres" left the description, and TOOL-026 (a free-form query tool must name its target) reported the tool.
+  const server = `const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\\n');
+const tool = { name: 'query_rows', title: 'Query rows', description: 'Query the postgres database and return the matching rows.', inputSchema: { type: 'object', properties: { sql: { type: 'string', description: 'SQL to run' } }, required: ['sql'] }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } };
+require('readline').createInterface({ input: process.stdin }).on('line', (l) => {
+  const m = JSON.parse(l);
+  if (m.id === undefined) return;
+  if (m.method === 'initialize') send({ id: m.id, result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'pgdb', title: 'Postgres Reader', version: '1.0.0' } } });
+  else if (m.method === 'tools/list') send({ id: m.id, result: { tools: [tool] } });
+  else send({ id: m.id, error: { code: -32601, message: 'Method not found' } });
+});`;
+  const run = (opts: string[]) => cli([...opts, '--stdio', '--', 'node', '-e', server]);
+  const DB = 'DATABASE_URL=postgres://postgres:postgres@db.test/app';
+
+  it('R-8: a plain URL username or password in --env changes no finding', async () => {
+    const plain = await run(['--format', 'json']);
+    expect(plain.code, plain.stderr).toBe(0);
+    expect(plain.json.findings.map((x: any) => x.ruleId), 'the description names the database').not.toContain('TOOL-026');
+    const r = await run(['--env', DB, '--format', 'json']);
+    expect(r.code, r.stderr).toBe(plain.code);
+    expect(triples(r.json)).toEqual(triples(plain.json));
+    // R-9: the finished report still masks them
+    const md = await run(['--env', DB, '--format', 'markdown', '--verbose']);
+    expect(md.stdout + md.stderr).not.toContain('postgres:postgres@');
+    expect(md.stdout).toContain('DATABASE_URL=«redacted»');
+    expect(md.stdout).toContain('Query the «redacted» database');
+  });
+
+  it('R-8: in the strong tier such parts are only the token-like ones; the full tier has them all', () => {
+    const env = { DATABASE_URL: 'postgres://app_user:pw-PLAIN01@db.test/app?token=k-PLAIN02', UPSTREAM: 'Bearer plain-PLAIN03', CACHE_URL: 'redis://ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1@cache.test', NOTE_URL: 'https://x.test/?token=Q7f3kLm9Xz2pR8tVw4' };
+    const strong = buildRedactor({ env }, true).values;
+    for (const v of ['app_user', 'pw-PLAIN01', 'k-PLAIN02', 'plain-PLAIN03', 'postgres://app_user:pw-PLAIN01@db.test/app?token=k-PLAIN02']) expect(strong.has(v), v).toBe(false);
+    for (const v of ['ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', 'Q7f3kLm9Xz2pR8tVw4']) expect(strong.has(v), v).toBe(true);
+    const full = buildRedactor({ env }).values;
+    for (const v of ['app_user', 'pw-PLAIN01', 'k-PLAIN02', 'plain-PLAIN03']) expect(full.has(v), v).toBe(true);
+    // a URL username of --url or of argv joins the strong tier only when it looks like a token; the password stays strong
+    expect(buildRedactor({ url: 'https://admin:pw-STRONG08@h.test/mcp' }, true).values).toEqual(new Set(['pw-STRONG08']));
+    expect(buildRedactor({ argv: ['node', 's.js', 'https://admin:pw-STRONG09@h.test/'] }, true).values).toEqual(new Set(['pw-STRONG09']));
+    expect(buildRedactor({ url: 'https://admin:pw-STRONG08@h.test/mcp' }).values.has('admin')).toBe(true);
+    // under a secret name every part stays strong
+    expect(buildRedactor({ env: { DB_PASSWORD: 'postgres://app_user:pw-PLAIN01@db.test/app' } }, true).values.has('pw-PLAIN01')).toBe(true);
+  });
+});

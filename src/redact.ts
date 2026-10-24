@@ -15,11 +15,15 @@ const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|
 /** A percent-decoded URL part, or the part as written when its escapes are malformed. */
 const decoded = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
 
+/** A value that is a credential by its form alone (R-8): a known token format, or 16+ characters with letters and digits. */
+const tokenLike = (v: string) => isKnownToken(v) || (v.length >= 16 && /[a-z]/i.test(v) && /\d/.test(v));
+
 /**
  * Credentials inside a URL, decoded and as written ("+", %2f): query and fragment parameters with a secret name or a
  * value in a known token format, path segments in a known token format, the password and the username of user:pass@ (R-9).
+ * `strongOnly` (R-8): the username only when it looks like a token, as a plain one is often a word ("postgres", "admin").
  */
-export function urlSecrets(raw: string): string[] {
+export function urlSecrets(raw: string, strongOnly = false): string[] {
   try {
     const u = new URL(raw);
     // URLSearchParams has one entry per non-empty "&" part; the raw value differs from the decoded one on "+" or %2f.
@@ -33,7 +37,7 @@ export function urlSecrets(raw: string): string[] {
     out.push(...u.pathname.split('/').filter(isKnownToken));
     if (u.password) out.push(u.password, decoded(u.password));
     // A username shorter than 4 characters is never a secret (createRedactor); TRIVIAL values are dropped in buildRedactor.
-    if (u.username.length >= 4) out.push(u.username, decoded(u.username));
+    if (u.username.length >= 4 && (!strongOnly || tokenLike(decoded(u.username)))) out.push(u.username, decoded(u.username));
     return out;
   } catch {
     return [];
@@ -56,7 +60,7 @@ function headerSecrets(name: string, value: string): string[] {
  * Secret values in a stdio argv: the value after a secret-looking flag (`--api-key X`, `--api-key=X`),
  * `KEY=value` with a secret-looking KEY, credentials inside URLs, and "Authorization: Bearer X" header args.
  */
-export function argvSecrets(args: string[]): string[] {
+export function argvSecrets(args: string[], strongOnly = false): string[] {
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -65,7 +69,7 @@ export function argvSecrets(args: string[]): string[] {
     else if (/^-{1,2}[\w.-]+$/.test(a) && isSecretName(a) && i + 1 < args.length && !args[i + 1].startsWith('--')) out.push(...withSchemeToken(args[++i]));
     const header = /^([\w-]+)\s*:\s*(.+)$/s.exec(a.replace(/^-{1,2}[\w.-]+=/, ''));
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
-    if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, '')));
+    if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, ''), strongOnly));
     else if (isKnownToken(a)) out.push(a);
   }
   return out;
@@ -81,15 +85,22 @@ export interface RedactionInput {
   env?: Record<string, string>;
 }
 
-/** A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values (strongOnly, R-8: under a secret name only). */
+/**
+ * A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values. strongOnly (R-8): an
+ * --env value under a secret name only, and a URL username or a part of an --env value under a plain name (the token
+ * after "Bearer", URL credentials) only when it looks like a token; the full set, for the finished report, has them all.
+ */
 export function buildRedactor(input: RedactionInput, strongOnly = false): Redactor {
   const headers = input.headers ?? {};
   const values: string[] = [];
   if (input.bearer) values.push(input.bearer);
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
-  if (input.url) values.push(...urlSecrets(input.url));
-  for (const v of Object.values(input.env ?? {})) values.push(...withSchemeToken(v).slice(1), ...urlSecrets(v));
-  if (input.argv) values.push(...argvSecrets(input.argv));
+  if (input.url) values.push(...urlSecrets(input.url, strongOnly));
+  for (const [k, v] of Object.entries(input.env ?? {})) {
+    const parts = [...withSchemeToken(v).slice(1), ...urlSecrets(v, strongOnly)];
+    values.push(...(!strongOnly || isSecretName(k) ? parts : parts.filter(tokenLike)));
+  }
+  if (input.argv) values.push(...argvSecrets(input.argv, strongOnly));
   for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k)) values.push(v);
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
 }

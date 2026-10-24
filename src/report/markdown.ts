@@ -15,10 +15,8 @@ const text = (s: string | undefined) => cell((s ?? '').replace(/[\\`[\]<>&@]/g, 
 
 /** Evidence as a code span (R-48): quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it (R-11). */
 const code = (s: string | undefined, inCell = true) => {
-  if (!s) return '';
-  const t = inCell ? cell(s) : s.replace(/\r?\n/g, ' ');
-  const fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
-  return `${fence} ${t} ${fence}`;
+  const t = inCell ? cell(s) : (s ?? '').replace(/\r?\n/g, ' '), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
+  return s ? `${fence} ${t} ${fence}` : '';
 };
 
 /** `rerun` is the redacted command line that reproduces the report (R-48). */
@@ -38,7 +36,7 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
   if (local) out.push(`> ${local}`, '');
   out.push('| Item | Value |', '|---|---|');
   out.push(`| Target | ${text(targetLabel(snap))} |`);
-  out.push(`| Transport | ${snap.transport.kind} · era ${eraLine(snap)} · auth ${cell(authSummary(snap))} |`);
+  out.push(`| Transport | ${snap.transport.kind} · era ${text(eraLine(snap))} · auth ${cell(authSummary(snap))} |`);
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(`| Revision | ${text(rev)} |`);
   out.push(`| Checked | ${counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);

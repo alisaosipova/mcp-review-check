@@ -62,7 +62,9 @@ describe('redactor (B2)', () => {
   it('R-9: buildRedactor: the URL username and the parts of a composite --env value are strong values', () => {
     expect([...buildRedactor({ url: `http://${USER_TOK}@h.test/mcp` }, true).values]).toContain(USER_TOK);
     const v = [...buildRedactor({ env: { DATABASE_URL: 'postgres://app:pw-DBSYNTH0001@db.test:5432/app', UPSTREAM_AUTH: 'Bearer sk-live-UPSYNTH0002' } }, true).values];
-    expect(v).toContain('pw-DBSYNTH0001');
+    // S-15 (R-8): a part of a value under a plain name that does not look like a token is weak, masked in the finished report
+    expect(v).not.toContain('pw-DBSYNTH0001');
+    expect([...buildRedactor({ env: { DATABASE_URL: 'postgres://app:pw-DBSYNTH0001@db.test:5432/app' } }).values]).toContain('pw-DBSYNTH0001');
     expect(v).toContain('sk-live-UPSYNTH0002');
     // the whole value under a plain name stays weak (R-8)
     expect(v).not.toContain('postgres://app:pw-DBSYNTH0001@db.test:5432/app');

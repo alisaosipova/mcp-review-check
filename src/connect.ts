@@ -63,7 +63,7 @@ interface Progress {
   nonJsonStdout?: string[];
   /** Close open clients (and the stdio child) when the deadline hits. */
   close?: () => Promise<void>;
-  /** Every stdio server process still running (main and fresh connections), ended at the deadline (R-60). */
+  /** Every stdio server process still running (main and fresh connections), ended at the deadline (R-60) and after every run (R-4). */
   children?: Set<ChildProcess>;
   /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight (R-6). */
   abort: AbortController;

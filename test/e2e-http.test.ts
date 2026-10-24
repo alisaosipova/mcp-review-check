@@ -444,4 +444,37 @@ describe('e2e http', () => {
     await new Promise((done) => setTimeout(done, 8000));
     expect(seen.filter((t) => t > resolved)).toEqual([]);
   }, 30000);
+
+  it('R-6: an SDK transport left open past --max-duration sends nothing after runCli resolves', async () => {
+    // The main connection lists tools. A fresh connection (the SDK client of tools re-list) gets a GET stream that
+    // ends at once with "retry: 2500", so its transport reconnects 2.5 s later, past the deadline, while its
+    // tools/list hangs until --timeout. Only the tracer's fetch of the SDK transport can stop that GET.
+    const seen: { at: number; what: string }[] = [];
+    const sdkSessions: unknown[] = []; // sessions in the order their notifications/initialized arrived: [0] is the main one
+    let sessions = 0;
+    const isFresh = (req: any) => sdkSessions.indexOf(req.headers['mcp-session-id']) > 0;
+    const s = track(await listen(async (req, res) => {
+      let body = '';
+      for await (const c of req) body += c;
+      let m: any = {};
+      try { m = JSON.parse(body); } catch { /* GET */ }
+      seen.push({ at: Date.now(), what: `${req.method} ${m.method ?? ''} ${req.headers['mcp-session-id'] ?? ''}` });
+      if (req.method === 'GET' && isFresh(req)) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end('retry: 2500\n\n'); return; }
+      if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }).end(); return; }
+      if (m.method === 'notifications/initialized') sdkSessions.push(req.headers['mcp-session-id']);
+      if (m.id === undefined) { res.writeHead(202).end(); return; }
+      const reply = (x: object, h = {}) => { res.writeHead(200, { 'content-type': 'application/json', ...h }); res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...x })); };
+      if (m.method === 'initialize') return reply({ result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'late', version: '1' } } }, { 'mcp-session-id': `s${++sessions}` });
+      if (m.method === 'tools/list' && isFresh(req)) return new Promise(() => {});
+      if (m.method === 'tools/list') return reply({ result: { tools: [{ name: 'ping', description: 'Reply with pong.', inputSchema: { type: 'object' } }] } });
+      reply({ error: { code: -32601, message: 'Method not found' } });
+    }));
+    const r = await runCli([s.url, '--format', 'json', '--max-duration', '2000', '--timeout', '6000'], { NO_COLOR: '1' }, false);
+    const resolved = Date.now();
+    expect(JSON.parse(r.stdout).limits.stopped).toMatchObject({ maxDurationMs: 2000, phase: 'tools re-list' });
+    // the fresh connection was open before the deadline: its GET stream was served
+    expect(seen.filter((x) => x.at <= resolved && x.what.startsWith('GET') && x.what.endsWith(String(sdkSessions[1]))).length).toBe(1);
+    await new Promise((done) => setTimeout(done, 8000));
+    expect(seen.filter((x) => x.at > resolved).map((x) => x.what)).toEqual([]);
+  }, 30000);
 });
