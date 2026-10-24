@@ -108,8 +108,8 @@ const SERVER_DATA = new Set(['serverInfo', 'instructions', 'tools', 'resources',
 const SERVER_KEYED = new Set(['resourceReads']);
 /** What the server sent under protocol-named keys: keys stay, but every value is masked, the own vocabulary included. */
 const SERVER_VALUES = new Set(['capabilities', 'initializeRaw', 'discoverRaw', ...SERVER_KEYED]);
-/** The report's own vocabulary (severities, platforms, verdicts) outside server data: renderers compare these values. */
-const OWN_VOCABULARY = new Set(['ruleId', 'severity', 'platforms', 'severityByPlatform', 'verdict', 'failOn', 'toolLevel', 'era', 'kind', 'role']);
+/** The report's own vocabulary (severities, platforms, verdicts, the gate texts) outside server data: renderers compare these values. */
+const OWN_VOCABULARY = new Set(['ruleId', 'severity', 'platforms', 'severityByPlatform', 'verdict', 'failOn', 'toolLevel', 'era', 'kind', 'role', 'gate']);
 
 /**
  * A deep copy of `value` with every secret replaced in strings and URL objects; no recursion, so any depth works.
@@ -144,7 +144,10 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     pending.push(() => {
       for (const [k, x] of Object.entries(v)) {
         const s = srv || keys === 2 || SERVER_VALUES.has(k);
-        out[keys ? scrub(k, r) : k] = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || OWN_VOCABULARY.has(k)), s);
+        const key = keys ? scrub(k, r) : k, val = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || OWN_VOCABULARY.has(k)), s);
+        // A "__proto__" key the server sent is data: a plain assignment would set the copy's prototype instead (R-10).
+        if (key === '__proto__') Object.defineProperty(out, key, { value: val, enumerable: true, writable: true, configurable: true });
+        else out[key] = val;
       }
     });
     return out;

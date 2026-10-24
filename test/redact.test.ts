@@ -1,5 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { argvSecrets, buildRedactor, redactDeep, scrub, urlSecrets } from '../src/redact.js';
+import { cleanErrorMessage, stderrSummary } from '../src/connect.js';
+import { createRedactor } from '../src/protocol/trace.js';
+import { buildReport } from '../src/report/index.js';
+import { runRules } from '../src/rules/engine.js';
+import { manualChecklist, RULES } from '../src/rules/index.js';
+import { cli } from './cli-runner.js';
+import { loadSnapshot } from './helpers.js';
 
 describe('redactor (B2)', () => {
   it('argvSecrets: values after secret-looking flags, --flag=value, KEY=value, URL credentials, header args', () => {
@@ -205,5 +213,47 @@ describe('SEC-1 defence in depth (S-28): redactor units', () => {
     expect(out.failOn).toBe('error');
     expect(out.snap.kind).toBe('error');
     expect(out.findings[0]).toEqual({ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, verdict: 'error', message: 'an «redacted»' });
+  });
+});
+
+describe('R-10', () => {
+  const SPLIT = `node ${fileURLToPath(new URL('./fixtures/utf8-split.mjs', import.meta.url))}`;
+
+  it('D-sec-1: stderrSummary and cleanErrorMessage mask before they cut', () => {
+    const SECRET = 'sk-live-SUMMARYSYNTH0123456789';
+    const r = createRedactor([], [SECRET]);
+    const text = 'Error: key '.padEnd(185, '.') + SECRET;
+    expect(stderrSummary(text, r)).not.toContain('sk-live-SUMM');
+    expect(cleanErrorMessage(text, 500, r)).not.toContain('sk-live-SUMM');
+    expect(cleanErrorMessage(text, 500, r)).toMatch(/^HTTP 500: Error: key \.+«redacted»$/);
+  });
+
+  it('D-sec-6: a stderr echo split inside a UTF-8 character is still masked', async () => {
+    const r = await cli(['--format', 'text', '--verbose', '--env', 'DB_PASSWORD=pw-SYNTHü0001-SECRET', '--stdio', SPLIT]);
+    expect(r.stdout + r.stderr).toContain('login failed with password «redacted»');
+    expect(r.stdout + r.stderr).not.toContain('0001-SECRE');
+  }, 60000);
+
+  it('D-sec-6: a non-JSON stdout line split inside a UTF-8 character is still masked', async () => {
+    const r = await cli(['--format', 'json', '--env', 'DB_PASSWORD=pw-SYNTHü0001-SECRET', '--stdio', `${SPLIT} --stdout`]);
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-018').message).toContain('login failed with password «redacted»');
+    expect(r.stdout + r.stderr).not.toContain('0001-SECRE');
+  }, 60000);
+
+  it('D-sec-3: the gate texts are not masked by value', () => {
+    const s = loadSnapshot('minimal-http');
+    const report = buildReport(s, runRules(s, RULES), manualChecklist(s), 'error', new Date('2026-10-22T10:00:00Z'), 1);
+    const gate = { platforms: ['claude'], reason: 'claude: 2 errors (A-1)', notGated: 'spec: 1 error (B-1) not gated' };
+    const out = redactDeep({ ...report, summary: { ...report.summary, gate } }, createRedactor([], ['error']));
+    expect(out.summary.gate).toEqual(gate);
+  });
+
+  it('CRIT-3: a "__proto__" key from server data stays as data', () => {
+    const tool = JSON.parse('{"name":"t","inputSchema":{"type":"object","properties":{"__proto__":{"type":"string"},"q":{"type":"string"}}}}');
+    const out: any = redactDeep({ tools: [tool] }, buildRedactor({ bearer: 'SYNTH-BEARER-0001' }));
+    const props = out.tools[0].inputSchema.properties;
+    expect(Object.keys(props)).toEqual(['__proto__', 'q']);
+    expect(Object.getPrototypeOf(props)).toBe(Object.prototype);
+    expect(JSON.stringify(props)).toBe('{"__proto__":{"type":"string"},"q":{"type":"string"}}');
   });
 });

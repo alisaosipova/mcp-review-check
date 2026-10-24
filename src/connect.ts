@@ -211,7 +211,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       const status = e instanceof StreamableHTTPError ? (e as StreamableHTTPError).code : undefined;
       const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
       last = {
-        ok: false, status, message: cleanErrorMessage(scrub((e as Error).message, tracer.redactor), status), // masked before its cuts (SEC-1)
+        ok: false, status, message: cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts (SEC-1)
         cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
@@ -224,9 +224,10 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
   return last;
 }
 
-/** Replace an HTML page in an SDK error message by its title, cap the length and show the HTTP status. */
-export function cleanErrorMessage(message: string, status?: number): string {
-  let m = message.length > ERROR_BODY_CAP ? message.slice(0, ERROR_BODY_CAP) : message;
+/** Mask secrets first (a cut leaves a prefix no scrub recognises), then replace an HTML page in an SDK error message by its title, cap the length and show the HTTP status. */
+export function cleanErrorMessage(message: string, status: number | undefined, r: Redactor): string {
+  let m = scrub(message, r);
+  if (m.length > ERROR_BODY_CAP) m = m.slice(0, ERROR_BODY_CAP);
   const html = /<(!doctype|html|head|body)\b/i.exec(m);
   if (html) {
     const title = /<title[^<>]{0,200}>([^<]{1,200})<\/title>/i.exec(m)?.[1].replace(/\s+/g, ' ').trim();
@@ -408,9 +409,9 @@ function isJsonLine(line: string): boolean {
   try { JSON.parse(line); return true; } catch { return false; }
 }
 
-/** The first error-looking stderr line (the cause in a stack trace) plus the last line. */
-export function stderrSummary(tail: string): string {
-  const lines = tail.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+/** The first error-looking stderr line (the cause in a stack trace) plus the last line, masked before the 200-character cut. */
+export function stderrSummary(tail: string, r: Redactor): string {
+  const lines = scrub(tail, r).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
   const isFrame = (l: string) => /^\s*at\s/.test(l);
   const first = lines.find((l) => !isFrame(l) && /(error|exception|cannot|failed|not found|unsupported|requires?)\b/i.test(l)) ?? lines.find((l) => !isFrame(l));
   const last = lines[lines.length - 1];
@@ -422,7 +423,8 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   const inner = new GroupStdioTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
   // Masked before the 4096-character tail and the 200-character summary lines cut it (SEC-1).
-  inner.stderr?.on('data', (c: Buffer) => { stderrTail = scrub(stderrTail + c.toString('utf8'), r).slice(-4096); });
+  // Decoded as a stream, so an echo split inside a UTF-8 character between two chunks is still one string to mask (R-10).
+  (inner.stderr as NodeJS.ReadableStream | null)?.setEncoding('utf8').on('data', (c: string) => { stderrTail = scrub(stderrTail + c, r).slice(-4096); });
   const nonJson: string[] = [];
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
@@ -431,12 +433,13 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
       // On POSIX the entry stays while the server's process group outlives its wrapper (R-5).
       else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
-    let buf = '';
+    // Split into lines as bytes, then decoded: the SDK reads the same stream as Buffers, and a chunk can end inside a UTF-8 character (R-10).
+    let buf = Buffer.alloc(0);
     proc?.stdout?.on('data', (c: Buffer) => {
-      buf += c.toString('utf8');
+      buf = Buffer.concat([buf, c]);
       let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, i).replace(/\r$/, '');
+      while ((i = buf.indexOf(10)) >= 0) {
+        const line = buf.subarray(0, i).toString('utf8').replace(/\r$/, '');
         buf = buf.slice(i + 1);
         if (line.trim() && !isJsonLine(line)) nonJson.push(line);
       }
@@ -449,7 +452,7 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   } catch (e) {
     await client.close().catch(() => {});
     const err = e as Error;
-    throw Object.assign(new Error(`${err.message}${stderrTail ? `; stderr: ${stderrSummary(stderrTail)}` : ''}`), { stderrTail });
+    throw Object.assign(new Error(`${err.message}${stderrTail ? `; stderr: ${stderrSummary(stderrTail, r)}` : ''}`), { stderrTail });
   }
   return { client, rec, nonJson, stderr: () => stderrTail };
 }

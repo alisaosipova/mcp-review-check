@@ -179,11 +179,11 @@ describe('review fixes: helpers', () => {
 
   it('stderrSummary keeps the cause line of a stack trace, not only the bottom frames', () => {
     const tail = 'file:///x/index.js:22\nError running script: ReferenceError: crypto is not defined\n    at run (file:///x/index.js:22:46)\n    at async ModuleLoader.import (node:internal/modules/esm/loader:336:24)';
-    expect(stderrSummary(tail)).toMatch(/^Error running script: ReferenceError: crypto is not defined \| at async ModuleLoader/);
+    expect(stderrSummary(tail, createRedactor())).toMatch(/^Error running script: ReferenceError: crypto is not defined \| at async ModuleLoader/);
   });
 
   it('cleanErrorMessage strips HTML pages and shows the status', () => {
-    const m = cleanErrorMessage(`Streamable HTTP error: Error POSTing to endpoint: <!doctype html><html><head><title>Example Domain</title></head><body>${'x'.repeat(600)}</body></html>`, 405);
+    const m = cleanErrorMessage(`Streamable HTTP error: Error POSTing to endpoint: <!doctype html><html><head><title>Example Domain</title></head><body>${'x'.repeat(600)}</body></html>`, 405, createRedactor());
     expect(m).toBe('HTTP 405: Streamable HTTP error: Error POSTing to endpoint: HTML page ("Example Domain")');
     expect(m).not.toContain('<');
     expect(m.length).toBeLessThan(220);
