@@ -76,11 +76,9 @@ export function registrableDomain(host: string): string {
   return lastTwo;
 }
 
-/** AUTH-001: query parameter names that put a credential in the server URL. */
-const SECRET_PARAM = /^(token|access_token|api_?key|apikey|key|secret|auth|password|bearer)$/i;
-
+/** AUTH-001: query parameter names that put a credential in the server URL; the redaction's list, so one source (R-12). */
 export function isSecretQueryParam(name: string): boolean {
-  return SECRET_PARAM.test(name);
+  return isSecretName(name);
 }
 
 /** SEC-1: a secret sign in any kebab, snake, dotted or camelCase segment of a name (--auth-header, client_secret, accessToken). */

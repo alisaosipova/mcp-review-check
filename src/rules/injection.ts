@@ -299,7 +299,8 @@ export const INJ_008 = defineRule(
     fix: 'Describe the specific situations where the tool applies.',
     sources: [OAI_GUIDE],
   },
-  (snap) => scanCorpus(snap, [{ re: /(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b|for (every|any|all) (request|message|query|question|prompt|conversation)|call (this|me) first|at the start of every/i }]),
+  // "for every query" counts only after a call verb in the same clause: "returns at most 20 matches for any query" is a limit, not a claim (R-12).
+  (snap) => scanCorpus(snap, [{ re: /(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b|\b(use|call|invoke|run|trigger)\b[^.;:]{0,40}\bfor (every|any|all) (request|message|query|question|prompt|conversation)s?\b|\b(should|must) be (used|called|invoked) (for|on) (every|any|all) (request|message|query|question|prompt|conversation)s?\b|call (this|me) first|at the start of every/i }]),
 );
 
 export const INJ_009_PATTERNS: Pattern[] = [

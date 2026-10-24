@@ -272,3 +272,23 @@ describe('AUTH rules', () => {
     expect(evaluate(byId('AUTH-010'), asSnap('https://mcp.example.com', 'http://10.0.0.5:4000', false)).length).toBeGreaterThan(0);
   });
 });
+
+describe('R-12: AUTH-001 by the shared secret-name list (D-rules-3, D-6)', () => {
+  const auth001 = authRules.find((r) => r.id === 'AUTH-001')!;
+
+  it('R-12: AUTH-001 uses the shared secret-name list', () => {
+    const names = ['api-key', 'credential', 'client_secret', 'session', 'cookie', 'signature', 'pass', 'pwd', 'dsn'];
+    const url = `https://mcp.acme.test/mcp?${names.map((n, i) => `${n}=SYNTHV${i}`).join('&')}&page=2`;
+    const f = evaluate(auth001, snap({ url }));
+    expect(f.map((x) => x.severity)).toEqual(['error']);
+    expect(f[0].message).toBe(`URL query contains credential parameter(s): ${names.map((n) => `${n}=«redacted»`).join(', ')}`);
+    expect(f[0].message).not.toMatch(/page|SYNTHV/);
+  });
+
+  it('R-12: the old AUTH-001 names still count; names that point to a secret do not', () => {
+    for (const n of ['token', 'access_token', 'api_key', 'apikey', 'key', 'secret', 'auth', 'password', 'bearer']) {
+      expect(evaluate(auth001, snap({ url: `https://mcp.acme.test/mcp?${n}=SYNTHV` })).length, n).toBe(1);
+    }
+    expect(evaluate(auth001, snap({ url: 'https://mcp.acme.test/sse?sessionId=abc&token_type=x&key_id=k' }))).toEqual([]);
+  });
+});

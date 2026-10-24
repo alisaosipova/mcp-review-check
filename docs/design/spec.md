@@ -834,7 +834,7 @@ UI tools are found through `uri = _meta.ui.resourceUri ?? _meta["ui/resourceUri"
 Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `authorization_servers[0]`, the only entry Claude uses. ChatGPT checks repeat for up to 3 entries.
 
 **AUTH-001 Token in the server URL query.** Severity: claude=error, chatgpt=error, spec=error. Needs: http (runs without auth).
-- Detect: a query parameter name matching `/^(token|access_token|api_?key|apikey|key|secret|auth|password|bearer)$/i`. The value is always redacted in the output.
+- Detect: a query parameter name with a secret sign, the same list redaction uses (`isSecretName`: `token`, `api_key`, `api-key`, `apiKey`, `client_secret`, `credential`, `session`, `cookie`, `signature`, `pass`, `pwd`, `dsn`, …; not names that point to a secret, such as `sessionId`, `key_id` or `token_type`). The value is always redacted in the output.
 - Source: https://claude.com/docs/connectors/building/authentication
 
 **AUTH-002 401 challenge format.** Severity: claude=error, chatgpt=error, spec=warning.

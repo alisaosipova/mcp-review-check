@@ -44,6 +44,7 @@ First public release, planned as 0.1.0.
 
 - TOOL-007 (missing tool description) is an error for Claude as well as ChatGPT (Software Directory Policy: tools must have descriptions).
 - SRV-001 checks the MCP server's own TLS certificate, also when the server does not answer 401 (it was only reported by AUTH-010 on OAuth servers): an untrusted certificate is an error. AUTH-010 now covers the authorization server hosts only.
+- AUTH-001 recognizes a credential in the server URL query by the same names redaction masks (`?api-key=`, `?client_secret=`, `?credential=`, `?session=`, `?cookie=`, `?signature=`, `?pass=`, `?pwd=`, `?dsn=`, camelCase and glued forms such as `?exaApiKey=`), not only nine exact names; it is an error as before, and names that point to a secret (`sessionId`, `key_id`, `token_type`) still do not count.
 
 #### Severity lowered / false positives fixed
 
@@ -59,6 +60,7 @@ First public release, planned as 0.1.0.
 - POL-004: widget links are compared by whole path words (`contracts-upgradeable` is not `upgrade`), source-code hosts (GitHub, GitLab, …) are skipped, and templated links (`${…}`, `{{…}}`, `$1`) are not extracted.
 - RT-011 ignores informational INJ-006 wording in tool output.
 - SRV-013: a problem in both `initialize` and `server/discover` is reported once, naming both; an empty `serverInfo.version` is a warning (missing stays an error).
+- INJ-008: "for every query" counts only after a call verb in the same clause ("use this tool for every request", "should be used for every query"), so a limit such as "Returns at most 20 matches for any query", a rate limit or a cache note is no longer flagged.
 
 #### Other rule changes
 
