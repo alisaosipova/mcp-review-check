@@ -544,9 +544,11 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
   });
   run.catch(() => {}); // a Stopped checkpoint (or a closed client) after the deadline is expected
   try {
-    return await Promise.race([run, stop]);
+    // Past the deadline the run is abandoned however it settles ('Not connected' calls are no finished run, R-60).
+    const r = await Promise.race([run, stop]);
+    return progress.stopped ? stop : r;
   } catch (e) {
-    if (e instanceof Stopped) return stop;
+    if (e instanceof Stopped || progress.stopped) return stop;
     throw e;
   } finally {
     clearTimeout(timer);

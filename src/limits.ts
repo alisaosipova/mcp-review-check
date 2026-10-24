@@ -12,26 +12,25 @@ export const ERROR_BODY_CAP = 64 * 1024;
 
 type Truncated = NonNullable<Snapshot['limits']>['truncated'];
 
-/** Truncate every string over `cap` inside `value` (in place); reports `where` once per object with the largest length. */
-function capStrings(value: unknown, cap: number, where: string, out: Truncated): unknown {
+/** Truncate every string over `cap` inside `value` (in place); reports `where` once per object with the largest length.
+ * Iterative and without a depth limit: the schema walkers go deeper than any fixed JSON depth (R-59). */
+function capStrings(value: object, cap: number, where: string, out: Truncated): void {
   let longest = 0;
-  const walk = (v: unknown, depth: number): unknown => {
-    if (isStr(v)) {
-      if (v.length <= cap) return v;
-      longest = Math.max(longest, v.length);
-      return v.slice(0, cap);
+  const stack: object[] = [value];
+  const seen = new Set<object>();
+  for (let o = stack.pop(); o; o = stack.pop()) {
+    if (seen.has(o)) continue;
+    seen.add(o);
+    const rec = o as Record<string, unknown>;
+    for (const k of Object.keys(rec)) {
+      const v = rec[k];
+      if (isStr(v) && v.length > cap) {
+        longest = Math.max(longest, v.length);
+        rec[k] = v.slice(0, cap);
+      } else if (v !== null && typeof v === 'object') stack.push(v);
     }
-    if (depth > 64 || v === null || typeof v !== 'object') return v;
-    if (Array.isArray(v)) {
-      for (let i = 0; i < v.length; i++) v[i] = walk(v[i], depth + 1);
-      return v;
-    }
-    for (const [k, x] of Object.entries(v)) (v as Record<string, unknown>)[k] = walk(x, depth + 1);
-    return v;
-  };
-  const r = walk(value, 0);
+  }
   if (longest) out.push({ where, length: longest, cap });
-  return r;
 }
 
 /** Apply TEXT_CAP to listed metadata and HTML_CAP to read UI content; returns the truncations (also on snap.limits). */

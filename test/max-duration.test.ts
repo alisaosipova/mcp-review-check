@@ -1,5 +1,6 @@
 // R-60: when --max-duration runs out, the stdio servers the check started end before the CLI exits —
-// also one that ignores stdin EOF or SIGTERM, before or after the handshake, and a fresh-connection child.
+// also one that ignores stdin EOF or SIGTERM, before or after the handshake, and a fresh-connection child;
+// a server slow to exit does not let the abandoned run pass for a finished one.
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,6 +65,16 @@ describe('--max-duration ends the stdio servers it started (R-60)', () => {
     const { r, pids } = await run(['--hang-fresh', '--ignore-term'], ['--max-duration', '4000']);
     expect(r.json?.limits?.stopped, r.stderr).toMatchObject({ maxDurationMs: 4000, phase: 'tools re-list' });
     expect(pids).toHaveLength(2);
+    expect(pids.filter(alive)).toEqual([]);
+  });
+
+  it('stopped during active tool calls: a server slow to exit on SIGTERM leaves the run INCOMPLETE, not finished with "Not connected"', async () => {
+    const { r, pids } = await run(['--slow-active'], ['--active', '--max-duration', '4000']);
+    expect(r.json?.limits?.stopped, r.stderr).toMatchObject({ maxDurationMs: 4000, phase: 'active tool calls' });
+    expect(r.json.coverage.toolLevel).toBe('stopped');
+    expect(r.json.findings.filter((f: any) => f.ruleId === 'RT-005')).toEqual([]);
+    expect(Object.values(r.json.summary.verdicts).map((v: any) => v.verdict)).toEqual(['INCOMPLETE', 'INCOMPLETE']);
+    expect(pids.length).toBeGreaterThan(0);
     expect(pids.filter(alive)).toEqual([]);
   });
 });
