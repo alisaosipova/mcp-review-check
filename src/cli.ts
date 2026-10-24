@@ -175,7 +175,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const rules = RULES.filter((r) => r.id.startsWith(prefix));
       const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
       if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);
-      if (!['text', 'json', 'markdown'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');
+      if (!['text', 'json', 'markdown', 'sarif'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');
+      // R-13: SARIF has no catalog form; print the text catalog with a warning and exit 0, as the MRC-1 baseline did.
+      if (values.format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\n';
       const list = values.format === 'json' ? listRulesJson(rules, manual) : values.format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
       return { code: 0, stdout: list, stderr };
     }

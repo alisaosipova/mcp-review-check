@@ -79,7 +79,11 @@ describe('R-39: --list-rules formats and filter, rationale in reports', () => {
     const none = await cli(['--list-rules', 'XYZ']);
     expect(none.code).toBe(2);
     expect(none.stdout).toBe('');
-    expect((await cli(['--list-rules', '--format', 'sarif'])).code).toBe(2);
+    // R-13: SARIF has no catalog form, so --list-rules prints the text catalog with a warning and exits 0, as the MRC-1 baseline did
+    const sarif = await cli(['--list-rules', '--format', 'sarif']);
+    expect(sarif.code, sarif.stderr).toBe(0);
+    expect(sarif.stdout.startsWith('ID '), sarif.stdout.slice(0, 80)).toBe(true);
+    expect(sarif.stderr).toMatch(/--format sarif does not apply to --list-rules; printing text/);
 
     // rationale: --list-rules --verbose, the --verbose text report and the markdown report
     const listVerbose = await cli(['--list-rules', 'TOOL-011', '--verbose']);
