@@ -319,7 +319,7 @@ const isMain = (() => {
 
 if (isMain) {
   runCli(process.argv.slice(2)).then(({ code, stdout, stderr }) => {
-    if (stderr) process.stderr.write(stderr);
-    process.stdout.write(stdout, () => process.exit(code));
+    // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB (R-7).
+    process.stderr.write(stderr, () => process.stdout.write(stdout, () => process.exit(code)));
   });
 }
