@@ -115,7 +115,7 @@ describe('exit gating (B5)', () => {
     s.fatal = 'connect ECONNREFUSED 127.0.0.1:1';
     const srv003 = f('SRV-003', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
     const r = buildReport(s, { ...runRules(s, RULES), findings: [srv003] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
-    expect(r.summary.failed).toBe(false);
+    expect(r.summary.failed).toBe(true); // exit 3 is failed in JSON (R-2, MRC-2)
     expect(resultLine(r)).toBe('FAIL (could not connect)');
     expect(renderText(r, { color: false, verbose: false })).toMatch(/Result: FAIL \(could not connect\)\n/);
     expect(renderMarkdown(r)).toContain('| Result | FAIL (could not connect) |');

@@ -258,7 +258,7 @@ describe('e2e stdio', () => {
     const t0 = Date.now();
     const r = await cli(['--stdio', HANG, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
     expect(Date.now() - t0).toBeLessThan(15000);
-    expect([0, 1], r.stderr).toContain(r.code); // a handshake happened: not exit 3
+    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too (R-1, MRC-2)
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.coverage.toolLevel).toBe('stopped');
     expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');

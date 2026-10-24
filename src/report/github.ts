@@ -16,9 +16,13 @@ const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
 /**
  * One `::error` or `::warning` line per finding at its highest severity on the gated platforms (the --target
  * directories, plus spec with --fail-on-spec), as for the exit code (D-4); info and ungated findings get none.
+ * Exit 3 (no connect, or a --max-duration stop) comes first as one `::error` with its cause (R-3).
  */
 export function annotations(r: Report): string[] {
-  const out: string[] = [];
+  const stop = r.snap.limits?.stopped;
+  const outcome = r.snap.fatal ? `Could not connect: ${r.snap.coverage.reason ?? r.snap.fatal}`
+    : stop ? `Stopped by --max-duration ${stop.maxDurationMs} ms during ${stop.phase}; the check is incomplete` : undefined;
+  const out: string[] = outcome ? [`::error title=mcp-review-check::${escapeCommand(outcome)}`] : [];
   for (const f of r.findings) {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))
       .reduce<Severity>((a, b) => (RANK[b] > RANK[a] ? b : a), 'info');

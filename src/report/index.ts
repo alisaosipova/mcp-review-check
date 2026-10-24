@@ -51,7 +51,8 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
-      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed, gate: g,
+      // Exit 3 (no connect, or a --max-duration stop) is a failed run whatever the gate says (R-2, MRC-2).
+      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
     },
   };
 }
@@ -113,6 +114,9 @@ export function resultLine(r: Report, fail = (x: string) => x, causes = false): 
   const cov = r.snap.coverage;
   // Exit 3: nothing could be checked, so the run never reads PASS, whatever the gate says.
   if (r.snap.fatal) return `${fail('FAIL')} (could not connect${causes ? `: ${cov.reason ?? r.snap.fatal}` : ''})`;
+  // A stop after the handshake (exit 3, R-1): the phase, then the findings that reached the threshold before it.
+  const stop = r.snap.limits?.stopped;
+  if (stop) return [`${fail('INCOMPLETE')} (stopped at --max-duration during ${stop.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const s = r.summary;
   const head = `${s.failed ? fail('FAIL') : 'PASS'} (--fail-on ${r.failOn}${s.gate.platforms.includes('spec') ? ', --fail-on-spec' : ''})`;
   const why = authReason(r.snap);

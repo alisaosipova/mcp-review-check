@@ -13,7 +13,7 @@ import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif, SARIF_LOCATION } from './report/sarif.js';
-import { annotations, appendStepSummary } from './report/github.js';
+import { annotations, appendStepSummary, escapeCommand } from './report/github.js';
 import type { FailOn } from './report/score.js';
 import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
@@ -70,12 +70,13 @@ Examples:
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
-Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect.
+Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect
+or stopped by --max-duration (at any --fail-on; the Result line reads INCOMPLETE after a handshake).
 The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
 findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
 The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
 With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
-severity) and the markdown report is appended to $GITHUB_STEP_SUMMARY when it is set.
+severity), exit 3 as one ::error with its cause, and the markdown report is appended to $GITHUB_STEP_SUMMARY when it is set.
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
 
@@ -287,7 +288,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;
       stderr = scrub(stderr, redactor);
     }
-    const code = snap.fatal ? 3 : report.summary.failed ? 1 : 0;
+    const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on (R-1)
     const s = report.summary;
     const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info · ${resultLine(report)}`;
     if (values.output) {
@@ -308,8 +309,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const message = unknown ? `unknown option ${unknown}${near ? `; did you mean ${near}?` : ''}` : (e as Error).message;
       return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
     }
+    // R-3: in GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
+    const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
+    const ann = first ? `::error title=mcp-review-check::${escapeCommand((redactor ? scrub(first, redactor) : first).split('\n')[0])}\n` : '';
     const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\n`;
-    return { code: 3, stdout: '', stderr: redactor ? scrub(fatal, redactor) : fatal };
+    return { code: 3, stdout: '', stderr: (redactor ? scrub(fatal, redactor) : fatal) + ann };
   }
 }
 
