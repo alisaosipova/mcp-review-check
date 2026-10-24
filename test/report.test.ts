@@ -276,3 +276,36 @@ describe('other formats', () => {
     expect(run.results.some((r: any) => String(r.ruleId).startsWith('MAN-'))).toBe(false);
   });
 });
+
+describe('R-11: server text is not markdown', () => {
+  it('R-11: server text in the heading, Subject, Message, coverage reason and limits renders no link, image, HTML or @mention', () => {
+    const s = loadSnapshot('minimal-http');
+    s.serverInfo = { name: 'Acme [x](https://e.test/home)', version: '1.0' };
+    s.coverage = { toolLevel: 'list-failed', reason: 'tools/list failed: <b>boom</b> & [y](https://e.test/r)' };
+    s.limits = { truncated: [{ where: 'tools[<i>wide</i>].description', length: 20000, cap: 16384 }] };
+    const r = report(s);
+    const md = renderMarkdown({ ...r, findings: [f('X-001', 'error', { tool: 'a <img src="https://e.test/p.png">', message: 'see [x](https://e.test/phish) @octocat' })] });
+    expect(md).not.toContain('<img src=');
+    expect(md).not.toMatch(/(?<!\\)\]\(https:\/\/e\.test/); // an escaped \] is text, not the end of a link
+    expect(md).not.toContain('@octocat');
+    expect(md).not.toContain('<b>');
+    expect(md).not.toContain('<i>');
+    // the text is still there, shown literally
+    expect(md).toMatch(/^# Acme \\\[x\\\]\(https:\/\/e\.test\/home\) 1\.0$/m);
+    expect(md).toContain('a &lt;img src="https://e.test/p.png"&gt;');
+    expect(md).toContain('see \\[x\\](https://e.test/phish) @&#8203;octocat');
+    expect(md).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; \\[y\\]');
+  });
+
+  it('R-11: evidence and the rerun line stay one code span whatever backticks they hold, with the text as is inside', () => {
+    const md = renderMarkdown({ ...report(loadSnapshot('minimal-http')), findings: [f('X-001', 'error', { evidence: 'Invalid Host `` <b>x</b> ``' }), f('X-002', 'error', { evidence: 'plain @x | y' })] }, { rerun: 'npx mcp-review-check --stdio "npx -y @scope/pkg ``x``"' });
+    const cellOf = (id: string) => md.split('\n').find((l) => l.startsWith(`| ${id} `))!.split(' | ').at(-1)!.replace(/ \|$/, '');
+    const ev = cellOf('X-001');
+    const fence = /^`+/.exec(ev)![0];
+    expect(fence.length).toBeGreaterThan(2);
+    expect(ev).toBe(`${fence} Invalid Host \`\` <b>x</b> \`\` ${fence}`);
+    expect(cellOf('X-002')).toBe('`` plain @x \\| y ``');
+    const rerun = md.split('\n').find((l) => l.includes('rerun:'))!;
+    expect(rerun).toBe('``` rerun: npx mcp-review-check --stdio "npx -y @scope/pkg ``x``" ```');
+  });
+});
