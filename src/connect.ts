@@ -65,6 +65,8 @@ interface Progress {
   close?: () => Promise<void>;
   /** Every stdio server process still running (main and fresh connections), ended at the deadline (R-60). */
   children?: Set<ChildProcess>;
+  /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight (R-6). */
+  abort: AbortController;
 }
 
 class Stopped extends Error {}
@@ -266,7 +268,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const timeoutMs = opts.timeoutMs ?? 30000;
   const connectTimeout = Math.min(timeoutMs, 15000);
   const headers = { ...(opts.headers ?? {}) };
-  const tracer = createTracer(redactorFor(opts), deps.now);
+  const tracer = createTracer(redactorFor(opts), deps.now, progress?.abort.signal);
   if (progress) progress.tracer = tracer;
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
@@ -520,7 +522,7 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-  const progress: Progress = { phase: 'connect', children: new Set() };
+  const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController() };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
   await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close() (R-4)
@@ -538,6 +540,7 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
   const stop = new Promise<BuildResult>((resolve) => {
     timer = setTimeout(() => {
       progress.stopped = true;
+      progress.abort.abort();
       void progress.close?.();
       const stopped = { snap: stoppedSnapshot(snap, ms, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() };
       ending = endChildren(progress.children);

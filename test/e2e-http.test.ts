@@ -13,6 +13,7 @@ import { createBadServer } from './fixtures/bad-server.mjs';
 // @ts-expect-error untyped .mjs fixture
 import { createUiCapServer } from './fixtures/ui-cap-server.mjs';
 import { cli, nonInfo, ruleIds } from './cli-runner.js';
+import { runCli } from '../src/cli.js';
 
 let servers: Started[] = [];
 afterEach(async () => { await Promise.all(servers.map((s) => s.close())); servers = []; });
@@ -417,4 +418,30 @@ describe('e2e http', () => {
     expect(caps.length).toBeGreaterThan(0);
     expect(caps).toEqual(caps.map(() => ({ extensions: UI_EXT })));
   });
+
+  it('R-6: no request reaches the server after runCli resolves on --max-duration', async () => {
+    // Answers initialize, notifications and tools/list and refuses server/discover; every other request (wire probes,
+    // GET) hangs. Counts when each request arrives.
+    const seen: number[] = [];
+    const s = track(await listen(async (req, res) => {
+      let body = '';
+      for await (const c of req) body += c;
+      seen.push(Date.now());
+      let m: any = {};
+      try { m = JSON.parse(body); } catch { /* GET */ }
+      if (req.method === 'POST' && m.id === undefined && m.method) { res.writeHead(202).end(); return; }
+      const reply = (x: object) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...x })); };
+      if (m.method === 'initialize') return reply({ result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'hang', version: '1' } } });
+      if (m.method === 'server/discover') return reply({ error: { code: -32601, message: 'Method not found' } });
+      if (m.method === 'tools/list' && !String(req.headers['mcp-protocol-version']).startsWith('1900')) return reply({ result: { tools: [{ name: 'ping', description: 'Reply with pong.', inputSchema: { type: 'object' } }] } });
+      await new Promise(() => {});
+    }));
+    // In process: no process.exit cuts the abandoned run short, as for a library caller.
+    const r = await runCli([s.url, '--format', 'json', '--max-duration', '1500', '--timeout', '2000'], { NO_COLOR: '1' }, false);
+    const resolved = Date.now();
+    expect(JSON.parse(r.stdout).limits.stopped).toMatchObject({ maxDurationMs: 1500 });
+    expect(seen.filter((t) => t <= resolved).length).toBeGreaterThan(0);
+    await new Promise((done) => setTimeout(done, 8000));
+    expect(seen.filter((t) => t > resolved)).toEqual([]);
+  }, 30000);
 });

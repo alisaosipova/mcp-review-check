@@ -157,7 +157,16 @@ export interface Tracer {
   now(): number;
 }
 
-export function createTracer(redactor: Redactor, now: () => number = () => performance.now()): Tracer {
+/** Abort `ctrl` when `stop` aborts, at once if it already has (by hand: AbortSignal.any is not in Node 18.19); returns the unlink. */
+function linkAbort(ctrl: AbortController, stop: AbortSignal | undefined): () => void {
+  const abort = () => ctrl.abort();
+  if (stop?.aborted) abort();
+  else stop?.addEventListener('abort', abort, { once: true });
+  return () => stop?.removeEventListener('abort', abort);
+}
+
+/** `stop` (the --max-duration deadline, R-6): once it aborts, nothing more is sent and probes in flight are cancelled. */
+export function createTracer(redactor: Redactor, now: () => number = () => performance.now(), stop?: AbortSignal): Tracer {
   const exchanges: HttpExchange[] = [];
   const timings: Record<string, number[]> = {};
   const pending: Promise<unknown>[] = [];
@@ -192,7 +201,9 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     exchanges.push(ex);
     const started = now();
     try {
-      const res = await fetch(url, init);
+      // Past the deadline the SDK sends nothing (a fetch with an aborted signal rejects before it connects); a request
+      // already in flight is left to its client (the deadline closes the main one).
+      const res = await fetch(url, stop?.aborted ? { ...init, signal: stop } : init);
       finishHeaders(ex, res, started);
       const isStream = ex.method === 'GET' && /event-stream/i.test(ex.contentType ?? '');
       if (!isStream && res.body) {
@@ -215,6 +226,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     const ctrl = new AbortController();
     const timeoutMs = init.timeoutMs ?? 30000;
     const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
+    const unlink = linkAbort(ctrl, stop);
     // Tracer-only options are not passed to fetch.
     const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, ...fetchInit } = init;
     try {
@@ -241,6 +253,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       return { exchange: ex };
     } finally {
       clearTimeout(timeout);
+      unlink();
     }
   };
 
