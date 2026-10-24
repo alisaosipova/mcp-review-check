@@ -9,8 +9,8 @@ export { isSecretName } from './rules/util/net.js';
 
 /** Header names whose value is a credential when they appear as "Name: value" in argv (mcp-remote --header ...). */
 const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-key|x-auth-token|[\w-]*(token|secret|key))$/i;
-/** Values never treated as secrets on their own: they would blank out unrelated report text. */
-const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?)$/i;
+/** Values never treated as secrets on their own: they would blank out unrelated report text, or, as protocol and schema words, server data (R-8). */
+const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|object|string|number|integer|array|boolean|type|title|name|description|properties|required|items|enum|const|default|format|pattern|anyOf|oneOf|allOf|\$ref|\$schema|\$defs|uri|mimeType|text|image|audio|resource|resource_link|json|html|plain|xml|application)$/i;
 
 /** Credentials inside a URL: the password of user:pass@ and secret query parameter values, decoded and as written ("+", %2f). */
 export function urlSecrets(raw: string): string[] {
@@ -69,15 +69,15 @@ export interface RedactionInput {
   env?: Record<string, string>;
 }
 
-/** The single Redactor for a run: --bearer, --header values, URL credentials, --env values and argv secrets. */
-export function buildRedactor(input: RedactionInput): Redactor {
+/** A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values (strongOnly, R-8: under a secret name only). */
+export function buildRedactor(input: RedactionInput, strongOnly = false): Redactor {
   const headers = input.headers ?? {};
   const values: string[] = [];
   if (input.bearer) values.push(input.bearer);
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
   if (input.url) values.push(...urlSecrets(input.url));
   if (input.argv) values.push(...argvSecrets(input.argv));
-  values.push(...Object.values(input.env ?? {}));
+  for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k)) values.push(v);
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
 }
 

@@ -37,7 +37,7 @@ export interface BuildOptions {
   active?: boolean;
   activeAuth?: boolean;
   toolArgs?: Record<string, unknown>;
-  /** The run's single Redactor (runCli passes it); built from these options when absent. */
+  /** The run's strong Redactor, applied before the rules (runCli passes it); built from these options when absent. */
   redactor?: Redactor;
   /** Overall deadline for the whole check (--max-duration); checks still pending then are skipped. */
   maxDurationMs?: number;
@@ -45,13 +45,13 @@ export interface BuildOptions {
   local?: boolean;
 }
 
-/** The redactor for these options: --bearer, --header values, URL credentials, stdio argv secrets and --env values. */
-export function redactorFor(opts: BuildOptions): Redactor {
+/** The redactor for these options; before the rules only strong values (R-8), `all` adds --env values under a plain name. */
+export function redactorFor(opts: BuildOptions, all = false): Redactor {
   const t = opts.target;
-  return opts.redactor ?? buildRedactor({
+  return (all ? undefined : opts.redactor) ?? buildRedactor({
     bearer: opts.bearer, headers: opts.headers,
     ...(t.kind === 'http' ? { url: t.url } : { argv: [t.command, ...t.args], env: t.env }),
-  });
+  }, !all);
 }
 
 /** Where a run is; --max-duration reports the phase and stops at the next checkpoint. */

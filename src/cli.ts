@@ -260,12 +260,14 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       active: !!values.active, activeAuth: !!values['active-auth'], toolArgs,
       local: values.local ? true : values['no-local'] ? false : undefined,
     };
-    redactor = opts.redactor = redactorFor(opts);
+    // R-8: every value for the report and each output; before the rules only the strong ones (not --env FORMAT=text).
+    redactor = redactorFor(opts, true);
+    opts.redactor = redactorFor(opts);
     const started = new Date();
     stderr += staleCatalogWarning(started) ?? '';
     const t0 = performance.now();
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
-    // buildSnapshot scrubs what the server sent (before the input caps) and the rules see no secret.
+    // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
