@@ -139,3 +139,31 @@ describe('SEC-1 review round 2 (S-25): redactor units', () => {
     expect(out.snap.resourceReads).toEqual({ 'ui://«redacted»/w': { ok: false, error: 'boom' } });
   });
 });
+
+describe('SEC-1 defence in depth (S-28): redactor units', () => {
+  it('S-28: the own vocabulary is kept only outside what the server sent: kind and role under capabilities, initializeRaw, discoverRaw and resourceReads are masked, their keys are not', () => {
+    const r = buildRedactor({ env: { K: 'S3cretValue99', LOG_LEVEL: 'error' } });
+    const input = {
+      summary: { errors: 1, warnings: 0 },
+      failOn: 'error',
+      findings: [{ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, verdict: 'error', message: 'an error' }],
+      snap: {
+        kind: 'error',
+        capabilities: { experimental: { x: { kind: 'S3cretValue99', role: 'S3cretValue99', note: 'S3cretValue99' } } },
+        initializeRaw: { capabilities: { experimental: { y: { severity: 'S3cretValue99', error: 1 } } } },
+        discoverRaw: { _meta: { 'io.modelcontextprotocol/serverInfo': { role: 'S3cretValue99', kind: ['S3cretValue99'] } } },
+        resourceReads: { 'ui://w': { ok: false, error: { kind: 'S3cretValue99' } } },
+      },
+    };
+    const out = redactDeep(input, r) as any;
+    expect(out.snap.capabilities).toEqual({ experimental: { x: { kind: '«redacted»', role: '«redacted»', note: '«redacted»' } } });
+    expect(out.snap.initializeRaw).toEqual({ capabilities: { experimental: { y: { severity: '«redacted»', error: 1 } } } });
+    expect(out.snap.discoverRaw).toEqual({ _meta: { 'io.modelcontextprotocol/serverInfo': { role: '«redacted»', kind: ['«redacted»'] } } });
+    expect(out.snap.resourceReads).toEqual({ 'ui://w': { ok: false, error: { kind: '«redacted»' } } });
+    // the report's own fields and vocabulary stay: --env LOG_LEVEL=error does not hide a severity or rename summary.errors
+    expect(Object.keys(out.summary)).toEqual(['errors', 'warnings']);
+    expect(out.failOn).toBe('error');
+    expect(out.snap.kind).toBe('error');
+    expect(out.findings[0]).toEqual({ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, verdict: 'error', message: 'an «redacted»' });
+  });
+});

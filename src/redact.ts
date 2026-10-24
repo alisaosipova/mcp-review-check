@@ -93,20 +93,23 @@ const isPlain = (v: object) => {
 const SERVER_DATA = new Set(['serverInfo', 'instructions', 'tools', 'resources', 'resourceTemplates', 'prompts', 'toolsWithoutUi', 'rawPages', 'raw', 'json', 'result', 'jsonRpcError', 'args', 'headers', 'parsed', 'data']);
 /** Maps keyed by a value the server chose (resource URIs): their keys are masked, their entries are the snapshot's own. */
 const SERVER_KEYED = new Set(['resourceReads']);
-/** The report's own vocabulary (severities, platforms, verdicts): never a secret, and renderers compare these values. */
+/** What the server sent under protocol-named keys: keys stay, but every value is masked, the own vocabulary included. */
+const SERVER_VALUES = new Set(['capabilities', 'initializeRaw', 'discoverRaw', ...SERVER_KEYED]);
+/** The report's own vocabulary (severities, platforms, verdicts) outside server data: renderers compare these values. */
 const OWN_VOCABULARY = new Set(['ruleId', 'severity', 'platforms', 'severityByPlatform', 'verdict', 'failOn', 'toolLevel', 'era', 'kind', 'role']);
 
 /**
  * A deep copy of `value` with every secret replaced in strings and URL objects; no recursion, so any depth works.
  * Field names of the snapshot and the report and their own vocabulary stay (a secret like "error" must not rename
  * summary.errors or a severity); keys are masked only inside server data (keys: 0 none, 1 this object's own, 2 the subtree).
+ * Inside what the server sent (`srv`) no value is kept as own vocabulary.
  */
 export function redactDeep<T>(value: T, r: Redactor): T {
   if (!r.values.size) return value;
   const seen = new Map<object, unknown>();
   const pending: (() => void)[] = [];
   // Copies one level: containers come back empty and are filled from `pending`, so deep data never grows the call stack.
-  const copy = (v: unknown, keys = 0, own = false): unknown => {
+  const copy = (v: unknown, keys = 0, own = false, srv = false): unknown => {
     if (typeof v === 'string') return own ? v : scrub(v, r);
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return seen.get(v);
@@ -119,7 +122,7 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     if (Array.isArray(v)) {
       const out: unknown[] = [];
       seen.set(v, out);
-      pending.push(() => { for (const x of v) out.push(copy(x, keys, own)); });
+      pending.push(() => { for (const x of v) out.push(copy(x, keys, own, srv)); });
       return out;
     }
     if (!isPlain(v)) return v;
@@ -127,7 +130,8 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     seen.set(v, out);
     pending.push(() => {
       for (const [k, x] of Object.entries(v)) {
-        out[keys ? scrub(k, r) : k] = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, own || (keys < 2 && OWN_VOCABULARY.has(k)));
+        const s = srv || keys === 2 || SERVER_VALUES.has(k);
+        out[keys ? scrub(k, r) : k] = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || OWN_VOCABULARY.has(k)), s);
       }
     });
     return out;
