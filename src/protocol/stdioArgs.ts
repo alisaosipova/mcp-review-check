@@ -1,5 +1,6 @@
-// Small shell-like tokenizer for --stdio: single quotes, double quotes (with \" \\ \$ \` escapes inside),
-// whitespace splitting. A backslash outside quotes is literal so Windows paths (C:\Users\me\server.js) survive.
+// Small shell-like tokenizer for --stdio: single quotes, double quotes, whitespace splitting. A backslash is literal
+// outside quotes and, inside double quotes, everywhere but before a " (the Windows argv rule, on every OS, R-15), so
+// Windows paths (C:\Users\me\server.js, "\\host\My Share\s.js", "C:\srv\\") survive.
 
 export function tokenizeCommand(input: string): string[] {
   const out: string[] = [];
@@ -17,8 +18,9 @@ export function tokenizeCommand(input: string): string[] {
     } else if (c === '"') {
       i++;
       while (i < input.length && input[i] !== '"') {
-        if (input[i] === '\\' && i + 1 < input.length && /["\\$`]/.test(input[i + 1])) i++;
-        cur += input[i++];
+        let n = 0; // 2n backslashes and " give n and end the quote, 2n+1 give n and a literal "
+        while (input[i + n] === '\\') n++;
+        if (input[i + n] === '"') { cur += '\\'.repeat(n >> 1) + (n % 2 ? '"' : ''); i += n + (n % 2); } else { cur += input.slice(i, i + n + 1); i += n + 1; }
       }
       if (i >= input.length) throw new Error('unterminated double quote');
       has = true;
@@ -36,6 +38,11 @@ export function tokenizeCommand(input: string): string[] {
   }
   if (has) out.push(cur);
   return out;
+}
+
+/** One argument quoted for cmd.exe and PowerShell as the Windows argv rule reads it back (tokenizeCommand too, R-15). */
+export function cmdQuote(arg: string): string {
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }
 
 /**

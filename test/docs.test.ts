@@ -81,3 +81,11 @@ describe('README and docs (W1-5)', () => {
     expect([...fromReadme].sort()).toEqual([...fromHelp].sort());
   });
 });
+
+describe('README: the stdio server environment (R-15)', () => {
+  it('X-mac-7: README names the variables a stdio server inherits and says to pass the rest with --env', () => {
+    expect(README).toMatch(/HOME, LOGNAME, PATH, SHELL, TERM, USER/);
+    expect(README).toMatch(/APPDATA, .*USERPROFILE/);
+    expect(README).toMatch(/TMPDIR[^\n]*--env|--env[^\n]*TMPDIR/);
+  });
+});

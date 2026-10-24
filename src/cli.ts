@@ -7,7 +7,7 @@ import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSp
 import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
-import { splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
+import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, resultLine, scoreLabel, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
@@ -65,8 +65,9 @@ Examples:
   mcp-review-check explain TOOL-011
   mcp-review-check --list-rules TOOL --format json
 
---stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash outside quotes is literal
-(Windows paths work); the "-- <command> [args...]" form passes arguments verbatim, with options before --.
+--stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash is literal (Windows paths work),
+also inside double quotes, except before a ": there, as on Windows, \\\\" is one \\ and ends the quote, \\" a literal ".
+The "-- <command> [args...]" form passes arguments verbatim, with options before --.
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
@@ -164,7 +165,15 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
     if (i > 0 && ['--bearer', '--header', '--env'].includes(argv[i - 1])) return masked(argv[i - 1], a);
     return /^https?:\/\//i.test(a) ? displayUrl(a) : a;
   }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
-  return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(' ');
+  // cmd.exe and PowerShell take no single quotes: on Windows an argument is double-quoted by the Windows argv rule (R-15).
+  const quote = process.platform === 'win32' ? cmdQuote : (a: string) => `'${a.replace(/'/g, "'\\''")}'`;
+  return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : quote(a)))].join(' ');
+}
+
+/** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE with its BOM (R-15). */
+function readToolArgs(file: string): Record<string, unknown> {
+  const raw = readFileSync(file);
+  return JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
 }
 
 /** A URL for a usage error: everything up to the last "@" after the scheme (a password may hold "/", "?" or "#"), query and fragment hidden. */
@@ -244,7 +253,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       for (const kv of values.env ?? []) {
         const i = kv.indexOf('=');
         if (i <= 0) throw new UsageError('--env must look like K=V (no "=" found; the value is not shown)');
-        envVars[kv.slice(0, i)] = kv.slice(i + 1);
+        // Windows names are case-insensitive: --env Path=… replaces the inherited PATH instead of losing to it (R-15).
+        envVars[process.platform === 'win32' ? kv.slice(0, i).toUpperCase() : kv.slice(0, i)] = kv.slice(i + 1);
       }
       spec = { kind: 'stdio', command: parts[0], args: parts.slice(1), env: envVars, cwd: values.cwd };
     } else {
@@ -261,7 +271,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
 
     let toolArgs: Record<string, unknown> | undefined;
     if (values['tool-args']) {
-      try { toolArgs = JSON.parse(readFileSync(values['tool-args'], 'utf8')); } catch (e) {
+      try { toolArgs = readToolArgs(values['tool-args']); } catch (e) {
         // A JSON syntax error message quotes the file (which may hold credentials): name the problem only.
         throw new UsageError(`cannot read --tool-args: ${e instanceof SyntaxError ? 'not valid JSON' : (e as Error).message}`);
       }

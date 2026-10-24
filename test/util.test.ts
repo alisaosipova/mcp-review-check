@@ -1,6 +1,6 @@
 import { extractWWWAuthenticateParams } from '@modelcontextprotocol/sdk/client/auth.js';
 import { describe, expect, it } from 'vitest';
-import { splitStdioArgv, tokenizeCommand } from '../src/protocol/stdioArgs.js';
+import { cmdQuote, splitStdioArgv, tokenizeCommand } from '../src/protocol/stdioArgs.js';
 import { parseSseMessages, createRedactor, redactUrl, scrub } from '../src/protocol/trace.js';
 import { asDiscoveryUrls, prmCandidates } from '../src/probe/auth.js';
 import { cleanErrorMessage, stderrSummary } from '../src/connect.js';
@@ -120,6 +120,20 @@ describe('protocol helpers', () => {
     expect(tokenizeCommand('node \\\\host\\share\\s.js')).toEqual(['node', '\\\\host\\share\\s.js']);
     expect(tokenizeCommand('"C:\\Program Files\\nodejs\\node.exe" D:\\srv\\a.js')).toEqual(['C:\\Program Files\\nodejs\\node.exe', 'D:\\srv\\a.js']);
     expect(tokenizeCommand('node a\\ b')).toEqual(['node', 'a\\', 'b']);
+  });
+  it('R-15: inside double quotes a backslash escapes only " (Windows rule), so UNC paths, \\$ and a trailing \\ survive', () => {
+    expect(tokenizeCommand(String.raw`node "\\srv\My Share\s.js"`)).toEqual(['node', String.raw`\\srv\My Share\s.js`]);
+    expect(tokenizeCommand(String.raw`node "C:\Users\me\$work\s.js"`)).toEqual(['node', String.raw`C:\Users\me\$work\s.js`]);
+    expect(() => tokenizeCommand(String.raw`node "C:\srv\\" x`)).not.toThrow();
+    expect(tokenizeCommand(String.raw`node "C:\srv\\" x`)).toEqual(['node', 'C:\\srv\\', 'x']);
+    expect(tokenizeCommand(String.raw`node "a\\\"b"`)).toEqual(['node', 'a\\"b']); // 2n+1 backslashes: n and a literal "
+  });
+  it('R-15: cmdQuote quotes an argument so that tokenizeCommand gives it back', () => {
+    expect(cmdQuote, 'cmdQuote is exported').toBeTypeOf('function');
+    for (const x of ['C:\\Program Files\\srv\\', 'say "hi"', 'a\\"b', String.raw`\\srv\My Share\s.js`, 'x\\\\', '']) {
+      expect(tokenizeCommand(cmdQuote(x)), x).toEqual([x]);
+    }
+    expect(cmdQuote('C:\\Program Files\\srv\\')).toBe('"C:\\Program Files\\srv\\\\"');
   });
   it('splitStdioArgv takes the command after `--stdio --` verbatim', () => {
     expect(splitStdioArgv(['--format', 'json', '--stdio', '--', 'node', 'my server.js', '--port', '0'])).toEqual({ args: ['--format', 'json'], command: ['node', 'my server.js', '--port', '0'] });

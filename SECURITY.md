@@ -34,7 +34,7 @@ Your `--bearer` token is sent only to the MCP server URL you entered, never to t
 
 **With `--active-auth`**, the tool **registers a client through Dynamic Client Registration** (`client_name: mcp-review-check`, redirect URIs for claude.ai and localhost), then sends `/authorize` requests and a `/token` request with a bogus authorization code. The registered client stays on your authorization server; delete it afterwards if your server does not expire unused clients.
 
-**With `--stdio`**, the tool starts the command you give it as a local process with your user's permissions (no shell is involved). Only run commands you would run yourself.
+**With `--stdio`**, the tool starts the command you give it as a local process with your user's permissions (no shell is involved). Only run commands you would run yourself. The process gets only `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM` and `USER` from your environment (on Windows `APPDATA`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `PATH`, `PROCESSOR_ARCHITECTURE`, `PROGRAMFILES`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`, `USERNAME`, `USERPROFILE`) and the `--env` values you give: other variables of your shell, tokens included, are not passed.
 
 ## Threat model and safe use
 
