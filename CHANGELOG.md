@@ -6,7 +6,9 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-First public release, planned as 0.1.0.
+## [0.1.0] - 2026-10-25
+
+First public release.
 
 ### Added
 
