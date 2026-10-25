@@ -56,7 +56,19 @@ describe('redactor (B2)', () => {
     for (const a of ['/home/user/project/dist/server.js', 'C:\\Users\\me\\mcp\\server.js', './node_modules/.bin/mcp-server', '@modelcontextprotocol/server-filesystem', 'mcp-server-git@1.2.3',
       '@scope/pkg@latest', '-y', '--directory', 'mcp_server_fetch', 'claude-sonnet-4-5-20250929', 'gpt-4o-mini-2024-07-18', '123e4567-e89b-12d3-a456-426614174000',
       'da39a3ee5e6b4b0d3255bfef95601890afd80709', '2026-10-24T11:11:07.869Z', 'ghcr.io/org/mcp-image:1.4.2', 'db.internal.example.com', 'skeleton-loader-component-v2', 'sk-SK', 'AKIA',
-      'eyJhbGciOiJIUzI1NiJ9', 'node_modules_cache_v2_LinuxX64_Node20', 'Dockerfile.production-build-2026', 'x sk-live-SYNTHabcdefghijklmnop0123']) expect(argvSecrets([a]), a).toEqual([]);
+      'eyJhbGciOiJIUzI1NiJ9', 'node_modules_cache_v2_LinuxX64_Node20', 'Dockerfile.production-build-2026']) expect(argvSecrets([a]), a).toEqual([]);
+  });
+
+  // MRC-2 review round 2: a token inside an argument (JSON, a comma list) or inside an --env value was left unmasked.
+  it('R-9: argvSecrets and buildRedactor find a known-format token anywhere in an argument or an --env value, bounded like a word', () => {
+    const J = 'sk-live-JSONSYNTH0123456789ab', A = 'ghp_LISTASYNTHabcdefghijklmnopqrstuvwxyz01', B = 'ghp_LISTBSYNTHabcdefghijklmnopqrstuvwxyz02';
+    const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.SYNTHsigABCdef0123';
+    expect(argvSecrets(['--config', `{"apiKey":"${J}"}`, `--keys=${A},${B}`, `x ${J}`, `--jwt=${JWT}.`])).toEqual([J, A, B, JWT]);
+    // glued to more word characters or "-" it is no token (xsk-…, ghp_…-v2, ghp_…_x)
+    expect(argvSecrets([`x${J}`, `${A}-v2`, `${A}_x`])).toEqual([]);
+    const strong = buildRedactor({ env: { SETTINGS: '{"slack":"xoxb-ENVJSONSYNTH-0123-QWERTY"}', UPSTREAM_KEYS: 'plain,glpat-ENVLISTSYNTH0123456789' } }, true).values;
+    expect(strong.has('xoxb-ENVJSONSYNTH-0123-QWERTY')).toBe(true);
+    expect(strong.has('glpat-ENVLISTSYNTH0123456789')).toBe(true);
   });
 
   it('R-9: buildRedactor: the URL username and the parts of a composite --env value are strong values', () => {
@@ -240,6 +252,17 @@ describe('R-10', () => {
     const r = await cli(['--format', 'json', '--env', 'DB_PASSWORD=pw-SYNTHü0001-SECRET', '--stdio', `${SPLIT} --stdout`]);
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-018').message).toContain('login failed with password «redacted»');
     expect(r.stdout + r.stderr).not.toContain('0001-SECRE');
+  }, 60000);
+
+  // MRC-2 review round 2 (mutation M10: each chunk masked alone, `(stderrTail + scrub(c, r)).slice(-4096)`, kept every test green).
+  it('R-10: an echo split between two stderr writes is masked before the 4096-character tail cuts through it', async () => {
+    const SECRET = 'pw-SYNTHü0001-TAILCHECK-QZXW';
+    const tail = `node ${fileURLToPath(new URL('./fixtures/stderr-tail-split.mjs', import.meta.url))}`;
+    const r = await cli(['--format', 'json', '--verbose', '--env', `DB_PASSWORD=${SECRET}`, '--stdio', tail]);
+    expect(r.code, r.stderr).toBe(3);
+    expect(r.stderr).toContain('[stdio stderr]\n'); // the tail is shown, and the fatal message quotes its first line
+    const all = r.stdout + r.stderr;
+    for (let i = 0; i + 6 <= SECRET.length; i++) expect(all, SECRET.slice(i, i + 6)).not.toContain(SECRET.slice(i, i + 6));
   }, 60000);
 
   it('D-sec-3: the gate texts are not masked by value', () => {

@@ -40,7 +40,7 @@ export function tokenizeCommand(input: string): string[] {
   return out;
 }
 
-/** One argument quoted for cmd.exe and PowerShell as the Windows argv rule reads it back (tokenizeCommand too, R-15). */
+/** One argument double-quoted for cmd.exe as the Windows argv rule reads it back (tokenizeCommand too, R-15). */
 export function cmdQuote(arg: string): string {
   return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }

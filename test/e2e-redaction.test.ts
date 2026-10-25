@@ -478,3 +478,35 @@ describe('R-9: a known-format token inside a stdio argument with a plain name (r
     }
   });
 });
+
+// MRC-2 review round 2: a known-format token inside a stdio argument (a JSON value, a comma list) or inside an --env
+// value under a plain name was masked nowhere: the target label, the rerun line, SRV-018, stderr and the server's echo.
+describe('R-9: a known-format token inside a JSON or list argument and inside an --env value (review round 2)', () => {
+  const JSON_TOK = 'sk-live-JSONSYNTH0123456789ab';
+  const LIST_A = 'ghp_LISTASYNTHabcdefghijklmnopqrstuvwxyz01';
+  const LIST_B = 'ghp_LISTBSYNTHabcdefghijklmnopqrstuvwxyz02';
+  const ENV_JSON = 'xoxb-ENVJSONSYNTH-0123-QWERTY';
+  const ENV_LIST = 'glpat-ENVLISTSYNTH0123456789';
+  const ARGS = ['--config', `{"apiKey":"${JSON_TOK}"}`, `--keys=${LIST_A},${LIST_B}`];
+  const ENVS = ['--env', `SETTINGS={"slack":"${ENV_JSON}"}`, '--env', `UPSTREAM_KEYS=plain,${ENV_LIST}`];
+  const SECRETS = [JSON_TOK, LIST_A, LIST_B, ENV_JSON, ENV_LIST];
+  /** A stdio server that writes its arguments and the tokens it takes out of the --env values to stderr and exits (SRV-003, fatal). */
+  const CRASH_ALL = "console.error('Error: rejected ' + process.argv.slice(1).join(' ') + ' env ' + JSON.parse(process.env.SETTINGS).slack + ' ' + process.env.UPSTREAM_KEYS.split(',')[1]); process.exit(1)";
+
+  it.each(FORMATS)('R-9: %s: the token is redacted in the label, Target, rerun, stderr, SRV-018 and the fatal message', async (format) => {
+    const echoed = await cli([...ENVS, '--format', format, '--verbose', '--stdio', '--', 'node', LEAKY_PATH, ...ARGS]);
+    expectNoLeak(echoed, SECRETS, `${format} (inside an argument)`);
+    expect(echoed.code).toBe(0);
+    const crashed = await cli([...ENVS, '--format', format, '--verbose', '--stdio', '--', 'node', '-e', CRASH_ALL, '--', ...ARGS]);
+    expectNoLeak(crashed, SECRETS, `${format} (inside an argument and an --env value, fatal)`);
+    expect(crashed.code).toBe(3);
+    if (format === 'json') {
+      expect(echoed.json.server.command).toBe(`node ${LEAKY_PATH} --config {"apiKey":"«redacted»"} --keys=«redacted»,«redacted»`);
+      expect(crashed.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toContain('rejected --config {"apiKey":"«redacted»"} --keys=«redacted»,«redacted» env «redacted» «redacted»');
+    }
+    if (format === 'markdown') {
+      expect(echoed.stdout).toContain('| Target | stdio:node');
+      expect(echoed.stdout).toMatch(/rerun: npx mcp-review-check .*--keys=«redacted»,«redacted»/);
+    }
+  });
+});

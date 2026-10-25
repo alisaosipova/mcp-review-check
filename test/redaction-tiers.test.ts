@@ -57,7 +57,7 @@ describe('R-8: a word in --env is not masked before the rules', () => {
 
 describe('U-2 with R-8: a weak --env value never reaches a channel', () => {
   const LEAKY = fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url));
-  const WEAK = 'weak-WEAKSYNTH0001';
+  const WEAK = 'weak-WEAKSYNTHabcd'; // no digits: a token-like value (16+ characters with letters and digits) would be strong
   // leaky-server echoes $API_TOKEN on stdout and stderr; this start-up hands it the plainly named WEAK_NOTE instead.
   const start = `process.env.API_TOKEN = process.env.WEAK_NOTE ?? ''; process.argv.splice(1, 0, ${JSON.stringify(LEAKY)}); import(${JSON.stringify(pathToFileURL(LEAKY).href)});`;
   const dir = mkdtempSync(join(tmpdir(), 'mrc-tiers-'));

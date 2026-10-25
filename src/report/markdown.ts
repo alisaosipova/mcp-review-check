@@ -3,6 +3,7 @@ import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
 import { RULES } from '../rules/index.js';
+import { AUTH_CONTACT } from '../rules/auth.js';
 import { localBanner, visibleFindings } from './text.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
@@ -11,8 +12,11 @@ const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
 const ESC: Record<string, string> = { '\\': '\\\\', '`': '\\`', '[': '\\[', ']': '\\]', '<': '&lt;', '>': '&gt;', '&': '&amp;', '@': '@&#8203;' };
 
-/** Server text outside a code span (R-11): shown as written, never a link, image, HTML or @mention (an @ after [A-Za-z0-9_.-], as in an e-mail address, mentions no one); a zero-width space inside "://" and "www." keeps GFM from linking a bare URL. */
-const text = (s: string | undefined) => cell((s ?? '').replace(/[\\`[\]<>&]|(?<![\w.-])@/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B'));
+/** The AUTH-012 contact address as a whole address: no e-mail character before it, no more domain after it. */
+const CONTACT = new RegExp(`(?<![\\w.+-])${AUTH_CONTACT.replace(/\./g, '\\.')}(?![\\w-]|\\.[\\w-])`);
+/** Server text outside a code span (R-11): shown as written, never a link, image, HTML, @mention or mailto link (every @ gets a
+ *  zero-width space, the AUTH-012 contact address alone stays as written); one inside "://" and "www." keeps GFM from linking a bare URL. */
+const text = (s: string | undefined) => cell((s ?? '').split(CONTACT).map((p) => p.replace(/[\\`[\]<>&@]/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B')).join(AUTH_CONTACT));
 
 /** Evidence as a code span (R-48): quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it (R-11). */
 const code = (s: string | undefined, inCell = true) => {

@@ -429,7 +429,7 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
     if (proc && progress?.children) {
-      if (progress.stopped) endTree(proc, 'SIGKILL'); // spawned while the deadline was ending the others
+      if (progress.stopped || ending) endTree(proc, 'SIGKILL'); // spawned while the deadline or a signal was ending the others (R-4)
       // On POSIX the entry stays while the server's process group outlives its wrapper (R-5).
       else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
@@ -571,9 +571,10 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
   }
 }
 
-/** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait (R-60). */
+/** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait (R-60);
+ *  SIGKILL again while the set still holds a live one, up to 3 rounds, as a server can join it during a wait (R-4). */
 async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 1000): Promise<void> {
-  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+  for (const signal of ['SIGTERM', 'SIGKILL', 'SIGKILL', 'SIGKILL'] as const) {
     const live = [...(children ?? [])].filter(running); // a process leaves the set on 'exit' unless its group lives on
     if (!live.length) return;
     for (const c of live) endTree(c, signal);
@@ -583,6 +584,8 @@ async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 10
 
 /** Every stdio server of every run in this process, for the CLI's signal handler (endAllNow). */
 const everyChild = new Set<ChildProcess>();
+/** Set by endAllNow: the CLI is exiting on a signal, so a server the check starts after it is killed at once (R-4). */
+let ending = false;
 
 /** A stdio server still running: the process itself or, on POSIX, anything left in its process group (R-5). */
 function running(c: ChildProcess): boolean {
@@ -601,6 +604,7 @@ function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
 /** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM, SIGHUP and
  *  SIGQUIT (R-5), with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait (R-4). */
 export function endAllNow(kill = false): Promise<void> {
+  ending = true;
   if (kill) for (const c of everyChild) endTree(c, 'SIGKILL');
   return endChildren(everyChild);
 }

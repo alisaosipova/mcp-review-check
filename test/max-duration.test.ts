@@ -5,7 +5,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runCli } from '../src/cli.js';
 import { cli } from './cli-runner.js';
 
 const STUBBORN = fileURLToPath(new URL('./fixtures/stubborn-server.mjs', import.meta.url));
@@ -108,4 +110,22 @@ describe('R-4: no stdio server outlives the CLI', () => {
     expect(pids).toHaveLength(1);
     expect(pids.filter(alive)).toEqual([]);
   });
+
+  // MRC-2 review round 1 tail: the client of a check that throws after the handshake is closed (stdin EOF, then the
+  // server's group), not only its process killed by the cleanup; no test caught the close's removal.
+  it('runCli in process: the check throws after the handshake and its stdio client is closed (progress.close)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-stubborn-'));
+    dirs.push(dir);
+    const pidFile = join(dir, 'pids');
+    const close = vi.spyOn(StdioClientTransport.prototype, 'close');
+    try {
+      const r = await runCli(['--stdio', `node "${THROWER}" "${pidFile}"`, '--format', 'json', '--timeout', '5000'], {});
+      expect(r.code, r.stderr).toBe(3);
+      expect(r.stderr).toMatch(/^fatal: TypeError/m);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(pidsOf(pidFile).filter(alive)).toEqual([]);
+    } finally {
+      close.mockRestore();
+    }
+  }, 30000);
 });

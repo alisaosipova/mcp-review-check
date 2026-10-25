@@ -321,6 +321,9 @@ export const AUTH_011 = defineRule(
   (snap) => forEachAs(snap, (_as, m) => (Array.isArray(m.code_challenge_methods_supported) && m.code_challenge_methods_supported.includes('S256') ? [] : [{ message: 'code_challenge_methods_supported does not include S256' }])),
 );
 
+/** Anthropic's contact for pre-registered credentials (AUTH-012); the markdown report shows it as written (R-11). */
+export const AUTH_CONTACT = 'mcp-review@anthropic.com';
+
 export const AUTH_012 = defineRule(
   {
     id: 'AUTH-012', title: 'Client registration path', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: ['auth'],
@@ -340,7 +343,7 @@ export const AUTH_012 = defineRule(
     // Claude
     if (cimd && !none) out.push({ platforms: ['claude'], severity: 'warning', message: 'CIMD advertised without token auth method "none": CIMD ignored, falls back to DCR' });
     // Pre-registered (Anthropic-held) and connection-time credentials are supported paths the linter cannot see.
-    if (!(cimd && none) && !dcr) out.push({ platforms: ['claude'], severity: 'warning', message: 'neither CIMD nor DCR: Claude requires Anthropic-held credentials (contact mcp-review@anthropic.com) or connection-time credentials; the linter cannot see whether pre-registration is in place' });
+    if (!(cimd && none) && !dcr) out.push({ platforms: ['claude'], severity: 'warning', message: `neither CIMD nor DCR: Claude requires Anthropic-held credentials (contact ${AUTH_CONTACT}) or connection-time credentials; the linter cannot see whether pre-registration is in place` });
     // ChatGPT
     if (cimd && methods === undefined) out.push({ platforms: ['chatgpt'], message: 'CIMD advertised but token_endpoint_auth_methods_supported is absent (RFC 8414 default client_secret_basic)' });
     else if (cimd && !none && !pkjwt) out.push({ platforms: ['chatgpt'], message: 'CIMD advertised without "none" or "private_key_jwt"' });

@@ -70,9 +70,12 @@ export function argvSecrets(args: string[], strongOnly = false): string[] {
     const header = /^([\w-]+)\s*:\s*(.+)$/s.exec(a.replace(/^-{1,2}[\w.-]+=/, ''));
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
     if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, ''), strongOnly));
-    else if (isKnownToken(a)) out.push(a);
-    // A known-format token after "=" or "Name: " under a plain name (--upstream=ghp_…, "X-Upstream: Bearer sk-…") (R-9).
-    else out.push(...[eq?.[2], header?.[2]].flatMap((v) => (v ? withSchemeToken(v) : [])).filter((v) => isKnownToken(v) && !out.includes(v)));
+    // A known-format token anywhere in the argument, bounded like a word: whole, after "=" or "Name: " under a plain name,
+    // inside JSON or a list ('{"apiKey":"sk-…"}', --keys=ghp_…,ghp_…); a JWT spans up to three dot-separated pieces (R-9).
+    for (const w of a.match(/[\w.-]+/g) ?? []) {
+      const p = w.split('.');
+      for (const v of p.flatMap((_, i) => [1, 2, 3].map((n) => p.slice(i, i + n).join('.')))) if (isKnownToken(v) && !out.includes(v)) out.push(v);
+    }
   }
   return out;
 }
@@ -100,7 +103,8 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
   if (input.url) values.push(...urlSecrets(input.url, strongOnly));
   for (const [k, v] of Object.entries(input.env ?? {})) {
-    const parts = [...withSchemeToken(v).slice(1), ...urlSecrets(v, strongOnly)];
+    // The parts: the token after "Bearer", URL credentials, a known-format token anywhere in the value (R-9).
+    const parts = [...withSchemeToken(v).slice(1), ...urlSecrets(v, strongOnly), ...argvSecrets([v]).filter(isKnownToken)];
     // One strength for a part as written and decoded (Pa%24%24word-… and Pa$$word-…): either form token-like makes both strong.
     const strong = (p: string) => [p, decoded(p), ...parts.filter((q) => decoded(q) === p)].some(tokenLike);
     values.push(...(!strongOnly || isSecretName(k) ? parts : parts.filter(strong)));

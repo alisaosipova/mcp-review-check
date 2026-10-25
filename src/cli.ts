@@ -165,7 +165,7 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
     if (i > 0 && ['--bearer', '--header', '--env'].includes(argv[i - 1])) return masked(argv[i - 1], a);
     return /^https?:\/\//i.test(a) ? displayUrl(a) : a;
   }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
-  // cmd.exe and PowerShell take no single quotes: on Windows an argument is double-quoted by the Windows argv rule (R-15).
+  // cmd.exe takes no single quotes: on Windows an argument is double-quoted by the Windows argv rule, for cmd.exe (R-15).
   const quote = process.platform === 'win32' ? cmdQuote : (a: string) => `'${a.replace(/'/g, "'\\''")}'`;
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : quote(a)))].join(' ');
 }

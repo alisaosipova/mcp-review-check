@@ -360,7 +360,7 @@ describe('R-11: server text is not markdown', () => {
     expect(md).not.toMatch(/(?<!\\)(\\\\)*\]\(https/); // a "](" after an even run of backslashes would end a link
   });
 
-  it('R-11: only an @ that GitHub reads as a mention is neutralized; an e-mail address, the AUTH-012 contact too, stays as written', () => {
+  it('R-11: every @ in server text is neutralized, an e-mail address too; the AUTH-012 contact stays as written', () => {
     const s = loadSnapshot('auth-required');
     const as = s.authProbe!.as[0].json!;
     delete as.registration_endpoint;
@@ -370,6 +370,20 @@ describe('R-11: server text is not markdown', () => {
     expect(own.message).toContain('(contact mcp-review@anthropic.com)');
     const md = renderMarkdown({ ...r, findings: [own, f('X-001', 'error', { message: 'ping @octocat (@team) or mail a@b.com, x.y@z.test, a-b@c.test' })] });
     expect(md).toContain('(contact mcp-review@anthropic.com)');
-    expect(md).toContain('| ping @&#8203;octocat (@&#8203;team) or mail a@b.com, x.y@z.test, a-b@c.test |');
+    expect(md).toContain('| ping @&#8203;octocat (@&#8203;team) or mail a@&#8203;b.com, x.y@&#8203;z.test, a-b@&#8203;c.test |');
+  });
+
+  // MRC-2 review round 2: an @ after ".", "-" or "_" stayed a GitHub mention (the mention filter reads "." and "-" as
+  // non-word characters, and "_…_" becomes <em> whose text starts with "@"), and an e-mail address became a mailto link.
+  it('R-11: an @ after ".", "-" or "_" and an e-mail address or mailto: in server text give no mention and no mailto link; only the whole AUTH-012 contact is kept', () => {
+    const s = loadSnapshot('minimal-http');
+    s.serverInfo = { name: 'Acme x.@octocat-title', version: '1.0' };
+    const msg = 'ping a.@octocat-dot b-@octocat-dash _@octocat-em_ mail admin@evil.example or mailto:x@evil.example; xmcp-review@anthropic.com, mcp-review@anthropic.com.evil.example, mcp-review@anthropic.com.';
+    const md = renderMarkdown({ ...report(s), findings: [f('X-001', 'error', { tool: 'ops-@octocat-tool', message: msg })] });
+    expect(md).toMatch(/^# Acme x\.@&#8203;octocat-title 1\.0$/m);
+    const row = md.split('\n').find((l) => l.startsWith('| X-001 '))!;
+    expect(row).toContain('| ops-@&#8203;octocat-tool | ping a.@&#8203;octocat-dot b-@&#8203;octocat-dash _@&#8203;octocat-em_ mail admin@&#8203;evil.example or mailto:x@&#8203;evil.example; xmcp-review@&#8203;anthropic.com, mcp-review@&#8203;anthropic.com.evil.example, mcp-review@anthropic.com. |');
+    // the only @ without the zero-width space is the contact address itself, as a whole address
+    expect(`${md.split('\n')[0]}\n${row}`.match(/\S*@(?!&#8203;)\S*/g)).toEqual(['mcp-review@anthropic.com.']);
   });
 });

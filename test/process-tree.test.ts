@@ -5,7 +5,7 @@
 // POSIX: black box, the built CLI with `sh -c 'node stubborn-server.mjs …; :'` (`; :` keeps sh from exec'ing node, so
 // the server is the wrapper's child). Windows: no machine here (NG-2), so runCli in process with process.platform set
 // to 'win32' after the modules have loaded and spawnSync of node:child_process mocked (exception named in tasks.md).
-import { ChildProcess, spawn, spawnSync } from 'node:child_process';
+import { ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -51,22 +51,27 @@ afterEach(() => {
   }
 });
 
-/** Start the built CLI, send it `signal` once the server has started (`twice`: again 300 ms later), and resolve with how the CLI ended. */
-function signalled(args: string[], pids: string, signal: NodeJS.Signals, twice = false): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+/** Start the built CLI, send it `signal` once `after` servers have started (`twice`: again 300 ms later), and resolve with
+ *  how the CLI ended; `at` gets the time of the last signal and of the exit. */
+function signalled(args: string[], pids: string, signal: NodeJS.Signals, twice = false, after = 1, at: { signal?: number; exit?: number } = {}): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolve, reject) => {
     // In the pid file's directory: a CLI that dies by SIGQUIT may leave a core file in its working directory.
     const child = spawn(process.execPath, [CLI, ...args], { cwd: dirname(pids), stdio: 'ignore' });
     child.once('error', reject);
-    child.once('exit', (code, sig) => resolve({ code, signal: sig }));
+    child.once('exit', (code, sig) => { at.exit = Date.now(); resolve({ code, signal: sig }); });
+    const send = () => { child.kill(signal); at.signal = Date.now(); };
     const t0 = Date.now();
     const poll = setInterval(() => {
-      if (pidsOf(pids).length || Date.now() - t0 > 15000) {
+      if (pidsOf(pids).length >= after || Date.now() - t0 > 15000) {
         clearInterval(poll);
-        setTimeout(() => { child.kill(signal); if (twice) setTimeout(() => child.kill(signal), 300); }, 500); // the handshake is done, listing hangs
+        setTimeout(() => { send(); if (twice) setTimeout(send, 300); }, 500); // the handshake is done, listing hangs
       }
     }, 50);
   });
 }
+
+/** Processes, with their parent pid, whose command line names this pid file: every server the run started, recorded or not. */
+const serversOf = (pids: string) => execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' }).split('\n').filter((l) => l.includes(pids) && !l.includes(CLI));
 
 describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrapper is ended with its wrapper', () => {
   it('(a) --max-duration: the server under the wrapper is gone when the CLI exits', async () => {
@@ -102,6 +107,26 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
     expect(pidsOf(pids)).toHaveLength(1);
     expect(pidsOf(pids).filter(alive)).toEqual([]);
     expect(r).toEqual({ code: null, signal: 'SIGINT' });
+  });
+
+  it('a second SIGINT ends the CLI within 500 ms, without waiting for a server that ignores SIGTERM', async () => {
+    const pids = pidFile();
+    const at: { signal?: number; exit?: number } = {};
+    const r = await signalled(['--format', 'json', '--timeout', '20000', ...wrapped(pids, '--ignore-term')], pids, 'SIGINT', true, 1, at);
+    expect(r).toEqual({ code: null, signal: 'SIGINT' });
+    expect(at.exit! - at.signal!).toBeLessThan(500);
+    expect(pidsOf(pids).filter(alive)).toEqual([]);
+  });
+
+  // MRC-2 review round 2: after SIGINT the check went on and, once the SIGKILL round had passed, started a fresh
+  // connection (the --active client-name re-list); that server, in its own group and deaf to EOF, outlived the CLI with ppid 1.
+  it('SIGINT while a fresh connection waits on servers that ignore SIGTERM: no server, started before or after the signal, outlives the CLI', async () => {
+    const pids = pidFile();
+    const r = await signalled(['--format', 'json', '--active', '--timeout', '20000', '--stdio', `node "${STUBBORN}" "${pids}" --mute-fresh --ignore-term`], pids, 'SIGINT', false, 2);
+    expect(r).toEqual({ code: null, signal: 'SIGINT' });
+    await new Promise((done) => setTimeout(done, 300)); // a server killed at the exit is reaped
+    expect(serversOf(pids)).toEqual([]);
+    expect(pidsOf(pids).filter(alive)).toEqual([]);
   });
 });
 
