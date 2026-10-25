@@ -353,12 +353,21 @@ const isMain = (() => {
 })();
 
 if (isMain) {
-  // The stdio servers lead their own process group (R-5), so a terminal's Ctrl+C reaches only the CLI: end them, then
-  // die by the same signal (130, 143), also when the run finishes first and exits.
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-    process.once(signal, () => {
-      process.once('exit', () => process.kill(process.pid, signal));
-      void endAllNow().finally(() => process.exit());
+  // The stdio servers lead their own process group (R-5), so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
+  // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
+  // a process cannot die by a signal, exit 128 + its number (U-4). A second signal SIGKILLs every server at once (R-4).
+  const signals = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGTERM: 15 };
+  let signalled = false;
+  for (const [signal, n] of Object.entries(signals)) {
+    process.on(signal, () => {
+      void endAllNow(signalled).finally(() => process.exit());
+      if (signalled) return;
+      signalled = true;
+      process.once('exit', () => {
+        if (process.platform === 'win32') { process.exitCode = 128 + n; return; }
+        for (const s of Object.keys(signals)) process.removeAllListeners(s);
+        process.kill(process.pid, signal);
+      });
     });
   }
   runCli(process.argv.slice(2)).then(({ code, stdout, stderr }) => {

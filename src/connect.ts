@@ -527,8 +527,15 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
   const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController() };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
-  const result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
-  await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close() (R-4)
+  let result: BuildResult;
+  try {
+    result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
+  } catch (e) {
+    await progress.close?.(); // the check threw after the handshake (a TypeError on odd server data): its client is still open (R-4)
+    throw e;
+  } finally {
+    await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close() (R-4)
+  }
   // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises
   // (SEC-1). The target stays as entered (rules parse and hash it).
   const masked = { ...redactDeep(result.snap, redactorFor(opts)), target: result.snap.target };
@@ -591,8 +598,10 @@ function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
   c.kill(signal);
 }
 
-/** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM and SIGHUP (R-5). */
-export function endAllNow(): Promise<void> {
+/** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM, SIGHUP and
+ *  SIGQUIT (R-5), with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait (R-4). */
+export function endAllNow(kill = false): Promise<void> {
+  if (kill) for (const c of everyChild) endTree(c, 'SIGKILL');
   return endChildren(everyChild);
 }
 

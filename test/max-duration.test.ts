@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cli } from './cli-runner.js';
 
 const STUBBORN = fileURLToPath(new URL('./fixtures/stubborn-server.mjs', import.meta.url));
+const THROWER = fileURLToPath(new URL('./fixtures/throw-server.mjs', import.meta.url));
 const dirs: string[] = [];
 
 function pidsOf(pidFile: string): number[] {
@@ -20,11 +21,11 @@ function alive(pid: number): boolean {
 }
 
 /** Run the CLI against stubborn-server.mjs; the pid file lists every server process the run started. */
-async function run(flags: string[], args: string[]) {
+async function run(flags: string[], args: string[], server = STUBBORN) {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-stubborn-'));
   dirs.push(dir);
   const pidFile = join(dir, 'pids');
-  const r = await cli(['--stdio', `node "${STUBBORN}" "${pidFile}" ${flags.join(' ')}`, '--format', 'json', '--timeout', '20000', ...args]);
+  const r = await cli(['--stdio', `node "${server}" "${pidFile}" ${flags.join(' ')}`, '--format', 'json', '--timeout', '20000', ...args]);
   return { r, pids: pidsOf(pidFile) };
 }
 
@@ -95,6 +96,16 @@ describe('R-4: no stdio server outlives the CLI', () => {
     expect(r.json?.coverage?.toolLevel, r.stderr).toBe('ok');
     expect(r.json?.limits?.stopped).toBeUndefined();
     expect(pids).toHaveLength(2);
+    expect(pids.filter(alive)).toEqual([]);
+  });
+
+  // MRC-2 review round 1: an exception in the check after the handshake (here a tool name that cannot become a
+  // string) skipped the cleanup, and a server that ignores EOF outlived the CLI with ppid 1.
+  it.each([[[] as string[]], [['--max-duration', '20000']]])('the check throws after the handshake (%j): exit 3 and the server is gone', async (args) => {
+    const { r, pids } = await run([], ['--timeout', '5000', ...args], THROWER);
+    expect(r.code, r.stderr).toBe(3);
+    expect(r.stderr).toMatch(/^fatal: TypeError/m);
+    expect(pids).toHaveLength(1);
     expect(pids.filter(alive)).toEqual([]);
   });
 });

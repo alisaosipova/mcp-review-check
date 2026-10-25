@@ -7,9 +7,10 @@
 // to 'win32' after the modules have loaded and spawnSync of node:child_process mocked (exception named in tasks.md).
 import { ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 import { cli, CLI, ROOT } from './cli-runner.js';
@@ -50,17 +51,18 @@ afterEach(() => {
   }
 });
 
-/** Start the built CLI, send it `signal` once the server has started, and resolve with how the CLI ended. */
-function signalled(args: string[], pids: string, signal: NodeJS.Signals): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+/** Start the built CLI, send it `signal` once the server has started (`twice`: again 300 ms later), and resolve with how the CLI ended. */
+function signalled(args: string[], pids: string, signal: NodeJS.Signals, twice = false): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI, ...args], { cwd: ROOT, stdio: 'ignore' });
+    // In the pid file's directory: a CLI that dies by SIGQUIT may leave a core file in its working directory.
+    const child = spawn(process.execPath, [CLI, ...args], { cwd: dirname(pids), stdio: 'ignore' });
     child.once('error', reject);
     child.once('exit', (code, sig) => resolve({ code, signal: sig }));
     const t0 = Date.now();
     const poll = setInterval(() => {
       if (pidsOf(pids).length || Date.now() - t0 > 15000) {
         clearInterval(poll);
-        setTimeout(() => child.kill(signal), 500); // the handshake is done, listing hangs
+        setTimeout(() => { child.kill(signal); if (twice) setTimeout(() => child.kill(signal), 300); }, 500); // the handshake is done, listing hangs
       }
     }, 50);
   });
@@ -84,12 +86,50 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
     expect(pidsOf(pids).filter(alive)).toEqual([]);
   });
 
-  it.each(['SIGTERM', 'SIGINT'] as const)('%s to the CLI during the check: the server is gone and the CLI dies by that signal', async (signal) => {
+  it.each(['SIGTERM', 'SIGINT', 'SIGQUIT'] as const)('%s to the CLI during the check: the server is gone and the CLI dies by that signal', async (signal) => {
     const pids = pidFile();
     const r = await signalled(['--format', 'json', '--timeout', '20000', ...wrapped(pids)], pids, signal);
     expect(pidsOf(pids)).toHaveLength(1);
     expect(pidsOf(pids).filter(alive)).toEqual([]);
     expect(r).toEqual({ code: null, signal });
+  });
+
+  // MRC-2 review round 1: a second Ctrl+C while the first one waits for a server that ignores SIGTERM killed the CLI
+  // at once, and the server, out of the terminal's reach in its own group, outlived it with ppid 1.
+  it('two SIGINTs 300 ms apart: the second one SIGKILLs the group of a server that ignores SIGTERM', async () => {
+    const pids = pidFile();
+    const r = await signalled(['--format', 'json', '--timeout', '20000', ...wrapped(pids, '--ignore-term')], pids, 'SIGINT', true);
+    expect(pidsOf(pids)).toHaveLength(1);
+    expect(pidsOf(pids).filter(alive)).toEqual([]);
+    expect(r).toEqual({ code: null, signal: 'SIGINT' });
+  });
+});
+
+// U-4 on Windows (process.platform emulated by a preload, NG-2): a process cannot die by a POSIX signal there (Node's
+// process.kill of itself would end it with exit 1, the threshold code, and throws for SIGHUP), so the CLI exits with
+// 128 + the signal number instead.
+describe.skipIf(process.platform === 'win32')('signal exit on Windows (process.platform emulated)', () => {
+  it('SIGINT during the check exits 130 without the CLI signalling itself', async () => {
+    const dir = dirname(pidFile());
+    const killLog = join(dir, 'kills');
+    let hit!: () => void;
+    const reached = new Promise<void>((done) => { hit = done; });
+    const server = createServer(() => hit()); // never answers: the check waits on its first request
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    try {
+      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`;
+      const preload = pathToFileURL(fileURLToPath(new URL('./fixtures/win32-preload.mjs', import.meta.url))).href;
+      const child = spawn(process.execPath, ['--import', preload, CLI, url, '--format', 'json', '--timeout', '20000'], { cwd: dir, stdio: 'ignore', env: { ...process.env, MRC_KILL_LOG: killLog } });
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => child.once('exit', (code, signal) => done({ code, signal })));
+      await reached;
+      child.kill('SIGINT');
+      expect(await exited).toEqual({ code: 130, signal: null });
+      const selfKills = (() => { try { return readFileSync(killLog, 'utf8').split('\n').filter(Boolean); } catch { return []; } })();
+      expect(selfKills, 'process.kill(process.pid, …)').toEqual([]);
+    } finally {
+      server.closeAllConnections?.();
+      server.close();
+    }
   });
 });
 
