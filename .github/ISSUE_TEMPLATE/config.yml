@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Help with a rejection
-    url: https://github.com/OWNER/mcp-review-check/discussions/categories/help-with-a-rejection
+    url: https://github.com/alisaosipova/mcp-review-check/discussions/categories/help-with-a-rejection
     about: Ask how to fix a finding or respond to a directory reviewer.
   - name: Report a security vulnerability
-    url: https://github.com/OWNER/mcp-review-check/security/advisories/new
+    url: https://github.com/alisaosipova/mcp-review-check/security/advisories/new
     about: Please report vulnerabilities privately, not as an issue.

@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately through GitHub: [open a security advisory](https://github.com/OWNER/mcp-review-check/security/advisories/new). Do not open a public issue for a vulnerability.
+Please report vulnerabilities privately through GitHub: [open a security advisory](https://github.com/alisaosipova/mcp-review-check/security/advisories/new). Do not open a public issue for a vulnerability.
 
 Include the version (`mcp-review-check --version`), the command you ran (with tokens removed) and what happened. We will acknowledge the report, agree a disclosure date with you, and ship the fix in a patch release.
 

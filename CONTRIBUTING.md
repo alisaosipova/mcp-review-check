@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. The most useful contributions are **false-positive reports** with a JSON report attached, **rejections the tool did not predict**, and new rules backed by a public source. Please use the [issue templates](https://github.com/OWNER/mcp-review-check/issues/new/choose).
+Thanks for helping. The most useful contributions are **false-positive reports** with a JSON report attached, **rejections the tool did not predict**, and new rules backed by a public source. Please use the [issue templates](https://github.com/alisaosipova/mcp-review-check/issues/new/choose).
 
 ## Setup
 
@@ -61,7 +61,7 @@ CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 20.19, 2
 
 ## Reporting a false positive
 
-Run the check with `--format json --output report.json`, remove anything private, and attach the relevant findings to a [False positive](https://github.com/OWNER/mcp-review-check/issues/new?template=false-positive.yml) issue. Tell us whether the server is already listed in a directory; a false positive on a listed server is treated as a bug with priority. A fix for a false positive on a public no-auth server should freeze its listing as a regression fixture (`node scripts/capture-real.mjs <name> <url>` writes `test/fixtures/real/<name>.json`) and add an assertion to `test/real-servers.test.ts`.
+Run the check with `--format json --output report.json`, remove anything private, and attach the relevant findings to a [False positive](https://github.com/alisaosipova/mcp-review-check/issues/new?template=false-positive.yml) issue. Tell us whether the server is already listed in a directory; a false positive on a listed server is treated as a bug with priority. A fix for a false positive on a public no-auth server should freeze its listing as a regression fixture (`node scripts/capture-real.mjs <name> <url>` writes `test/fixtures/real/<name>.json`) and add an assertion to `test/real-servers.test.ts`.
 
 ## Pull requests
 
