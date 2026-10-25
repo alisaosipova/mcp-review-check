@@ -154,7 +154,7 @@ describe('protocol helpers', () => {
   });
 });
 
-describe('review fixes: helpers', () => {
+describe('protocol and redaction helpers: edge cases', () => {
   it('prmCandidates drops a trailing slash and keeps the query (RFC 9728 §3.1)', () => {
     expect(prmCandidates(new URL('https://a.test/mcp/')).map((c) => c.url)[0]).toBe('https://a.test/.well-known/oauth-protected-resource/mcp');
     expect(prmCandidates(new URL('https://a.test/mcp?tenant=1')).map((c) => c.url)[0]).toBe('https://a.test/.well-known/oauth-protected-resource/mcp?tenant=1');
