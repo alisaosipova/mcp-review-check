@@ -310,3 +310,22 @@ describe('R-12: AUTH-010 names a network failure instead of a TLS verdict (D-rul
     expect(asTls('CERT_HAS_EXPIRED')[0]).toMatchObject({ message: 'TLS handshake with auth.acme.test failed: CERT_HAS_EXPIRED', fix: auth010.fix });
   });
 });
+
+describe('R-12: AUTH-010 gives the DNS fix only for a DNS failure (review round 1)', () => {
+  const auth010 = authRules.find((r) => r.id === 'AUTH-010')!;
+  const asTls = (code: string) => evaluate(auth010, authSnap({ set: (s) => { s.transport.tls = [{ host: 'auth.acme.test', role: 'as', ok: false, code }]; } }));
+
+  it('R-12: AUTH-010 for ECONNREFUSED and EHOSTUNREACH has no DNS fix; ENOTFOUND keeps it', () => {
+    const refused = asTls('ECONNREFUSED')[0];
+    expect(refused.message).toBe('connection refused by auth.acme.test:443 (ECONNREFUSED); TLS not checked');
+    expect(refused.fix).not.toMatch(/DNS/);
+    expect(refused.fix).toBe('Nothing is listening there: check that the server is running and the port is right.');
+    const unreach = asTls('EHOSTUNREACH')[0];
+    expect(unreach.message).toBe('no route to auth.acme.test:443 (EHOSTUNREACH); TLS not checked');
+    expect(unreach.fix).not.toMatch(/DNS/);
+    expect(unreach.fix).toMatch(/^Check the address, VPN and firewall/);
+    // a code without a hint: reachability, not DNS and not the certificate
+    expect(asTls('EACCES')[0].fix).toBe('Make every OAuth endpoint host reachable over https.');
+    expect(asTls('ENOTFOUND')[0].fix).toBe('Publish public DNS records for every OAuth endpoint host and serve it over https.');
+  });
+});

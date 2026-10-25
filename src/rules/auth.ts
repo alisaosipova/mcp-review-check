@@ -296,7 +296,10 @@ export const AUTH_010 = defineRule(
       // A plain network error (ENOTFOUND, ECONNREFUSED) is no certificate verdict, as in SRV-001: name the cause (R-12).
       if (!t.transient && /^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && t.code !== 'EPROTO') {
         const d = describeCause(new URL(`https://${t.host}`), { code: t.code });
-        out.push({ message: `${/^fetch failed/.test(d.summary) ? `${t.host} could not be reached (${t.code})` : d.summary}; TLS not checked${tries}`, fix: 'Publish public DNS records for every OAuth endpoint host and serve it over https.' });
+        // The DNS fix only for a DNS failure; otherwise the cause's own hint (R-12).
+        const fix = d.kind === 'dns' ? 'Publish public DNS records for every OAuth endpoint host and serve it over https.'
+          : d.hint ? `${d.hint[0].toUpperCase()}${d.hint.slice(1)}.` : 'Make every OAuth endpoint host reachable over https.';
+        out.push({ message: `${/^fetch failed/.test(d.summary) ? `${t.host} could not be reached (${t.code})` : d.summary}; TLS not checked${tries}`, fix });
         continue;
       }
       out.push(t.transient
