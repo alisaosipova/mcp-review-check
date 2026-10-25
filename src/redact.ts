@@ -71,6 +71,8 @@ export function argvSecrets(args: string[], strongOnly = false): string[] {
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
     if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, ''), strongOnly));
     else if (isKnownToken(a)) out.push(a);
+    // A known-format token after "=" or "Name: " under a plain name (--upstream=ghp_…, "X-Upstream: Bearer sk-…") (R-9).
+    else out.push(...[eq?.[2], header?.[2]].flatMap((v) => (v ? withSchemeToken(v) : [])).filter((v) => isKnownToken(v) && !out.includes(v)));
   }
   return out;
 }
@@ -87,8 +89,9 @@ export interface RedactionInput {
 
 /**
  * A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values. strongOnly (R-8): an
- * --env value under a secret name only, and a URL username or a part of an --env value under a plain name (the token
- * after "Bearer", URL credentials) only when it looks like a token; the full set, for the finished report, has them all.
+ * --env value under a secret name, or under a plain name when it looks like a token, and a URL username or a part of an
+ * --env value under a plain name (the token after "Bearer", URL credentials) only when it looks like a token; the full
+ * set, for the finished report, has them all.
  */
 export function buildRedactor(input: RedactionInput, strongOnly = false): Redactor {
   const headers = input.headers ?? {};
@@ -98,10 +101,13 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   if (input.url) values.push(...urlSecrets(input.url, strongOnly));
   for (const [k, v] of Object.entries(input.env ?? {})) {
     const parts = [...withSchemeToken(v).slice(1), ...urlSecrets(v, strongOnly)];
-    values.push(...(!strongOnly || isSecretName(k) ? parts : parts.filter(tokenLike)));
+    // One strength for a part as written and decoded (Pa%24%24word-… and Pa$$word-…): either form token-like makes both strong.
+    const strong = (p: string) => [p, decoded(p), ...parts.filter((q) => decoded(q) === p)].some(tokenLike);
+    values.push(...(!strongOnly || isSecretName(k) ? parts : parts.filter(strong)));
   }
   if (input.argv) values.push(...argvSecrets(input.argv, strongOnly));
-  for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k)) values.push(v);
+  // A whole value under a plain name is strong when it is one token-like word (GITHUB_PAT=ghp_…), not a URL or "Bearer X" (U-2).
+  for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k) || (tokenLike(v.trim()) && !/\s|:\/\//.test(v.trim()))) values.push(v);
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
 }
 

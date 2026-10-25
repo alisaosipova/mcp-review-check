@@ -456,3 +456,25 @@ describe('R-9: sources without a flag sign', () => {
     if (format === 'json') expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toContain('login «redacted» upstream «redacted» rejected');
   });
 });
+
+describe('R-9: a known-format token inside a stdio argument with a plain name (review round 1)', () => {
+  const OPT_TOK = 'ghp_OPTSYNTHabcdefghijklmnopqrstuvwxyz0123';
+  const KEY_TOK = 'sk-live-KEYSYNTH0123456789ab';
+  const HDR_TOK = 'xoxb-HDRSYNTH-01234-QWERTY';
+  const ARGS = [`--upstream=${OPT_TOK}`, `UPSTREAM=${KEY_TOK}`, `X-Upstream: ${HDR_TOK}`];
+  /** A stdio server that writes all its arguments to stderr and exits (SRV-003, fatal). */
+  const CRASH_ALL = "console.error('Error: rejected ' + process.argv.slice(1).join(' ')); process.exit(1)";
+
+  it.each(FORMATS)('R-9: %s: "--opt=TOKEN", "KEY=TOKEN" and "Name: TOKEN" are redacted in the label, rerun, stderr and the fatal message', async (format) => {
+    const echoed = await cli(['--format', format, '--verbose', '--stdio', '--', 'node', LEAKY_PATH, ...ARGS]);
+    expectNoLeak(echoed, [OPT_TOK, KEY_TOK, HDR_TOK], `${format} (inside an argument)`);
+    expect(echoed.code).toBe(0);
+    const crashed = await cli(['--format', format, '--verbose', '--stdio', '--', 'node', '-e', CRASH_ALL, '--', ...ARGS]);
+    expectNoLeak(crashed, [OPT_TOK, KEY_TOK, HDR_TOK], `${format} (inside an argument, fatal)`);
+    expect(crashed.code).toBe(3);
+    if (format === 'json') {
+      expect(echoed.json.server.command).toBe(`node ${LEAKY_PATH} --upstream=«redacted» UPSTREAM=«redacted» X-Upstream: «redacted»`);
+      expect(crashed.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toContain('rejected --upstream=«redacted» UPSTREAM=«redacted» X-Upstream: «redacted»');
+    }
+  });
+});

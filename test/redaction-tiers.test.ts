@@ -125,3 +125,32 @@ require('readline').createInterface({ input: process.stdin }).on('line', (l) => 
     expect(buildRedactor({ env: { DB_PASSWORD: 'postgres://app_user:pw-PLAIN01@db.test/app' } }, true).values.has('pw-PLAIN01')).toBe(true);
   });
 });
+
+describe('U-2 with R-9: a token-like --env value under a plain name is strong (review round 1)', () => {
+  const PAT = 'ghp_SYNTHa1b2c3d4e5f6g7h8i9j0k1l2m3n4o5';
+  /** Writes $GITHUB_PAT on stderr past column 183 and exits: the 200-character start-up error line cuts through it. */
+  const CUT = "console.error('Error: authentication failed for key '.padEnd(183, '.') + process.env.GITHUB_PAT + ' rest'); process.exit(1)";
+
+  it('SEC-env-known-token-weak: --env GITHUB_PAT=<a known-format token> is in the strong tier, a plain word is not', () => {
+    expect(buildRedactor({ env: { GITHUB_PAT: PAT } }, true).values.has(PAT)).toBe(true);
+    expect(buildRedactor({ env: { NOTE: 'plain-WEAK05', MODE: 'title', DIR: 'postgres-readonly' } }, true).values.size).toBe(0);
+  });
+
+  it.each(['text', 'json', 'markdown', 'sarif'])('SEC-env-known-token-weak: %s: an echo cut at 200 characters leaves no prefix of the token', async (format) => {
+    const r = await cli(['--env', `GITHUB_PAT=${PAT}`, '--format', format, '--stdio', '--', 'node', '-e', CUT]);
+    expect(r.code, r.stderr).toBe(3);
+    const all = r.stdout + r.stderr;
+    expect(all, 'the cut line reached the report').toContain('authentication failed for key');
+    expect(all).not.toContain(PAT.slice(0, 10));
+  });
+
+  it('SEC-env-part-raw-decoded-split: the written and the decoded form of a URL password in --env get one strength', () => {
+    const strong = buildRedactor({ env: { DATABASE_URL: 'postgres://app:Pa%24%24word-Secret-Synth@db.test/app' } }, true).values;
+    expect(strong.has('Pa%24%24word-Secret-Synth'), 'as written').toBe(true);
+    expect(strong.has('Pa$$word-Secret-Synth'), 'decoded').toBe(true);
+    // neither form looks like a token: both stay in the full set only
+    const short = { DATABASE_URL: 'postgres://app:pa%24%24word@db.test/app' };
+    expect(buildRedactor({ env: short }, true).values.size).toBe(0);
+    for (const v of ['pa%24%24word', 'pa$$word']) expect(buildRedactor({ env: short }).values.has(v), v).toBe(true);
+  });
+});

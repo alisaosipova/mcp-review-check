@@ -244,6 +244,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (bearer !== undefined && /[\r\n]/.test(bearer)) throw new UsageError('--bearer must not contain CR or LF');
 
     let spec: TargetSpec;
+    const typedEnv: Record<string, string> = {}; // --env names as typed: they decide a value's redaction tier (U-2)
     if (isStdio) {
       let parts: string[];
       if (split.command) parts = split.command;
@@ -253,6 +254,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       for (const kv of values.env ?? []) {
         const i = kv.indexOf('=');
         if (i <= 0) throw new UsageError('--env must look like K=V (no "=" found; the value is not shown)');
+        typedEnv[kv.slice(0, i)] = kv.slice(i + 1);
         // Windows names are case-insensitive: --env Path=… replaces the inherited PATH instead of losing to it (R-15).
         envVars[process.platform === 'win32' ? kv.slice(0, i).toUpperCase() : kv.slice(0, i)] = kv.slice(i + 1);
       }
@@ -285,8 +287,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       local: values.local ? true : values['no-local'] ? false : undefined,
     };
     // R-8: every value for the report and each output; before the rules only the strong ones (not --env FORMAT=text).
-    redactor = redactorFor(opts, true);
-    opts.redactor = redactorFor(opts);
+    // U-2: by the --env names as typed, not as upper-cased for the server on win32 (signingKey is secret, SIGNINGKEY not).
+    const typed: BuildOptions = spec.kind === 'stdio' ? { ...opts, target: { ...spec, env: typedEnv } } : opts;
+    redactor = redactorFor(typed, true);
+    opts.redactor = redactorFor(typed);
     const started = new Date();
     stderr += staleCatalogWarning(started) ?? '';
     const t0 = performance.now();
