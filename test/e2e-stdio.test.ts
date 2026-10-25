@@ -1,5 +1,5 @@
 // End-to-end: the built CLI against the GOOD and BAD stdio fixture servers.
-import { existsSync, readFileSync, rmSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -313,5 +313,19 @@ describe('e2e stdio', () => {
     expect((await cli(['--version'])).stdout.trim()).toBe(PKG_VERSION);
     expect((await cli(['--help'])).stdout).toMatch(/--stdio -- <command>/);
     expect((await cli(['--help'])).stdout).toMatch(/--fail-on-spec {10}Also fail on MCP spec findings/);
+  });
+});
+
+// A fixture server starts only when run as the main module. Its path as typed (Windows C:\..., a link, a space)
+// differs from its file URL, so the check must compare real paths: the servers here run through a linked directory.
+describe('fixture servers run as the main module under any path form', () => {
+  it.each([['good-server.mjs', 0], ['bad-server.mjs', 1], ['ui-cap-server.mjs', 1]] as const)('%s through a linked directory: connects, exit %i', async (file, code) => {
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-main '));
+    try {
+      symlinkSync(fileURLToPath(new URL('./fixtures', import.meta.url)), join(dir, 'fx'), 'junction');
+      const r = await cli(['--stdio', `node "${join(dir, 'fx', file)}"`, '--format', 'json']);
+      expect(r.code, r.stderr).toBe(code);
+      expect(r.json?.coverage?.toolLevel, r.stderr).toBe('ok');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

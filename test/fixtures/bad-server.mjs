@@ -3,6 +3,7 @@
 // checker. It violates many rules on purpose.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { isMain } from './is-main.mjs';
 import {
   CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, McpError, ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -152,7 +153,7 @@ export function createBadServer() {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   console.log('Bad MCP server v0.0.1 starting...'); // non-MCP output on stdout (SRV-018)
   const server = createBadServer();
   await server.connect(new StdioServerTransport());

@@ -3,6 +3,7 @@
 // warnings for --target all in local mode (local-mode info findings are fine).
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { isMain } from './is-main.mjs';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
 
@@ -122,7 +123,7 @@ export function createGoodServer() {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const server = createGoodServer();
   await server.connect(new StdioServerTransport());
 }

@@ -5,6 +5,7 @@
 // same tool without _meta.ui, which is the documented graceful degradation.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { isMain } from './is-main.mjs';
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export function createUiCapServer({ fallback = false } = {}) {
@@ -23,6 +24,6 @@ export function createUiCapServer({ fallback = false } = {}) {
   return s;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   await createUiCapServer({ fallback: process.argv.includes('--fallback') }).connect(new StdioServerTransport());
 }
