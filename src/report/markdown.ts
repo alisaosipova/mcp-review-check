@@ -6,16 +6,17 @@ import { RULES } from '../rules/index.js';
 import { localBanner, visibleFindings } from './text.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
 
-const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+const EOL = /\r\n?|\n/g; // a lone CR ends a line too (CommonMark)
+const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(EOL, ' ');
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
 const ESC: Record<string, string> = { '\\': '\\\\', '`': '\\`', '[': '\\[', ']': '\\]', '<': '&lt;', '>': '&gt;', '&': '&amp;', '@': '@&#8203;' };
 
-/** Server text outside a code span (R-11): shown as written, never a link, image, HTML or @mention. */
-const text = (s: string | undefined) => cell((s ?? '').replace(/[\\`[\]<>&@]/g, (c) => ESC[c]));
+/** Server text outside a code span (R-11): shown as written, never a link, image, HTML or @mention (an @ after [A-Za-z0-9_.-], as in an e-mail address, mentions no one); a zero-width space inside "://" and "www." keeps GFM from linking a bare URL. */
+const text = (s: string | undefined) => cell((s ?? '').replace(/[\\`[\]<>&]|(?<![\w.-])@/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B'));
 
 /** Evidence as a code span (R-48): quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it (R-11). */
 const code = (s: string | undefined, inCell = true) => {
-  const t = inCell ? cell(s) : (s ?? '').replace(/\r?\n/g, ' '), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
+  const t = inCell ? cell(s) : (s ?? '').replace(EOL, ' '), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
   return s ? `${fence} ${t} ${fence}` : '';
 };
 

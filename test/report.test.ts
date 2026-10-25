@@ -286,14 +286,14 @@ describe('R-11: server text is not markdown', () => {
     const r = report(s);
     const md = renderMarkdown({ ...r, findings: [f('X-001', 'error', { tool: 'a <img src="https://e.test/p.png">', message: 'see [x](https://e.test/phish) @octocat' })] });
     expect(md).not.toContain('<img src=');
-    expect(md).not.toMatch(/(?<!\\)\]\(https:\/\/e\.test/); // an escaped \] is text, not the end of a link
+    expect(md).not.toMatch(/(?<!\\)\]\(https:\u200B?\/\/e\.test/); // an escaped \] is text, not the end of a link
     expect(md).not.toContain('@octocat');
     expect(md).not.toContain('<b>');
     expect(md).not.toContain('<i>');
     // the text is still there, shown literally
-    expect(md).toMatch(/^# Acme \\\[x\\\]\(https:\/\/e\.test\/home\) 1\.0$/m);
-    expect(md).toContain('a &lt;img src="https://e.test/p.png"&gt;');
-    expect(md).toContain('see \\[x\\](https://e.test/phish) @&#8203;octocat');
+    expect(md).toMatch(/^# Acme \\\[x\\\]\(https:\u200B\/\/e\.test\/home\) 1\.0$/m);
+    expect(md).toContain('a &lt;img src="https:\u200B//e.test/p.png"&gt;');
+    expect(md).toContain('see \\[x\\](https:\u200B//e.test/phish) @&#8203;octocat');
     expect(md).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; \\[y\\]');
   });
 
@@ -317,10 +317,59 @@ describe('R-11: server text is not markdown', () => {
     const srv020 = f('SRV-020', 'info', { message: 'era: legacy. <img src="https://e.test/rev.png"> [r](https://e.test/rev)' });
     const md = renderMarkdown({ ...report(s), findings: [srv020] });
     for (const raw of ['<b>', '<u>', '<img src=']) expect(md, raw).not.toContain(raw);
-    expect(md).not.toMatch(/(?<!\\)\]\(https:\/\/e\.test/);
-    expect(md).toContain('> Could not connect: stderr: &lt;b&gt;down&lt;/b&gt; \\[c\\](https://e.test/cause)');
-    expect(md).toContain('| Target | stdio:node \\[t\\](https://e.test/target) &lt;u&gt;arg&lt;/u&gt; |');
-    expect(md).toContain('| Revision | &lt;img src="https://e.test/rev.png"&gt; \\[r\\](https://e.test/rev) |');
-    expect(md).toContain('era legacy (&lt;b&gt;1&lt;/b&gt; \\[v\\](https://e.test/version)) · auth');
+    expect(md).not.toMatch(/(?<!\\)\]\(https:\u200B?\/\/e\.test/);
+    expect(md).toContain('> Could not connect: stderr: &lt;b&gt;down&lt;/b&gt; \\[c\\](https:\u200B//e.test/cause)');
+    expect(md).toContain('| Target | stdio:node \\[t\\](https:\u200B//e.test/target) &lt;u&gt;arg&lt;/u&gt; |');
+    expect(md).toContain('| Revision | &lt;img src="https:\u200B//e.test/rev.png"&gt; \\[r\\](https:\u200B//e.test/rev) |');
+    expect(md).toContain('era legacy (&lt;b&gt;1&lt;/b&gt; \\[v\\](https:\u200B//e.test/version)) · auth');
+  });
+
+  it('R-11: a bare https:// or www. URL in server text is no GFM autolink: a zero-width space sits inside "://" and "www."', () => {
+    const s = loadSnapshot('minimal-http');
+    s.serverInfo = { name: 'Acme https://e.example/login', version: '1.0' };
+    s.target = { kind: 'stdio', command: 'node', args: ['https://e.example/t'] };
+    s.coverage = { toolLevel: 'list-failed', reason: 'see www.e.example/r' };
+    const md = renderMarkdown({ ...report(s), findings: [f('X-001', 'error', { tool: 'WWW.e.example', message: 'go to HTTP://e.example/a or www.e.example/b' })] });
+    expect(md).not.toMatch(/(https?:\/\/|www\.)e\.example/i);
+    expect(md).toMatch(/^# Acme https:​\/\/e\.example\/login 1\.0$/m);
+    expect(md).toContain('| Target | stdio:node https:​//e.example/t |');
+    expect(md).toContain('> see www​.e.example/r. ');
+    expect(md).toContain('| WWW​.e.example | go to HTTP:​//e.example/a or www​.e.example/b |');
+  });
+
+  it('R-11: a lone CR in evidence, a message or the rerun line ends neither the table row nor the line', () => {
+    const ev = 'Invalid Host\r[Click](https://e.example/phish) ![p](https://e.example/p.png) <img src="https://e.example/i.png">';
+    const findings = [f('X-001', 'error', { message: 'bad\r[Click](https://e.example/m)', evidence: ev })];
+    const md = renderMarkdown({ ...report(loadSnapshot('minimal-http')), findings }, { rerun: 'npx x\r[y](https://e.example/r)' });
+    expect(md).not.toContain('\r');
+    const lines = md.split(/\r\n?|\n/);
+    const row = lines.find((l) => l.startsWith('| X-001 '))!;
+    expect(row).toContain('| bad \\[Click\\](https:​//e.example/m) |');
+    expect(row.endsWith(' | `` Invalid Host [Click](https://e.example/phish) ![p](https://e.example/p.png) <img src="https://e.example/i.png"> `` |'), row).toBe(true);
+    expect(lines).toContain('`` rerun: npx x [y](https://e.example/r) ``');
+    expect(lines.filter((l) => l.includes('e.example'))).toHaveLength(2);
+  });
+
+  it('R-11: a backslash in server text is escaped too, so a server "\\[x\\](url)" stays text, not a link', () => {
+    const s = loadSnapshot('minimal-http');
+    s.serverInfo = { name: '\\[h\\](https://e.example/h)', version: '1.0' };
+    const findings = [f('X-001', 'error', { tool: '\\[t\\](https://e.example/t)', message: '\\[x\\](https://e.example) \\!\\[p\\](https://e.example/p.png)' })];
+    const md = renderMarkdown({ ...report(s), findings });
+    expect(md).toMatch(/^# \\\\\\\[h\\\\\\\]\(https:​\/\/e\.example\/h\) 1\.0$/m);
+    expect(md).toContain('| \\\\\\[t\\\\\\](https:​//e.example/t) | \\\\\\[x\\\\\\](https:​//e.example) \\\\!\\\\\\[p\\\\\\](https:​//e.example/p.png) |');
+    expect(md).not.toMatch(/(?<!\\)(\\\\)*\]\(https/); // a "](" after an even run of backslashes would end a link
+  });
+
+  it('R-11: only an @ that GitHub reads as a mention is neutralized; an e-mail address, the AUTH-012 contact too, stays as written', () => {
+    const s = loadSnapshot('auth-required');
+    const as = s.authProbe!.as[0].json!;
+    delete as.registration_endpoint;
+    delete as.client_id_metadata_document_supported;
+    const r = report(s);
+    const own = r.findings.find((x) => x.ruleId === 'AUTH-012' && x.platforms.includes('claude'))!;
+    expect(own.message).toContain('(contact mcp-review@anthropic.com)');
+    const md = renderMarkdown({ ...r, findings: [own, f('X-001', 'error', { message: 'ping @octocat (@team) or mail a@b.com, x.y@z.test, a-b@c.test' })] });
+    expect(md).toContain('(contact mcp-review@anthropic.com)');
+    expect(md).toContain('| ping @&#8203;octocat (@&#8203;team) or mail a@b.com, x.y@z.test, a-b@c.test |');
   });
 });
