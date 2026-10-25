@@ -1,4 +1,4 @@
-// B6 retries and B7 connection diagnostics: pure helpers.
+// Retries and connection diagnostics: pure helpers.
 import { describe, expect, it } from 'vitest';
 import { cleanErrorMessage } from '../src/connect.js';
 import { describeCause, describeHttpFailure, networkCause, schemeSuggestion, suggestedEndpoint } from '../src/diagnose.js';
@@ -9,7 +9,7 @@ import { exchange } from './helpers.js';
 
 const U = new URL('https://mcp.acme.test/');
 
-describe('connection diagnostics (B7)', () => {
+describe('connection diagnostics', () => {
   it('surfaces the undici cause code', () => {
     const e = Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('getaddrinfo ENOTFOUND x'), { code: 'ENOTFOUND' }) });
     expect(networkCause(e)).toEqual({ code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND x' });
@@ -44,7 +44,7 @@ describe('connection diagnostics (B7)', () => {
     expect(suggestedEndpoint(new URL('https://a.test/mcp'))).toBeUndefined();
   });
 
-  it('S-26 (R-18): a status below 100 (the SDK\'s -1 for an unexpected content type) is not printed as an HTTP status', () => {
+  it('a status below 100 (the SDK\'s -1 for an unexpected content type) is not printed as an HTTP status', () => {
     const page = describeHttpFailure(U, { status: -1, contentType: 'text/html; charset=utf-8', body: '<!doctype html><html><head><title>My App</title></head></html>', message: 'HTTP -1: Unexpected content type' });
     expect(page).toMatchObject({ kind: 'not-mcp', summary: 'response with an HTML page ("My App"): https://mcp.acme.test/ is not an MCP endpoint' });
     expect(page.status).toBeUndefined();
@@ -59,7 +59,7 @@ describe('connection diagnostics (B7)', () => {
     expect(schemeSuggestion('justaword')).toBeUndefined();
   });
 
-  it('R-19: schemeSuggestion reads <label>:<digits> as a local host and port (http://)', () => {
+  it('schemeSuggestion reads <label>:<digits> as a local host and port (http://)', () => {
     expect(schemeSuggestion('mcp:8080/mcp')).toBe('http://mcp:8080/mcp');
     expect(schemeSuggestion('app:3000')).toBe('http://app:3000');
     expect(schemeSuggestion('MCP:8080')).toBe('http://MCP:8080');
@@ -67,7 +67,7 @@ describe('connection diagnostics (B7)', () => {
     expect(schemeSuggestion('mailto:a@b.test')).toBeUndefined();
   });
 
-  it('cleanErrorMessage replaces an HTML page by its title and caps a huge body before regexes (W1-8)', () => {
+  it('cleanErrorMessage replaces an HTML page by its title and caps a huge body before regexes', () => {
     const big = `Error POSTing: <!doctype html><html><head><title>Not Found</title></head>${'<script '.repeat(400000)}`;
     const t0 = performance.now();
     expect(cleanErrorMessage(big, 404, createRedactor())).toBe('HTTP 404: Error POSTing: HTML page ("Not Found")');
@@ -75,7 +75,7 @@ describe('connection diagnostics (B7)', () => {
   });
 });
 
-describe('transient failures and retries (B6)', () => {
+describe('transient failures and retries', () => {
   it('classifies timeouts, resets, 5xx and 429 as transient; 4xx, 501 and TLS errors are not', () => {
     expect(isTransient(exchange({ error: { name: 'AbortError', message: 'aborted' } }))).toBe(true);
     expect(isTransient(exchange({ error: { name: 'TypeError', causeCode: 'ECONNRESET', message: 'fetch failed' } }))).toBe(true);
@@ -136,8 +136,8 @@ describe('transient failures and retries (B6)', () => {
   });
 });
 
-describe('R-12: unreachable-network codes and no "HTTP -1" (X-mac-3, D-rules-5)', () => {
-  it.each(['EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'EADDRNOTAVAIL'])('R-12: describeCause %s → no route to, kind other', (code) => {
+describe('unreachable-network codes and no "HTTP -1"', () => {
+  it.each(['EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'EADDRNOTAVAIL'])('describeCause %s → no route to, kind other', (code) => {
     const d = describeCause(U, { code });
     expect(d.kind).toBe('other');
     expect(d.summary).toMatch(/no route to/);
@@ -145,7 +145,7 @@ describe('R-12: unreachable-network codes and no "HTTP -1" (X-mac-3, D-rules-5)'
     expect(d.hint).toMatch(/Local Network/);
   });
 
-  it('R-12: cleanErrorMessage drops the SDK status -1, and a real status keeps its prefix', () => {
+  it('cleanErrorMessage drops the SDK status -1, and a real status keeps its prefix', () => {
     const msg = 'Streamable HTTP error: Unexpected content type: text/plain';
     expect(cleanErrorMessage(msg, -1, createRedactor())).not.toContain('HTTP -1');
     expect(cleanErrorMessage(msg, -1, createRedactor())).toBe(msg);

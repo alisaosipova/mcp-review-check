@@ -1,4 +1,4 @@
-// R-14 (MRC-2): .gitattributes keeps every text file LF on checkout in any OS (Git for Windows runners default to
+// .gitattributes keeps every text file LF on checkout in any OS (Git for Windows runners default to
 // core.autocrlf=true, and a CRLF checkout breaks docs.test, output-modes and e2e-http) and marks *.br as binary.
 // Asks git itself (git check-attr), so on a baseline without .gitattributes each check fails on an assertion.
 import { execFileSync } from 'node:child_process';
@@ -20,8 +20,8 @@ function checkAttr(attr: string, files: string[]): Record<string, string> {
   return out;
 }
 
-describe.skipIf(!existsSync(join(ROOT, '.git')))('repository config (R-14)', () => {
-  it('R-14: every text file checks out with LF; *.br is binary', () => {
+describe.skipIf(!existsSync(join(ROOT, '.git')))('repository config', () => {
+  it('every text file checks out with LF; *.br is binary', () => {
     const named = ['docs/RULES.md', 'test/fixtures/good-server.mjs', 'test/docs.test.ts'];
     expect(checkAttr('eol', named)).toEqual(Object.fromEntries(named.map((f) => [f, 'lf'])));
     const br = 'test/fixtures/real/openzeppelin.json.br';

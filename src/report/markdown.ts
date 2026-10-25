@@ -14,17 +14,17 @@ const ESC: Record<string, string> = { '\\': '\\\\', '`': '\\`', '[': '\\[', ']':
 
 /** The AUTH-012 contact address as a whole address: no e-mail character before it, no more domain after it. */
 const CONTACT = new RegExp(`(?<![\\w.+-])${AUTH_CONTACT.replace(/\./g, '\\.')}(?![\\w-]|\\.[\\w-])`);
-/** Server text outside a code span (R-11): shown as written, never a link, image, HTML, @mention or mailto link (every @ gets a
+/** Server text outside a code span: shown as written, never a link, image, HTML, @mention or mailto link (every @ gets a
  *  zero-width space, the AUTH-012 contact address alone stays as written); one inside "://" and "www." keeps GFM from linking a bare URL. */
 const text = (s: string | undefined) => cell((s ?? '').split(CONTACT).map((p) => p.replace(/[\\`[\]<>&@]/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B')).join(AUTH_CONTACT));
 
-/** Evidence as a code span (R-48): quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it (R-11). */
+/** Evidence as a code span: quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it. */
 const code = (s: string | undefined, inCell = true) => {
   const t = inCell ? cell(s) : (s ?? '').replace(EOL, ' '), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
   return s ? `${fence} ${t} ${fence}` : '';
 };
 
-/** `rerun` is the redacted command line that reproduces the report (R-48). */
+/** `rerun` is the redacted command line that reproduces the report. */
 export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean; rerun?: string } = {}): string {
   const snap = r.snap;
   const s = r.summary;

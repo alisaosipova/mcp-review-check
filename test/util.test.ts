@@ -121,14 +121,14 @@ describe('protocol helpers', () => {
     expect(tokenizeCommand('"C:\\Program Files\\nodejs\\node.exe" D:\\srv\\a.js')).toEqual(['C:\\Program Files\\nodejs\\node.exe', 'D:\\srv\\a.js']);
     expect(tokenizeCommand('node a\\ b')).toEqual(['node', 'a\\', 'b']);
   });
-  it('R-15: inside double quotes a backslash escapes only " (Windows rule), so UNC paths, \\$ and a trailing \\ survive', () => {
+  it('inside double quotes a backslash escapes only " (Windows rule), so UNC paths, \\$ and a trailing \\ survive', () => {
     expect(tokenizeCommand(String.raw`node "\\srv\My Share\s.js"`)).toEqual(['node', String.raw`\\srv\My Share\s.js`]);
     expect(tokenizeCommand(String.raw`node "C:\Users\me\$work\s.js"`)).toEqual(['node', String.raw`C:\Users\me\$work\s.js`]);
     expect(() => tokenizeCommand(String.raw`node "C:\srv\\" x`)).not.toThrow();
     expect(tokenizeCommand(String.raw`node "C:\srv\\" x`)).toEqual(['node', 'C:\\srv\\', 'x']);
     expect(tokenizeCommand(String.raw`node "a\\\"b"`)).toEqual(['node', 'a\\"b']); // 2n+1 backslashes: n and a literal "
   });
-  it('R-15: cmdQuote quotes an argument so that tokenizeCommand gives it back', () => {
+  it('cmdQuote quotes an argument so that tokenizeCommand gives it back', () => {
     expect(cmdQuote, 'cmdQuote is exported').toBeTypeOf('function');
     for (const x of ['C:\\Program Files\\srv\\', 'say "hi"', 'a\\"b', String.raw`\\srv\My Share\s.js`, 'x\\\\', '']) {
       expect(tokenizeCommand(cmdQuote(x)), x).toEqual([x]);
@@ -184,7 +184,7 @@ describe('review fixes: helpers', () => {
     expect(displayUrl('https://a.test')).toBe('https://a.test');
   });
 
-  it('R-9: displayUrl redacts secret-named fragment parameters, known-format tokens in path segments and query values', () => {
+  it('displayUrl redacts secret-named fragment parameters, known-format tokens in path segments and query values', () => {
     expect(displayUrl('http://h.test/mcp#access_token=FRAGSYNTH0001&state=open')).toBe('http://h.test/mcp#access_token=«redacted»&state=open');
     expect(displayUrl('https://h.test/api/s/sk-live-PATHSYNTH0123456789/mcp?sig=ghp_QUERYSYNTHabcdefghijklmnopqrstuvwxyz&page=2'))
       .toBe('https://h.test/api/s/«redacted»/mcp?sig=«redacted»&page=2');

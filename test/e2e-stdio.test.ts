@@ -38,7 +38,7 @@ describe('e2e stdio', () => {
     });
   });
 
-  it('R-63: JSON has schemaVersion and tool.catalogAgeDays', async () => {
+  it('JSON has schemaVersion and tool.catalogAgeDays', async () => {
     const before = Date.now();
     const r = await cli(['--stdio', GOOD, '--format', 'json']);
     const after = Date.now();
@@ -67,7 +67,7 @@ describe('e2e stdio', () => {
     expect(srv018.message).toContain('Bad MCP server v0.0.1 starting...');
   });
 
-  it('U-5: no tools/call without --active (BAD, --verbose: trace and stderr)', async () => {
+  it('no tools/call without --active (BAD, --verbose: trace and stderr)', async () => {
     // Without --active the only tools/call is the documented probe of a non-existent tool (README «What the tool sends»).
     // A preload logs every JSON-RPC method the server reads (with the tool name for tools/call) to a file and to the
     // server's stderr, which --verbose prints.
@@ -207,7 +207,7 @@ describe('e2e stdio', () => {
     expect(r.json.manual).toEqual([]); // no manual checklist when nothing connected
   });
 
-  it('R-12: a stdio server that cannot start never reads PASS (text, markdown, --output summary line)', async () => {
+  it('a stdio server that cannot start never reads PASS (text, markdown, --output summary line)', async () => {
     const DEAD = 'node -e "process.exit(1)"';
     const text = await cli(['--stdio', DEAD, '--no-color']);
     expect(text.code).toBe(3);
@@ -229,7 +229,7 @@ describe('e2e stdio', () => {
     }
   });
 
-  it('R-59: an 80 000-character description is truncated and reported (JSON limits, text notice)', async () => {
+  it('an 80 000-character description is truncated and reported (JSON limits, text notice)', async () => {
     const r = await cli(['--stdio', HUGE, '--format', 'json']);
     expect(r.code, r.stderr).not.toBe(3);
     expect(r.json.limits?.truncated).toEqual([{ where: 'tool run_sql', length: 80000, cap: 16384 }]);
@@ -241,7 +241,7 @@ describe('e2e stdio', () => {
     expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
   });
 
-  it('MCP Apps capability (B3): UI hidden behind getUiCapability is checked; a missing text-only fallback is APPS-019', async () => {
+  it('MCP Apps capability: UI hidden behind getUiCapability is checked; a missing text-only fallback is APPS-019', async () => {
     const r = await cli(['--stdio', UI_CAP, '--format', 'json']);
     const ids = ruleIds(r.json);
     // the UI resource is seen (it is listed only for clients that declare io.modelcontextprotocol/ui)
@@ -254,11 +254,11 @@ describe('e2e stdio', () => {
     expect(ruleIds(fallback.json)).not.toContain('APPS-019');
   });
 
-  it('--max-duration (W1-8): a server that never answers is stopped at the deadline with a partial report', async () => {
+  it('--max-duration: a server that never answers is stopped at the deadline with a partial report', async () => {
     const t0 = Date.now();
     const r = await cli(['--stdio', HANG, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
     expect(Date.now() - t0).toBeLessThan(15000);
-    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too (R-1, MRC-2)
+    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.coverage.toolLevel).toBe('stopped');
     expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
@@ -267,7 +267,7 @@ describe('e2e stdio', () => {
     expect((await cli(['--stdio', HANG, '--max-duration', '0'])).code).toBe(2);
   });
 
-  it('--max-duration (W1-8): a stdio server that never completes initialize exits 3 at the deadline', async () => {
+  it('--max-duration: a stdio server that never completes initialize exits 3 at the deadline', async () => {
     const t0 = Date.now();
     const r = await cli(['--stdio', 'node -e "setInterval(() => {}, 1000)"', '--format', 'json', '--timeout', '20000', '--max-duration', '1500']);
     expect(Date.now() - t0).toBeLessThan(15000);
@@ -276,7 +276,7 @@ describe('e2e stdio', () => {
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toMatch(/no handshake within --max-duration \(1500 ms\)/);
   });
 
-  it('exit code follows --target (B5): a spec-only error passes unless --fail-on-spec, and the Result line says why', async () => {
+  it('exit code follows --target: a spec-only error passes unless --fail-on-spec, and the Result line says why', async () => {
     // leaky-server writes a log line to stdout: SRV-018, a spec-only error. Nothing fails Claude or ChatGPT.
     for (const target of ['claude', 'chatgpt', 'all']) {
       const r = await cli(['--stdio', LEAKY, '--target', target, '--no-color']);
@@ -292,7 +292,7 @@ describe('e2e stdio', () => {
     expect(bad.stdout).toMatch(/Result: FAIL \(--fail-on error\) · claude: \d+ errors \((INJ|TOOL|DATA|APPS)-\d+/);
   });
 
-  it('R-11: a FAIL also names the spec findings that were not gated, and not those a directory counted', async () => {
+  it('a FAIL also names the spec findings that were not gated, and not those a directory counted', async () => {
     const [text, json] = await Promise.all([cli(['--stdio', BAD, '--target', 'claude', '--no-color']), cli(['--stdio', BAD, '--target', 'claude', '--format', 'json'])]);
     expect(text.code).toBe(1);
     expect(text.stdout).toMatch(/Result: FAIL \(--fail-on error\) · claude: \d+ errors \([^\n]* · spec: \d+ errors? \([^\n]*\) not gated; add --fail-on-spec/);

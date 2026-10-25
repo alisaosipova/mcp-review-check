@@ -1,4 +1,4 @@
-// R-1, R-2, R-3 (MRC-2): exit 3 has one outcome everywhere. A --max-duration stop after the handshake exits 3 and reads
+// Exit 3 has one outcome everywhere. A --max-duration stop after the handshake exits 3 and reads
 // INCOMPLETE (stopped at --max-duration during <phase>) in text, markdown, the step summary and the --output line, also
 // with errors found before the stop and with --fail-on never; JSON summary.failed is true on exit 3; in GitHub Actions
 // exit 3 prints exactly one ::error with the cause, the unexpected-failure path (no report) as well.
@@ -50,7 +50,7 @@ async function closedPort(): Promise<string> {
   return s.url;
 }
 
-/** Answers initialize over plain http (SRV-001 error with --no-local); every later request hangs (as e2e-http S-26). */
+/** Answers initialize over plain http (SRV-001 error with --no-local); every later request hangs (as in e2e-http.test.ts). */
 async function hangAfterHandshake(): Promise<Started> {
   const s = await listen(async (req, res) => {
     if (req.method !== 'POST') { res.writeHead(405).end(); return; }
@@ -67,8 +67,8 @@ async function hangAfterHandshake(): Promise<Started> {
   return s;
 }
 
-describe('R-1: a --max-duration stop after the handshake is exit 3 and INCOMPLETE', () => {
-  it('R-1: a stop after the handshake exits 3 and reads INCOMPLETE (stopped at --max-duration during listing) in text, markdown, step summary and the --output line', async () => {
+describe('a --max-duration stop after the handshake is exit 3 and INCOMPLETE', () => {
+  it('a stop after the handshake exits 3 and reads INCOMPLETE (stopped at --max-duration during listing) in text, markdown, step summary and the --output line', async () => {
     const summary = join(dir, 'summary.md');
     const out = join(dir, 'report.txt');
     const [text, md, written] = await Promise.all([
@@ -86,20 +86,20 @@ describe('R-1: a --max-duration stop after the handshake is exit 3 and INCOMPLET
     expect(readFileSync(out, 'utf8')).toContain(`Result: ${INCOMPLETE}`);
   });
 
-  it('R-1: --fail-on never still exits 3 on a stop', async () => {
+  it('--fail-on never still exits 3 on a stop', async () => {
     const r = await cli(['--stdio', HANG, ...STOP, '--fail-on', 'never']);
     expect(r.code, r.stderr).toBe(3);
     expect(r.stdout).toContain(`Result: ${INCOMPLETE}\n`);
   });
 
-  it('R-1: errors found before the stop: exit 3 and the Result names them after INCOMPLETE', async () => {
+  it('errors found before the stop: exit 3 and the Result names them after INCOMPLETE', async () => {
     const s = await hangAfterHandshake();
     const r = await cli([s.url, '--no-local', ...STOP]);
     expect(r.code, r.stderr).toBe(3);
     expect(r.stdout).toMatch(/Result: INCOMPLETE \(stopped at --max-duration during listing\) · claude: \d+ errors? \([^)]*SRV-001/);
   });
 
-  it('R-1: resultLine of a stopped snapshot without fatal reads INCOMPLETE with the phase and the gate reason; a stop before the handshake stays FAIL (could not connect)', () => {
+  it('resultLine of a stopped snapshot without fatal reads INCOMPLETE with the phase and the gate reason; a stop before the handshake stays FAIL (could not connect)', () => {
     const srv001 = f('SRV-001', 'error', { platforms: ['claude', 'chatgpt'], severityByPlatform: { claude: 'error', chatgpt: 'error' } });
     const s = loadSnapshot('minimal-http');
     s.coverage = { toolLevel: 'stopped', reason: 'stopped by --max-duration (4000 ms) during wire probes' };
@@ -115,8 +115,8 @@ describe('R-1: a --max-duration stop after the handshake is exit 3 and INCOMPLET
   });
 });
 
-describe('R-2: JSON agrees with exit 3', () => {
-  it('R-2: exit 3 has summary.failed = true', async () => {
+describe('JSON agrees with exit 3', () => {
+  it('exit 3 has summary.failed = true', async () => {
     const [refused, stopped] = await Promise.all([
       cli([await closedPort(), '--format', 'json', '--timeout', '3000']),
       cli(['--stdio', HANG, ...STOP, '--format', 'json']),
@@ -129,8 +129,8 @@ describe('R-2: JSON agrees with exit 3', () => {
   });
 });
 
-describe('R-3: exit 3 in GitHub Actions', () => {
-  it('R-3: exit 3 prints exactly one ::error with the cause', async () => {
+describe('exit 3 in GitHub Actions', () => {
+  it('exit 3 prints exactly one ::error with the cause', async () => {
     const [refused, stopped] = await Promise.all([
       cli([await closedPort(), '--format', 'json', '--timeout', '3000'], { GITHUB_ACTIONS: 'true' }),
       cli(['--stdio', HANG, ...STOP, '--format', 'json'], { GITHUB_ACTIONS: 'true' }),
@@ -143,13 +143,13 @@ describe('R-3: exit 3 in GitHub Actions', () => {
     expect(commands(stopped.stderr).filter((l) => /::error title=mcp-review-check::Stopped by --max-duration .* during listing/.test(l))).toHaveLength(1);
   });
 
-  it('R-3: a finished run (exit 0 or 1) has no outcome annotation', () => {
+  it('a finished run (exit 0 or 1) has no outcome annotation', () => {
     const s = loadSnapshot('minimal-http');
     const r = buildReport(s, runRules(s, RULES), [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
     expect(annotations(r).filter((l) => l.startsWith(OWN))).toEqual([]);
   });
 
-  it('R-3: an unexpected failure (exit 3 without a report) prints exactly one ::error, the --bearer value masked', async () => {
+  it('an unexpected failure (exit 3 without a report) prints exactly one ::error, the --bearer value masked', async () => {
     const SECRET = 'sk-live-CRASHSYNTH0001';
     const r = await runCli(['http://127.0.0.1:1/mcp', '--bearer', SECRET, '--format', 'json'], { GITHUB_ACTIONS: 'true' }, false);
     expect(r.code, r.stderr).toBe(3);

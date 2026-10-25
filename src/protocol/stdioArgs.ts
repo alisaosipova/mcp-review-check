@@ -1,5 +1,5 @@
 // Small shell-like tokenizer for --stdio: single quotes, double quotes, whitespace splitting. A backslash is literal
-// outside quotes and, inside double quotes, everywhere but before a " (the Windows argv rule, on every OS, R-15), so
+// outside quotes and, inside double quotes, everywhere but before a " (the Windows argv rule, on every OS), so
 // Windows paths (C:\Users\me\server.js, "\\host\My Share\s.js", "C:\srv\\") survive.
 
 export function tokenizeCommand(input: string): string[] {
@@ -40,7 +40,7 @@ export function tokenizeCommand(input: string): string[] {
   return out;
 }
 
-/** One argument double-quoted for cmd.exe as the Windows argv rule reads it back (tokenizeCommand too, R-15). */
+/** One argument double-quoted for cmd.exe as the Windows argv rule reads it back (tokenizeCommand too). */
 export function cmdQuote(arg: string): string {
   return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }

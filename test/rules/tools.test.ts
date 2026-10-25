@@ -152,7 +152,7 @@ describe('TOOL rules', () => {
   it('TOOL-006 long title: info with a snippet; differing titles are shown as snippets (Svelte, Hugging Face)', () => {
     const long = 'Hugging Face Hub: Find, use and view models, datasets, spaces, buckets, papers, documentation and collections. Get daily papers reports.';
     const f = evaluate(byId('TOOL-006'), one(tool({ title: undefined, annotations: { title: long, readOnlyHint: true } })));
-    // D-6: the 60-character limit has no public source, so a long title is info, not a warning
+    // The 60-character limit has no public source, so a long title is info, not a warning
     expect(f).toMatchObject([{ severity: 'info', platforms: ['claude'], message: expect.stringMatching(/^title is \d+ characters \(linter-defined limit 60\): "Hugging Face Hub: Find, use .*…"$/) }]);
     expect(f[0].message.length).toBeLessThan(140);
     const both = evaluate(byId('TOOL-006'), one(tool({ title: 'x'.repeat(1191), annotations: { title: 'Get documentation', readOnlyHint: true } })));
@@ -201,8 +201,8 @@ describe('TOOL rules', () => {
     expect(evaluate(byId('TOOL-011'), ann({ readOnlyHint: false }))[0].severity).toBe('warning');
   });
 
-  // D-11 (a): replaces the baseline 'TOOL-012 emits one finding per missing hint' (3 findings)
-  it('R-27: TOOL-012 is one finding per tool listing the missing hints', () => {
+  // Replaces the baseline 'TOOL-012 emits one finding per missing hint' (3 findings)
+  it('TOOL-012 is one finding per tool listing the missing hints', () => {
     expect(evaluate(byId('TOOL-012'), ann({})).map((f) => f.message)).toEqual(['missing readOnlyHint, destructiveHint, openWorldHint']);
     expect(evaluate(byId('TOOL-012'), ann({ readOnlyHint: true })).map((f) => f.message)).toEqual(['missing destructiveHint, openWorldHint']);
     const two = snap({ tools: [tool({ annotations: undefined }), tool({ name: 'get_note', annotations: { destructiveHint: false } })] });
@@ -212,7 +212,7 @@ describe('TOOL rules', () => {
     ]);
   });
 
-  it('R-30: TOOL-014 at spec level is not reported without an annotations object', () => {
+  it('TOOL-014 at spec level is not reported without an annotations object', () => {
     const t = byId('TOOL-014');
     expect(evaluate(t, one(tool({ name: 'get_note', annotations: undefined })))).toEqual([]);
     // with an annotations object the absent readOnlyHint is still reported

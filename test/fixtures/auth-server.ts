@@ -17,7 +17,7 @@ export interface AuthServerOptions {
   clientCredentialsOnly?: boolean;
   invalidToken200?: boolean;
   delayMs?: number;
-  /** The first N requests for AS metadata (and for the PRM) answer 503 with Retry-After: 0 (B6: transient failures). */
+  /** The first N requests for AS metadata (and for the PRM) answer 503 with Retry-After: 0 (transient failures). */
   asFailures?: number;
   prmFailures?: number;
   /** Token accepted at /mcp; requests carrying it are bridged to `mcp`. */

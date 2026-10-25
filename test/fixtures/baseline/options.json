@@ -1,5 +1,5 @@
 {
-  "source": "mcp-review-check 0.1.0 at main d6100a9: --help (specs evidence/0/recon-baseline-help.txt); --stdio is from the Usage line",
+  "source": "mcp-review-check 0.1.0 at main d6100a9: --help; --stdio is from the Usage line",
   "options": [
     {"flag": "--stdio", "short": null, "value": true, "default": null},
     {"flag": "--header", "short": null, "value": true, "default": null},

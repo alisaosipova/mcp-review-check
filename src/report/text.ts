@@ -13,8 +13,8 @@ export interface TextOptions {
   color: boolean;
   verbose: boolean;
   cta?: string; // ctaLine(), printed above the disclaimer
-  checklist?: boolean; // R-32: the manual checklist in full
-  quiet?: boolean; // R-33: findings (no info), Score, Result and the disclaimer
+  checklist?: boolean; // the manual checklist in full
+  quiet?: boolean; // findings (no info), Score, Result and the disclaimer
 }
 
 const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', cyan: '\x1b[36m', bold: '\x1b[1m', dim: '\x1b[2m', reset: '\x1b[0m' };
@@ -29,7 +29,7 @@ function subject(f: Finding): string {
   return f.path && !f.message.includes(f.path) ? `${s} (${f.path})` : s;
 }
 
-/** Collapse 2 or more findings of the same rule and message into one line with a count (R-28). */
+/** Collapse 2 or more findings of the same rule and message into one line with a count. */
 export function groupFindings(list: Finding[], verbose: boolean): Group[] {
   if (verbose) return list.map((f) => ({ first: f, items: [f] }));
   const map = new Map<string, Group>();
@@ -64,7 +64,7 @@ export function visibleFindings(list: Finding[], opts: { verbose?: boolean; quie
 const HINTS = ['readOnlyHint', 'destructiveHint', 'openWorldHint'];
 
 /**
- * R-29: a JSON fragment to paste into each tool reported by TOOL-006 (no title), TOOL-011 or TOOL-012: the missing
+ * A JSON fragment to paste into each tool reported by TOOL-006 (no title), TOOL-011 or TOOL-012: the missing
  * title from the name, and the annotations with missing hints guessed from the name (read-only for read verbs).
  */
 export function fixSnippets(r: Report): string[] {
@@ -82,7 +82,7 @@ export function fixSnippets(r: Report): string[] {
   });
 }
 
-/** R-35: the local-mode banner, naming the rules whose deploy-time findings were made informational. */
+/** The local-mode banner, naming the rules whose deploy-time findings were made informational. */
 export function localBanner(r: Report): string | undefined {
   if (!r.snap.localMode) return undefined;
   const ids = [...new Set(r.findings.filter((f) => f.message.startsWith(DEPLOY)).map((f) => f.ruleId))].sort();
@@ -145,7 +145,7 @@ export function renderText(r: Report, opts: TextOptions): string {
   const s = r.summary;
   const rc = r.rootCauses;
   const causes = rc.errors + rc.warnings;
-  // --quiet hides the info findings, so it does not count them either (R-12).
+  // --quiet hides the info findings, so it does not count them either.
   out.push(...(out.length ? [''] : []), `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings${opts.quiet ? '' : ` · ${s.info} info`}`);
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;

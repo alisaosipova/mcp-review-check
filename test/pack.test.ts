@@ -1,4 +1,4 @@
-// R-1: a tarball packed from a clean clone (no dist/) ships a built, runnable bin.
+// A tarball packed from a clean clone (no dist/) ships a built, runnable bin.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,8 +22,8 @@ function cleanCopy(): string {
   return dir;
 }
 
-describe('npm pack (R-1)', () => {
-  it('R-1: npm pack from a clean copy ships dist/cli.js with a shebang (prepack)', () => {
+describe('npm pack', () => {
+  it('npm pack from a clean copy ships dist/cli.js with a shebang (prepack)', () => {
     const dir = cleanCopy();
     try {
       expect(existsSync(join(dir, 'dist'))).toBe(false);

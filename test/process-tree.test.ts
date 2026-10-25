@@ -1,10 +1,10 @@
-// R-5 (MRC-2): a stdio server started through a wrapper (npx, .cmd, .bat, sh -c) is ended with everything the
+// A stdio server started through a wrapper (npx, .cmd, .bat, sh -c) is ended with everything the
 // wrapper started. On Linux and macOS the server runs as the leader of its own process group and the CLI ends the
 // group; on Windows the CLI ends the tree with `taskkill /PID <pid> /T /F` before it kills the wrapper. The group
 // no longer gets the terminal's Ctrl+C, so the CLI ends it on SIGINT, SIGTERM and SIGHUP and then dies by that signal.
 // POSIX: black box, the built CLI with `sh -c 'node stubborn-server.mjs …; :'` (`; :` keeps sh from exec'ing node, so
-// the server is the wrapper's child). Windows: no machine here (NG-2), so runCli in process with process.platform set
-// to 'win32' after the modules have loaded and spawnSync of node:child_process mocked (exception named in tasks.md).
+// the server is the wrapper's child). Windows: no machine here, so runCli in process with process.platform set
+// to 'win32' after the modules have loaded and spawnSync of node:child_process mocked.
 import { ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -73,7 +73,7 @@ function signalled(args: string[], pids: string, signal: NodeJS.Signals, twice =
 /** Processes, with their parent pid, whose command line names this pid file: every server the run started, recorded or not. */
 const serversOf = (pids: string) => execFileSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' }).split('\n').filter((l) => l.includes(pids) && !l.includes(CLI));
 
-describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrapper is ended with its wrapper', () => {
+describe.skipIf(process.platform === 'win32')('a server behind a sh -c wrapper is ended with its wrapper', () => {
   it('(a) --max-duration: the server under the wrapper is gone when the CLI exits', async () => {
     const pids = pidFile();
     const r = await cli(['--format', 'json', '--timeout', '20000', '--max-duration', '1500', ...wrapped(pids)]);
@@ -99,7 +99,7 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
     expect(r).toEqual({ code: null, signal });
   });
 
-  // MRC-2 review round 1: a second Ctrl+C while the first one waits for a server that ignores SIGTERM killed the CLI
+  // A second Ctrl+C while the first one waits for a server that ignores SIGTERM killed the CLI
   // at once, and the server, out of the terminal's reach in its own group, outlived it with ppid 1.
   it('two SIGINTs 300 ms apart: the second one SIGKILLs the group of a server that ignores SIGTERM', async () => {
     const pids = pidFile();
@@ -118,7 +118,7 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
     expect(pidsOf(pids).filter(alive)).toEqual([]);
   });
 
-  // MRC-2 review round 2: after SIGINT the check went on and, once the SIGKILL round had passed, started a fresh
+  // After SIGINT the check went on and, once the SIGKILL round had passed, started a fresh
   // connection (the --active client-name re-list); that server, in its own group and deaf to EOF, outlived the CLI with ppid 1.
   it('SIGINT while a fresh connection waits on servers that ignore SIGTERM: no server, started before or after the signal, outlives the CLI', async () => {
     const pids = pidFile();
@@ -130,7 +130,7 @@ describe.skipIf(process.platform === 'win32')('R-5: a server behind a sh -c wrap
   });
 });
 
-// U-4 on Windows (process.platform emulated by a preload, NG-2): a process cannot die by a POSIX signal there (Node's
+// Signal exit on Windows (process.platform emulated by a preload): a process cannot die by a POSIX signal there (Node's
 // process.kill of itself would end it with exit 1, the threshold code, and throws for SIGHUP), so the CLI exits with
 // 128 + the signal number instead.
 describe.skipIf(process.platform === 'win32')('signal exit on Windows (process.platform emulated)', () => {
@@ -158,7 +158,7 @@ describe.skipIf(process.platform === 'win32')('signal exit on Windows (process.p
   });
 });
 
-describe('R-5 on Windows (process.platform emulated): the tree is ended before the wrapper', () => {
+describe('process tree on Windows (process.platform emulated): the tree is ended before the wrapper', () => {
   /** runCli as on win32 with the stubborn server (`flags` after the server); taskkill /T must come before the first kill of its pid. */
   async function taskkillFirst(flags: string[]): Promise<void> {
     const pids = pidFile();

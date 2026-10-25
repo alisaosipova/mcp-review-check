@@ -219,7 +219,7 @@ describe('SRV rules', () => {
     expect(f[0]).toMatchObject({ severity: 'error', platforms: ['spec'], fix: 'Try https://mcp.acme.test/mcp.' });
   });
 
-  it('SRV-004 (B7): NXDOMAIN says "does not resolve", not IPv4-only; informational when the connect failed on it', () => {
+  it('SRV-004: NXDOMAIN says "does not resolve", not IPv4-only; informational when the connect failed on it', () => {
     const nx = { host: 'nope.acme.test', a: [], aaaa: [], error: 'queryA ENOTFOUND nope.acme.test', code: 'ENOTFOUND' };
     const fatal = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = nx; s.fatal = 'could not complete a handshake'; } }));
     expect(fatal).toHaveLength(1);
@@ -232,7 +232,7 @@ describe('SRV rules', () => {
     expect(servfail[0]).toMatchObject({ severity: 'info', message: expect.stringMatching(/^inconclusive \(network\): DNS lookup/) });
   });
 
-  it('R-37: SRV-004 tells "resolves only locally" (dns.lookup) from "no A record"', () => {
+  it('SRV-004 tells "resolves only locally" (dns.lookup) from "no A record"', () => {
     const local = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([]), lookup: ['127.0.0.1'] }; } }));
     expect(local.map((x) => [x.severity, x.message])).toEqual([['error', 'mcp.acme.test resolves only locally (127.0.0.1), not in public DNS']]);
     const noA = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([], ['2606:2800:220:1::1']), lookup: ['2606:2800:220:1::1'] }; } }));
@@ -243,7 +243,7 @@ describe('SRV rules', () => {
     expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...docker, lookup: [] }; } }))[0].message).toMatch(/does not resolve \(NXDOMAIN\)/);
   });
 
-  it('SRV-001 (B7): the MCP host certificate is checked without auth; timeouts are inconclusive', () => {
+  it('SRV-001: the MCP host certificate is checked without auth; timeouts are inconclusive', () => {
     const tls = (t: Record<string, unknown>) => snap({ url: URL_OK, set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, ...t }]; } });
     const self = evaluate(byId('SRV-001'), tls({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }));
     expect(self[0]).toMatchObject({ severity: 'error', message: expect.stringMatching(/TLS handshake with mcp\.acme\.test failed: DEPTH_ZERO_SELF_SIGNED_CERT/) });
@@ -258,24 +258,24 @@ describe('SRV rules', () => {
 
   const tlsFail = (code: string) => evaluate(byId('SRV-001'), snap({ url: URL_OK, set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, code }]; } }));
 
-  it('S-26 (R-21): a certificate for another name (ERR_TLS_*) is an error, like a self-signed one', () => {
+  it('a certificate for another name (ERR_TLS_*) is an error, like a self-signed one', () => {
     for (const code of ['ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']) {
       expect(tlsFail(code), code).toMatchObject([{ severity: 'error', message: `TLS handshake with mcp.acme.test failed: ${code}; hosts reject this certificate` }]);
     }
     expect(tlsFail('EHOSTUNREACH')).toEqual([]);
   });
 
-  it('S-26 (R-21): EPROTO is a TLS protocol failure, not a certificate verdict', () => {
+  it('EPROTO is a TLS protocol failure, not a certificate verdict', () => {
     const proto = tlsFail('EPROTO');
     expect(proto).toMatchObject([{ severity: 'error', message: 'TLS handshake with mcp.acme.test failed: EPROTO (not a TLS endpoint?)' }]);
     expect(proto[0].message).not.toMatch(/certificate/);
   });
 });
 
-describe('R-12: SRV-001 and SRV-008 texts (CRIT-1, CRIT-2)', () => {
+describe('SRV-001 and SRV-008 texts', () => {
   const byId = (id: string) => serverRules.find((r) => r.id === id)!;
 
-  it('R-12: SRV-001 ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE is a version or cipher mismatch, not "not a TLS endpoint?"', () => {
+  it('SRV-001 ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE is a version or cipher mismatch, not "not a TLS endpoint?"', () => {
     const f = evaluate(byId('SRV-001'), snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.transport.tls = [{ host: 'mcp.acme.test', role: 'mcp', ok: false, code: 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE' }]; } }));
     expect(f).toHaveLength(1);
     expect(f[0].severity).toBe('error');
@@ -287,7 +287,7 @@ describe('R-12: SRV-001 and SRV-008 texts (CRIT-1, CRIT-2)', () => {
     }
   });
 
-  it('R-12: SRV-008 on 10.0.0.5 in local mode does not call the server loopback; severity stays error', () => {
+  it('SRV-008 on 10.0.0.5 in local mode does not call the server loopback; severity stays error', () => {
     const f = evaluate(byId('SRV-008'), snap({ url: 'http://10.0.0.5:8080/mcp', set: (s) => { s.localMode = true; s.transport.probes.originEvil = exchange({ status: 200 }); } }));
     expect(f).toHaveLength(1);
     expect(f[0].severity).toBe('error');

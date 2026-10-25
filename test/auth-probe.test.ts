@@ -103,7 +103,7 @@ describe('auth probe', () => {
     expect(findings.find((f) => f.ruleId === id)?.severity).toBe('error');
   });
 
-  it('B6: transient 503s on PRM and AS metadata are retried; the run is clean', async () => {
+  it('transient 503s on PRM and AS metadata are retried; the run is clean', async () => {
     const { snap, findings } = await probe({ asFailures: 2, prmFailures: 1 });
     const a = snap.authProbe!;
     expect(a.prm).toBeDefined();
@@ -113,7 +113,7 @@ describe('auth probe', () => {
     expect(findings.filter((f) => f.severity !== 'info').map((f) => `${f.ruleId} ${f.message}`)).toEqual([]);
   });
 
-  it('B6: AS metadata that keeps failing with 503 is inconclusive (network), with the status of every attempt', async () => {
+  it('AS metadata that keeps failing with 503 is inconclusive (network), with the status of every attempt', async () => {
     const { findings } = await probe({ asFailures: 100 });
     const f = findings.filter((x) => x.ruleId === 'AUTH-007');
     expect(f).toHaveLength(1);
@@ -121,7 +121,7 @@ describe('auth probe', () => {
     expect(f[0].message).toMatch(/^inconclusive \(network\): no authorization server metadata .*oauth-authorization-server: 503, 503, 503; .*openid-configuration: 404/);
   });
 
-  it('B6: PRM that keeps failing is inconclusive, not an AUTH-004 error', async () => {
+  it('PRM that keeps failing is inconclusive, not an AUTH-004 error', async () => {
     const { findings } = await probe({ prmFailures: 100, noWwwAuth: false });
     const f = findings.find((x) => x.ruleId === 'AUTH-004');
     expect(f?.severity).toBe('info');

@@ -1,4 +1,4 @@
-// R-8 (MRC-2): two redaction tiers. Before the rules only strong values are masked in what the server sent (--bearer,
+// Two redaction tiers. Before the rules only strong values are masked in what the server sent (--bearer,
 // --header values, --env under a secret name, URL credentials, argv after a secret flag); an --env value under a plain
 // name is masked in the finished report and every channel outside it only, so a word of the protocol or of the
 // server's own data in it changes no finding, severity or exit code.
@@ -10,11 +10,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildRedactor, scrub } from '../src/redact.js';
 import { cli, GOOD } from './cli-runner.js';
 
-/** What R-8 keeps: (rule, severity, tool) of every finding, order aside. */
+/** What a weak --env value must not change: (rule, severity, tool) of every finding, order aside. */
 const triples = (json: any): string[] => json.findings.map((f: any) => `${f.ruleId}|${f.severity}|${f.tool ?? ''}`).sort();
 
-describe('R-8: a word in --env is not masked before the rules', () => {
-  it('R-8: a protocol or schema word in --env changes no finding, severity or exit code', async () => {
+describe('a word in --env is not masked before the rules', () => {
+  it('a protocol or schema word in --env changes no finding, severity or exit code', async () => {
     const plain = await cli(['--stdio', GOOD, '--format', 'json']);
     expect(plain.code, plain.stderr).toBe(0);
     const words = ['FORMAT=text', 'MODE=title', 'X=object', 'OUT=json', 'KIND=image'];
@@ -26,7 +26,7 @@ describe('R-8: a word in --env is not masked before the rules', () => {
     expect(r.stdout).not.toContain('«redacted»');
   });
 
-  it('R-8: an --env value under a plain name that names a field of the server data is masked in the report only', async () => {
+  it('an --env value under a plain name that names a field of the server data is masked in the report only', async () => {
     const plain = await cli(['--stdio', GOOD, '--format', 'json']);
     const r = await cli(['--stdio', GOOD, '--env', 'HINT=readOnlyHint', '--format', 'json']);
     expect(r.code, r.stderr).toBe(0);
@@ -35,7 +35,7 @@ describe('R-8: a word in --env is not masked before the rules', () => {
     expect(r.stdout).not.toContain('readOnlyHint');
   });
 
-  it('R-8: the strong tier holds --bearer, --header values, URL and argv secrets and --env values under a secret name', () => {
+  it('the strong tier holds --bearer, --header values, URL and argv secrets and --env values under a secret name', () => {
     const input = {
       bearer: 'bearer-STRONG01', headers: { 'X-Trace': 'hdr-STRONG02' }, argv: ['node', 's.js', '--api-key', 'argv-STRONG03'],
       env: { API_TOKEN: 'env-STRONG04', NOTE: 'plain-WEAK05' },
@@ -47,7 +47,7 @@ describe('R-8: a word in --env is not masked before the rules', () => {
     expect(buildRedactor({ url: 'https://u:pw-STRONG06@h.test/mcp?token=q-STRONG07' }, true).values).toEqual(new Set(['pw-STRONG06', 'q-STRONG07']));
   });
 
-  it('R-8: protocol and schema words are never treated as secrets, in either tier', () => {
+  it('protocol and schema words are never treated as secrets, in either tier', () => {
     const text = 'type object string integer array boolean title description properties text image audio resource json html';
     const r = buildRedactor({ bearer: 'object', headers: { 'X-Mode': 'text' }, env: { A: 'title', B: 'json', C: 'image', D: 'string' } });
     expect(r.values.size).toBe(0);
@@ -55,7 +55,7 @@ describe('R-8: a word in --env is not masked before the rules', () => {
   });
 });
 
-describe('U-2 with R-8: a weak --env value never reaches a channel', () => {
+describe('a weak --env value never reaches a channel', () => {
   const LEAKY = fileURLToPath(new URL('./fixtures/leaky-server.mjs', import.meta.url));
   const WEAK = 'weak-WEAKSYNTHabcd'; // no digits: a token-like value (16+ characters with letters and digits) would be strong
   // leaky-server echoes $API_TOKEN on stdout and stderr; this start-up hands it the plainly named WEAK_NOTE instead.
@@ -81,7 +81,7 @@ describe('U-2 with R-8: a weak --env value never reaches a channel', () => {
   });
 });
 
-describe('R-8 with R-9: the parts of an --env value under a plain name', () => {
+describe('the parts of an --env value under a plain name', () => {
   // A raw stdio server whose free-form "sql" tool names its database only in the description. Masked before the rules,
   // "postgres" left the description, and TOOL-026 (a free-form query tool must name its target) reported the tool.
   const server = `const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\\n');
@@ -96,21 +96,21 @@ require('readline').createInterface({ input: process.stdin }).on('line', (l) => 
   const run = (opts: string[]) => cli([...opts, '--stdio', '--', 'node', '-e', server]);
   const DB = 'DATABASE_URL=postgres://postgres:postgres@db.test/app';
 
-  it('R-8: a plain URL username or password in --env changes no finding', async () => {
+  it('a plain URL username or password in --env changes no finding', async () => {
     const plain = await run(['--format', 'json']);
     expect(plain.code, plain.stderr).toBe(0);
     expect(plain.json.findings.map((x: any) => x.ruleId), 'the description names the database').not.toContain('TOOL-026');
     const r = await run(['--env', DB, '--format', 'json']);
     expect(r.code, r.stderr).toBe(plain.code);
     expect(triples(r.json)).toEqual(triples(plain.json));
-    // R-9: the finished report still masks them
+    // The finished report still masks them
     const md = await run(['--env', DB, '--format', 'markdown', '--verbose']);
     expect(md.stdout + md.stderr).not.toContain('postgres:postgres@');
     expect(md.stdout).toContain('DATABASE_URL=«redacted»');
     expect(md.stdout).toContain('Query the «redacted» database');
   });
 
-  it('R-8: in the strong tier such parts are only the token-like ones; the full tier has them all', () => {
+  it('in the strong tier such parts are only the token-like ones; the full tier has them all', () => {
     const env = { DATABASE_URL: 'postgres://app_user:pw-PLAIN01@db.test/app?token=k-PLAIN02', UPSTREAM: 'Bearer plain-PLAIN03', CACHE_URL: 'redis://ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1@cache.test', NOTE_URL: 'https://x.test/?token=Q7f3kLm9Xz2pR8tVw4' };
     const strong = buildRedactor({ env }, true).values;
     for (const v of ['app_user', 'pw-PLAIN01', 'k-PLAIN02', 'plain-PLAIN03', 'postgres://app_user:pw-PLAIN01@db.test/app?token=k-PLAIN02']) expect(strong.has(v), v).toBe(false);
@@ -126,7 +126,7 @@ require('readline').createInterface({ input: process.stdin }).on('line', (l) => 
   });
 });
 
-describe('U-2 with R-9: a token-like --env value under a plain name is strong (review round 1)', () => {
+describe('a token-like --env value under a plain name is strong', () => {
   const PAT = 'ghp_SYNTHa1b2c3d4e5f6g7h8i9j0k1l2m3n4o5';
   /** Writes $GITHUB_PAT on stderr past column 183 and exits: the 200-character start-up error line cuts through it. */
   const CUT = "console.error('Error: authentication failed for key '.padEnd(183, '.') + process.env.GITHUB_PAT + ' rest'); process.exit(1)";

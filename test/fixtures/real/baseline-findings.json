@@ -1,5 +1,5 @@
 {
- "note": "Warning and error findings of the baseline rules on test/fixtures/real/ (U-15): [ruleId, severity, tool or resource].",
+ "note": "Warning and error findings of the baseline rules on test/fixtures/real/: [ruleId, severity, tool or resource].",
  "commit": "d6100a9",
  "target": "all",
  "findings": {

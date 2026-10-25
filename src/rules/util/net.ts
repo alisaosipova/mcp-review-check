@@ -45,7 +45,7 @@ export function isLoopbackHost(host: string): boolean {
   return false;
 }
 
-/** R-35: local mode for a host without a dot, or one whose every address (DNS and the system resolver) is non-public. */
+/** Local mode for a host without a dot, or one whose every address (DNS and the system resolver) is non-public. */
 export function isLocalTarget(d: DnsResult): boolean {
   const addrs = [...d.a, ...d.aaaa, ...(d.lookup ?? [])];
   return (!d.host.includes('.') && !isIP(d.host)) || (addrs.length > 0 && addrs.every(isNonPublicIp));
@@ -76,12 +76,12 @@ export function registrableDomain(host: string): string {
   return lastTwo;
 }
 
-/** AUTH-001: query parameter names that put a credential in the server URL; the redaction's list, so one source (R-12). */
+/** AUTH-001: query parameter names that put a credential in the server URL; the redaction's list, so one source. */
 export function isSecretQueryParam(name: string): boolean {
   return isSecretName(name);
 }
 
-/** SEC-1: a secret sign in any kebab, snake, dotted or camelCase segment of a name (--auth-header, client_secret, accessToken). */
+/** A secret sign in any kebab, snake, dotted or camelCase segment of a name (--auth-header, client_secret, accessToken). */
 const SECRET_SIGN = /(^|[-_.])(api[-_]?key|apikey|key|token|secret|password|passwd|pwd|pass|auth|authorization|bearer|credentials?|cookie|session|private[-_]?key|signature|dsn)([-_.]|$)/i;
 /** The same sign glued to what precedes it (authtoken, apitoken, secretkey, GITHUBTOKEN): fail-closed, NOT_SECRET still applies. */
 const SECRET_TAIL = /(token|secret|passw(or)?d|credentials?|(api|auth|secret|private|access|client)key)([-_.]|$)/i;
@@ -94,7 +94,7 @@ export function isSecretName(name: string): boolean {
   return (SECRET_SIGN.test(n) || SECRET_TAIL.test(n)) && !NOT_SECRET.test(n);
 }
 
-/** R-9: a whole value in a known token format (OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face keys, a JWT); no entropy guess. */
+/** A whole value in a known token format (OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face keys, a JWT); no entropy guess. */
 const KNOWN_TOKEN = /^(sk-(live|test|proj|ant|or)?[-_]?[A-Za-z0-9_-]{16,}|[sr]k_(live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[abprse]-[A-Za-z0-9-]{10,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|npm_[A-Za-z0-9]{36}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})$/;
 
 /** Whether a value is a credential by its form alone (a positional argument, a path segment, a query value under any name). */
@@ -104,7 +104,7 @@ export function isKnownToken(value: string): boolean {
 
 export const REDACTED_MARK = '«redacted»';
 
-/** The URL for display in reports: userinfo (user:pass@) removed; secret query and fragment values and known-format tokens (R-9) redacted. */
+/** The URL for display in reports: userinfo (user:pass@) removed; secret query and fragment values and known-format tokens redacted. */
 export function displayUrl(raw: string): string {
   try {
     const u = new URL(raw);

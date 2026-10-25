@@ -1,4 +1,4 @@
-// R-62: a check run warns on stderr when the rule catalog is more than 90 days old (black box: runCli only).
+// A check run warns on stderr when the rule catalog is more than 90 days old (black box: runCli only).
 // The catalog date is read from the --help header, so the test does not depend on how the source stores it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
@@ -21,7 +21,7 @@ function clockAt(date: string, days: number): void {
 describe('stale rule catalog', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('R-62: a catalog older than 90 days warns on stderr; --help and --version do not', async () => {
+  it('a catalog older than 90 days warns on stderr; --help and --version do not', async () => {
     const date = await catalogDate();
     clockAt(date, 91);
     const r = await runCli(['--stdio', FAILING_SERVER, '--format', 'json', '--timeout', '5000'], {}, false);
@@ -36,7 +36,7 @@ describe('stale rule catalog', () => {
     expect(fresh.stderr).not.toMatch(/rule catalog is/);
   });
 
-  it('U-12: with a stale catalog stdout stays a single JSON or SARIF document', async () => {
+  it('with a stale catalog stdout stays a single JSON or SARIF document', async () => {
     const date = await catalogDate();
     clockAt(date, 200);
     for (const format of ['json', 'sarif']) {

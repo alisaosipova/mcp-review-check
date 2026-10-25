@@ -222,7 +222,7 @@ describe('AUTH rules', () => {
     expect(f[0].message).toMatch(/CERT_HAS_EXPIRED/);
   });
 
-  it('AUTH-010 (B6/B7): a TLS timeout after retries is inconclusive; the MCP host itself is left to SRV-001', () => {
+  it('AUTH-010: a TLS timeout after retries is inconclusive; the MCP host itself is left to SRV-001', () => {
     const f = evaluate(byId('AUTH-010'), authSnap({ set: (s) => {
       s.transport.tls = [
         { host: 'mcp.acme.test', role: 'mcp', ok: false, code: 'DEPTH_ZERO_SELF_SIGNED_CERT' },
@@ -234,12 +234,12 @@ describe('AUTH rules', () => {
     expect(f[0].message).toBe('inconclusive (network): TLS handshake with auth.acme.test did not complete: ETIMEDOUT (attempts: ETIMEDOUT, ETIMEDOUT, ETIMEDOUT)');
   });
 
-  it('AUTH-016 (B6): an invalid-token probe that keeps answering 503 is inconclusive', () => {
+  it('AUTH-016: an invalid-token probe that keeps answering 503 is inconclusive', () => {
     const f = evaluate(byId('AUTH-016'), authSnap({ probe: { invalidToken: exchange({ status: 503 }) } }));
     expect(f[0]).toMatchObject({ severity: 'info', message: 'inconclusive (network): invalid bearer token got 503 after retries' });
   });
 
-  it('AUTH-007 (B6): lists every attempt; a definitive 404 everywhere stays an error', () => {
+  it('AUTH-007: lists every attempt; a definitive 404 everywhere stays an error', () => {
     const s = authSnap({ set: (x) => {
       const as = x.authProbe!.as[0];
       as.json = undefined;
@@ -261,7 +261,7 @@ describe('AUTH rules', () => {
     expect(evaluate(byId('AUTH-006'), s)).toEqual([]);
   });
 
-  it('local mode (R-35): an http AS on a private IP, a dotless host or the MCP host is accepted like loopback; a public one is not', () => {
+  it('local mode: an http AS on a private IP, a dotless host or the MCP host is accepted like loopback; a public one is not', () => {
     const asSnap = (mcp: string, as: string, localMode = true) => authSnap({ url: `${mcp}/mcp`, as: { issuer: as, authorization_endpoint: `${as}/authorize`, token_endpoint: `${as}/token`, registration_endpoint: `${as}/register` }, prm: { authorization_servers: [as] }, set: (x) => { x.localMode = localMode; x.authProbe!.as[0].issuer = as; } });
     for (const [mcp, as] of [['http://10.0.0.5:8080', 'http://10.0.0.5:4000'], ['http://devbox:8080', 'http://devbox:4000'], ['http://mcp.lan:8080', 'http://mcp.lan:4000'], ['http://10.0.0.5:8080', 'http://[fd00::5]:4000']]) {
       expect(evaluate(byId('AUTH-010'), asSnap(mcp, as)), as).toEqual([]);
@@ -273,10 +273,10 @@ describe('AUTH rules', () => {
   });
 });
 
-describe('R-12: AUTH-001 by the shared secret-name list (D-rules-3, D-6)', () => {
+describe('AUTH-001 by the shared secret-name list', () => {
   const auth001 = authRules.find((r) => r.id === 'AUTH-001')!;
 
-  it('R-12: AUTH-001 uses the shared secret-name list', () => {
+  it('AUTH-001 uses the shared secret-name list', () => {
     const names = ['api-key', 'credential', 'client_secret', 'session', 'cookie', 'signature', 'pass', 'pwd', 'dsn'];
     const url = `https://mcp.acme.test/mcp?${names.map((n, i) => `${n}=SYNTHV${i}`).join('&')}&page=2`;
     const f = evaluate(auth001, snap({ url }));
@@ -285,7 +285,7 @@ describe('R-12: AUTH-001 by the shared secret-name list (D-rules-3, D-6)', () =>
     expect(f[0].message).not.toMatch(/page|SYNTHV/);
   });
 
-  it('R-12: the old AUTH-001 names still count; names that point to a secret do not', () => {
+  it('the old AUTH-001 names still count; names that point to a secret do not', () => {
     for (const n of ['token', 'access_token', 'api_key', 'apikey', 'key', 'secret', 'auth', 'password', 'bearer']) {
       expect(evaluate(auth001, snap({ url: `https://mcp.acme.test/mcp?${n}=SYNTHV` })).length, n).toBe(1);
     }
@@ -293,11 +293,11 @@ describe('R-12: AUTH-001 by the shared secret-name list (D-rules-3, D-6)', () =>
   });
 });
 
-describe('R-12: AUTH-010 names a network failure instead of a TLS verdict (D-rules-2)', () => {
+describe('AUTH-010 names a network failure instead of a TLS verdict', () => {
   const auth010 = authRules.find((r) => r.id === 'AUTH-010')!;
   const asTls = (code: string) => evaluate(auth010, authSnap({ set: (s) => { s.transport.tls = [{ host: 'auth.acme.test', role: 'as', ok: false, code }]; } }));
 
-  it("R-12: AUTH-010 for tls {role:'as', code:'ENOTFOUND'} says the host does not resolve, not that the TLS handshake failed", () => {
+  it("AUTH-010 for tls {role:'as', code:'ENOTFOUND'} says the host does not resolve, not that the TLS handshake failed", () => {
     const f = asTls('ENOTFOUND');
     expect(f).toHaveLength(1);
     expect(f[0].severity).toBe('error');
@@ -311,11 +311,11 @@ describe('R-12: AUTH-010 names a network failure instead of a TLS verdict (D-rul
   });
 });
 
-describe('R-12: AUTH-010 gives the DNS fix only for a DNS failure (review round 1)', () => {
+describe('AUTH-010 gives the DNS fix only for a DNS failure', () => {
   const auth010 = authRules.find((r) => r.id === 'AUTH-010')!;
   const asTls = (code: string) => evaluate(auth010, authSnap({ set: (s) => { s.transport.tls = [{ host: 'auth.acme.test', role: 'as', ok: false, code }]; } }));
 
-  it('R-12: AUTH-010 for ECONNREFUSED and EHOSTUNREACH has no DNS fix; ENOTFOUND keeps it', () => {
+  it('AUTH-010 for ECONNREFUSED and EHOSTUNREACH has no DNS fix; ENOTFOUND keeps it', () => {
     const refused = asTls('ECONNREFUSED')[0];
     expect(refused.message).toBe('connection refused by auth.acme.test:443 (ECONNREFUSED); TLS not checked');
     expect(refused.fix).not.toMatch(/DNS/);

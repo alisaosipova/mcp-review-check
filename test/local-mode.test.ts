@@ -1,4 +1,4 @@
-// W1-3: automatic local mode (R-35) and --local / --no-local (R-36). Deploy-time checks (HTTPS, public DNS, tunnel
+// Automatic local mode and --local / --no-local. Deploy-time checks (HTTPS, public DNS, tunnel
 // domains) are informational for a host without a dot or one whose every address is non-public, and the banner
 // names the rules that were downgraded. Black-box over the built CLI, plus the detection with injected resolvers.
 import { afterAll, describe, expect, it } from 'vitest';
@@ -51,7 +51,7 @@ async function expectLocal(url: string) {
   expect(text.stdout).toMatch(/Local target: deploy-time checks are informational \(SRV-001[^)]*\); --no-local for strict checks\./);
 }
 
-describe('automatic local mode (R-35)', () => {
+describe('automatic local mode', () => {
   it.skipIf(!privateIp)('a server on the IP of a non-public interface is checked in local mode, with the banner', async () => {
     const port = await serveOn(privateIp!);
     await expectLocal(`http://${privateIp}:${port}/mcp`);
@@ -94,7 +94,7 @@ describe('automatic local mode (R-35)', () => {
   });
 });
 
-describe('--local and --no-local (R-36)', () => {
+describe('--local and --no-local', () => {
   it('override the automatic choice for HTTP and stdio; both together is a usage error', async () => {
     const s: Started = await listen(createBridgeHandler(factory));
     servers.push(s);

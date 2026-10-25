@@ -124,7 +124,7 @@ describe('APPS rules', () => {
     expect(evaluate(rule, ui({ set: (s) => { s.toolsWithoutUi = [tool({ name: 'show_board' })]; } }))).toEqual([]);
   });
 
-  it('extractOrigins and <img> checks stay linear on unterminated tags (W1-8)', () => {
+  it('extractOrigins and <img> checks stay linear on unterminated tags', () => {
     // 400 000 characters each: a quadratic scan takes seconds here (about 10 s per pass on the baseline).
     const tags = '<img'.repeat(100000);
     const t0 = performance.now();
@@ -149,7 +149,7 @@ describe('APPS rules', () => {
     expect(evaluate(rule, ui({ html: '<script>/* widget */ const app = new App({ name: "x" }); app.render();</script>' }))).toHaveLength(1);
   });
 
-  it('S-26 (R-54): APPS-014 accepts a hand-written ui/initialize handshake when the App class is used in code without connect()', () => {
+  it('APPS-014 accepts a hand-written ui/initialize handshake when the App class is used in code without connect()', () => {
     const rule = appsRules.find((r) => r.id === 'APPS-014')!;
     const html = '<script>const app = new App({ name: "x" });\nwindow.parent.postMessage({ jsonrpc: "2.0", id: 1, method: \'ui/initialize\', params: {} }, "*");</script>';
     expect(evaluate(rule, ui({ html }))).toEqual([]);

@@ -1,5 +1,5 @@
-// B3: the MCP Apps client capability the linter declares (pure parts; R-5). Moved here from limits.test.ts so that
-// each test file has one slice that owns it.
+// The MCP Apps client capability the linter declares (pure parts). Moved here from limits.test.ts so that
+// each test file covers one topic.
 import { describe, expect, it } from 'vitest';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from '../src/protocol/clientCaps.js';
 import { ModernClient } from '../src/protocol/modern.js';
@@ -7,7 +7,7 @@ import type { Tracer } from '../src/protocol/trace.js';
 import { initializeBody } from '../src/probe/network.js';
 import { exchange } from './helpers.js';
 
-describe('MCP Apps capability (B3)', () => {
+describe('MCP Apps capability', () => {
   const UI = { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } };
 
   it('is declared in raw initialize probes and in 2026-07-28 _meta clientCapabilities', async () => {

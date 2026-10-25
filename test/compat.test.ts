@@ -1,6 +1,6 @@
 // Compatibility sensors against the baseline (main d6100a9, mcp-review-check 0.1.0). They guard every later
-// commit: rule IDs (U-1), the BAD fixture findings (U-3), JSON keys (U-4), runtime dependencies (U-8) and
-// CLI options with their defaults (U-13). Baseline data lives in test/fixtures/baseline/.
+// commit: rule IDs, the BAD fixture findings, JSON keys, runtime dependencies and
+// CLI options with their defaults. Baseline data lives in test/fixtures/baseline/.
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,9 +17,9 @@ const BASE_OPTIONS: { flag: string; short: string | null; value: boolean; defaul
 
 /**
  * Rules whose (rule, severity, tool) set on the BAD fixture may differ from the baseline: only changes accepted
- * in D-6, one line per rule, added by the slice that makes the change.
+ * on purpose, one line per rule, added by the commit that makes the change.
  */
-const D6_CHANGES: Record<string, string> = {};
+const ACCEPTED_CHANGES: Record<string, string> = {};
 
 const range = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}-${String(i + 1).padStart(3, '0')}`);
 /** The 143 rule IDs and 31 manual items of the baseline. */
@@ -42,7 +42,7 @@ function keyPaths(o: unknown, prefix = '', acc = new Set<string>()): Set<string>
 }
 
 const triples = (json: any): string[] =>
-  [...new Set<string>(json.findings.filter((f: any) => !(f.ruleId in D6_CHANGES)).map((f: any) => JSON.stringify([f.ruleId, f.severity, f.tool ?? null])))].sort();
+  [...new Set<string>(json.findings.filter((f: any) => !(f.ruleId in ACCEPTED_CHANGES)).map((f: any) => JSON.stringify([f.ruleId, f.severity, f.tool ?? null])))].sort();
 
 describe('compatibility with the baseline', () => {
   let bad: CliRun;
@@ -51,7 +51,7 @@ describe('compatibility with the baseline', () => {
     [bad, good] = await Promise.all([cli(['--stdio', BAD, '--format', 'json']), cli(['--stdio', GOOD, '--format', 'json'])]);
   });
 
-  it('U-1: every rule ID and manual item of the baseline is still in the catalog', () => {
+  it('every rule ID and manual item of the baseline is still in the catalog', () => {
     expect(BASE_RULE_IDS).toHaveLength(143);
     const rules = new Set(RULES.map((r) => r.id));
     const manual = new Set(MANUAL_ITEMS.map((m) => m.id));
@@ -59,24 +59,24 @@ describe('compatibility with the baseline', () => {
     expect(BASE_MAN_IDS.filter((id) => !manual.has(id))).toEqual([]);
   });
 
-  it('U-3: the (rule, severity, tool) set on the BAD fixture matches the baseline, except D-6 changes', () => {
+  it('the (rule, severity, tool) set on the BAD fixture matches the baseline, except accepted changes', () => {
     expect(bad.code, bad.stderr).toBe(1);
-    const expected = BASE_TRIPLES.filter(([id]) => !(id in D6_CHANGES)).map((t) => JSON.stringify(t)).sort();
+    const expected = BASE_TRIPLES.filter(([id]) => !(id in ACCEPTED_CHANGES)).map((t) => JSON.stringify(t)).sort();
     expect(triples(bad.json)).toEqual(expected);
   });
 
-  it('U-4: JSON keys are a superset of the baseline keys (BAD and GOOD fixtures)', () => {
+  it('JSON keys are a superset of the baseline keys (BAD and GOOD fixtures)', () => {
     const missing = (have: Set<string>, base: string[]) => base.filter((k) => !have.has(k));
     expect(missing(keyPaths(bad.json), BASE_KEYS.bad)).toEqual([]);
     expect(missing(keyPaths(good.json), BASE_KEYS.good)).toEqual([]);
   });
 
-  it('U-8: runtime dependencies are only @modelcontextprotocol/sdk, zod and ajv', () => {
+  it('runtime dependencies are only @modelcontextprotocol/sdk, zod and ajv', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(['@modelcontextprotocol/sdk', 'ajv', 'zod']);
   });
 
-  it('U-13: every baseline option is still documented in --help with the same default', async () => {
+  it('every baseline option is still documented in --help with the same default', async () => {
     const help = (await cli(['--help'])).stdout;
     const lines = help.split('\n');
     for (const o of BASE_OPTIONS) {
@@ -89,7 +89,7 @@ describe('compatibility with the baseline', () => {
     }
   });
 
-  it('U-13: every baseline option is still accepted, and the defaults still apply', async () => {
+  it('every baseline option is still accepted, and the defaults still apply', async () => {
     const values: Record<string, string> = {
       '--stdio': 'node x.mjs', '--header': 'X-Test: 1', '--bearer': 'tok', '--target': 'all', '--format': 'text',
       '--output': join(tmpdir(), 'mrc-compat-unused.txt'), '--timeout': '30000', '--fail-on': 'error', '--tool-args': 'args.json',

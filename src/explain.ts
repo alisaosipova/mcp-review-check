@@ -1,4 +1,4 @@
-// Rule catalog output: `explain <ID>` (R-38), --list-rules as text, JSON or markdown (R-39); rulesMarkdown also
+// Rule catalog output: `explain <ID>`, --list-rules as text, JSON or markdown; rulesMarkdown also
 // writes the rule table in docs/RULES.md (scripts/rules-table.mjs), not in the README.
 import { CATALOG_DATE } from './catalog.js';
 import { MANUAL_ITEMS, RULES } from './rules/index.js';

@@ -94,7 +94,7 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
 } as const;
 
-/** The known option nearest to an unknown one (Levenshtein distance at most 2), for "did you mean" (R-41). */
+/** The known option nearest to an unknown one (Levenshtein distance at most 2), for "did you mean". */
 function closestOption(name: string): string | undefined {
   let best: string | undefined;
   let bestDistance = 3;
@@ -110,7 +110,7 @@ function closestOption(name: string): string | undefined {
   return best;
 }
 
-/** One line for a parseArgs error: the option and what it needs, never its value or Node's multi-line advice (R-12). */
+/** One line for a parseArgs error: the option and what it needs, never its value or Node's multi-line advice. */
 function usageMessage(e: Error & { code?: string }): string {
   const option = /'(?:-\w, )?(-[^'=\s,]*)/.exec(e.message)?.[1];
   if (option && e.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
@@ -146,14 +146,14 @@ function parseHeader(raw: string): [string, string] {
 function render(r: Report, format: string, opts: TextOptions, rerun: string, sarifLocation: string): string {
   switch (format) {
     case 'json': return renderJson(r);
-    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose, rerun }); // --quiet and --checklist are text only (D-3)
+    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose, rerun }); // --quiet and --checklist are text only
     case 'sarif': return renderSarif(r, sarifLocation);
     default: return renderText(r, opts);
   }
 }
 
-/** R-48: the command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out (D-3).
- *  SEC-1: --bearer, --header and --env values masked by position at any length, the URL through displayUrl, then scrub. */
+/** The command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out.
+ *  --bearer, --header and --env values masked by position at any length, the URL through displayUrl, then scrub. */
 function rerunCommand(argv: string[], redactor: Redactor): string {
   const end = argv.includes('--') ? argv.indexOf('--') : argv.length;
   // Header and variable names stay ("X-Api-Key:«redacted»", "API_KEY=«redacted»"); a --bearer value goes whole.
@@ -165,12 +165,12 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
     if (i > 0 && ['--bearer', '--header', '--env'].includes(argv[i - 1])) return masked(argv[i - 1], a);
     return /^https?:\/\//i.test(a) ? displayUrl(a) : a;
   }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
-  // cmd.exe takes no single quotes: on Windows an argument is double-quoted by the Windows argv rule, for cmd.exe (R-15).
+  // cmd.exe takes no single quotes: on Windows an argument is double-quoted by the Windows argv rule, for cmd.exe.
   const quote = process.platform === 'win32' ? cmdQuote : (a: string) => `'${a.replace(/'/g, "'\\''")}'`;
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : quote(a)))].join(' ');
 }
 
-/** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE with its BOM (R-15). */
+/** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE with its BOM. */
 function readToolArgs(file: string): Record<string, unknown> {
   const raw = readFileSync(file);
   return JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
@@ -199,7 +199,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
       if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);
       if (!['text', 'json', 'markdown', 'sarif'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');
-      // R-13: SARIF has no catalog form; print the text catalog with a warning and exit 0, as the MRC-1 baseline did.
+      // SARIF has no catalog form; print the text catalog with a warning and exit 0, as the 0.1.0 baseline did.
       if (values.format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\n';
       const list = values.format === 'json' ? listRulesJson(rules, manual) : values.format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
       return { code: 0, stdout: list, stderr };
@@ -244,7 +244,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (bearer !== undefined && /[\r\n]/.test(bearer)) throw new UsageError('--bearer must not contain CR or LF');
 
     let spec: TargetSpec;
-    const typedEnv: Record<string, string> = {}; // --env names as typed: they decide a value's redaction tier (U-2)
+    const typedEnv: Record<string, string> = {}; // --env names as typed: they decide a value's redaction tier
     if (isStdio) {
       let parts: string[];
       if (split.command) parts = split.command;
@@ -255,7 +255,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         const i = kv.indexOf('=');
         if (i <= 0) throw new UsageError('--env must look like K=V (no "=" found; the value is not shown)');
         typedEnv[kv.slice(0, i)] = kv.slice(i + 1);
-        // Windows names are case-insensitive: --env Path=… replaces the inherited PATH instead of losing to it (R-15).
+        // Windows names are case-insensitive: --env Path=… replaces the inherited PATH instead of losing to it.
         envVars[process.platform === 'win32' ? kv.slice(0, i).toUpperCase() : kv.slice(0, i)] = kv.slice(i + 1);
       }
       spec = { kind: 'stdio', command: parts[0], args: parts.slice(1), env: envVars, cwd: values.cwd };
@@ -286,8 +286,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       active: !!values.active, activeAuth: !!values['active-auth'], toolArgs,
       local: values.local ? true : values['no-local'] ? false : undefined,
     };
-    // R-8: every value for the report and each output; before the rules only the strong ones (not --env FORMAT=text).
-    // U-2: by the --env names as typed, not as upper-cased for the server on win32 (signingKey is secret, SIGNINGKEY not).
+    // Every value for the report and each output; before the rules only the strong ones (not --env FORMAT=text).
+    // Tiers go by the --env names as typed, not as upper-cased for the server on win32 (signingKey is secret, SIGNINGKEY not).
     const typed: BuildOptions = spec.kind === 'stdio' ? { ...opts, target: { ...spec, env: typedEnv } } : opts;
     redactor = redactorFor(typed, true);
     opts.redactor = redactorFor(typed);
@@ -299,20 +299,20 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
-    const ignoredIds = new Set((values.ignore ?? []).map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item (R-12)
+    const ignoredIds = new Set((values.ignore ?? []).map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
     const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
 
-    // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off (R-47).
+    // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off.
     const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;
     const color = tty && !values['no-color'] && format === 'text' && !values.output;
     const banner = localBanner(report);
-    if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document (U-12)
+    if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document
     const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
     const rerun = rerunCommand(argv, redactor);
     const body = render(report, format, textOpts, rerun, sarifLocation);
-    if (env.GITHUB_ACTIONS === 'true') { // R-46: annotations go to stderr, so stdout stays the document (U-12)
+    if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
       for (const a of annotations(report)) stderr += `${a}\n`;
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, renderMarkdown(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }));
     }
@@ -321,7 +321,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;
       stderr = scrub(stderr, redactor);
     }
-    const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on (R-1)
+    const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on
     const s = report.summary;
     const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info · ${resultLine(report)}`;
     if (values.output) {
@@ -340,7 +340,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const message = e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string });
       return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
     }
-    // R-3: in GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
+    // In GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
     const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
     const ann = first ? `::error title=mcp-review-check::${escapeCommand((redactor ? scrub(first, redactor) : first).split('\n')[0])}\n` : '';
     const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\n`;
@@ -353,9 +353,9 @@ const isMain = (() => {
 })();
 
 if (isMain) {
-  // The stdio servers lead their own process group (R-5), so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
+  // The stdio servers lead their own process group, so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
   // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
-  // a process cannot die by a signal, exit 128 + its number (U-4). A second signal SIGKILLs every server at once (R-4).
+  // a process cannot die by a signal, exit 128 + its number. A second signal SIGKILLs every server at once.
   const signals = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGTERM: 15 };
   let signalled = false;
   for (const [signal, n] of Object.entries(signals)) {
@@ -371,7 +371,7 @@ if (isMain) {
     });
   }
   runCli(process.argv.slice(2)).then(({ code, stdout, stderr }) => {
-    // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB (R-7).
+    // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB.
     process.stderr.write(stderr, () => process.stdout.write(stdout, () => process.exit(code)));
   });
 }

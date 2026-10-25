@@ -1,5 +1,5 @@
-// Rule explainability and CLI hygiene (W1-4): `explain <ID>` (R-38), --list-rules formats, prefix filter and the
-// rationale in reports (R-39), --ignore checked against the catalog (R-40), "did you mean" and --help examples (R-41).
+// Rule explainability and CLI hygiene: `explain <ID>`, --list-rules formats, prefix filter and the
+// rationale in reports, --ignore checked against the catalog, "did you mean" and --help examples.
 // Black-box: the built CLI (cli()) and runCli in process; the catalog is read from src/rules/index.ts.
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
@@ -10,8 +10,8 @@ const rule = (id: string) => RULES.find((r) => r.id === id)!;
 /** Catalog lines of the text listing (the header line starts with "ID"). */
 const rows = (out: string) => out.trim().split('\n').filter((l) => !l.startsWith('ID '));
 
-describe('R-38: explain <ID>', () => {
-  it('R-38: explain <ID> prints severities, rationale, sources, fix and --ignore hint; unknown ID exits 2', async () => {
+describe('explain <ID>', () => {
+  it('explain <ID> prints severities, rationale, sources, fix and --ignore hint; unknown ID exits 2', async () => {
     const r = rule('TOOL-011');
     const out = await cli(['explain', 'TOOL-011']);
     expect(out.code, out.stderr).toBe(0);
@@ -46,8 +46,8 @@ describe('R-38: explain <ID>', () => {
   });
 });
 
-describe('R-39: --list-rules formats and filter, rationale in reports', () => {
-  it('R-39: --list-rules --format json|markdown, prefix filter; rationale in --verbose and markdown', async () => {
+describe('--list-rules formats and filter, rationale in reports', () => {
+  it('--list-rules --format json|markdown, prefix filter; rationale in --verbose and markdown', async () => {
     const json = await cli(['--list-rules', '--format', 'json']);
     expect(json.code, json.stderr).toBe(0);
     expect(() => JSON.parse(json.stdout), '--list-rules --format json prints a JSON document').not.toThrow();
@@ -79,7 +79,7 @@ describe('R-39: --list-rules formats and filter, rationale in reports', () => {
     const none = await cli(['--list-rules', 'XYZ']);
     expect(none.code).toBe(2);
     expect(none.stdout).toBe('');
-    // R-13: SARIF has no catalog form, so --list-rules prints the text catalog with a warning and exits 0, as the MRC-1 baseline did
+    // SARIF has no catalog form, so --list-rules prints the text catalog with a warning and exits 0, as the 0.1.0 baseline did
     const sarif = await cli(['--list-rules', '--format', 'sarif']);
     expect(sarif.code, sarif.stderr).toBe(0);
     expect(sarif.stdout.startsWith('ID '), sarif.stdout.slice(0, 80)).toBe(true);
@@ -106,8 +106,8 @@ describe('R-39: --list-rules formats and filter, rationale in reports', () => {
   });
 });
 
-describe('R-40: --ignore is checked against the catalog', () => {
-  it('R-40: --ignore with an unknown ID exits 2; MAN IDs are accepted', async () => {
+describe('--ignore is checked against the catalog', () => {
+  it('--ignore with an unknown ID exits 2; MAN IDs are accepted', async () => {
     const unknown = await cli(['--stdio', GOOD, '--ignore', 'TOOL-011', '--ignore', 'TOOL-999']);
     expect(unknown.code).toBe(2);
     expect(unknown.stdout).toBe('');
@@ -121,8 +121,8 @@ describe('R-40: --ignore is checked against the catalog', () => {
   });
 });
 
-describe('R-41: did you mean, --help examples', () => {
-  it('R-41: an unknown option suggests the closest one; --help has examples', async () => {
+describe('did you mean, --help examples', () => {
+  it('an unknown option suggests the closest one; --help has examples', async () => {
     const typo = await runCli(['--formt', 'json', '--stdio', 'node x.mjs']);
     expect(typo.code).toBe(2);
     expect(typo.stdout).toBe('');
@@ -148,8 +148,8 @@ describe('R-41: did you mean, --help examples', () => {
   });
 });
 
-describe('SEC-1 review (S-22): --list-rules never repeats a positional that is not an ID prefix', () => {
-  it('SEC-1 review: --list-rules with a URL lists the whole catalog (as the baseline did) without echoing the URL', async () => {
+describe('--list-rules never repeats a positional that is not an ID prefix', () => {
+  it('--list-rules with a URL lists the whole catalog (as the baseline did) without echoing the URL', async () => {
     const all = await cli(['--list-rules']);
     expect(all.code, all.stderr).toBe(0);
     for (const args of [
@@ -168,8 +168,8 @@ describe('SEC-1 review (S-22): --list-rules never repeats a positional that is n
   });
 });
 
-describe('SEC-1 review round 2 (S-25): explain never repeats a value that is not an ID', () => {
-  it('S-25: explain with a URL, user:pass@ or a bare token says «value not shown»; an ID-like value is still named', async () => {
+describe('explain never repeats a value that is not an ID', () => {
+  it('explain with a URL, user:pass@ or a bare token says «value not shown»; an ID-like value is still named', async () => {
     for (const v of ['https://mcp.example.com/mcp?api_key=SuperSecret123', 'https://bob:SuperSecret123@mcp.example.com/mcp', 'SuperSecret123']) {
       const r = await runCli(['explain', v]);
       expect(r.code, v).toBe(2);
@@ -182,8 +182,8 @@ describe('SEC-1 review round 2 (S-25): explain never repeats a value that is not
   });
 });
 
-describe('R-12: --ignore MAN-xxx and one-line parseArgs errors (D-rules-4, CRIT-5)', () => {
-  it('R-12: --ignore man-001 hides MAN-001 from JSON manual and the text checklist', async () => {
+describe('--ignore MAN-xxx and one-line parseArgs errors', () => {
+  it('--ignore man-001 hides MAN-001 from JSON manual and the text checklist', async () => {
     const [json, text] = await Promise.all([
       cli(['--ignore', 'man-001', '--format', 'json', '--stdio', GOOD]),
       cli(['--ignore', 'man-001', '--checklist', '--stdio', GOOD]),
@@ -197,7 +197,7 @@ describe('R-12: --ignore MAN-xxx and one-line parseArgs errors (D-rules-4, CRIT-
     expect(text.stdout).not.toMatch(/MAN-001/);
   }, 60000);
 
-  it('R-12: a parseArgs error is exactly the lines "error: …" and "Run with --help…", without the value', async () => {
+  it('a parseArgs error is exactly the lines "error: …" and "Run with --help…", without the value', async () => {
     for (const args of [['http://127.0.0.1:9/mcp', '--bearer', '-SYNTHVALUE'], ['http://127.0.0.1:9/mcp', '--timeout'], ['http://127.0.0.1:9/mcp', '--no-color=SYNTHVALUE']]) {
       const r = await runCli(args);
       expect(r.code, args.join(' ')).toBe(2);

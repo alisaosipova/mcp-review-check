@@ -1,4 +1,4 @@
-// README and docs/RULES.md (W1-5): purpose and npx at the top, the rule table generated into docs/RULES.md, the token
+// README and docs/RULES.md: purpose and npx at the top, the rule table generated into docs/RULES.md, the token
 // recipe that AUTH_NOTICE points to, the other user-facing sections, --help and README options in sync.
 // Static imports exist on the baseline, so each check fails there on an assertion, not on import.
 import { existsSync, readFileSync } from 'node:fs';
@@ -19,8 +19,8 @@ function section(title: string): string | undefined {
 /** `--option` names in a text. */
 const optionNames = (s: string) => [...s.matchAll(/--[a-z][a-z-]*/g)].map((m) => m[0]);
 
-describe('README and docs (W1-5)', () => {
-  it('R-42: purpose and npx in README lines 1-5; docs/RULES.md equals the generator output', async () => {
+describe('README and docs', () => {
+  it('purpose and npx in README lines 1-5; docs/RULES.md equals the generator output', async () => {
     const top = README.split('\n').slice(0, 5).join('\n');
     expect(top).toMatch(/Lint an MCP server against the public review criteria/);
     expect(top).toMatch(/`npx mcp-review-check https?:\/\/\S+`/);
@@ -34,13 +34,13 @@ describe('README and docs (W1-5)', () => {
     expect(section('Rules')).toContain('(docs/RULES.md)');
   });
 
-  it('R-61: the example report header in README shows CATALOG_DATE', () => {
+  it('the example report header in README shows CATALOG_DATE', () => {
     const header = README.match(/^mcp-review-check \S+ · rules (\S+) · target: /m);
     expect(header, 'README has an example report header').not.toBeNull();
     expect(header![1]).toBe(CATALOG_DATE);
   });
 
-  it('R-43: AUTH_NOTICE points to the README token recipe; README has token recipe, Privacy, FAQ, CI recipes (stdio and preview URL), docker-compose', () => {
+  it('AUTH_NOTICE points to the README token recipe; README has token recipe, Privacy, FAQ, CI recipes (stdio and preview URL), docker-compose', () => {
     expect(AUTH_NOTICE).toMatch(/^Server requires OAuth\. Auth checks ran; tool, resource and UI checks need `--bearer <token>`/);
     expect(AUTH_NOTICE).toMatch(/"Token recipe" in the mcp-review-check README/);
     const recipe = section('Token recipe');
@@ -59,7 +59,7 @@ describe('README and docs (W1-5)', () => {
     expect(compose).toContain('docker compose run');
   });
 
-  it('R-44: a dated comparison with linked tools; no promise of a code scanning upload', () => {
+  it('a dated comparison with linked tools; no promise of a code scanning upload', () => {
     const cmp = section('Compared with other tools');
     expect(cmp, 'README section "Compared with other tools"').toBeDefined();
     expect(cmp).toMatch(/As of \d{4}-\d{2}-\d{2}/);
@@ -69,7 +69,7 @@ describe('README and docs (W1-5)', () => {
     expect(README).not.toMatch(/upload-sarif|codeql-action/);
   });
 
-  it('R-45: every --help option is in README and vice versa', async () => {
+  it('every --help option is in README and vice versa', async () => {
     const help = (await runCli(['--help'], {}, false)).stdout;
     const block = (name: string) => help.match(new RegExp(`^${name}:\\n([\\s\\S]*?)\\n\\n`, 'm'))?.[1] ?? '';
     // Options: the first option on each line (`-h, --help` → --help); Usage: --stdio and anything else spelled there.
@@ -82,8 +82,8 @@ describe('README and docs (W1-5)', () => {
   });
 });
 
-describe('README: the stdio server environment (R-15)', () => {
-  it('X-mac-7: README names the variables a stdio server inherits and says to pass the rest with --env', () => {
+describe('README: the stdio server environment', () => {
+  it('README names the variables a stdio server inherits and says to pass the rest with --env', () => {
     expect(README).toMatch(/HOME, LOGNAME, PATH, SHELL, TERM, USER/);
     expect(README).toMatch(/APPDATA, .*USERPROFILE/);
     expect(README).toMatch(/TMPDIR[^\n]*--env|--env[^\n]*TMPDIR/);

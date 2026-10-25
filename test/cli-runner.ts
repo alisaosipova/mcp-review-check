@@ -14,7 +14,7 @@ export interface CliRun {
   json?: any;
 }
 
-/** The CI switches a run inherits from a GitHub Actions job: removed from the child's env unless a test passes them (S-18). */
+/** The CI switches a run inherits from a GitHub Actions job: removed from the child's env unless a test passes them. */
 const CI_ENV = ['GITHUB_ACTIONS', 'GITHUB_STEP_SUMMARY', 'FORCE_COLOR'];
 
 export function cli(args: string[], env: Record<string, string> = {}): Promise<CliRun> {

@@ -1,4 +1,4 @@
-// R-16 (MRC-2): the GitHub workflows keep write tokens away from the code they run. Workflows cannot run here (no
+// The GitHub workflows keep write tokens away from the code they run. Workflows cannot run here (no
 // GitHub repository yet), so this reads .github/workflows/*.yml line by line, by indentation, without a YAML
 // dependency: every `uses:` is pinned to a commit SHA, every job has timeout-minutes, only the publish jobs get
 // id-token: write or contents: write and they run no install scripts, tests or builds, checkout keeps no token,
@@ -65,7 +65,7 @@ function steps(job: Job): string[][] {
   return out;
 }
 
-describe('GitHub workflows (R-16)', () => {
+describe('GitHub workflows', () => {
   it('finds the workflows and their jobs', () => {
     expect(FILES).toEqual(['ci.yml', 'release.yml']);
     expect(jobs().length).toBeGreaterThanOrEqual(3);

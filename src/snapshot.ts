@@ -74,7 +74,7 @@ export interface DnsResult {
   error?: string;
   /** Resolver error code when both lookups failed (ENOTFOUND = NXDOMAIN, ENODATA, ETIMEOUT, ...). */
   code?: string;
-  /** Addresses from the system resolver (dns.lookup: /etc/hosts, container DNS), when it answered (R-35, R-37). */
+  /** Addresses from the system resolver (dns.lookup: /etc/hosts, container DNS), when it answered. */
   lookup?: string[];
 }
 
@@ -89,7 +89,7 @@ export interface TlsObservation {
   transient?: boolean;
 }
 
-/** Why an HTTP handshake failed (B7): the network cause or "not an MCP endpoint", with a hint. */
+/** Why an HTTP handshake failed: the network cause or "not an MCP endpoint", with a hint. */
 export interface ConnectDiagnosis {
   kind: 'dns' | 'refused' | 'timeout' | 'reset' | 'tls' | 'not-mcp' | 'http' | 'other';
   summary: string;
@@ -98,7 +98,7 @@ export interface ConnectDiagnosis {
   hint?: string;
 }
 
-/** Input caps applied before the regex rules (W1-8) and the --max-duration stop. */
+/** Input caps applied before the regex rules and the --max-duration stop. */
 export interface Limits {
   truncated: Array<{ where: string; length: number; cap: number }>;
   stopped?: { maxDurationMs: number; phase: string };

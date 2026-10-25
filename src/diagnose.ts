@@ -1,4 +1,4 @@
-// Connection diagnostics (B7): turn "fetch failed" and HTML error pages into a cause and a next step.
+// Connection diagnostics: turn "fetch failed" and HTML error pages into a cause and a next step.
 import type { ConnectDiagnosis } from './snapshot.js';
 import { displayUrl } from './rules/util/net.js';
 
@@ -38,7 +38,7 @@ export function describeCause(url: URL, cause: { code?: string; message?: string
     case 'EHOSTUNREACH':
     case 'ENETUNREACH':
     case 'EHOSTDOWN':
-    case 'EADDRNOTAVAIL': // kind stays 'other': JSON coverage.diagnosis.kind does not change (R-12)
+    case 'EADDRNOTAVAIL': // kind stays 'other': JSON coverage.diagnosis.kind does not change
       return { kind: 'other', code, summary: `no route to ${hostPort} (${code})`, hint: 'check the address, VPN and firewall; on macOS 15+ allow Local Network access for your terminal app (System Settings > Privacy & Security > Local Network)' };
   }
   if (isTlsCode(code)) {
@@ -101,7 +101,7 @@ export function schemeSuggestion(raw: string): string | undefined {
   const hostPort = t.split(/[/?#]/)[0];
   const host = hostPort.replace(/:\d+$/, '').toLowerCase();
   if (!host || !/^[\w.-]+$|^\[[0-9a-f:]+\]$/i.test(host)) return undefined;
-  // "mcp:8080/mcp": a name without a dot plus a port is a container or LAN host, checked in local mode (R-19, R-35).
+  // "mcp:8080/mcp": a name without a dot plus a port is a container or LAN host, checked in local mode.
   const dotless = /^[\w-]+$/.test(host) && /:\d+$/.test(hostPort);
   const local = dotless || host === 'localhost' || host.endsWith('.localhost') || /^127\.|^\[::1\]$|^0\.0\.0\.0$/.test(host);
   if (!local && !host.includes('.')) return undefined;

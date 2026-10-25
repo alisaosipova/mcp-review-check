@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A stdio server on which the check itself throws after the handshake, for R-4 (MRC-2): tools/list returns a tool
+// A stdio server on which the check itself throws after the handshake, for the cleanup tests: tools/list returns a tool
 // whose name cannot be turned into a string, so the tools re-list throws a TypeError in buildStdio. It ignores stdin
 // EOF (a timer keeps it alive), so only a signal ends it. Usage: throw-server.mjs <pid-file>
 // It appends its pid to <pid-file> and exits by itself after 30 s, so a failed test leaves nothing behind.

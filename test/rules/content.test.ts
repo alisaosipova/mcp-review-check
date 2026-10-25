@@ -188,7 +188,7 @@ describe('INJ / DATA / POL rules', () => {
     expect(f[0].severity).toBe('info');
   });
 
-  // ---- B4: false positives seen on listed servers ----
+  // ---- false positives seen on listed servers ----
 
   it('INJ-006 self-restriction is not steering (Kiwi): "Do NOT use it for other MCP servers"', () => {
     const kiwi = 'Send feedback, bug reports, or feature requests about the Kiwi.com flight search, filters, or errors in search responses. Do NOT use it for other MCP servers, Claude/app behaviour, account or booking issues.';

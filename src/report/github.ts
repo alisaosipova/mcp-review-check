@@ -1,5 +1,5 @@
-// GitHub Actions mode (R-46): workflow-command annotations on stderr and the markdown report appended to the job
-// summary. On only when GITHUB_ACTIONS=true; there is no separate switch (D-7).
+// GitHub Actions mode: workflow-command annotations on stderr and the markdown report appended to the job
+// summary. On only when GITHUB_ACTIONS=true; there is no separate switch.
 import { appendFileSync } from 'node:fs';
 import { platformSeverity } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
@@ -15,8 +15,8 @@ const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
 
 /**
  * One `::error` or `::warning` line per finding at its highest severity on the gated platforms (the --target
- * directories, plus spec with --fail-on-spec), as for the exit code (D-4); info and ungated findings get none.
- * Exit 3 (no connect, or a --max-duration stop) comes first as one `::error` with its cause (R-3).
+ * directories, plus spec with --fail-on-spec), as for the exit code; info and ungated findings get none.
+ * Exit 3 (no connect, or a --max-duration stop) comes first as one `::error` with its cause.
  */
 export function annotations(r: Report): string[] {
   const stop = r.snap.limits?.stopped;

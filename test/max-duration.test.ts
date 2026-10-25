@@ -1,4 +1,4 @@
-// R-60: when --max-duration runs out, the stdio servers the check started end before the CLI exits —
+// When --max-duration runs out, the stdio servers the check started end before the CLI exits —
 // also one that ignores stdin EOF or SIGTERM, before or after the handshake, and a fresh-connection child;
 // a server slow to exit does not let the abandoned run pass for a finished one.
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -39,7 +39,7 @@ afterEach(() => {
   }
 });
 
-describe('--max-duration ends the stdio servers it started (R-60)', () => {
+describe('--max-duration ends the stdio servers it started', () => {
   it('after the handshake: a server that ignores stdin EOF is gone when the CLI exits', async () => {
     const { r, pids } = await run([], ['--max-duration', '1500']);
     expect(r.json?.limits?.stopped, r.stderr).toMatchObject({ maxDurationMs: 1500, phase: 'listing' });
@@ -82,9 +82,9 @@ describe('--max-duration ends the stdio servers it started (R-60)', () => {
   });
 });
 
-// R-4: a server that never answers initialize is left to the SDK's `void close()` (EOF, then SIGTERM after 2 s),
+// A server that never answers initialize is left to the SDK's `void close()` (EOF, then SIGTERM after 2 s),
 // which the CLI exit cuts short; without --max-duration the check ends every child itself before returning.
-describe('R-4: no stdio server outlives the CLI', () => {
+describe('no stdio server outlives the CLI', () => {
   it('main connection: a server that never answers initialize and ignores EOF is gone', async () => {
     const { r, pids } = await run(['--mute'], ['--timeout', '1500']);
     expect(r.code, r.stderr).toBe(3);
@@ -101,7 +101,7 @@ describe('R-4: no stdio server outlives the CLI', () => {
     expect(pids.filter(alive)).toEqual([]);
   });
 
-  // MRC-2 review round 1: an exception in the check after the handshake (here a tool name that cannot become a
+  // An exception in the check after the handshake (here a tool name that cannot become a
   // string) skipped the cleanup, and a server that ignores EOF outlived the CLI with ppid 1.
   it.each([[[] as string[]], [['--max-duration', '20000']]])('the check throws after the handshake (%j): exit 3 and the server is gone', async (args) => {
     const { r, pids } = await run([], ['--timeout', '5000', ...args], THROWER);
@@ -111,7 +111,7 @@ describe('R-4: no stdio server outlives the CLI', () => {
     expect(pids.filter(alive)).toEqual([]);
   });
 
-  // MRC-2 review round 1 tail: the client of a check that throws after the handshake is closed (stdin EOF, then the
+  // The client of a check that throws after the handshake is closed (stdin EOF, then the
   // server's group), not only its process killed by the cleanup; no test caught the close's removal.
   it('runCli in process: the check throws after the handshake and its stdio client is closed (progress.close)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'mrc-stubborn-'));

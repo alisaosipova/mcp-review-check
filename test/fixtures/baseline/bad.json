@@ -1,5 +1,5 @@
 {
-  "source": "mcp-review-check 0.1.0 at main d6100a9: --stdio \"node test/fixtures/bad-server.mjs\" --format json (same as specs evidence/0/recon-baseline-bad.json)",
+  "source": "mcp-review-check 0.1.0 at main d6100a9: --stdio \"node test/fixtures/bad-server.mjs\" --format json",
   "triples": [
     ["APPS-001", "error", "show_chart"],
     ["APPS-003", "error", null],

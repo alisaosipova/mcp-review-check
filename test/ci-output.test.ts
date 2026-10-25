@@ -1,5 +1,5 @@
-// W1-6: GitHub Actions mode (R-46), FORCE_COLOR (R-47), the Evidence column and the redacted rerun line in markdown
-// (R-48), and a clean stdout for json and sarif in GitHub Actions with a stale catalog (U-12).
+// GitHub Actions mode, FORCE_COLOR, the Evidence column and the redacted rerun line in markdown,
+// and a clean stdout for json and sarif in GitHub Actions with a stale catalog.
 // Black box: the built CLI (cli) and runCli with env and isTty passed in; the step summary is a temporary file.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,8 +18,8 @@ let dir = '';
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'mrc-ci-')); });
 afterEach(() => { vi.useRealTimers(); rmSync(dir, { recursive: true, force: true }); });
 
-describe('GitHub Actions mode (R-46)', () => {
-  it('R-46: GITHUB_ACTIONS=true prints ::error/::warning on stderr and appends to $GITHUB_STEP_SUMMARY; untouched without it', async () => {
+describe('GitHub Actions mode', () => {
+  it('GITHUB_ACTIONS=true prints ::error/::warning on stderr and appends to $GITHUB_STEP_SUMMARY; untouched without it', async () => {
     const summary = join(dir, 'summary.md');
     writeFileSync(summary, 'previous step\n');
     const args = ['--stdio', BAD, '--target', 'claude', '--env', `API_TOKEN=${ENV_SECRET}`];
@@ -27,7 +27,7 @@ describe('GitHub Actions mode (R-46)', () => {
     expect(r.code, r.stderr).toBe(1);
     const ann = commands(r.stderr);
     expect(ann.find((l) => l.startsWith('::error title=TOOL-011 update_settings::')), r.stderr).toBeDefined();
-    // Severity at the --target platforms, as for the exit code (D-4): TOOL-013 is a ChatGPT error but a Claude warning.
+    // Severity at the --target platforms, as for the exit code: TOOL-013 is a ChatGPT error but a Claude warning.
     expect(ann.find((l) => l.startsWith('::warning title=TOOL-013 archive_items::'))).toBeDefined();
     expect(ann.filter((l) => /title=(TOOL-012|SRV-018|TOOL-027) /.test(l))).toEqual([]); // ChatGPT-only, spec-only, info
     // Escaping: ":" and "," in a property, "%", CR and LF in the message; one line per annotation.
@@ -60,7 +60,7 @@ describe('GitHub Actions mode (R-46)', () => {
     expect(readFileSync(untouched, 'utf8')).toBe('');
   });
 
-  it('U-12: with GITHUB_ACTIONS=true and a stale catalog, stdout with --format json and sarif is one JSON document', async () => {
+  it('with GITHUB_ACTIONS=true and a stale catalog, stdout with --format json and sarif is one JSON document', async () => {
     const date = /\(rules (\d{4}-\d{2}-\d{2})\)/.exec((await runCli(['--help'], {}, false)).stdout)![1];
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(Date.parse(`${date}T12:00:00Z`) + 200 * 86_400_000));
@@ -75,8 +75,8 @@ describe('GitHub Actions mode (R-46)', () => {
   });
 });
 
-describe('FORCE_COLOR (R-47)', () => {
-  it('R-47: FORCE_COLOR colours text without a TTY', async () => {
+describe('FORCE_COLOR', () => {
+  it('FORCE_COLOR colours text without a TTY', async () => {
     const plain = await runCli(['--stdio', BAD], {}, false);
     expect(plain.stdout).toContain('ERRORS (');
     expect(plain.stdout).not.toMatch(ANSI);
@@ -94,8 +94,8 @@ describe('FORCE_COLOR (R-47)', () => {
   });
 });
 
-describe('markdown evidence and rerun (R-48)', () => {
-  it('R-48: markdown has an Evidence column and a redacted «rerun: npx mcp-review-check …» line', async () => {
+describe('markdown evidence and rerun', () => {
+  it('markdown has an Evidence column and a redacted «rerun: npx mcp-review-check …» line', async () => {
     const args = ['--format', 'markdown', '--env', `API_TOKEN=${ENV_SECRET}`, '--stdio', `${BAD} --api-key=${SECRET}`];
     const r = await runCli(args, {}, false);
     expect(r.stdout).toContain('| Rule | Platforms | Subject | Message | Fix | Docs | Evidence |');

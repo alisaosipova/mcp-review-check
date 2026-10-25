@@ -29,7 +29,7 @@ function forEachAs(snap: Snapshot, fn: (as: AsObservation, meta: Obj, i: number,
   });
 }
 
-/** https, or in local mode plain http on a local host: loopback, a non-public IP, a name without a dot or the MCP host (R-35). */
+/** https, or in local mode plain http on a local host: loopback, a non-public IP, a name without a dot or the MCP host. */
 function httpsOrLocal(snap: Snapshot, raw: string): boolean {
   try {
     const u = new URL(raw);
@@ -293,10 +293,10 @@ export const AUTH_010 = defineRule(
     for (const t of snap.transport.tls ?? []) {
       if (t.ok || (t.role ? t.role !== 'as' : t.host === mcpHost)) continue;
       const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
-      // A plain network error (ENOTFOUND, ECONNREFUSED) is no certificate verdict, as in SRV-001: name the cause (R-12).
+      // A plain network error (ENOTFOUND, ECONNREFUSED) is no certificate verdict, as in SRV-001: name the cause.
       if (!t.transient && /^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && t.code !== 'EPROTO') {
         const d = describeCause(new URL(`https://${t.host}`), { code: t.code });
-        // The DNS fix only for a DNS failure; otherwise the cause's own hint (R-12).
+        // The DNS fix only for a DNS failure; otherwise the cause's own hint.
         const fix = d.kind === 'dns' ? 'Publish public DNS records for every OAuth endpoint host and serve it over https.'
           : d.hint ? `${d.hint[0].toUpperCase()}${d.hint.slice(1)}.` : 'Make every OAuth endpoint host reachable over https.';
         out.push({ message: `${/^fetch failed/.test(d.summary) ? `${t.host} could not be reached (${t.code})` : d.summary}; TLS not checked${tries}`, fix });
@@ -321,7 +321,7 @@ export const AUTH_011 = defineRule(
   (snap) => forEachAs(snap, (_as, m) => (Array.isArray(m.code_challenge_methods_supported) && m.code_challenge_methods_supported.includes('S256') ? [] : [{ message: 'code_challenge_methods_supported does not include S256' }])),
 );
 
-/** Anthropic's contact for pre-registered credentials (AUTH-012); the markdown report shows it as written (R-11). */
+/** Anthropic's contact for pre-registered credentials (AUTH-012); the markdown report shows it as written. */
 export const AUTH_CONTACT = 'mcp-review@anthropic.com';
 
 export const AUTH_012 = defineRule(

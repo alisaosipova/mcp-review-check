@@ -1,4 +1,4 @@
-// SEC-1 (B2): secrets given to the linter never reach a report. Sources × channels × the four formats:
+// Secrets given to the linter never reach a report. Sources × channels × the four formats:
 // - stdio: an argv value after a secret-looking flag (`--api-key X`, `--token=X`, camelCase `--accessToken X`,
 //   `--clientSecret=X`, a value that starts with "-"), an --env value; the leaky-server
 //   fixture echoes them on stdout (SRV-018 quotes it), on stderr (stderr tail, --verbose) and, with --crash, in the
@@ -51,7 +51,7 @@ describe('secret redaction (stdio)', () => {
     for (const crash of [false, true]) {
       const r = await run(format, crash);
       expectNoLeak(r, STDIO_SECRETS, `${format}${crash ? ' --crash' : ''}`);
-      // SRV-018 (stdout noise) is spec-only, so it does not fail the run without --fail-on-spec (B5).
+      // SRV-018 (stdout noise) is spec-only, so it does not fail the run without --fail-on-spec.
       expect(r.code).toBe(crash ? 3 : 0);
     }
   });
@@ -104,7 +104,7 @@ describe('secret redaction (stdio)', () => {
     if (format === 'json') expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toMatch(/failed for key \.+«redacted»/);
   });
 
-  it('an --env value shorter than 4 characters is not treated as a secret (D-5)', async () => {
+  it('an --env value shorter than 4 characters is not treated as a secret', async () => {
     const r = await cli(['--stdio', GOOD, '--env', 'DEBUG=on', '--format', 'json']);
     expect(r.stdout).not.toContain('«redacted»');
   });
@@ -240,7 +240,7 @@ describe('secret redaction (usage errors)', () => {
   });
 });
 
-// ---- review round 1 (S-22) ----
+// ---- secret names in any segment, raw query values, deep data ----
 
 /** A server whose tool description echoes the raw request URL (path and query, as sent). */
 function urlEchoServer(): Promise<Started> {
@@ -262,11 +262,11 @@ function urlEchoServer(): Promise<Started> {
 
 const rerunLine = (r: CliRun) => /rerun: .*/.exec(r.stdout)?.[0] ?? '';
 
-describe('SEC-1 review (S-22)', () => {
+describe('secret names in any segment, raw query values, deep data', () => {
   const NAMED = { 'api-key': 'sk-live-QAPIKEY21', credential: 'sk-live-QCRED22', client_secret: 'sk-live-QCLIENT23', 'access-token': 'sk-live-QACCESS24', auth_token: 'sk-live-QAUTHT25' };
   const namedUrl = (s: Started) => `http://127.0.0.1:${s.port}/mcp?${Object.entries(NAMED).map(([k, v]) => `${k}=${v}`).join('&')}`;
 
-  it.each(FORMATS)('SEC-1 review: %s: query parameters with the sign in any segment (api-key, credential, client_secret, access-token, auth_token) are redacted in the label, rerun and echo', async (format) => {
+  it.each(FORMATS)('%s: query parameters with the sign in any segment (api-key, credential, client_secret, access-token, auth_token) are redacted in the label, rerun and echo', async (format) => {
     const s = track(await urlEchoServer());
     const r = await cli([namedUrl(s), '--format', format, '--timeout', '5000']);
     expectNoLeak(r, Object.values(NAMED), `${format} (query names)`);
@@ -275,14 +275,14 @@ describe('SEC-1 review (S-22)', () => {
 
   const PLUS = 'sk-live-PLUS+SECRET26';
   const LOWER = 'sk-live-abc%2fLOWER27';
-  it.each(FORMATS)('SEC-1 review: %s: raw query values with "+" and a lowercase percent-escape are redacted in the rerun line and in the echo of the request URL', async (format) => {
+  it.each(FORMATS)('%s: raw query values with "+" and a lowercase percent-escape are redacted in the rerun line and in the echo of the request URL', async (format) => {
     const s = track(await urlEchoServer());
     const r = await cli([`http://127.0.0.1:${s.port}/mcp?api_key=${PLUS}&token=${LOWER}`, '--format', format, '--timeout', '5000']);
     expectNoLeak(r, [PLUS, LOWER, 'sk-live-PLUS SECRET26', 'sk-live-abc/LOWER27'], `${format} (raw query)`);
     if (format === 'json') expect(r.json.findings.map((f: any) => f.message).join('\n')).toMatch(/Received url \/mcp\?api_key=«redacted»&token=«redacted»/);
   });
 
-  it('SEC-1 review: the rerun line masks --bearer, --header and --env values and URL credentials by position, whatever their length', async () => {
+  it('the rerun line masks --bearer, --header and --env values and URL credentials by position, whatever their length', async () => {
     const s = track(await echoServer());
     const http = await cli([`http://u:Pw7@127.0.0.1:${s.port}/mcp?token=Zq8`, '--bearer', 'Zq9', '--header', 'X-Api-Key: Ab1', '--format', 'markdown', '--timeout', '5000']);
     const line = rerunLine(http);
@@ -301,20 +301,20 @@ describe('SEC-1 review (S-22)', () => {
 
   const AUTH_HEADER = 'sk-live-AUTHHEADER28';
   const API_VALUE = 'sk-live-APIKEYVAL29';
-  it.each(FORMATS)('SEC-1 review: %s: stdio flags with the sign before the last segment (--auth-header, --api-key-value) are redacted', async (format) => {
+  it.each(FORMATS)('%s: stdio flags with the sign before the last segment (--auth-header, --api-key-value) are redacted', async (format) => {
     const r = await cli(['--format', format, '--verbose', '--stdio', `${LEAKY} --auth-header "Bearer ${AUTH_HEADER}" --api-key-value ${API_VALUE}`]);
     expectNoLeak(r, [AUTH_HEADER, API_VALUE], `${format} (any segment)`);
     if (format === 'json') expect(r.json.server.command).toBe(`${LEAKY} --auth-header «redacted» --api-key-value «redacted»`);
   });
 
-  it('SEC-1 review: a usage error hides the whole userinfo, up to the last "@" of the authority', async () => {
+  it('a usage error hides the whole userinfo, up to the last "@" of the authority', async () => {
     const r = await cli(['https://user:pa@ssWORDSECRET30@[bad/mcp']);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('invalid URL');
     expect(r.stderr).not.toMatch(/WORDSECRET|ssWORD/);
   });
 
-  it('SEC-1 review: a server answer nested 5000 levels deep with a secret configured still gives a report, not a crash', async () => {
+  it('a server answer nested 5000 levels deep with a secret configured still gives a report, not a crash', async () => {
     const r = await cli(['--env', `API_TOKEN=${ENV}`, '--format', 'json', '--stdio', `${LEAKY} --deep 5000`]);
     expect(r.stderr, 'no fatal error').not.toMatch(/fatal|RangeError/);
     expect([0, 1], `exit ${r.code}`).toContain(r.code);
@@ -323,10 +323,10 @@ describe('SEC-1 review (S-22)', () => {
   });
 });
 
-// ---- review round 2 (S-25) ----
+// ---- short values, one-word secret names, values equal to report field names ----
 
-describe('SEC-1 review round 2 (S-25)', () => {
-  it.each(FORMATS)('S-25: %s: a short secret query value is redacted in the «not an MCP endpoint» diagnosis', async (format) => {
+describe('short values, one-word secret names, values equal to report field names', () => {
+  it.each(FORMATS)('%s: a short secret query value is redacted in the «not an MCP endpoint» diagnosis', async (format) => {
     const s = track(await listen((_req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('Not Found');
@@ -337,7 +337,7 @@ describe('SEC-1 review round 2 (S-25)', () => {
     expect(r.stdout + r.stderr, `${format} leaks the token`).not.toContain('Zq1');
   });
 
-  it('S-25: a usage error hides userinfo whose password holds "/", "?" or "#"', async () => {
+  it('a usage error hides userinfo whose password holds "/", "?" or "#"', async () => {
     for (const pw of ['Sk/9xQ2pLmPWSECRET31', 'Sk9x?Q2pLmPWSECRET32', 'Sk9x#Q2pLmPWSECRET33']) {
       const r = await cli([`https://bob:${pw}@mcp.example.com/mcp`]);
       expect(r.code, pw).toBe(2);
@@ -348,7 +348,7 @@ describe('SEC-1 review round 2 (S-25)', () => {
 
   const AUTHTOK = 'sk-live-AUTHTOKEN34';
   const APITOK = 'sk-live-APITOKEN35';
-  it.each(FORMATS)('S-25: %s: a secret sign written as one word (--authtoken, --apitoken=, ?authtoken=) is redacted', async (format) => {
+  it.each(FORMATS)('%s: a secret sign written as one word (--authtoken, --apitoken=, ?authtoken=) is redacted', async (format) => {
     const stdio = await cli(['--format', format, '--verbose', '--stdio', `${LEAKY} --authtoken ${AUTHTOK} --apitoken=${APITOK} --crash`]);
     expectNoLeak(stdio, [AUTHTOK, APITOK], `${format} (one-word flags)`);
     if (format === 'json') expect(stdio.json.server.command).toBe(`${LEAKY} --authtoken «redacted» --apitoken=«redacted» --crash`);
@@ -356,7 +356,7 @@ describe('SEC-1 review round 2 (S-25)', () => {
     expectNoLeak(http, [AUTHTOK], `${format} (?authtoken=)`);
   });
 
-  it('S-25: an --env or --bearer value equal to a report field name leaves the report intact', async () => {
+  it('an --env or --bearer value equal to a report field name leaves the report intact', async () => {
     const plain = await cli(['--stdio', BAD, '--format', 'json', '--fail-on', 'warning']);
     expect(plain.code).toBe(1);
     const r = await cli(['--stdio', BAD, '--env', 'LOG_LEVEL=error', '--env', 'MODE=summary', '--env', 'STATE=failed', '--format', 'json', '--fail-on', 'warning']);
@@ -379,9 +379,9 @@ describe('SEC-1 review round 2 (S-25)', () => {
   });
 });
 
-// ---- R-9: sources without a flag sign (D-sec-2, D-sec-7, D-sec-8, D-sec-11); synthetic values only ----
+// ---- sources without a flag sign; synthetic values only ----
 
-describe('R-9: sources without a flag sign', () => {
+describe('sources without a flag sign', () => {
   const POSITIONAL = 'sk-live-POSITIONALSYNTH01';
   const PATH_TOK = 'sk-live-PATHSYNTH0123456789';
   const QUERY_TOK = 'ghp_QUERYSYNTHabcdefghijklmnopqrstuvwxyz';
@@ -414,7 +414,7 @@ describe('R-9: sources without a flag sign', () => {
     }, path);
   }
 
-  it.each(FORMATS)('R-9: %s: a positional known-format token in stdio argv is redacted in the label, rerun, stderr and the fatal message', async (format) => {
+  it.each(FORMATS)('%s: a positional known-format token in stdio argv is redacted in the label, rerun, stderr and the fatal message', async (format) => {
     const echoed = await cli(['--format', format, '--verbose', '--stdio', '--', 'node', LEAKY_PATH, POSITIONAL]);
     expectNoLeak(echoed, [POSITIONAL], `${format} (positional)`);
     expect(echoed.code).toBe(0);
@@ -427,7 +427,7 @@ describe('R-9: sources without a flag sign', () => {
     }
   });
 
-  it.each(FORMATS)('R-9: %s: a token in a path segment, in a query value under any name and a secret-named fragment parameter are redacted', async (format) => {
+  it.each(FORMATS)('%s: a token in a path segment, in a query value under any name and a secret-named fragment parameter are redacted', async (format) => {
     const s = track(await pathEchoServer());
     const r = await cli([`${s.url}?sig=${QUERY_TOK}&page=2#access_token=${FRAG}`, '--format', format, '--verbose', '--timeout', '5000']);
     expectNoLeak(r, [PATH_TOK, QUERY_TOK, FRAG], `${format} (path, query, fragment)`);
@@ -438,7 +438,7 @@ describe('R-9: sources without a flag sign', () => {
     }
   });
 
-  it.each(FORMATS)('R-9: %s: a token as the URL username, alone and in user:pass@, is redacted in the connect error', async (format) => {
+  it.each(FORMATS)('%s: a token as the URL username, alone and in user:pass@, is redacted in the connect error', async (format) => {
     const user = await cli([`http://${USER_TOK}@127.0.0.1:1/mcp`, '--format', format, '--timeout', '3000']);
     expectNoLeak(user, [USER_TOK], `${format} (TOKEN@host)`);
     expect(user.code).toBe(3);
@@ -448,7 +448,7 @@ describe('R-9: sources without a flag sign', () => {
     if (format === 'json') expect(JSON.stringify(user.json.coverage)).toContain('«redacted»@127.0.0.1');
   });
 
-  it.each(FORMATS)('R-9: %s: the password inside an --env URL and the token after "Bearer" in an --env value are redacted', async (format) => {
+  it.each(FORMATS)('%s: the password inside an --env URL and the token after "Bearer" in an --env value are redacted', async (format) => {
     const r = await cli(['--env', `DATABASE_URL=postgres://app:${DB_PASS}@db.test:5432/app`, '--env', `UPSTREAM_AUTH=Bearer ${UPSTREAM}`, '--format', format, '--verbose',
       '--stdio', '--', 'node', '-e', CRASH_ENV]);
     expectNoLeak(r, [DB_PASS, UPSTREAM], `${format} (composite --env)`);
@@ -457,7 +457,7 @@ describe('R-9: sources without a flag sign', () => {
   });
 });
 
-describe('R-9: a known-format token inside a stdio argument with a plain name (review round 1)', () => {
+describe('a known-format token inside a stdio argument with a plain name', () => {
   const OPT_TOK = 'ghp_OPTSYNTHabcdefghijklmnopqrstuvwxyz0123';
   const KEY_TOK = 'sk-live-KEYSYNTH0123456789ab';
   const HDR_TOK = 'xoxb-HDRSYNTH-01234-QWERTY';
@@ -465,7 +465,7 @@ describe('R-9: a known-format token inside a stdio argument with a plain name (r
   /** A stdio server that writes all its arguments to stderr and exits (SRV-003, fatal). */
   const CRASH_ALL = "console.error('Error: rejected ' + process.argv.slice(1).join(' ')); process.exit(1)";
 
-  it.each(FORMATS)('R-9: %s: "--opt=TOKEN", "KEY=TOKEN" and "Name: TOKEN" are redacted in the label, rerun, stderr and the fatal message', async (format) => {
+  it.each(FORMATS)('%s: "--opt=TOKEN", "KEY=TOKEN" and "Name: TOKEN" are redacted in the label, rerun, stderr and the fatal message', async (format) => {
     const echoed = await cli(['--format', format, '--verbose', '--stdio', '--', 'node', LEAKY_PATH, ...ARGS]);
     expectNoLeak(echoed, [OPT_TOK, KEY_TOK, HDR_TOK], `${format} (inside an argument)`);
     expect(echoed.code).toBe(0);
@@ -479,9 +479,9 @@ describe('R-9: a known-format token inside a stdio argument with a plain name (r
   });
 });
 
-// MRC-2 review round 2: a known-format token inside a stdio argument (a JSON value, a comma list) or inside an --env
+// A known-format token inside a stdio argument (a JSON value, a comma list) or inside an --env
 // value under a plain name was masked nowhere: the target label, the rerun line, SRV-018, stderr and the server's echo.
-describe('R-9: a known-format token inside a JSON or list argument and inside an --env value (review round 2)', () => {
+describe('a known-format token inside a JSON or list argument and inside an --env value', () => {
   const JSON_TOK = 'sk-live-JSONSYNTH0123456789ab';
   const LIST_A = 'ghp_LISTASYNTHabcdefghijklmnopqrstuvwxyz01';
   const LIST_B = 'ghp_LISTBSYNTHabcdefghijklmnopqrstuvwxyz02';
@@ -493,7 +493,7 @@ describe('R-9: a known-format token inside a JSON or list argument and inside an
   /** A stdio server that writes its arguments and the tokens it takes out of the --env values to stderr and exits (SRV-003, fatal). */
   const CRASH_ALL = "console.error('Error: rejected ' + process.argv.slice(1).join(' ') + ' env ' + JSON.parse(process.env.SETTINGS).slack + ' ' + process.env.UPSTREAM_KEYS.split(',')[1]); process.exit(1)";
 
-  it.each(FORMATS)('R-9: %s: the token is redacted in the label, Target, rerun, stderr, SRV-018 and the fatal message', async (format) => {
+  it.each(FORMATS)('%s: the token is redacted in the label, Target, rerun, stderr, SRV-018 and the fatal message', async (format) => {
     const echoed = await cli([...ENVS, '--format', format, '--verbose', '--stdio', '--', 'node', LEAKY_PATH, ...ARGS]);
     expectNoLeak(echoed, SECRETS, `${format} (inside an argument)`);
     expect(echoed.code).toBe(0);

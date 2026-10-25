@@ -1,4 +1,4 @@
-// B9: the call to action is a mechanism that stays off until a contact URL is set (R-25, R-26, D-9).
+// The call to action is a mechanism that stays off until a contact URL is set.
 import { describe, expect, it } from 'vitest';
 import type { EngineResult } from '../src/rules/engine.js';
 import { runRules } from '../src/rules/engine.js';
@@ -29,8 +29,8 @@ const markdown = (r: ReturnType<typeof report>, line?: string) => renderMarkdown
 const cta = ctaLine;
 const disclaimerStart = DISCLAIMER.split('\n')[0];
 
-describe('call to action (B9)', () => {
-  it('R-25: CTA only on BLOCKED, legacy era or auth-required, above the disclaimer, text and markdown only', () => {
+describe('call to action', () => {
+  it('CTA only on BLOCKED, legacy era or auth-required, above the disclaimer, text and markdown only', () => {
     const blocked = report('minimal-http');
     expect(blocked.summary.verdicts.claude?.verdict).toBe('BLOCKED');
     const line = cta(blocked, {}, URL_SET);
@@ -57,13 +57,13 @@ describe('call to action (B9)', () => {
     expect(renderSarif(blocked)).not.toContain(CTA_TEXT);
   });
 
-  it('R-26: MCP_REVIEW_CHECK_NO_CTA=1 or an empty URL hides the CTA; JSON contact stays null; SARIF has no CTA', async () => {
+  it('MCP_REVIEW_CHECK_NO_CTA=1 or an empty URL hides the CTA; JSON contact stays null; SARIF has no CTA', async () => {
     const blocked = report('minimal-http', { era: 'legacy' });
     expect(cta(blocked, {}, URL_SET)).toBe(`${CTA_TEXT} ${URL_SET}`);
     expect(cta(blocked, { MCP_REVIEW_CHECK_NO_CTA: '1' }, URL_SET)).toBeUndefined();
     expect(cta(blocked, {}, '')).toBeUndefined();
     expect(cta(blocked, {}, '<CONTACT_URL>')).toBeUndefined();
-    expect(cta(blocked, {})).toBeUndefined(); // CONTACT_URL is empty by default (D-9)
+    expect(cta(blocked, {})).toBeUndefined(); // CONTACT_URL is empty by default
 
     expect(text(blocked)).not.toContain(CTA_TEXT);
     expect(markdown(blocked)).not.toContain(CTA_TEXT);

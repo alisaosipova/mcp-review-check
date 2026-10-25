@@ -123,7 +123,7 @@ export const RT_005 = defineRule(
       // Calls are cut off at min(--timeout, 241 s): a call still running past 240 s exceeds Claude's limit.
       if (c.durationMs >= CLAUDE_TOOL_TIMEOUT_MS) return [
         { tool: c.tool, platforms: ['claude'], message: `${c.kind} call got no answer within ${ms} ms; exceeds ${limit}` },
-        { tool: c.tool, platforms: ['chatgpt'], message: `${c.kind} call got no answer within ${ms} ms (> 5 s, linter-defined threshold)` }, // R-52
+        { tool: c.tool, platforms: ['chatgpt'], message: `${c.kind} call got no answer within ${ms} ms (> 5 s, linter-defined threshold)` },
       ];
       return [{ tool: c.tool, severity: 'warning', message: `${c.kind} call got no answer after ${ms} ms: ${c.transportError} (raise --timeout to measure slower tools)` }];
     }

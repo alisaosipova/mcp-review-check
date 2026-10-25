@@ -1,5 +1,5 @@
-// R-15 (MRC-2): Windows details of a stdio check. No Windows machine here (NG-2), so the win32 cases run runCli in
-// process with process.platform set to 'win32' after the modules have loaded (exception named in tasks.md); the SDK
+// Windows details of a stdio check. No Windows machine here, so the win32 cases run runCli in
+// process with process.platform set to 'win32' after the modules have loaded; the SDK
 // stdio transport is mocked to record its parameters and fail to start, so nothing is spawned. The --tool-args
 // encodings need no emulation: the built CLI reads the files on any OS.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ import { buildRedactor } from '../src/redact.js';
 import { cli, GOOD } from './cli-runner.js';
 
 const seen = vi.hoisted(() => [] as { env?: Record<string, string> }[]);
-/** U-2 (review round 1): `spawn.real` lets one test start a real server; `built` records every redactor a run builds. */
+/** `spawn.real` lets one test start a real server; `built` records every redactor a run builds. */
 const spawn = vi.hoisted(() => ({ real: false }));
 const built = vi.hoisted(() => [] as { strongOnly: boolean; values: Set<string> }[]);
 
@@ -53,8 +53,8 @@ async function asWin32(argv: string[]) {
 const dir = mkdtempSync(join(tmpdir(), 'mrc-win-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-describe('R-15: Windows (process.platform emulated)', () => {
-  it('X-win-3: --env Path=X replaces the inherited PATH on win32', async () => {
+describe('Windows (process.platform emulated)', () => {
+  it('--env Path=X replaces the inherited PATH on win32', async () => {
     seen.length = 0;
     await asWin32(['--stdio', 'node s.js', '--env', 'Path=X', '--format', 'json', '--timeout', '3000']);
     expect(seen.length, 'the stdio transport was created').toBeGreaterThan(0);
@@ -64,7 +64,7 @@ describe('R-15: Windows (process.platform emulated)', () => {
     expect(env[paths[0]]).toBe('X');
   });
 
-  it('X-win-6: the markdown rerun line on win32 uses double quotes', async () => {
+  it('the markdown rerun line on win32 uses double quotes', async () => {
     const r = await asWin32(['--format', 'markdown', '--timeout', '3000', '--stdio', 'node C:\\srv\\s.js']);
     const rerun = /rerun: (npx mcp-review-check .*?) ?`+$/m.exec(r.stdout)?.[1];
     expect(rerun, r.stdout.slice(0, 400)).toBeDefined();
@@ -73,12 +73,12 @@ describe('R-15: Windows (process.platform emulated)', () => {
   });
 });
 
-describe('R-15: --tool-args saved by Windows editors', () => {
+describe('--tool-args saved by Windows editors', () => {
   const json = '{"search_notes":{"keywords":"x"}}';
   it.each([
     ['UTF-8 with BOM', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, 'utf8')])],
     ['UTF-16LE', Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')])],
-  ])('X-win-4: --tool-args in %s is read', async (name, bytes) => {
+  ])('--tool-args in %s is read', async (name, bytes) => {
     const file = join(dir, `${name.replace(/\W+/g, '-')}.json`);
     writeFileSync(file, bytes);
     const r = await cli(['--stdio', GOOD, '--active', '--tool-args', file, '--format', 'json']);
@@ -88,7 +88,7 @@ describe('R-15: --tool-args saved by Windows editors', () => {
   });
 });
 
-describe('U-2 with R-15: the strength of an --env value follows its name as typed (review round 1)', () => {
+describe('the strength of an --env value follows its name as typed', () => {
   const KEY = 'SynthSigningKey-abcdefghij-ABCDEFGHIJ'; // no digits: not token-like, strong only by its name
   /** Writes the value past column 183 on stderr and exits: the 200-character start-up error line cuts through it. */
   const CUT = "console.error('Error: authentication failed for key '.padEnd(183, '.') + (process.env.SIGNINGKEY ?? process.env.signingKey) + ' rest'); process.exit(1)";

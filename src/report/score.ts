@@ -8,7 +8,7 @@ export type FailOn = 'error' | 'warning' | 'never';
 /** Version of the score formula in JSON summary.scoreVersion; the baseline (up to 3 findings per rule) is 1. */
 export const SCORE_VERSION = 2;
 
-/** Rules with an error finding, and rules with warnings only: one root cause each, however many findings (R-31). */
+/** Rules with an error finding, and rules with warnings only: one root cause each, however many findings. */
 export function rootCauses(findings: Finding[]): { errors: number; warnings: number } {
   const errors = new Set(findings.filter((f) => f.severity === 'error').map((f) => f.ruleId));
   const warnings = new Set(findings.filter((f) => f.severity === 'warning' && !errors.has(f.ruleId)).map((f) => f.ruleId));
@@ -21,7 +21,7 @@ export function score(findings: Finding[]): number {
   return Math.max(0, 100 - 12 * errors - 4 * warnings);
 }
 
-/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass; after a failed connect or a --max-duration stop (`connectFailed`, R-17, R-60) it is INCOMPLETE even with errors. */
+/** `complete` is false when tool-level checks could not run (auth, connect or list failure): no errors then means INCOMPLETE, not a pass; after a failed connect or a --max-duration stop (`connectFailed`) it is INCOMPLETE even with errors. */
 export function verdict(findings: Finding[], platform: Platform, complete = true, connectFailed = false): { verdict: Verdict; errors: number; warnings: number } {
   // Count each finding at this platform's own severity, not the maximum over all its platforms.
   const mine = findings.filter((f) => f.platforms.includes(platform)).map((f) => platformSeverity(f, platform));
@@ -31,7 +31,7 @@ export function verdict(findings: Finding[], platform: Platform, complete = true
   return { verdict: v, errors, warnings };
 }
 
-/** Platforms whose findings decide the exit code: the --target directories, plus spec only with --fail-on-spec (B5). */
+/** Platforms whose findings decide the exit code: the --target directories, plus spec only with --fail-on-spec. */
 export function gatedPlatforms(target: TargetOpt, failOnSpec = false): Platform[] {
   const dirs: Platform[] = target === 'all' ? ['claude', 'chatgpt'] : [target];
   return failOnSpec ? [...dirs, 'spec'] : dirs;

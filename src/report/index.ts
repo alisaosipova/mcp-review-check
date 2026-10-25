@@ -17,7 +17,7 @@ export interface Report {
   snap: Snapshot;
   findings: Finding[];
   ignored: Finding[];
-  /** Root causes on the score's basis, every platform (D-4), not the --target findings (R-12); not in JSON. */
+  /** Root causes on the score's basis, every platform, not the --target findings; not in JSON. */
   rootCauses: { errors: number; warnings: number };
   skipped: EngineResult['skipped'];
   rulesRun: number;
@@ -29,11 +29,11 @@ export interface Report {
     info: number;
     /** null when the check is partial (coverage.toolLevel is not 'ok'). */
     score: number | null;
-    /** Version of the score formula (2: per unique broken rule, R-31). */
+    /** Version of the score formula (2: per unique broken rule). */
     scoreVersion: number;
     verdicts: Partial<Record<'claude' | 'chatgpt', { verdict: Verdict; errors: number; warnings: number }>>;
     failed: boolean;
-    /** Which platforms decided `failed` and why (B5: spec is gated only with --fail-on-spec). */
+    /** Which platforms decided `failed` and why (spec is gated only with --fail-on-spec). */
     gate: Omit<Gate, 'failed'>;
   };
 }
@@ -43,7 +43,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   const { failed, ...g } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
   const complete = snap.coverage.toolLevel === 'ok';
   const verdicts: Report['summary']['verdicts'] = {};
-  // A failed connect (exit 3) checked nothing, a --max-duration stop not everything: INCOMPLETE whatever the findings say (R-17, R-60, D-4).
+  // A failed connect (exit 3) checked nothing, a --max-duration stop not everything: INCOMPLETE whatever the findings say.
   for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal || !!snap.limits?.stopped);
   return {
     tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
@@ -53,7 +53,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
-      // Exit 3 (no connect, or a --max-duration stop) is a failed run whatever the gate says (R-2, MRC-2).
+      // Exit 3 (no connect, or a --max-duration stop) is a failed run whatever the gate says.
       score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
     },
   };
@@ -110,13 +110,13 @@ export function scoreLabel(r: Report): string {
   return r.summary.score === null ? `n/a (partial check: ${r.snap.coverage.toolLevel})` : `${r.summary.score}/100`;
 }
 
-/** "FAIL (--fail-on error) · claude: 2 errors (TOOL-006, TOOL-011)", then the not-gated spec note (R-11); `causes` (--quiet
- * drops the header notices) adds the connect failure cause or why the check is partial (D-4). */
+/** "FAIL (--fail-on error) · claude: 2 errors (TOOL-006, TOOL-011)", then the not-gated spec note; `causes` (--quiet
+ * drops the header notices) adds the connect failure cause or why the check is partial. */
 export function resultLine(r: Report, fail = (x: string) => x, causes = false): string {
   const cov = r.snap.coverage;
   // Exit 3: nothing could be checked, so the run never reads PASS, whatever the gate says.
   if (r.snap.fatal) return `${fail('FAIL')} (could not connect${causes ? `: ${cov.reason ?? r.snap.fatal}` : ''})`;
-  // A stop after the handshake (exit 3, R-1): the phase, then the findings that reached the threshold before it.
+  // A stop after the handshake (exit 3): the phase, then the findings that reached the threshold before it.
   const stop = r.snap.limits?.stopped;
   if (stop) return [`${fail('INCOMPLETE')} (stopped at --max-duration during ${stop.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const s = r.summary;

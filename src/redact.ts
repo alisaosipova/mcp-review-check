@@ -9,19 +9,19 @@ export { isSecretName } from './rules/util/net.js';
 
 /** Header names whose value is a credential when they appear as "Name: value" in argv (mcp-remote --header ...). */
 const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-key|x-auth-token|[\w-]*(token|secret|key))$/i;
-/** Values never treated as secrets on their own: they would blank out unrelated report text, or, as protocol and schema words, server data (R-8). */
+/** Values never treated as secrets on their own: they would blank out unrelated report text, or, as protocol and schema words, server data. */
 const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|object|string|number|integer|array|boolean|type|title|name|description|properties|required|items|enum|const|default|format|pattern|anyOf|oneOf|allOf|\$ref|\$schema|\$defs|uri|mimeType|text|image|audio|resource|resource_link|json|html|plain|xml|application)$/i;
 
 /** A percent-decoded URL part, or the part as written when its escapes are malformed. */
 const decoded = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
 
-/** A value that is a credential by its form alone (R-8): a known token format, or 16+ characters with letters and digits. */
+/** A value that is a credential by its form alone: a known token format, or 16+ characters with letters and digits. */
 const tokenLike = (v: string) => isKnownToken(v) || (v.length >= 16 && /[a-z]/i.test(v) && /\d/.test(v));
 
 /**
  * Credentials inside a URL, decoded and as written ("+", %2f): query and fragment parameters with a secret name or a
- * value in a known token format, path segments in a known token format, the password and the username of user:pass@ (R-9).
- * `strongOnly` (R-8): the username only when it looks like a token, as a plain one is often a word ("postgres", "admin").
+ * value in a known token format, path segments in a known token format, the password and the username of user:pass@.
+ * `strongOnly`: the username only when it looks like a token, as a plain one is often a word ("postgres", "admin").
  */
 export function urlSecrets(raw: string, strongOnly = false): string[] {
   try {
@@ -71,7 +71,7 @@ export function argvSecrets(args: string[], strongOnly = false): string[] {
     if (header && !a.includes('://')) out.push(...headerSecrets(header[1], header[2]));
     if (a.includes('://')) out.push(...urlSecrets(a.replace(/^[^=]*=(?=\w+:\/\/)/, ''), strongOnly));
     // A known-format token anywhere in the argument, bounded like a word: whole, after "=" or "Name: " under a plain name,
-    // inside JSON or a list ('{"apiKey":"sk-…"}', --keys=ghp_…,ghp_…); a JWT spans up to three dot-separated pieces (R-9).
+    // inside JSON or a list ('{"apiKey":"sk-…"}', --keys=ghp_…,ghp_…); a JWT spans up to three dot-separated pieces.
     for (const w of a.match(/[\w.-]+/g) ?? []) {
       const p = w.split('.');
       for (const v of p.flatMap((_, i) => [1, 2, 3].map((n) => p.slice(i, i + n).join('.')))) if (isKnownToken(v) && !out.includes(v)) out.push(v);
@@ -91,7 +91,7 @@ export interface RedactionInput {
 }
 
 /**
- * A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values. strongOnly (R-8): an
+ * A Redactor for a run: --bearer, --header values, URL credentials, argv secrets and --env values. strongOnly: an
  * --env value under a secret name, or under a plain name when it looks like a token, and a URL username or a part of an
  * --env value under a plain name (the token after "Bearer", URL credentials) only when it looks like a token; the full
  * set, for the finished report, has them all.
@@ -103,14 +103,14 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
   if (input.url) values.push(...urlSecrets(input.url, strongOnly));
   for (const [k, v] of Object.entries(input.env ?? {})) {
-    // The parts: the token after "Bearer", URL credentials, a known-format token anywhere in the value (R-9).
+    // The parts: the token after "Bearer", URL credentials, a known-format token anywhere in the value.
     const parts = [...withSchemeToken(v).slice(1), ...urlSecrets(v, strongOnly), ...argvSecrets([v]).filter(isKnownToken)];
     // One strength for a part as written and decoded (Pa%24%24word-… and Pa$$word-…): either form token-like makes both strong.
     const strong = (p: string) => [p, decoded(p), ...parts.filter((q) => decoded(q) === p)].some(tokenLike);
     values.push(...(!strongOnly || isSecretName(k) ? parts : parts.filter(strong)));
   }
   if (input.argv) values.push(...argvSecrets(input.argv, strongOnly));
-  // A whole value under a plain name is strong when it is one token-like word (GITHUB_PAT=ghp_…), not a URL or "Bearer X" (U-2).
+  // A whole value under a plain name is strong when it is one token-like word (GITHUB_PAT=ghp_…), not a URL or "Bearer X".
   for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k) || (tokenLike(v.trim()) && !/\s|:\/\//.test(v.trim()))) values.push(v);
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
 }
@@ -166,7 +166,7 @@ export function redactDeep<T>(value: T, r: Redactor): T {
       for (const [k, x] of Object.entries(v)) {
         const s = srv || keys === 2 || SERVER_VALUES.has(k);
         const key = keys ? scrub(k, r) : k, val = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || OWN_VOCABULARY.has(k)), s);
-        // A "__proto__" key the server sent is data: a plain assignment would set the copy's prototype instead (R-10).
+        // A "__proto__" key the server sent is data: a plain assignment would set the copy's prototype instead.
         if (key === '__proto__') Object.defineProperty(out, key, { value: val, enumerable: true, writable: true, configurable: true });
         else out[key] = val;
       }

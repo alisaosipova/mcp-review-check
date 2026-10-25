@@ -61,7 +61,7 @@ export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, un
         })),
         // One code-scanning category (the id up to its last "/") per --sarif-location; the target is a run property.
         automationDetails: { id: `mcp-review-check/${uri}/${r.startedAt}` },
-        // The URL (credentials and secret parameters masked by displayUrl) or the command; the CLI scrubs the report first (SEC-1).
+        // The URL (credentials and secret parameters masked by displayUrl) or the command; the CLI scrubs the report first.
         properties: { target: targetLabel(r.snap), disclaimer: DISCLAIMER.replace(/\n/g, ' '), summary: r.summary },
       },
     ],

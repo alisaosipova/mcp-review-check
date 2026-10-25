@@ -180,7 +180,7 @@ describe('e2e http', () => {
     for (const id of ['SPEC-013', 'SPEC-015', 'SPEC-006']) expect(ids, id).toContain(id);
   });
 
-  it('U-11: dual-era server (2026-07-28 and 2025-11-25 on one endpoint): era dual, clean, exit 0', async () => {
+  it('dual-era server (2026-07-28 and 2025-11-25 on one endpoint): era dual, clean, exit 0', async () => {
     const s = track(await startModernServer({ dual: true }));
     const r = await cli([s.url, '--format', 'json']);
     expect(r.code, r.stderr).toBe(0);
@@ -203,7 +203,7 @@ describe('e2e http', () => {
     expect(r.code).toBe(3);
     const srv003 = r.json.findings.find((f: any) => f.ruleId === 'SRV-003');
     expect(srv003).toMatchObject({ severity: 'error', platforms: ['spec'] });
-    // B7: the cause code is surfaced, and a connect failure reads INCOMPLETE (as for stdio), not BLOCKED
+    // The cause code is surfaced, and a connect failure reads INCOMPLETE (as for stdio), not BLOCKED
     expect(srv003.message).toMatch(/connection refused by 127\.0\.0\.1:\d+ \(ECONNREFUSED\)/);
     expect(r.json.coverage.diagnosis).toMatchObject({ kind: 'refused', code: 'ECONNREFUSED' });
     expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
@@ -214,7 +214,7 @@ describe('e2e http', () => {
     expect(text.stdout).not.toMatch(/MANUAL CHECKLIST/);
   });
 
-  it('R-12: a failed connect (http://localhost:1/mcp) never reads PASS (text, markdown, --output summary line)', async () => {
+  it('a failed connect (http://localhost:1/mcp) never reads PASS (text, markdown, --output summary line)', async () => {
     const URL1 = 'http://localhost:1/mcp';
     const text = await cli([URL1, '--timeout', '3000', '--no-color']);
     expect(text.code).toBe(3);
@@ -236,7 +236,7 @@ describe('e2e http', () => {
     }
   });
 
-  it('B7: an HTML 404 page is "not an MCP endpoint" with a /mcp suggestion and no HTML in the report', async () => {
+  it('an HTML 404 page is "not an MCP endpoint" with a /mcp suggestion and no HTML in the report', async () => {
     const page = track(await listen((_req, res) => {
       res.writeHead(404, { 'content-type': 'text/html' });
       res.end(`<!doctype html><html><head><title>Page not found</title><style>body{}</style></head><body><h1>Oops</h1>${'<p>filler</p>'.repeat(200)}</body></html>`);
@@ -249,7 +249,7 @@ describe('e2e http', () => {
     expect(r.json.summary.verdicts.claude.verdict).toBe('INCOMPLETE');
   });
 
-  it('S-26 (R-18): an HTML page served with 200 is "not an MCP endpoint" without a made-up HTTP status', async () => {
+  it('an HTML page served with 200 is "not an MCP endpoint" without a made-up HTTP status', async () => {
     const page = track(await listen((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end('<!doctype html><html><head><title>My App</title></head><body><div id="root"></div></body></html>');
@@ -264,7 +264,7 @@ describe('e2e http', () => {
     expect(text.stdout).toContain(`Could not connect: ${want}`);
   });
 
-  it('B7: a /sse URL that no longer serves SSE suggests /mcp', async () => {
+  it('a /sse URL that no longer serves SSE suggests /mcp', async () => {
     const gone = track(await listen((_req, res) => {
       res.writeHead(_req.method === 'GET' ? 410 : 405, { 'content-type': 'application/json' });
       res.end('{"error":"SSE transport is deprecated"}');
@@ -274,7 +274,7 @@ describe('e2e http', () => {
     expect(r.json.coverage.reason).toBe(`HTTP 405: ${gone.url} is not an MCP endpoint; /sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve ${gone.base}/mcp`);
   });
 
-  it('--max-duration (W1-8): a server that never answers is reported as a connect failure at the deadline', async () => {
+  it('--max-duration: a server that never answers is reported as a connect failure at the deadline', async () => {
     const silent = track(await listen(() => new Promise(() => {})));
     const t0 = Date.now();
     const r = await cli([silent.url, '--format', 'json', '--max-duration', '1500']);
@@ -284,7 +284,7 @@ describe('e2e http', () => {
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003').message).toMatch(/no handshake within --max-duration \(1500 ms\)/);
   });
 
-  it('--max-duration (W1-8): after the handshake the run stops with INCOMPLETE verdicts and names the phase', async () => {
+  it('--max-duration: after the handshake the run stops with INCOMPLETE verdicts and names the phase', async () => {
     // Answers initialize (and refuses server/discover and GET); every later request hangs.
     const s = track(await listen(async (req, res) => {
       if (req.method !== 'POST') { res.writeHead(405).end(); return; }
@@ -300,7 +300,7 @@ describe('e2e http', () => {
     const t0 = Date.now();
     const r = await cli([s.url, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
     expect(Date.now() - t0).toBeLessThan(15000);
-    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too (R-1, MRC-2)
+    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too
     expect(r.json.server.era).toBe('legacy');
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.coverage.toolLevel).toBe('stopped');
@@ -310,7 +310,7 @@ describe('e2e http', () => {
     expect(md.stdout).toMatch(/stopped by --max-duration 1500 ms during listing/);
   });
 
-  it('S-26 (R-60): a stop after the handshake reads INCOMPLETE even when errors were found before it', async () => {
+  it('a stop after the handshake reads INCOMPLETE even when errors were found before it', async () => {
     // Answers initialize over plain http (SRV-001 error with --no-local); every later request hangs.
     const s = track(await listen(async (req, res) => {
       if (req.method !== 'POST') { res.writeHead(405).end(); return; }
@@ -324,7 +324,7 @@ describe('e2e http', () => {
       await new Promise(() => {});
     }));
     const r = await cli([s.url, '--format', 'json', '--no-local', '--timeout', '20000', '--max-duration', '2500']);
-    expect(r.code, r.stderr).toBe(3); // exit 3 also with errors found before the stop (R-1, MRC-2)
+    expect(r.code, r.stderr).toBe(3); // exit 3 also with errors found before the stop
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-001')).toMatchObject({ severity: 'error' });
     expect(r.json.summary.verdicts.claude).toMatchObject({ verdict: 'INCOMPLETE' });
@@ -332,14 +332,14 @@ describe('e2e http', () => {
     expect(r.json.summary.verdicts.chatgpt.verdict).toBe('INCOMPLETE');
   });
 
-  it('B7: a URL without a scheme gets a suggestion (exit 2)', async () => {
+  it('a URL without a scheme gets a suggestion (exit 2)', async () => {
     const r = await cli(['mcp.example.com/mcp']);
     expect(r.code).toBe(2);
     expect(r.stderr).toMatch(/did you mean https:\/\/mcp\.example\.com\/mcp\?/);
     expect((await cli(['localhost:3000/mcp'])).stderr).toMatch(/did you mean http:\/\/localhost:3000\/mcp\?/);
   });
 
-  it('R-19: a dotless host with a port and no scheme (mcp:8080/mcp) gets an http:// suggestion (exit 2)', async () => {
+  it('a dotless host with a port and no scheme (mcp:8080/mcp) gets an http:// suggestion (exit 2)', async () => {
     for (const [raw, hint] of [['mcp:8080/mcp', 'http://mcp:8080/mcp'], ['app:3000', 'http://app:3000']]) {
       const r = await cli([raw]);
       expect(r.code, raw).toBe(2);
@@ -347,7 +347,7 @@ describe('e2e http', () => {
     }
   });
 
-  it('R-17: a failed connect to a plain-http URL reads INCOMPLETE, even with the SRV-001 http error', async () => {
+  it('a failed connect to a plain-http URL reads INCOMPLETE, even with the SRV-001 http error', async () => {
     const s = await good();
     const url = s.url;
     await s.close();
@@ -363,7 +363,7 @@ describe('e2e http', () => {
     expect(text.stdout).not.toContain('BLOCKED');
   });
 
-  it('D-4: the score is one number per server whatever --target; the findings and the exit code follow --target', async () => {
+  it('the score is one number per server whatever --target; the findings and the exit code follow --target', async () => {
     // A destructive tool without openWorldHint: TOOL-012 is a ChatGPT error, and Claude has nothing against it.
     const s = track(await startBridge(() => {
       const server = createGoodServer();
@@ -383,13 +383,13 @@ describe('e2e http', () => {
     expect([all.code, claude.code, chatgpt.code]).toEqual([1, 0, 1]);
   });
 
-  it('B3 over Streamable HTTP: the UI capability is declared and the text-only re-list feeds APPS-019', async () => {
+  it('MCP Apps capability over Streamable HTTP: the UI capability is declared and the text-only re-list feeds APPS-019', async () => {
     const bridge = track(await startBridge(() => createUiCapServer()));
     const proxy = await recordingProxy(bridge.url);
     track(proxy);
     const r = await cli([proxy.url, '--format', 'json']);
     expect(r.code, r.stderr).not.toBe(3);
-    // R-5: every initialize declares the extension (raw probes and the SDK handshake) except the one text-only re-list
+    // Every initialize declares the extension (raw probes and the SDK handshake) except the one text-only re-list
     const inits = proxy.seen.filter((x) => x.body?.method === 'initialize');
     const declares = (x: Recorded) => JSON.stringify(x.body.params?.capabilities?.extensions ?? null) === JSON.stringify(UI_EXT);
     const raw = inits.filter((x) => x.headers.origin !== undefined); // the Origin probes are raw initialize requests
@@ -398,7 +398,7 @@ describe('e2e http', () => {
     const textOnly = inits.filter((x) => !declares(x));
     expect(textOnly.map((x) => x.body.params?.capabilities)).toEqual([{}]);
     expect(inits.filter(declares).length).toBeGreaterThanOrEqual(3);
-    // R-6: the UI hidden behind getUiCapability is seen and the missing text-only fallback is reported
+    // The UI hidden behind getUiCapability is seen and the missing text-only fallback is reported
     const ids = ruleIds(r.json);
     expect(ids).toContain('APPS-003');
     expect(r.json.findings.filter((f: any) => f.ruleId === 'APPS-019')).toEqual([expect.objectContaining({ tool: 'get_weather', severity: 'warning' })]);
@@ -408,7 +408,7 @@ describe('e2e http', () => {
     expect(withFallback).not.toContain('APPS-019');
   });
 
-  it('B3 on a 2026-07-28 server: _meta clientCapabilities declares the UI extension', async () => {
+  it('MCP Apps capability on a 2026-07-28 server: _meta clientCapabilities declares the UI extension', async () => {
     const modern = track(await startModernServer());
     const proxy = await recordingProxy(modern.url);
     track(proxy);
@@ -419,7 +419,7 @@ describe('e2e http', () => {
     expect(caps).toEqual(caps.map(() => ({ extensions: UI_EXT })));
   });
 
-  it('R-6: no request reaches the server after runCli resolves on --max-duration', async () => {
+  it('no request reaches the server after runCli resolves on --max-duration', async () => {
     // Answers initialize, notifications and tools/list and refuses server/discover; every other request (wire probes,
     // GET) hangs. Counts when each request arrives.
     const seen: number[] = [];
@@ -445,7 +445,7 @@ describe('e2e http', () => {
     expect(seen.filter((t) => t > resolved)).toEqual([]);
   }, 30000);
 
-  it('R-6: an SDK transport left open past --max-duration sends nothing after runCli resolves', async () => {
+  it('an SDK transport left open past --max-duration sends nothing after runCli resolves', async () => {
     // The main connection lists tools. A fresh connection (the SDK client of tools re-list) gets a GET stream that
     // ends at once with "retry: 2500", so its transport reconnects 2.5 s later, past the deadline, while its
     // tools/list hangs until --timeout. Only the tracer's fetch of the SDK transport can stop that GET.

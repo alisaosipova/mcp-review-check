@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// One tool with an 80 000-character description and a free-form `sql` parameter (W1-8, R-59): the pattern rules
+// One tool with an 80 000-character description and a free-form `sql` parameter: the pattern rules
 // must see it truncated to 16 KB, the report must say so, and the check must stay fast.
 import readline from 'node:readline';
 

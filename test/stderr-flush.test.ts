@@ -1,6 +1,6 @@
-// R-7 (MRC-2): the CLI exits only after stdout and stderr are fully written. A pipe is asynchronous, so a
+// The CLI exits only after stdout and stderr are fully written. A pipe is asynchronous, so a
 // process.exit() that waits for stdout alone cut stderr at the pipe buffer (64 KB): annotations and the --output
-// summary line were lost (CRIT-6). Black box: the built CLI through spawn, with the parent's stderr reader paused
+// summary line were lost. Black box: the built CLI through spawn, with the parent's stderr reader paused
 // until the CLI has written its report, so the pipe buffer fills up whatever the machine speed.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -46,8 +46,8 @@ let dir = '';
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'mrc-flush-')); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-describe('R-7: the CLI exits after stdout and stderr are written', () => {
-  it('R-7: every annotation and the --output summary line reach stderr through a pipe', async () => {
+describe('the CLI exits after stdout and stderr are written', () => {
+  it('every annotation and the --output summary line reach stderr through a pipe', async () => {
     const out = join(dir, 'report.json');
     const r = await runWithPausedStderr(['--stdio', MANY, '--format', 'json', '--output', out], out, { GITHUB_ACTIONS: 'true' });
     expect(r.code, r.stderr.slice(-500)).toBe(1);

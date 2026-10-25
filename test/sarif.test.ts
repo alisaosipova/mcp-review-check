@@ -1,7 +1,7 @@
-// B8: SARIF that code-scanning tools accept (black box: toSarif, buildReport and runCli exist in the baseline).
-// R-23: artifactLocation.uri is a relative path (default .mcp-review-check, --sarif-location); the target URL or
-// command moves to run.properties and is redacted (SEC-1 channel: every secret source of SEC-1 is checked there).
-// R-24: partialFingerprints, automationDetails.id, informationUri = repository URL, valid against SARIF 2.1.0.
+// SARIF that code-scanning tools accept (black box: toSarif, buildReport and runCli exist in the baseline).
+// artifactLocation.uri is a relative path (default .mcp-review-check, --sarif-location); the target URL or
+// command moves to run.properties and is redacted (a report channel: every secret source is checked there).
+// partialFingerprints, automationDetails.id, informationUri = repository URL, valid against SARIF 2.1.0.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import _Ajv from 'ajv';
@@ -59,8 +59,8 @@ function schemaValidator(): any {
   return ajv.compile(schema);
 }
 
-describe('SARIF for code scanning (B8)', () => {
-  it('R-23: artifactLocation.uri is relative (default .mcp-review-check, --sarif-location); target URL and command are in run.properties, redacted', async () => {
+describe('SARIF for code scanning', () => {
+  it('artifactLocation.uri is relative (default .mcp-review-check, --sarif-location); target URL and command are in run.properties, redacted', async () => {
     // HTTP: the URL is not the artifact; it is a run property with its credentials redacted.
     const http = httpSarif();
     expect(http.runs[0].results.length).toBeGreaterThan(0);
@@ -94,7 +94,7 @@ describe('SARIF for code scanning (B8)', () => {
     }
   });
 
-  it('R-23 (SEC-1): run.properties carries the target with every secret source redacted: --bearer, --header, --env, ?token=, ?client_secret=, user:pass@, --api-key X, --authtoken X, --token=X', async () => {
+  it('run.properties carries the target with every secret source redacted: --bearer, --header, --env, ?token=, ?client_secret=, user:pass@, --api-key X, --authtoken X, --token=X', async () => {
     const BEARER = 'sk-live-PROPBEARER41';
     const HEADER = 'sk-live-PROPHEADER42';
     const TOKEN = 'sk-live-PROPQTOKEN43';
@@ -132,7 +132,7 @@ describe('SARIF for code scanning (B8)', () => {
     }
   });
 
-  it('R-24: partialFingerprints on every result, automationDetails.id, informationUri = repository URL; valid against sarif-schema-2.1.0.json (ajv)', async () => {
+  it('partialFingerprints on every result, automationDetails.id, informationUri = repository URL; valid against sarif-schema-2.1.0.json (ajv)', async () => {
     const validate = schemaValidator();
     const runs: [string, any, any][] = [['http', httpSarif(), httpSarif()], ['stdio', await stdioSarif(), await stdioSarif()]];
     for (const [kind, sarif, again] of runs) {

@@ -41,11 +41,11 @@ export interface BuildOptions {
   redactor?: Redactor;
   /** Overall deadline for the whole check (--max-duration); checks still pending then are skipped. */
   maxDurationMs?: number;
-  /** --local (true) or --no-local (false); unset: detected from the host (R-35, R-36). */
+  /** --local (true) or --no-local (false); unset: detected from the host. */
   local?: boolean;
 }
 
-/** The redactor for these options; before the rules only strong values (R-8), `all` adds --env values under a plain name. */
+/** The redactor for these options; before the rules only strong values, `all` adds --env values under a plain name. */
 export function redactorFor(opts: BuildOptions, all = false): Redactor {
   const t = opts.target;
   return (all ? undefined : opts.redactor) ?? buildRedactor({
@@ -63,9 +63,9 @@ interface Progress {
   nonJsonStdout?: string[];
   /** Close open clients (and the stdio child) when the deadline hits. */
   close?: () => Promise<void>;
-  /** Every stdio server process still running (main and fresh connections), ended at the deadline (R-60) and after every run (R-4). */
+  /** Every stdio server process still running (main and fresh connections), ended at the deadline and after every run. */
   children?: Set<ChildProcess>;
-  /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight (R-6). */
+  /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight. */
   abort: AbortController;
 }
 
@@ -177,7 +177,7 @@ interface LegacyConn {
   message?: string;
   /** Network cause of a failed fetch (ENOTFOUND, ECONNREFUSED, CERT_*, ...). */
   cause?: { code?: string; message?: string };
-  /** The failing initialize response (B7 diagnostics). */
+  /** The failing initialize response (for the connection diagnostics). */
   contentType?: string;
   body?: string;
 }
@@ -211,7 +211,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       const status = e instanceof StreamableHTTPError ? (e as StreamableHTTPError).code : undefined;
       const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
       last = {
-        ok: false, status, message: cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts (SEC-1)
+        ok: false, status, message: cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts
         cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
@@ -234,7 +234,7 @@ export function cleanErrorMessage(message: string, status: number | undefined, r
     m = `${m.slice(0, html.index).trim()} HTML page${title ? ` ("${title}")` : ''}`.trim();
   }
   if (m.length > 200) m = `${m.slice(0, 200)}…`;
-  return status !== undefined && status >= 100 && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m; // the SDK's -1 is no HTTP status (R-12)
+  return status !== undefined && status >= 100 && !m.includes(`HTTP ${status}`) ? `HTTP ${status}: ${m}` : m; // the SDK's -1 is no HTTP status
 }
 
 async function connectSse(url: URL, headers: Record<string, string>, tracer: Tracer, timeoutMs: number, variant: ClientVariant = {}): Promise<LegacyConn> {
@@ -422,18 +422,18 @@ export function stderrSummary(tail: string, r: Redactor): string {
 async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}, progress?: Progress): Promise<StdioConn> {
   const inner = new GroupStdioTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
   let stderrTail = '';
-  // Masked before the 4096-character tail and the 200-character summary lines cut it (SEC-1).
-  // Decoded as a stream, so an echo split inside a UTF-8 character between two chunks is still one string to mask (R-10).
+  // Masked before the 4096-character tail and the 200-character summary lines cut it.
+  // Decoded as a stream, so an echo split inside a UTF-8 character between two chunks is still one string to mask.
   (inner.stderr as NodeJS.ReadableStream | null)?.setEncoding('utf8').on('data', (c: string) => { stderrTail = scrub(stderrTail + c, r).slice(-4096); });
   const nonJson: string[] = [];
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
     if (proc && progress?.children) {
-      if (progress.stopped || ending) endTree(proc, 'SIGKILL'); // spawned while the deadline or a signal was ending the others (R-4)
-      // On POSIX the entry stays while the server's process group outlives its wrapper (R-5).
+      if (progress.stopped || ending) endTree(proc, 'SIGKILL'); // spawned while the deadline or a signal was ending the others
+      // On POSIX the entry stays while the server's process group outlives its wrapper.
       else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
-    // Split into lines as bytes, then decoded: the SDK reads the same stream as Buffers, and a chunk can end inside a UTF-8 character (R-10).
+    // Split into lines as bytes, then decoded: the SDK reads the same stream as Buffers, and a chunk can end inside a UTF-8 character.
     let buf = Buffer.alloc(0);
     proc?.stdout?.on('data', (c: Buffer) => {
       buf = Buffer.concat([buf, c]);
@@ -531,13 +531,13 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   try {
     result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
   } catch (e) {
-    await progress.close?.(); // the check threw after the handshake (a TypeError on odd server data): its client is still open (R-4)
+    await progress.close?.(); // the check threw after the handshake (a TypeError on odd server data): its client is still open
     throw e;
   } finally {
-    await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close() (R-4)
+    await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close()
   }
-  // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises
-  // (SEC-1). The target stays as entered (rules parse and hash it).
+  // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises.
+  // The target stays as entered (rules parse and hash it).
   const masked = { ...redactDeep(result.snap, redactorFor(opts)), target: result.snap.target };
   capSnapshot(masked);
   return { ...result, snap: masked };
@@ -559,7 +559,7 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
   });
   run.catch(() => {}); // a Stopped checkpoint (or a closed client) after the deadline is expected
   try {
-    // Past the deadline the run is abandoned however it settles ('Not connected' calls are no finished run, R-60).
+    // Past the deadline the run is abandoned however it settles ('Not connected' calls are no finished run).
     const r = await Promise.race([run, stop]);
     return progress.stopped ? stop : r;
   } catch (e) {
@@ -571,8 +571,8 @@ async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: numbe
   }
 }
 
-/** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait (R-60);
- *  SIGKILL again while the set still holds a live one, up to 3 rounds, as a server can join it during a wait (R-4). */
+/** End the stdio servers still running so none outlives the CLI: SIGTERM, then SIGKILL, each with a bounded wait;
+ *  SIGKILL again while the set still holds a live one, up to 3 rounds, as a server can join it during a wait. */
 async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 1000): Promise<void> {
   for (const signal of ['SIGTERM', 'SIGKILL', 'SIGKILL', 'SIGKILL'] as const) {
     const live = [...(children ?? [])].filter(running); // a process leaves the set on 'exit' unless its group lives on
@@ -584,16 +584,16 @@ async function endChildren(children: Set<ChildProcess> | undefined, graceMs = 10
 
 /** Every stdio server of every run in this process, for the CLI's signal handler (endAllNow). */
 const everyChild = new Set<ChildProcess>();
-/** Set by endAllNow: the CLI is exiting on a signal, so a server the check starts after it is killed at once (R-4). */
+/** Set by endAllNow: the CLI is exiting on a signal, so a server the check starts after it is killed at once. */
 let ending = false;
 
-/** A stdio server still running: the process itself or, on POSIX, anything left in its process group (R-5). */
+/** A stdio server still running: the process itself or, on POSIX, anything left in its process group. */
 function running(c: ChildProcess): boolean {
   if (c.exitCode === null && c.signalCode === null) return true;
   try { return process.platform !== 'win32' && !!c.pid && process.kill(-c.pid, 0); } catch { return false; }
 }
 
-/** Send `signal` to a stdio server and everything it started: its process group on POSIX, its tree on Windows (R-5). */
+/** Send `signal` to a stdio server and everything it started: its process group on POSIX, its tree on Windows. */
 function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
   // Windows: before the wrapper (cmd.exe for npx, .cmd and .bat) dies, as /T finds only the children of a live pid.
   if (process.platform === 'win32') { if (c.pid) spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); }
@@ -602,7 +602,7 @@ function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
 }
 
 /** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM, SIGHUP and
- *  SIGQUIT (R-5), with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait (R-4). */
+ *  SIGQUIT, with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait. */
 export function endAllNow(kill = false): Promise<void> {
   ending = true;
   if (kill) for (const c of everyChild) endTree(c, 'SIGKILL');
@@ -613,7 +613,7 @@ export function endAllNow(kill = false): Promise<void> {
 type SdkStdio = { _process?: ChildProcess; _serverParams: ConstructorParameters<typeof StdioClientTransport>[0]; _readBuffer: { append(chunk: Buffer): void }; _stderrStream: NodeJS.WritableStream | null; processReadBuffer(): void };
 
 /** The SDK's stdio transport, but a server started through a wrapper (npx, .cmd, .bat, sh -c) ends with everything it
- *  started (R-5): on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
+ *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
 class GroupStdioTransport extends StdioClientTransport {
   /** The SDK's start (client/stdio.js:60-107) with detached: true; Windows keeps it as is (no groups there). */
   override async start(): Promise<void> {

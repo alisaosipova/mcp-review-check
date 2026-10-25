@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// R-7 (MRC-2, from the CRIT-6 recon): 400 tools without annotations, so the report has thousands of findings and more than 64 KB of ::error/::warning lines.
+// 400 tools without annotations, so the report has thousands of findings and more than 64 KB of ::error/::warning lines.
 import readline from 'node:readline';
 const tools = Array.from({ length: 400 }, (_, i) => ({ name: `tool_${i}`, description: `Does thing number ${i}.`, inputSchema: { type: 'object', properties: { q: { type: 'string' } } } }));
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');

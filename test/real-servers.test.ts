@@ -1,4 +1,4 @@
-// B4 regression: listings frozen from real public servers (scripts/capture-real.mjs, captured 2026-10-22). Kiwi,
+// Regression on listings frozen from real public servers (scripts/capture-real.mjs, captured 2026-10-22). Kiwi,
 // Hugging Face, Microsoft Learn and Exa are listed in the Claude directory; Svelte, OpenZeppelin and AWS Knowledge
 // showed false positives in the analysis. Only content rules can run here: transport probes are not frozen.
 import { existsSync, readFileSync } from 'node:fs';
@@ -24,11 +24,11 @@ function loadReal(name: string, target: Snapshot['options']['target'] = 'all'): 
 }
 
 type Row = [ruleId: string, severity: Finding['severity'], subject: string | null];
-/** Warnings and errors of the baseline rules (main d6100a9) on the same listings, written by a run on main (U-15). */
+/** Warnings and errors of the baseline rules (main d6100a9) on the same listings, written by a run on main. */
 const BASELINE: { findings: Record<string, Row[]> } = JSON.parse(readFileSync(new URL('./fixtures/real/baseline-findings.json', import.meta.url), 'utf8'));
 const RANK: Record<Finding['severity'], number> = { info: 0, warning: 1, error: 2 };
-/** Rules whose new or raised findings on these listings are accepted in D-6, one line per rule, added by the slice that makes the change. */
-const D6_NEW: Record<string, string> = {};
+/** Rules whose new or raised findings on these listings are accepted on purpose, one line per rule, added by the commit that makes the change. */
+const ACCEPTED_NEW: Record<string, string> = {};
 
 const findings = (name: string, target: Snapshot['options']['target'] = 'all') => runRules(loadReal(name, target).snap, RULES).findings;
 const of = (list: Finding[], id: string) => list.filter((f) => f.ruleId === id);
@@ -43,11 +43,11 @@ describe('real-server fixtures (no heuristic false positives)', () => {
     expect(loud(list)).toEqual([]);
   });
 
-  it.each(ALL)('U-15 %s: no new warning or error against the baseline findings (main), except D-6', (name) => {
+  it.each(ALL)('%s: no new warning or error against the baseline findings (main), except accepted changes', (name) => {
     const base = BASELINE.findings[name];
     expect(base, 'baseline captured').toBeDefined();
     const fresh = findings(name)
-      .filter((f) => f.severity !== 'info' && !(f.ruleId in D6_NEW))
+      .filter((f) => f.severity !== 'info' && !(f.ruleId in ACCEPTED_NEW))
       .filter((f) => !base.some(([id, sev, subject]) => id === f.ruleId && subject === (f.tool ?? f.resource ?? null) && RANK[sev] >= RANK[f.severity]))
       .map((f) => `${f.ruleId} ${f.severity} ${f.tool ?? f.resource ?? ''}: ${f.message}`);
     expect(fresh).toEqual([]);

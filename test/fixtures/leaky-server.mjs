@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Leak fixture (B2): echoes its credentials on every channel a report can quote. The secret from
+// Leak fixture: echoes its credentials on every channel a report can quote. The secret from
 // --api-key / --token= (argv) and $API_TOKEN (--env) go to stdout (SRV-018 quotes non-JSON lines) and stderr;
 // stderr also gets the whole argv, so any other secret flag (--accessToken X, --password -X) is echoed too.
 // With --crash it writes them to stderr and exits, so they land in the SRV-003 fatal message. With --boundary a tool
-// description echoes the --api-key value so that the 16 KB input cap (W1-8) cuts through it, three characters short.
+// description echoes the --api-key value so that the 16 KB input cap cuts through it, three characters short.
 // With --crash --cut the stderr cuts (the 4096-character tail, the 200-character summary line) go through it.
 // With --deep N it answers raw JSON-RPC with one tool whose inputSchema nests N levels deep (redaction must not recurse).
 import readline from 'node:readline';

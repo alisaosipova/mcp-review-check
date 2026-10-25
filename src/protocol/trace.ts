@@ -165,7 +165,7 @@ function linkAbort(ctrl: AbortController, stop: AbortSignal | undefined): () => 
   return () => stop?.removeEventListener('abort', abort);
 }
 
-/** `stop` (the --max-duration deadline, R-6): once it aborts, nothing more is sent and probes in flight are cancelled. */
+/** `stop` (the --max-duration deadline): once it aborts, nothing more is sent and probes in flight are cancelled. */
 export function createTracer(redactor: Redactor, now: () => number = () => performance.now(), stop?: AbortSignal): Tracer {
   const exchanges: HttpExchange[] = [];
   const timings: Record<string, number[]> = {};
@@ -191,7 +191,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   };
 
   const finishBody = (ex: HttpExchange, text: string) => {
-    ex.bodySnippet = scrub(text, redactor).slice(0, SNIPPET); // masked before the cut: no secret prefix is left (SEC-1)
+    ex.bodySnippet = scrub(text, redactor).slice(0, SNIPPET); // masked before the cut: no secret prefix is left
     ex.json = parseBody(text, ex.contentType, ex.requestJson);
   };
 

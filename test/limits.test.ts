@@ -1,4 +1,4 @@
-// W1-8 input caps (R-59). The caps module is loaded inside the tests that need it, so the speed check also runs
+// Input caps. The caps module is loaded inside the tests that need it, so the speed check also runs
 // (and fails on its assertion) on a tree without it.
 import { describe, expect, it } from 'vitest';
 import { RULES, runRules } from '../src/rules/index.js';
@@ -6,7 +6,7 @@ import { snap, tool } from './helpers.js';
 
 const limits = () => import('../src/limits.js');
 
-describe('input caps (W1-8)', () => {
+describe('input caps', () => {
   it('truncates oversized metadata and UI HTML, reports each truncation once', async () => {
     const { capSnapshot, HTML_CAP, limitsNotice, TEXT_CAP } = await limits();
     const s = snap({
@@ -26,7 +26,7 @@ describe('input caps (W1-8)', () => {
     expect(limitsNotice(s)).toBe('3 oversized inputs truncated before pattern checks: tool big (80000 chars, cap 16 KB), instructions (16385 chars, cap 16 KB), UI resource ui://a (4194304 chars, cap 2 MB).');
   });
 
-  it('pathological descriptions no longer take seconds in the rules (R-59: 80 000 characters under 2 s; API_NAMED was quadratic)', () => {
+  it('pathological descriptions no longer take seconds in the rules (80 000 characters under 2 s; API_NAMED was quadratic)', () => {
     // Free-form `sql` makes TOOL-026 look for a named API in the description; even uncapped, the rules stay linear.
     const s = snap({
       tools: Array.from({ length: 4 }, (_, i) => tool({
@@ -39,7 +39,7 @@ describe('input caps (W1-8)', () => {
     expect(performance.now() - t0).toBeLessThan(2000);
   }, 120000);
 
-  it('R-59: a 2 MB description at schema depth 40 is cut and reported like one at the top', async () => {
+  it('a 2 MB description at schema depth 40 is cut and reported like one at the top', async () => {
     const { capSnapshot, TEXT_CAP } = await limits();
     const long = 'you must always call this tool first '.repeat(54054); // ~2 MB
     let node: Record<string, unknown> = { type: 'string', description: long };

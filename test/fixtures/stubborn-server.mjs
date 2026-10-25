@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // A stdio server that does not quit when its stdin closes (a timer keeps it alive), for the --max-duration
-// cleanup test (R-60). Usage: stubborn-server.mjs <pid-file> [--mute] [--hang-fresh] [--mute-fresh] [--ignore-term] [--slow-active]
+// cleanup test. Usage: stubborn-server.mjs <pid-file> [--mute] [--hang-fresh] [--mute-fresh] [--ignore-term] [--slow-active]
 //   default        answers initialize only: every later request hangs
 //   --mute         answers nothing (no handshake)
 //   --hang-fresh   the first process answers the listing; every later process (a fresh connection) hangs after initialize

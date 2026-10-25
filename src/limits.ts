@@ -1,4 +1,4 @@
-// Input caps (W1-8): several heuristics run regexes whose cost grows with the input, so oversized strings
+// Input caps: several heuristics run regexes whose cost grows with the input, so oversized strings
 // are truncated before the rules see them, and every truncation is reported.
 import type { Snapshot } from './snapshot.js';
 import { isObj, isStr, toolName } from './rules/util/access.js';
@@ -13,7 +13,7 @@ export const ERROR_BODY_CAP = 64 * 1024;
 type Truncated = NonNullable<Snapshot['limits']>['truncated'];
 
 /** Truncate every string over `cap` inside `value` (in place); reports `where` once per object with the largest length.
- * Iterative and without a depth limit: the schema walkers go deeper than any fixed JSON depth (R-59). */
+ * Iterative and without a depth limit: the schema walkers go deeper than any fixed JSON depth. */
 function capStrings(value: object, cap: number, where: string, out: Truncated): void {
   let longest = 0;
   const stack: object[] = [value];

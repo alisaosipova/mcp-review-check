@@ -9,7 +9,7 @@ import { manualChecklist, RULES } from '../src/rules/index.js';
 import { cli } from './cli-runner.js';
 import { loadSnapshot } from './helpers.js';
 
-describe('redactor (B2)', () => {
+describe('redactor', () => {
   it('argvSecrets: values after secret-looking flags, --flag=value, KEY=value, URL credentials, header args', () => {
     expect(argvSecrets(['server.js', '--api-key', 'A1', '--token=B2', 'DB_PASSWORD=C3', '--port', '3000', '--verbose'])).toEqual(['A1', 'B2', 'C3']);
     expect(argvSecrets(['mcp-remote', 'https://x.test/mcp', '--header', 'Authorization: Bearer T0K'])).toEqual(['Bearer T0K', 'T0K']);
@@ -28,12 +28,12 @@ describe('redactor (B2)', () => {
     expect(urlSecrets('not a url')).toEqual([]);
   });
 
-  // R-9 (D-sec-2, D-sec-7, D-sec-8): sources without a flag sign; synthetic values only.
+  // Sources without a flag sign; synthetic values only.
   const PATH_TOK = 'sk-live-PATHSYNTH0123456789';
   const QUERY_TOK = 'ghp_QUERYSYNTHabcdefghijklmnopqrstuvwxyz';
   const USER_TOK = 'ghp_USERSYNTHabcdefghijklmnopqrstuvwxyz01';
 
-  it('R-9: urlSecrets: known-format tokens in query values under any name and in path segments, secret-named fragment parameters, the username', () => {
+  it('urlSecrets: known-format tokens in query values under any name and in path segments, secret-named fragment parameters, the username', () => {
     expect(urlSecrets(`https://${USER_TOK}@h.test/api/s/${PATH_TOK}/mcp?sig=${QUERY_TOK}&page=2#access_token=FRAGSYNTH0001&state=open`))
       .toEqual([QUERY_TOK, 'FRAGSYNTH0001', PATH_TOK, USER_TOK, USER_TOK]);
     // user:pass@: the username is masked too, a short one is left out as everywhere (under 4 characters)
@@ -44,12 +44,12 @@ describe('redactor (B2)', () => {
     expect(urlSecrets('https://h.test/mcp/v1/tools?sig=abc&page=2#section-2')).toEqual([]);
   });
 
-  it('R-9: argvSecrets: a positional argument that is a known-format token, once, after the flag-taken values', () => {
+  it('argvSecrets: a positional argument that is a known-format token, once, after the flag-taken values', () => {
     expect(argvSecrets(['server.js', 'sk-live-POSITIONALSYNTH01', '--api-key', QUERY_TOK, '--model', 'gpt-4o-mini-2024-07-18', '@scope/pkg@latest', `https://x.test/s/${PATH_TOK}/mcp`]))
       .toEqual(['sk-live-POSITIONALSYNTH01', QUERY_TOK, PATH_TOK]);
   });
 
-  it('R-9: known token formats are recognized whole (D-sec-2-heuristic), ordinary arguments are not', () => {
+  it('known token formats are recognized whole, ordinary arguments are not', () => {
     for (const t of ['sk-live-SYNTHabcdefghijklmnop0123', 'sk-proj-SYNTHAbCdEfGhIjKlMnOpQrStUv012345', 'sk_live_SYNTH0123456789abcdefABCD', 'ghp_SYNTHabcdefghijklmnopqrstuvwxyz0123',
       'github_pat_11SYNTH0abcdefghijkl_mnopqrstuvwxyzABCDEF0123456789', 'glpat-SYNTHabcdefghij0123456', 'xoxb-1234567890-SYNTH-abcdefghij', 'AKIASYNTH0EXAMPLE123',
       'npm_SYNTHabcdefghijklmnopqrstuvwxyz01234', 'hf_SYNTHabcdefghijklmnopqrstuvwxyz01', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.SYNTHsigABCdef0123']) expect(argvSecrets([t]), t).toEqual([t]);
@@ -59,8 +59,8 @@ describe('redactor (B2)', () => {
       'eyJhbGciOiJIUzI1NiJ9', 'node_modules_cache_v2_LinuxX64_Node20', 'Dockerfile.production-build-2026']) expect(argvSecrets([a]), a).toEqual([]);
   });
 
-  // MRC-2 review round 2: a token inside an argument (JSON, a comma list) or inside an --env value was left unmasked.
-  it('R-9: argvSecrets and buildRedactor find a known-format token anywhere in an argument or an --env value, bounded like a word', () => {
+  // A token inside an argument (JSON, a comma list) or inside an --env value must be masked too.
+  it('argvSecrets and buildRedactor find a known-format token anywhere in an argument or an --env value, bounded like a word', () => {
     const J = 'sk-live-JSONSYNTH0123456789ab', A = 'ghp_LISTASYNTHabcdefghijklmnopqrstuvwxyz01', B = 'ghp_LISTBSYNTHabcdefghijklmnopqrstuvwxyz02';
     const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.SYNTHsigABCdef0123';
     expect(argvSecrets(['--config', `{"apiKey":"${J}"}`, `--keys=${A},${B}`, `x ${J}`, `--jwt=${JWT}.`])).toEqual([J, A, B, JWT]);
@@ -71,14 +71,14 @@ describe('redactor (B2)', () => {
     expect(strong.has('glpat-ENVLISTSYNTH0123456789')).toBe(true);
   });
 
-  it('R-9: buildRedactor: the URL username and the parts of a composite --env value are strong values', () => {
+  it('buildRedactor: the URL username and the parts of a composite --env value are strong values', () => {
     expect([...buildRedactor({ url: `http://${USER_TOK}@h.test/mcp` }, true).values]).toContain(USER_TOK);
     const v = [...buildRedactor({ env: { DATABASE_URL: 'postgres://app:pw-DBSYNTH0001@db.test:5432/app', UPSTREAM_AUTH: 'Bearer sk-live-UPSYNTH0002' } }, true).values];
-    // S-15 (R-8): a part of a value under a plain name that does not look like a token is weak, masked in the finished report
+    // a part of a value under a plain name that does not look like a token is weak, masked in the finished report
     expect(v).not.toContain('pw-DBSYNTH0001');
     expect([...buildRedactor({ env: { DATABASE_URL: 'postgres://app:pw-DBSYNTH0001@db.test:5432/app' } }).values]).toContain('pw-DBSYNTH0001');
     expect(v).toContain('sk-live-UPSYNTH0002');
-    // the whole value under a plain name stays weak (R-8)
+    // the whole value under a plain name stays weak
     expect(v).not.toContain('postgres://app:pw-DBSYNTH0001@db.test:5432/app');
   });
 
@@ -114,9 +114,8 @@ describe('redactor (B2)', () => {
   });
 });
 
-// Review round 1 (S-22): the secret sign in any segment of a name, raw query values, deep data.
-describe('SEC-1 review (S-22): redactor units', () => {
-  it('SEC-1 review: a secret sign in any segment of a flag, KEY= or query name; pointers to a secret are not secrets', () => {
+describe('redactor units: the secret sign in any segment of a name, raw query values, deep data', () => {
+  it('a secret sign in any segment of a flag, KEY= or query name; pointers to a secret are not secrets', () => {
     expect(argvSecrets(['--auth-header', 'Bearer sk-AUTHHDR13', '--api-key-value', 'sk-APIVAL14', '--client-secret-value=sk-CSVAL15', 'AUTH_TOKEN_VALUE=sk-ATVAL16']))
       .toEqual(['Bearer sk-AUTHHDR13', 'sk-AUTHHDR13', 'sk-APIVAL14', 'sk-CSVAL15', 'sk-ATVAL16']);
     // false positives: a file, a path, a directory, an id, a URL, a limit or a look-alike word is not the secret itself
@@ -131,7 +130,7 @@ describe('SEC-1 review (S-22): redactor units', () => {
     expect(all).not.toContain('kid7');
   });
 
-  it('SEC-1 review: urlSecrets keeps the raw query value too ("+", lowercase %2f), not only the decoded one', () => {
+  it('urlSecrets keeps the raw query value too ("+", lowercase %2f), not only the decoded one', () => {
     const raw = urlSecrets('https://x.test/mcp?api_key=sk-PLUS+SECRET11&token=sk-abc%2fLOWER12');
     expect(raw).toContain('sk-PLUS+SECRET11');
     expect(raw).toContain('sk-abc%2fLOWER12');
@@ -139,7 +138,7 @@ describe('SEC-1 review (S-22): redactor units', () => {
     expect(raw).toContain('sk-abc/LOWER12');
   });
 
-  it('SEC-1 review: redactDeep walks data 20 000 levels deep without overflowing the stack and redacts the bottom', () => {
+  it('redactDeep walks data 20 000 levels deep without overflowing the stack and redacts the bottom', () => {
     const r = buildRedactor({ bearer: 'tok-DEEPSECRET' });
     let deep: any = { leaf: 'uses tok-DEEPSECRET' };
     for (let i = 0; i < 20000; i++) deep = { a: deep, list: [i, 'tok-DEEPSECRET'] };
@@ -153,9 +152,8 @@ describe('SEC-1 review (S-22): redactor units', () => {
   });
 });
 
-// Review round 2 (S-25): one-word secret names, header names, the --flag= forms, keys of the report's own structure.
-describe('SEC-1 review round 2 (S-25): redactor units', () => {
-  it('S-25: a secret sign written as one word with what precedes it is a secret (authtoken, apitoken, secretkey, GITHUBTOKEN, X-Auth:); look-alikes are not', () => {
+describe('redactor units: one-word secret names, header names, the --flag= forms, keys of the report\'s own structure', () => {
+  it('a secret sign written as one word with what precedes it is a secret (authtoken, apitoken, secretkey, GITHUBTOKEN, X-Auth:); look-alikes are not', () => {
     expect(argvSecrets(['--authtoken', 'v1-AUTHTOK', '--apitoken=v2-APITOK', '--accesstoken', 'v3-ACCTOK', '--secretkey', 'v4-SECKEY', '--authkey', 'v5-AUTHKEY', 'GITHUBTOKEN=v6-GHTOK', 'X-Auth: v7-XAUTH']))
       .toEqual(['v1-AUTHTOK', 'v2-APITOK', 'v3-ACCTOK', 'v4-SECKEY', 'v5-AUTHKEY', 'v6-GHTOK', 'v7-XAUTH']);
     expect(argvSecrets([
@@ -168,14 +166,14 @@ describe('SEC-1 review round 2 (S-25): redactor units', () => {
     expect(q).not.toContain('us');
   });
 
-  it('S-25: the --flag=Header: value and --flag=URL forms in argv give the header token and the URL credentials', () => {
+  it('the --flag=Header: value and --flag=URL forms in argv give the header token and the URL credentials', () => {
     expect(argvSecrets(['--header=Authorization: Bearer v10-HDREQ'])).toContain('v10-HDREQ');
     const url = argvSecrets(['--server-url=https://u:pw12@h.test/mcp?token=abcd']);
     expect(url).toContain('pw12');
     expect(url).toContain('abcd');
   });
 
-  it('S-25: redactDeep keeps the field names and the own vocabulary of the snapshot and the report; keys are masked only inside what the server sent', () => {
+  it('redactDeep keeps the field names and the own vocabulary of the snapshot and the report; keys are masked only inside what the server sent', () => {
     const r = buildRedactor({ env: { LOG_LEVEL: 'error', MODE: 'summary', STATE: 'failed' } });
     const input = {
       summary: { errors: 1, warnings: 2, failed: true, gate: { failed: 'x' } },
@@ -202,8 +200,8 @@ describe('SEC-1 review round 2 (S-25): redactor units', () => {
   });
 });
 
-describe('SEC-1 defence in depth (S-28): redactor units', () => {
-  it('S-28: the own vocabulary is kept only outside what the server sent: kind and role under capabilities, initializeRaw, discoverRaw and resourceReads are masked, their keys are not', () => {
+describe('redactor units: the report\'s own vocabulary outside server data', () => {
+  it('the own vocabulary is kept only outside what the server sent: kind and role under capabilities, initializeRaw, discoverRaw and resourceReads are masked, their keys are not', () => {
     const r = buildRedactor({ env: { K: 'S3cretValue99', LOG_LEVEL: 'error' } });
     const input = {
       summary: { errors: 1, warnings: 0 },
@@ -230,10 +228,10 @@ describe('SEC-1 defence in depth (S-28): redactor units', () => {
   });
 });
 
-describe('R-10', () => {
+describe('masking before cuts and across split chunks; gate texts and __proto__ keys stay as they are', () => {
   const SPLIT = `node ${fileURLToPath(new URL('./fixtures/utf8-split.mjs', import.meta.url))}`;
 
-  it('D-sec-1: stderrSummary and cleanErrorMessage mask before they cut', () => {
+  it('stderrSummary and cleanErrorMessage mask before they cut', () => {
     const SECRET = 'sk-live-SUMMARYSYNTH0123456789';
     const r = createRedactor([], [SECRET]);
     const text = 'Error: key '.padEnd(185, '.') + SECRET;
@@ -242,20 +240,20 @@ describe('R-10', () => {
     expect(cleanErrorMessage(text, 500, r)).toMatch(/^HTTP 500: Error: key \.+«redacted»$/);
   });
 
-  it('D-sec-6: a stderr echo split inside a UTF-8 character is still masked', async () => {
+  it('a stderr echo split inside a UTF-8 character is still masked', async () => {
     const r = await cli(['--format', 'text', '--verbose', '--env', 'DB_PASSWORD=pw-SYNTHü0001-SECRET', '--stdio', SPLIT]);
     expect(r.stdout + r.stderr).toContain('login failed with password «redacted»');
     expect(r.stdout + r.stderr).not.toContain('0001-SECRE');
   }, 60000);
 
-  it('D-sec-6: a non-JSON stdout line split inside a UTF-8 character is still masked', async () => {
+  it('a non-JSON stdout line split inside a UTF-8 character is still masked', async () => {
     const r = await cli(['--format', 'json', '--env', 'DB_PASSWORD=pw-SYNTHü0001-SECRET', '--stdio', `${SPLIT} --stdout`]);
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-018').message).toContain('login failed with password «redacted»');
     expect(r.stdout + r.stderr).not.toContain('0001-SECRE');
   }, 60000);
 
-  // MRC-2 review round 2 (mutation M10: each chunk masked alone, `(stderrTail + scrub(c, r)).slice(-4096)`, kept every test green).
-  it('R-10: an echo split between two stderr writes is masked before the 4096-character tail cuts through it', async () => {
+  // Masking each chunk alone (`(stderrTail + scrub(c, r)).slice(-4096)`) would leave the secret's end in the tail.
+  it('an echo split between two stderr writes is masked before the 4096-character tail cuts through it', async () => {
     const SECRET = 'pw-SYNTHü0001-TAILCHECK-QZXW';
     const tail = `node ${fileURLToPath(new URL('./fixtures/stderr-tail-split.mjs', import.meta.url))}`;
     const r = await cli(['--format', 'json', '--verbose', '--env', `DB_PASSWORD=${SECRET}`, '--stdio', tail]);
@@ -265,7 +263,7 @@ describe('R-10', () => {
     for (let i = 0; i + 6 <= SECRET.length; i++) expect(all, SECRET.slice(i, i + 6)).not.toContain(SECRET.slice(i, i + 6));
   }, 60000);
 
-  it('D-sec-3: the gate texts are not masked by value', () => {
+  it('the gate texts are not masked by value', () => {
     const s = loadSnapshot('minimal-http');
     const report = buildReport(s, runRules(s, RULES), manualChecklist(s), 'error', new Date('2026-10-22T10:00:00Z'), 1);
     const gate = { platforms: ['claude'], reason: 'claude: 2 errors (A-1)', notGated: 'spec: 1 error (B-1) not gated' };
@@ -273,7 +271,7 @@ describe('R-10', () => {
     expect(out.summary.gate).toEqual(gate);
   });
 
-  it('CRIT-3: a "__proto__" key from server data stays as data', () => {
+  it('a "__proto__" key from server data stays as data', () => {
     const tool = JSON.parse('{"name":"t","inputSchema":{"type":"object","properties":{"__proto__":{"type":"string"},"q":{"type":"string"}}}}');
     const out: any = redactDeep({ tools: [tool] }, buildRedactor({ bearer: 'SYNTH-BEARER-0001' }));
     const props = out.tools[0].inputSchema.properties;

@@ -1,5 +1,5 @@
 // Release lifecycle: single-source version and catalog date, JSON schema version.
-// Imports only modules that exist on the baseline, so R-61 and R-63 fail on an assertion there, not on import.
+// Imports only modules that exist on the baseline, so the catalog-date and schema-version tests fail on an assertion there, not on import.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,7 @@ describe('version', () => {
     expect(initializeBody().params.clientInfo.version).toBe(VERSION);
   });
 
-  it('R-2: no version literal in src/', () => {
+  it('no version literal in src/', () => {
     const literal = new RegExp(`(['"\`])${pkg.version.replace(/\./g, '\\.')}\\1`);
     const files = sourceFiles();
     expect(files).toContain('version.ts');
@@ -38,13 +38,13 @@ describe('version', () => {
 });
 
 describe('catalog date', () => {
-  it('R-61: CATALOG_DATE is one value shared by the rules index, DISCLAIMER and README', () => {
+  it('CATALOG_DATE is one value shared by the rules index, DISCLAIMER and README', () => {
     expect(CATALOG_DATE).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // The date is written once in src/; everything else (rules index, DISCLAIMER, header, JSON) reads it.
     const hits = sourceFiles().flatMap((f) => (readFileSync(join(SRC, f), 'utf8').match(new RegExp(CATALOG_DATE, 'g')) ?? []).map(() => f));
     expect(hits, `files spelling out ${CATALOG_DATE}`).toHaveLength(1);
     expect(DISCLAIMER).toContain(`as of ${CATALOG_DATE}.`);
-    // README and docs/RULES.md (the generated rule table, S-19) carry the date in markers that npm run readme:rules fills.
+    // README and docs/RULES.md (the generated rule table) carry the date in markers that npm run readme:rules fills.
     for (const doc of ['README.md', 'docs/RULES.md']) {
       const file = new URL(`../${doc}`, import.meta.url);
       expect(existsSync(file), `${doc} exists`).toBe(true);
@@ -54,7 +54,7 @@ describe('catalog date', () => {
     }
   });
 
-  it('R-63: the JSON report carries schemaVersion first and tool.catalogAgeDays', () => {
+  it('the JSON report carries schemaVersion first and tool.catalogAgeDays', () => {
     const s = loadSnapshot('minimal-http');
     const at = new Date(Date.parse(`${CATALOG_DATE}T12:00:00Z`) + 45 * 86_400_000);
     const j = toJson(buildReport(s, runRules(s, RULES), manualChecklist(s), 'error', at, 1)) as Record<string, any>;

@@ -60,7 +60,7 @@ export interface EngineResult {
   ignored: Finding[];
   skipped: Array<{ ruleId: string; reason: string }>;
   rulesRun: number;
-  /** Findings (not ignored) over every platform whatever --target: the score basis, one number per server (D-4). */
+  /** Findings (not ignored) over every platform whatever --target: the score basis, one number per server. */
   scored?: Finding[];
 }
 
@@ -93,7 +93,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
 
   for (const rule of rules) {
     const rulePlatforms = Object.keys(rule.severity) as Platform[];
-    // A rule outside --target still runs for the score (D-4), but is reported as skipped and lists no findings.
+    // A rule outside --target still runs for the score, but is reported as skipped and lists no findings.
     const applies = rulePlatforms.some((p) => active.includes(p));
     if (!applies) skipped.push({ ruleId: rule.id, reason: `not applicable to --target ${snap.options.target}` });
     const reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);

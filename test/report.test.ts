@@ -25,7 +25,7 @@ function report(s: Snapshot) {
 }
 
 describe('score and verdicts', () => {
-  it('R-31: each broken rule counts once (scoreVersion 2), an error rule outranks its warnings', () => {
+  it('each broken rule counts once (scoreVersion 2), an error rule outranks its warnings', () => {
     const many = Array.from({ length: 10 }, () => f('TOOL-012', 'error'));
     expect(score(many)).toBe(100 - 12);
     expect(score([f('A', 'warning'), f('A', 'error'), f('A', 'warning')])).toBe(88);
@@ -61,7 +61,7 @@ describe('score and verdicts', () => {
   });
 });
 
-describe('exit gating (B5)', () => {
+describe('exit gating', () => {
   // Hugging Face with --target claude: one spec-only error (SPEC-004) and Claude warnings.
   const specErr = f('SPEC-004', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
   const claudeWarn = f('INJ-006', 'warning', { platforms: ['claude'], severityByPlatform: { claude: 'warning' } });
@@ -109,21 +109,21 @@ describe('exit gating (B5)', () => {
     expect(resultLine(withSpec)).toMatch(/^FAIL \(--fail-on error, --fail-on-spec\) · claude: /);
   });
 
-  it('R-12: a failed connect (exit 3) reads FAIL (could not connect) in text and markdown, never PASS', () => {
+  it('a failed connect (exit 3) reads FAIL (could not connect) in text and markdown, never PASS', () => {
     // A connect failure is a spec-only SRV-003 error: the gate alone would call it a pass.
     const s = loadSnapshot('minimal-http');
     s.fatal = 'connect ECONNREFUSED 127.0.0.1:1';
     const srv003 = f('SRV-003', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
     const r = buildReport(s, { ...runRules(s, RULES), findings: [srv003] }, [], 'error', new Date('2026-10-22T10:00:00Z'), 1);
-    expect(r.summary.failed).toBe(true); // exit 3 is failed in JSON (R-2, MRC-2)
+    expect(r.summary.failed).toBe(true); // exit 3 is failed in JSON
     expect(resultLine(r)).toBe('FAIL (could not connect)');
     expect(renderText(r, { color: false, verbose: false })).toMatch(/Result: FAIL \(could not connect\)\n/);
     expect(renderMarkdown(r)).toContain('| Result | FAIL (could not connect) |');
   });
 });
 
-describe('review round 1 (R-11, R-17, D-4)', () => {
-  it('D-4: buildReport scores every platform whatever --target (deepwiki-like: one score); ignored rules do not count', () => {
+describe('score basis, not-gated spec findings and INCOMPLETE after a failed connect', () => {
+  it('buildReport scores every platform whatever --target (deepwiki-like: one score); ignored rules do not count', () => {
     const scoreFor = (target: 'all' | 'claude' | 'chatgpt', ignore: string[] = []) => {
       const s = loadSnapshot('deepwiki-like');
       s.options.target = target;
@@ -134,7 +134,7 @@ describe('review round 1 (R-11, R-17, D-4)', () => {
     expect(scoreFor('all', ['TOOL-012'])).toBeGreaterThan(scoreFor('all')!);
   });
 
-  it('R-11: on FAIL the Result line also names the not-gated spec findings; one a gated platform counted is not among them', () => {
+  it('on FAIL the Result line also names the not-gated spec findings; one a gated platform counted is not among them', () => {
     const specErr = f('SPEC-004', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
     const both = f('APPS-003', 'error', { platforms: ['claude', 'spec'], severityByPlatform: { claude: 'error', spec: 'error' } });
     const g = gate([specErr, both], 'error', ['claude']);
@@ -144,7 +144,7 @@ describe('review round 1 (R-11, R-17, D-4)', () => {
     expect(resultLine(r)).toBe('FAIL (--fail-on error) · claude: 1 error (APPS-003) · spec: 1 error (SPEC-004) not gated; add --fail-on-spec to fail on spec findings');
   });
 
-  it('R-17: after a failed connect every verdict is INCOMPLETE, even with a directory error (SRV-001 http)', () => {
+  it('after a failed connect every verdict is INCOMPLETE, even with a directory error (SRV-001 http)', () => {
     const srv001 = f('SRV-001', 'error', { platforms: ['claude', 'chatgpt'], severityByPlatform: { claude: 'error', chatgpt: 'error' } });
     expect(verdict([srv001], 'claude', false, true).verdict).toBe('INCOMPLETE');
     expect(verdict([srv001], 'claude', false).verdict).toBe('BLOCKED');
@@ -158,8 +158,8 @@ describe('review round 1 (R-11, R-17, D-4)', () => {
   });
 });
 
-describe('review round 2 (R-60)', () => {
-  it('S-26: a --max-duration stop after the handshake reads INCOMPLETE even with errors found before it', () => {
+describe('INCOMPLETE after a --max-duration stop', () => {
+  it('a --max-duration stop after the handshake reads INCOMPLETE even with errors found before it', () => {
     const srv001 = f('SRV-001', 'error', { platforms: ['claude', 'chatgpt'], severityByPlatform: { claude: 'error', chatgpt: 'error' } });
     const s = loadSnapshot('minimal-http');
     s.coverage = { toolLevel: 'stopped', reason: 'stopped by --max-duration (4000 ms) during listing' };
@@ -173,7 +173,7 @@ describe('review round 2 (R-60)', () => {
 });
 
 describe('text report', () => {
-  it('collapses 2 or more findings of the same rule and message (R-28)', () => {
+  it('collapses 2 or more findings of the same rule and message', () => {
     const list = ['a', 'b', 'c', 'd', 'e'].map((t) => f('TOOL-012', 'error', { tool: t, message: 'missing openWorldHint' }));
     expect(groupFindings(list, false)).toHaveLength(1);
     expect(groupFindings(list, true)).toHaveLength(5);
@@ -184,7 +184,7 @@ describe('text report', () => {
   });
 
   it('renders header, groups, checklist, verdicts, disclaimer and CTA without ANSI when color is off', () => {
-    // The full checklist needs checklist: true (--checklist); by default it is one line (R-32, D-11 (b)).
+    // The full checklist needs checklist: true (--checklist); by default it is one line.
     const text = renderText(report(loadSnapshot('minimal-http')), { color: false, verbose: false, checklist: true });
     expect(text.startsWith(`mcp-review-check ${VERSION} · rules 2026-10-22 · target: all`)).toBe(true);
     expect(text).toContain('Server  Acme Notes 1.4.2 · https://mcp.acme.test/mcp');
@@ -277,8 +277,8 @@ describe('other formats', () => {
   });
 });
 
-describe('R-11: server text is not markdown', () => {
-  it('R-11: server text in the heading, Subject, Message, coverage reason and limits renders no link, image, HTML or @mention', () => {
+describe('server text is not markdown', () => {
+  it('server text in the heading, Subject, Message, coverage reason and limits renders no link, image, HTML or @mention', () => {
     const s = loadSnapshot('minimal-http');
     s.serverInfo = { name: 'Acme [x](https://e.test/home)', version: '1.0' };
     s.coverage = { toolLevel: 'list-failed', reason: 'tools/list failed: <b>boom</b> & [y](https://e.test/r)' };
@@ -297,7 +297,7 @@ describe('R-11: server text is not markdown', () => {
     expect(md).toContain('&lt;b&gt;boom&lt;/b&gt; &amp; \\[y\\]');
   });
 
-  it('R-11: evidence and the rerun line stay one code span whatever backticks they hold, with the text as is inside', () => {
+  it('evidence and the rerun line stay one code span whatever backticks they hold, with the text as is inside', () => {
     const md = renderMarkdown({ ...report(loadSnapshot('minimal-http')), findings: [f('X-001', 'error', { evidence: 'Invalid Host `` <b>x</b> ``' }), f('X-002', 'error', { evidence: 'plain @x | y' })] }, { rerun: 'npx mcp-review-check --stdio "npx -y @scope/pkg ``x``"' });
     const cellOf = (id: string) => md.split('\n').find((l) => l.startsWith(`| ${id} `))!.split(' | ').at(-1)!.replace(/ \|$/, '');
     const ev = cellOf('X-001');
@@ -309,7 +309,7 @@ describe('R-11: server text is not markdown', () => {
     expect(rerun).toBe('``` rerun: npx mcp-review-check --stdio "npx -y @scope/pkg ``x``" ```');
   });
 
-  it('R-11: the connect failure, Target, Revision and the Transport line show server text as written', () => {
+  it('the connect failure, Target, Revision and the Transport line show server text as written', () => {
     const s = loadSnapshot('minimal-http');
     s.target = { kind: 'stdio', command: 'node', args: ['[t](https://e.test/target)', '<u>arg</u>'] };
     s.coverage = { toolLevel: 'connect-failed', reason: 'stderr: <b>down</b> [c](https://e.test/cause)' };
@@ -324,7 +324,7 @@ describe('R-11: server text is not markdown', () => {
     expect(md).toContain('era legacy (&lt;b&gt;1&lt;/b&gt; \\[v\\](https:\u200B//e.test/version)) · auth');
   });
 
-  it('R-11: a bare https:// or www. URL in server text is no GFM autolink: a zero-width space sits inside "://" and "www."', () => {
+  it('a bare https:// or www. URL in server text is no GFM autolink: a zero-width space sits inside "://" and "www."', () => {
     const s = loadSnapshot('minimal-http');
     s.serverInfo = { name: 'Acme https://e.example/login', version: '1.0' };
     s.target = { kind: 'stdio', command: 'node', args: ['https://e.example/t'] };
@@ -337,7 +337,7 @@ describe('R-11: server text is not markdown', () => {
     expect(md).toContain('| WWW​.e.example | go to HTTP:​//e.example/a or www​.e.example/b |');
   });
 
-  it('R-11: a lone CR in evidence, a message or the rerun line ends neither the table row nor the line', () => {
+  it('a lone CR in evidence, a message or the rerun line ends neither the table row nor the line', () => {
     const ev = 'Invalid Host\r[Click](https://e.example/phish) ![p](https://e.example/p.png) <img src="https://e.example/i.png">';
     const findings = [f('X-001', 'error', { message: 'bad\r[Click](https://e.example/m)', evidence: ev })];
     const md = renderMarkdown({ ...report(loadSnapshot('minimal-http')), findings }, { rerun: 'npx x\r[y](https://e.example/r)' });
@@ -350,7 +350,7 @@ describe('R-11: server text is not markdown', () => {
     expect(lines.filter((l) => l.includes('e.example'))).toHaveLength(2);
   });
 
-  it('R-11: a backslash in server text is escaped too, so a server "\\[x\\](url)" stays text, not a link', () => {
+  it('a backslash in server text is escaped too, so a server "\\[x\\](url)" stays text, not a link', () => {
     const s = loadSnapshot('minimal-http');
     s.serverInfo = { name: '\\[h\\](https://e.example/h)', version: '1.0' };
     const findings = [f('X-001', 'error', { tool: '\\[t\\](https://e.example/t)', message: '\\[x\\](https://e.example) \\!\\[p\\](https://e.example/p.png)' })];
@@ -360,7 +360,7 @@ describe('R-11: server text is not markdown', () => {
     expect(md).not.toMatch(/(?<!\\)(\\\\)*\]\(https/); // a "](" after an even run of backslashes would end a link
   });
 
-  it('R-11: every @ in server text is neutralized, an e-mail address too; the AUTH-012 contact stays as written', () => {
+  it('every @ in server text is neutralized, an e-mail address too; the AUTH-012 contact stays as written', () => {
     const s = loadSnapshot('auth-required');
     const as = s.authProbe!.as[0].json!;
     delete as.registration_endpoint;
@@ -373,9 +373,9 @@ describe('R-11: server text is not markdown', () => {
     expect(md).toContain('| ping @&#8203;octocat (@&#8203;team) or mail a@&#8203;b.com, x.y@&#8203;z.test, a-b@&#8203;c.test |');
   });
 
-  // MRC-2 review round 2: an @ after ".", "-" or "_" stayed a GitHub mention (the mention filter reads "." and "-" as
+  // An @ after ".", "-" or "_" stayed a GitHub mention (the mention filter reads "." and "-" as
   // non-word characters, and "_…_" becomes <em> whose text starts with "@"), and an e-mail address became a mailto link.
-  it('R-11: an @ after ".", "-" or "_" and an e-mail address or mailto: in server text give no mention and no mailto link; only the whole AUTH-012 contact is kept', () => {
+  it('an @ after ".", "-" or "_" and an e-mail address or mailto: in server text give no mention and no mailto link; only the whole AUTH-012 contact is kept', () => {
     const s = loadSnapshot('minimal-http');
     s.serverInfo = { name: 'Acme x.@octocat-title', version: '1.0' };
     const msg = 'ping a.@octocat-dot b-@octocat-dash _@octocat-em_ mail admin@evil.example or mailto:x@evil.example; xmcp-review@anthropic.com, mcp-review@anthropic.com.evil.example, mcp-review@anthropic.com.';

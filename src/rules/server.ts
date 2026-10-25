@@ -40,7 +40,7 @@ export const SRV_001 = defineRule(
     if (!t || t.ok || (/^E[A-Z_]+$/.test(t.code ?? '') && !isTlsCode(t.code) && !tlsProto && !t.transient)) return [];
     const tries = t.attempts && t.attempts.length > 1 ? ` (attempts: ${t.attempts.join(', ')})` : '';
     if (t.transient) return [{ severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }];
-    // Only a non-TLS answer reads as "not a TLS endpoint"; other ERR_SSL_* codes are a version or cipher mismatch (R-12).
+    // Only a non-TLS answer reads as "not a TLS endpoint"; other ERR_SSL_* codes are a version or cipher mismatch.
     if (/^(EPROTO|ERR_SSL_WRONG_VERSION_NUMBER|ERR_SSL_PACKET_LENGTH_TOO_LONG)$/.test(t.code ?? '')) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (not a TLS endpoint?)${tries}` })];
     if (tlsProto) return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code} (TLS version or cipher mismatch; hosts need TLS 1.2+ with common ciphers)${tries}` })];
     return [localize(snap, { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}; hosts reject this certificate` })];
@@ -100,7 +100,7 @@ export const SRV_004 = defineRule(
     const results = [snap.transport.dns, ...(snap.authProbe?.asDns ?? [])].filter((d) => d !== undefined);
     for (const d of results) {
       const note = ' (system resolver)';
-      // R-37: the system resolver (/etc/hosts, container DNS) answers where public DNS has no A record.
+      // The system resolver (/etc/hosts, container DNS) answers where public DNS has no A record.
       const local = d.a.length ? [] : (d.lookup ?? []).filter((ip) => isIP(ip) === 4 || !!d.error);
       if (local.length) { out.push(localize(snap, { message: `${d.host} resolves only locally (${local.join(', ')}), not in public DNS` })); continue; }
       if (d.a.length === 0 && d.aaaa.length === 0 && d.error) {
