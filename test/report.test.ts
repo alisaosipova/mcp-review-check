@@ -5,7 +5,7 @@ import { runRules } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
 import type { Finding } from '../src/rules/types.js';
 import { buildReport, resultLine } from '../src/report/index.js';
-import { contactUrl } from '../src/report/constants.js';
+import { CONTACT_URL, contactUrl, CTA_TEXT } from '../src/report/constants.js';
 import { targetLabel } from '../src/report/index.js';
 import { toJson } from '../src/report/json.js';
 import { renderMarkdown } from '../src/report/markdown.js';
@@ -193,7 +193,7 @@ describe('text report', () => {
     expect(text).toContain('MANUAL CHECKLIST (not verified automatically)');
     expect(text).toMatch(/Claude: BLOCKED .* · ChatGPT: BLOCKED .* · Result: FAIL \(--fail-on error\)/);
     expect(text).toContain('not affiliated with Anthropic or OpenAI');
-    expect(text).not.toContain('<CONTACT_URL>'); // no placeholder CTA while CONTACT_URL is unset
+    expect(text).not.toContain('<CONTACT_URL>'); // a placeholder never reaches a report
     expect(text).not.toMatch(/\x1b\[/);
   });
 
@@ -211,10 +211,10 @@ describe('other formats', () => {
     expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: '2026-10-22', catalogAgeDays: 0 });
     expect(j.summary).toHaveProperty('verdicts.claude');
     expect(j.findings[0]).toHaveProperty('docs');
-    expect(j.contact).toBeNull();
+    expect(j.contact).toEqual({ text: CTA_TEXT, url: CONTACT_URL });
   });
 
-  it('contactUrl accepts only absolute http(s) URLs', () => {
+  it('contactUrl accepts absolute http(s) URLs (mailto: cases in cta.test.ts)', () => {
     expect(contactUrl('<CONTACT_URL>')).toBeUndefined();
     expect(contactUrl('')).toBeUndefined();
     expect(contactUrl('https://example.test/help')).toBe('https://example.test/help');

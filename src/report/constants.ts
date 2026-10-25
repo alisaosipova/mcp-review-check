@@ -2,18 +2,27 @@
 import { CATALOG_DATE } from '../catalog.js';
 import type { Report } from './index.js';
 
-// Set to a real absolute https URL before release; empty leaves the call to action out. No brand or URL is invented here.
-export const CONTACT_URL = '';
+// The maintainer's contact: an absolute http(s) URL or a mailto: with one plain address; empty leaves the call to action out.
+export const CONTACT_URL = 'mailto:20horizon93@gmail.com';
 export const CTA_TEXT = 'Need help getting your connector approved?';
 
-/** CONTACT_URL when it is a valid absolute http(s) URL, otherwise undefined (placeholders never reach a report). */
+const MAILTO = /^mailto:([A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})$/;
+
+/** CONTACT_URL when it is a valid absolute http(s) URL or a mailto: with one plain address (no query, no second
+ *  address, no percent-escape that a mail client would decode into one), otherwise undefined (placeholders never reach a report). */
 export function contactUrl(raw: string = CONTACT_URL): string | undefined {
+  if (MAILTO.test(raw)) return raw;
   try {
     const u = new URL(raw);
     return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** How a person reads the contact: the address of a mailto:, the URL itself otherwise. */
+function contactLabel(link: string): string {
+  return MAILTO.exec(link)?.[1] ?? link;
 }
 
 export const DISCLAIMER =
@@ -25,7 +34,7 @@ export const DISCLAIMER =
 export function ctaLine(r: Report, env: NodeJS.ProcessEnv = process.env, url: string = CONTACT_URL): string | undefined {
   const link = contactUrl(url);
   const due = Object.values(r.summary.verdicts).some((v) => v?.verdict === 'BLOCKED') || r.snap.era.includes('legacy') || r.snap.coverage.toolLevel === 'auth-required';
-  return link && due && env.MCP_REVIEW_CHECK_NO_CTA !== '1' ? `${CTA_TEXT} ${link}` : undefined;
+  return link && due && env.MCP_REVIEW_CHECK_NO_CTA !== '1' ? `${CTA_TEXT} ${contactLabel(link)}` : undefined;
 }
 
 export const AUTH_NOTICE =

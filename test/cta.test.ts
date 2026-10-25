@@ -1,9 +1,9 @@
-// The call to action is a mechanism that stays off until a contact URL is set.
+// The call to action: the maintainer's contact on a BLOCKED, legacy-era or auth-required result, in text and markdown.
 import { describe, expect, it } from 'vitest';
 import type { EngineResult } from '../src/rules/engine.js';
 import { runRules } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
-import { CTA_TEXT, ctaLine, DISCLAIMER } from '../src/report/constants.js';
+import { CONTACT_URL, contactUrl, CTA_TEXT, ctaLine, DISCLAIMER } from '../src/report/constants.js';
 import { buildReport } from '../src/report/index.js';
 import { toJson } from '../src/report/json.js';
 import { renderMarkdown } from '../src/report/markdown.js';
@@ -14,6 +14,8 @@ import { BAD, cli } from './cli-runner.js';
 import { loadSnapshot } from './helpers.js';
 
 const URL_SET = 'https://example.test/help';
+const ADDRESS = '20horizon93@gmail.com';
+const MAIL_LINE = `${CTA_TEXT} ${ADDRESS}`;
 const started = new Date('2026-10-22T10:00:00Z');
 const NONE: EngineResult = { findings: [], ignored: [], skipped: [], rulesRun: 0 };
 
@@ -52,35 +54,47 @@ describe('call to action', () => {
       expect(out.indexOf(line!)).toBeLessThan(out.indexOf(disclaimerStart));
     }
     expect(text(blocked)).not.toContain(CTA_TEXT);
-    // Never in the machine formats.
-    expect(JSON.stringify(toJson(blocked))).not.toContain(CTA_TEXT);
+    // SARIF never has it; JSON has the contact as data in its own field.
     expect(renderSarif(blocked)).not.toContain(CTA_TEXT);
+    expect(renderSarif(blocked)).not.toContain(ADDRESS);
+    expect(toJson(blocked)).toHaveProperty('contact', { text: CTA_TEXT, url: `mailto:${ADDRESS}` });
   });
 
-  it('MCP_REVIEW_CHECK_NO_CTA=1 or an empty URL hides the CTA; JSON contact stays null; SARIF has no CTA', async () => {
+  it('the contact is the maintainer\'s address; a mailto: shows as the bare address and only a plain one is accepted', () => {
+    expect(CONTACT_URL).toBe(`mailto:${ADDRESS}`);
+    expect(cta(report('minimal-http'), {})).toBe(MAIL_LINE);
+    for (const bad of ['mailto:', 'mailto:a@b', 'mailto:a@b.test?subject=x', 'mailto:a@b.test,c@d.test', 'mailto:a@b.test%0Abcc:c@d.test',
+      'mailto:<a@b.test>', 'javascript:alert(1)', 'MAILTO:a@b.test', 'mailto:a b@c.test',
+      'mailto:x%2Cevil%40attacker.test@b.test', 'mailto:a%0Abcc%3Ac%40d.test@b.test']) expect(contactUrl(bad), bad).toBeUndefined();
+    expect(contactUrl('mailto:first.last+mcp@mail.example.test')).toBe('mailto:first.last+mcp@mail.example.test');
+  });
+
+  it('MCP_REVIEW_CHECK_NO_CTA=1 or an empty URL hides the CTA; SARIF has no CTA; end to end it shows the address', async () => {
     const blocked = report('minimal-http', { era: 'legacy' });
     expect(cta(blocked, {}, URL_SET)).toBe(`${CTA_TEXT} ${URL_SET}`);
     expect(cta(blocked, { MCP_REVIEW_CHECK_NO_CTA: '1' }, URL_SET)).toBeUndefined();
     expect(cta(blocked, {}, '')).toBeUndefined();
     expect(cta(blocked, {}, '<CONTACT_URL>')).toBeUndefined();
-    expect(cta(blocked, {})).toBeUndefined(); // CONTACT_URL is empty by default
+    expect(cta(blocked, {})).toBe(MAIL_LINE); // CONTACT_URL by default
 
     expect(text(blocked)).not.toContain(CTA_TEXT);
     expect(markdown(blocked)).not.toContain(CTA_TEXT);
-    expect(toJson(blocked)).toHaveProperty('contact', null);
     const sarif = renderSarif(blocked);
     expect(sarif).not.toContain(CTA_TEXT);
     expect(JSON.parse(sarif).runs[0].properties).not.toHaveProperty('contact');
 
-    // End to end on a BLOCKED server: no CTA in any format, contact null.
+    // End to end on a BLOCKED server: the address above the disclaimer in text and markdown, none in SARIF.
     for (const format of ['text', 'markdown', 'sarif']) {
       const run = await cli(['--stdio', BAD, '--format', format]);
       expect(run.code).toBe(1);
       expect(run.stdout).toContain('mcp-review-check');
-      expect(run.stdout).not.toContain(CTA_TEXT);
+      if (format === 'sarif') expect(run.stdout).not.toContain(CTA_TEXT);
+      else expect(run.stdout.indexOf(MAIL_LINE), format).toBeGreaterThan(-1);
+      if (format !== 'sarif') expect(run.stdout.indexOf(MAIL_LINE)).toBeLessThan(run.stdout.indexOf(disclaimerStart));
+      const off = await cli(['--stdio', BAD, '--format', format], { MCP_REVIEW_CHECK_NO_CTA: '1' });
+      expect(off.stdout).not.toContain(CTA_TEXT);
     }
     const json = await cli(['--stdio', BAD, '--format', 'json']);
-    expect(json.json.contact).toBeNull();
-    expect(json.stdout).not.toContain(CTA_TEXT);
+    expect(json.json.contact).toEqual({ text: CTA_TEXT, url: `mailto:${ADDRESS}` });
   });
 });

@@ -1417,12 +1417,12 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
     disclaimer, contact: {text, url} | null }
   ```
   Findings are not collapsed.
-- **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then a manual checklist as `- [ ]` items, then the disclaimer and the CTA. Pipes inside cells are escaped.
+- **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
 - **sarif:** SARIF 2.1.0.
   - `tool.driver` = mcp-review-check, with `rules[]` taken from the catalog (`id`, `shortDescription`, `helpUri` = first source, `properties.platforms`).
   - Level mapping: error→`error`, warning→`warning`, info→`note`.
   - Each result has `logicalLocations` `[{name: tool, kind: 'function'}]` and `physicalLocation.artifactLocation.uri` set to the redacted server URL (`new URL().href`, so it is a valid URI), or `stdio:` + `encodeURIComponent(command)`.
-  - `tool.driver.informationUri` is written only when `CONTACT_URL` is an absolute http(s) URL.
+  - `tool.driver.informationUri` is the project repository URL (`package.json` `repository.url`), never `CONTACT_URL`.
   - The output validates against the official SARIF 2.1.0 schema (vendored in `test/fixtures/sarif-schema-2.1.0.json`).
   - Manual items are excluded.
   - Known limitation: GitHub code scanning cannot link these results to source lines.
@@ -1430,11 +1430,11 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
 ### 5.4 CTA constant
 `src/report/constants.ts`:
 ```ts
-export const CONTACT_URL = '';  // set to a real absolute https URL before release; no brand or URL is invented here
+export const CONTACT_URL = 'mailto:20horizon93@gmail.com';  // an absolute http(s) URL or a mailto: with one plain address
 export const CTA_TEXT = 'Need help getting your connector approved?';
 ```
-- When `CONTACT_URL` is a valid absolute http(s) URL (`contactUrl()`), every format prints `${CTA_TEXT} ${CONTACT_URL}` and JSON puts it in `contact`.
-- Otherwise (empty, or a placeholder such as `<CONTACT_URL>`) the CTA is omitted and JSON `contact` is `null`.
+- When `CONTACT_URL` is valid (`contactUrl()`), text and markdown print `${CTA_TEXT} ${address or URL}` above the disclaimer on a `BLOCKED`, legacy-era or auth-required result, and JSON puts `{text, url}` in `contact`; SARIF never carries it.
+- Otherwise (empty, a placeholder such as `<CONTACT_URL>`, a mailto: with a query or a second address) the CTA is omitted and JSON `contact` is `null`.
 
 ---
 

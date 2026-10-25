@@ -93,7 +93,7 @@ This version is not published to npm yet. From a checkout: `npm install && npm r
 | `--no-color`, `--verbose`, `--help`, `--version` | | `--no-color` turns colours off (they are also off without a TTY or with `NO_COLOR`; `FORCE_COLOR=1` turns them on without a TTY, see [GitHub Actions](#github-actions)). `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
 
 Environment variables: `MCP_REVIEW_CHECK_TOKEN` is the default for `--bearer` (see [Token recipe](#token-recipe)); `NO_COLOR` and `FORCE_COLOR` set colours; `GITHUB_ACTIONS` and `GITHUB_STEP_SUMMARY` turn on [GitHub Actions](#github-actions) output.
-`MCP_REVIEW_CHECK_NO_CTA=1` hides the call to action (a contact link that text and markdown reports may show above the disclaimer on a `BLOCKED`, legacy-era or auth-required result); this version sets no contact URL, so no report shows one either way.
+`MCP_REVIEW_CHECK_NO_CTA=1` hides the call to action: the maintainer's e-mail address, which text and markdown reports show above the disclaimer on a `BLOCKED`, legacy-era or auth-required result (JSON always has it in `contact`, SARIF never).
 
 ### Exit codes
 
