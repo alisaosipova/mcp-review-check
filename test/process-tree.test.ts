@@ -33,6 +33,13 @@ function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+/** The recorded servers still alive up to 2 s after the CLI exited: a second signal makes the CLI SIGKILL the group and
+ *  exit without a wait, and the kernel can end the server a moment later (seen on macOS). */
+async function aliveAfterKill(pidFile: string): Promise<number[]> {
+  for (const until = Date.now() + 2000; pidsOf(pidFile).some(alive) && Date.now() < until;) await new Promise((done) => setTimeout(done, 25));
+  return pidsOf(pidFile).filter(alive);
+}
+
 function pidFile(): string {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-tree-'));
   dirs.push(dir);
@@ -105,7 +112,7 @@ describe.skipIf(process.platform === 'win32')('a server behind a sh -c wrapper i
     const pids = pidFile();
     const r = await signalled(['--format', 'json', '--timeout', '20000', ...wrapped(pids, '--ignore-term')], pids, 'SIGINT', true);
     expect(pidsOf(pids)).toHaveLength(1);
-    expect(pidsOf(pids).filter(alive)).toEqual([]);
+    expect(await aliveAfterKill(pids)).toEqual([]);
     expect(r).toEqual({ code: null, signal: 'SIGINT' });
   });
 
@@ -115,7 +122,7 @@ describe.skipIf(process.platform === 'win32')('a server behind a sh -c wrapper i
     const r = await signalled(['--format', 'json', '--timeout', '20000', ...wrapped(pids, '--ignore-term')], pids, 'SIGINT', true, 1, at);
     expect(r).toEqual({ code: null, signal: 'SIGINT' });
     expect(at.exit! - at.signal!).toBeLessThan(500);
-    expect(pidsOf(pids).filter(alive)).toEqual([]);
+    expect(await aliveAfterKill(pids)).toEqual([]);
   });
 
   // After SIGINT the check went on and, once the SIGKILL round had passed, started a fresh
