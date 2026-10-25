@@ -290,7 +290,9 @@ describe('secret names in any segment, raw query values, deep data', () => {
     for (const v of ['Zq9', 'Zq8', 'Pw7', 'Ab1']) expect(line, `rerun leaks ${v}`).not.toContain(v);
     expect(line).toContain('--bearer «redacted»');
     expect(line).toContain('X-Api-Key:«redacted»');
-    expect(line).toContain(`'http://127.0.0.1:${s.port}/mcp?token=«redacted»'`);
+    // Quoted for the shell it is pasted into: POSIX single quotes, cmd.exe double quotes on Windows.
+    const q = process.platform === 'win32' ? '"' : "'";
+    expect(line).toContain(`${q}http://127.0.0.1:${s.port}/mcp?token=«redacted»${q}`);
     const eq = rerunLine(await cli([`http://127.0.0.1:${s.port}/mcp`, '--bearer=Zq6', '--format', 'markdown', '--timeout', '5000']));
     expect(eq).not.toContain('Zq6');
     expect(eq).toContain('--bearer=«redacted»');
