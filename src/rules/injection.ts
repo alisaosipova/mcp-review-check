@@ -184,6 +184,19 @@ export function encodedPayload(run: string): boolean {
   return true;
 }
 
+/**
+ * An escape run that hides text. A percent-encoded run that decodes to UTF-8 without any ASCII letter is a
+ * non-Latin word in a URL example (%D0%BF%D1%80%D0%B8... is Russian), not a payload.
+ */
+export function escapePayload(run: string): boolean {
+  if (!/^(%[0-9a-f]{2})+$/i.test(run)) return true;
+  try {
+    return /[A-Za-z]/.test(decodeURIComponent(run));
+  } catch {
+    return true; // not UTF-8: raw bytes
+  }
+}
+
 export const INJ_004 = defineRule(
   {
     id: 'INJ-004', title: 'Encoded payloads', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
@@ -199,7 +212,11 @@ export const INJ_004 = defineRule(
       for (const m of text.matchAll(/[A-Za-z0-9+/]{40,}={0,2}/g)) {
         if (encodedPayload(m[0])) { hit = m as RegExpExecArray; break; }
       }
-      hit ??= /(\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|%[0-9a-f]{2}){8,}/i.exec(text);
+      if (!hit) {
+        for (const m of text.matchAll(/(\\x[0-9a-f]{2}|\\u[0-9a-f]{4}|%[0-9a-f]{2}){8,}/gi)) {
+          if (escapePayload(m[0])) { hit = m as RegExpExecArray; break; }
+        }
+      }
       if (hit) out.push(finding(e, text, hit));
     }
     return out;
