@@ -7,7 +7,7 @@ import { RULES } from '../rules/index.js';
 import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
-import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, type Report } from './index.js';
+import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, visibleText, type Report } from './index.js';
 
 export interface TextOptions {
   color: boolean;
@@ -89,16 +89,22 @@ export function localBanner(r: Report): string | undefined {
   return `Local target: deploy-time checks are informational${ids.length ? ` (${ids.join(', ')})` : ''}; --no-local for strict checks.`;
 }
 
+/**
+ * Every line but the disclaimer and the call to action goes through visibleText (server names, messages and reasons
+ * may hold ESC, CR or LF), and a line that would start with "::" after its indent gets its first ":" as \u{3A}: the
+ * GitHub runner reads such a stdout line as a workflow command.
+ */
 export function renderText(r: Report, opts: TextOptions): string {
-  const c = (color: keyof typeof ANSI, s: string) => (opts.color ? `${ANSI[color]}${s}${ANSI.reset}` : s);
+  const t = visibleText;
+  const c = (color: keyof typeof ANSI, s: string) => (opts.color ? `${ANSI[color]}${t(s)}${ANSI.reset}` : t(s));
   const snap = r.snap;
   const out: string[] = [];
   out.push(c('bold', `${r.tool.name} ${r.tool.version} · rules ${r.tool.catalogDate} · target: ${snap.options.target}`));
-  out.push(`Server  ${serverName(snap)} · ${targetLabel(snap)}`);
-  out.push(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`);
+  out.push(t(`Server  ${serverName(snap)} · ${targetLabel(snap)}`));
+  out.push(t(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`));
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(c('dim', `          ${rev}`));
-  out.push(`Checked ${counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`);
+  out.push(t(`Checked ${counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`));
   const local = localBanner(r);
   if (local) out.push(c('dim', local));
   if (snap.coverage.toolLevel === 'auth-required') out.push('', c('yellow', AUTH_NOTICE));
@@ -114,7 +120,7 @@ export function renderText(r: Report, opts: TextOptions): string {
     if (!list.length) continue;
     if (!opts.quiet) out.push('', c(COLOR[sev], `${HEAD[sev]} (${list.length})`));
     for (const g of groupFindings(list, opts.verbose)) {
-      out.push(`  ${c(COLOR[sev], MARK[sev])} ${line(g)}`);
+      out.push(`  ${c(COLOR[sev], MARK[sev])} ${t(line(g))}`);
       if (!opts.quiet && (sev !== 'info' || opts.verbose)) {
         out.push(c('dim', `      fix  ${g.first.fix}`));
         if (g.first.docs[0]) out.push(c('dim', `      docs ${g.first.docs[0]}`));
@@ -127,18 +133,18 @@ export function renderText(r: Report, opts: TextOptions): string {
   const snippets = fixSnippets(r);
   if (snippets.length) {
     out.push('', c('bold', 'FIX SNIPPETS (add to each tool definition; check the guessed hint values)'));
-    for (const x of snippets) out.push(`  ${x}`);
+    for (const x of snippets) out.push(t(`  ${x}`));
   }
   if (r.ignored.length) out.push('', c('dim', `Ignored ${r.ignored.length} finding(s) via --ignore.`));
 
   if (r.manual.length && opts.checklist) {
     out.push('', c('bold', 'MANUAL CHECKLIST (not verified automatically)'));
-    for (const m of r.manual) out.push(`  [ ] ${m.id} [${m.platforms.join(', ')}] ${m.text}`);
+    for (const m of r.manual) out.push(t(`  [ ] ${m.id} [${m.platforms.join(', ')}] ${m.text}`));
   } else if (r.manual.length) out.push('', c('dim', `${r.manual.length} manual item${r.manual.length === 1 ? '' : 's'}: --checklist to show`));
 
   if (opts.verbose && r.skipped.length) {
     out.push('', c('bold', 'SKIPPED RULES'));
-    for (const s of r.skipped) out.push(`  - ${s.ruleId}: ${s.reason}`);
+    for (const s of r.skipped) out.push(t(`  - ${s.ruleId}: ${s.reason}`));
   }
 
   if (opts.quiet) out.length = findingsEnd; // no fix snippets, ignored count, checklist or skipped rules
@@ -146,12 +152,14 @@ export function renderText(r: Report, opts: TextOptions): string {
   const rc = r.rootCauses;
   const causes = rc.errors + rc.warnings;
   // --quiet hides the info findings, so it does not count them either.
-  out.push(...(out.length ? [''] : []), `Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings${opts.quiet ? '' : ` · ${s.info} info`}`);
+  out.push(...(out.length ? [''] : []), t(`Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings${opts.quiet ? '' : ` · ${s.info} info`}`));
   const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
     x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
   const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
-  out.push([...verdicts, `Result: ${resultLine(r, (x) => c('red', x), opts.quiet)}`].join(' · '));
+  // The cause of a failed connect in the result line is the server's text: made visible first, then FAIL is coloured.
+  const result = t(resultLine(r, (x) => x, opts.quiet)).replace(/^(FAIL|INCOMPLETE)\b/, (x) => c('red', x));
+  out.push([...verdicts, `Result: ${result}`].join(' · '));
   if (opts.cta && !opts.quiet) out.push('', opts.cta);
   out.push('', DISCLAIMER);
-  return out.join('\n') + '\n';
+  return out.map((l) => l.replace(/^(\s*):(?=:)/, '$1\\u{3A}')).join('\n') + '\n';
 }

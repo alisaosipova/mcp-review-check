@@ -5,22 +5,26 @@ import { limitsNotice } from '../limits.js';
 import { RULES } from '../rules/index.js';
 import { AUTH_CONTACT } from '../rules/auth.js';
 import { localBanner, visibleFindings } from './text.js';
-import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, type Report } from './index.js';
+import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, visibleText, type Report } from './index.js';
 
 const EOL = /\r\n?|\n/g; // a lone CR ends a line too (CommonMark)
-const cell = (s: string | undefined) => (s ?? '').replace(/\|/g, '\\|').replace(EOL, ' ');
+/** One line, with every other control or format character (ESC, bidi overrides, zero-width) shown as \u{..}. */
+const oneLine = (s: string | undefined) => visibleText((s ?? '').replace(EOL, ' '));
+const pipes = (s: string) => s.replace(/\|/g, '\\|');
+const cell = (s: string | undefined) => pipes(oneLine(s));
 const HEAD: Record<Severity, string> = { error: 'Errors', warning: 'Warnings', info: 'Info' };
-const ESC: Record<string, string> = { '\\': '\\\\', '`': '\\`', '[': '\\[', ']': '\\]', '<': '&lt;', '>': '&gt;', '&': '&amp;', '@': '@&#8203;' };
+const ESC: Record<string, string> = { '\\': '\\\\', '`': '\\`', '[': '\\[', ']': '\\]', '<': '&lt;', '>': '&gt;', '&': '&amp;', '@': '@&#8203;', '*': '\\*', '_': '\\_', '~': '\\~', '$': '\\$' };
 
 /** The AUTH-012 contact address as a whole address: no e-mail character before it, no more domain after it. */
 const CONTACT = new RegExp(`(?<![\\w.+-])${AUTH_CONTACT.replace(/\./g, '\\.')}(?![\\w-]|\\.[\\w-])`);
-/** Server text outside a code span: shown as written, never a link, image, HTML, @mention or mailto link (every @ gets a
- *  zero-width space, the AUTH-012 contact address alone stays as written); one inside "://" and "www." keeps GFM from linking a bare URL. */
-const text = (s: string | undefined) => cell((s ?? '').split(CONTACT).map((p) => p.replace(/[\\`[\]<>&@]/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B')).join(AUTH_CONTACT));
+/** Server text outside a code span: shown as written, never a link, image, HTML, emphasis, strikethrough, math, @mention or
+ *  mailto link (every @ gets a zero-width space, the AUTH-012 contact address alone stays as written); one inside "://"
+ *  and "www." keeps GFM from linking a bare URL. Hidden characters are made visible first, so these zero-width spaces stay. */
+const text = (s: string | undefined) => pipes(oneLine(s).split(CONTACT).map((p) => p.replace(/[\\`[\]<>&@*_~$]/g, (c) => ESC[c]).replace(/(:)(?=\/\/)|(www)(?=\.)/gi, '$1$2\u200B')).join(AUTH_CONTACT));
 
 /** Evidence as a code span: quoted server text is shown, not rendered as markdown or HTML. The fence is longer than any backtick run inside, so the text cannot close it. */
 const code = (s: string | undefined, inCell = true) => {
-  const t = inCell ? cell(s) : (s ?? '').replace(EOL, ' '), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
+  const t = inCell ? cell(s) : oneLine(s), fence = '`'.repeat(Math.max(1, ...(t.match(/`+/g) ?? []).map((x) => x.length)) + 1);
   return s ? `${fence} ${t} ${fence}` : '';
 };
 

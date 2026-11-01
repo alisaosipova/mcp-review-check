@@ -382,7 +382,7 @@ describe('server text is not markdown', () => {
     const md = renderMarkdown({ ...report(s), findings: [f('X-001', 'error', { tool: 'ops-@octocat-tool', message: msg })] });
     expect(md).toMatch(/^# Acme x\.@&#8203;octocat-title 1\.0$/m);
     const row = md.split('\n').find((l) => l.startsWith('| X-001 '))!;
-    expect(row).toContain('| ops-@&#8203;octocat-tool | ping a.@&#8203;octocat-dot b-@&#8203;octocat-dash _@&#8203;octocat-em_ mail admin@&#8203;evil.example or mailto:x@&#8203;evil.example; xmcp-review@&#8203;anthropic.com, mcp-review@&#8203;anthropic.com.evil.example, mcp-review@anthropic.com. |');
+    expect(row).toContain('| ops-@&#8203;octocat-tool | ping a.@&#8203;octocat-dot b-@&#8203;octocat-dash \\_@&#8203;octocat-em\\_ mail admin@&#8203;evil.example or mailto:x@&#8203;evil.example; xmcp-review@&#8203;anthropic.com, mcp-review@&#8203;anthropic.com.evil.example, mcp-review@anthropic.com. |');
     // the only @ without the zero-width space is the contact address itself, as a whole address
     expect(`${md.split('\n')[0]}\n${row}`.match(/\S*@(?!&#8203;)\S*/g)).toEqual(['mcp-review@anthropic.com.']);
   });

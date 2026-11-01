@@ -69,6 +69,18 @@ export function platformLabel(f: Finding): string {
   return f.platforms.map((p) => (platformSeverity(f, p) !== f.severity ? `${p}: ${platformSeverity(f, p)}` : p)).join(', ');
 }
 
+/** Control and format characters, and the Unicode line and paragraph separators, except tab. */
+const HIDDEN = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
+
+/**
+ * Text for a terminal, a CI log or a markdown file: every control or format character but a tab (ESC, CR, LF, BEL,
+ * C1, bidi overrides, zero-width) shown as \u{..}, so text the server chose can not recolour, erase or reorder the
+ * report, add a hyperlink, or start a line of its own (a GitHub workflow command).
+ */
+export function visibleText(s: string): string {
+  return s.replace(HIDDEN, (ch) => (ch === '\t' ? ch : `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`));
+}
+
 export function serverName(snap: Snapshot): string {
   const si = snap.serverInfo ?? {};
   const name = isStr(si.title) ? si.title : isStr(si.name) ? si.name : 'MCP server';
