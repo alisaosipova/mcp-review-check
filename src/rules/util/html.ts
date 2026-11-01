@@ -73,8 +73,35 @@ export function extractOrigins(html: string): ExtractedOrigin[] {
     ['connect', new RegExp(`\\bky(?:\\.\\w+)?\\(\\s*${lit}`, 'g')],
     ['navigate', new RegExp(`\\bopenExternal\\(\\s*(?:\\{\\s*url\\s*:\\s*)?${lit}`, 'g')],
     ['navigate', new RegExp(`ui\\/open-link[\\s\\S]{0,200}?${lit}`, 'g')],
+    // ES modules: `import x from "https://..."`, `import "https://..."`, `export * from "https://..."`, `import("https://...")`.
+    ['resource', new RegExp(`\\b(?:import|export)\\b\\s*(?:[^;'"\`()]{0,200}?\\bfrom\\s*)?${lit}`, 'g')],
+    ['resource', new RegExp(`\\bimport\\(\\s*${lit}`, 'g')],
   ];
   for (const [kind, re] of jsPatterns) for (const m of html.matchAll(re)) add(kind, m[1], m[0], 'js');
+  for (const [specifier, url] of importMapUrls(html)) add('resource', url, `importmap "${specifier}": "${url}"`, 'js');
+  return out;
+}
+
+/**
+ * Targets of `<script type="importmap">` (imports and scopes). A mapped module is loaded only when imported, so the
+ * caller treats these as js confidence. Unparseable maps are skipped: the browser rejects them too.
+ */
+function importMapUrls(html: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const m of html.matchAll(/<script\b[^<>]*\btype\s*=\s*["']?importmap\b[^<>]*>/gi)) {
+    const start = (m.index ?? 0) + m[0].length;
+    const end = html.indexOf('</script', start);
+    let map: unknown;
+    try { map = JSON.parse(html.slice(start, end < 0 ? undefined : end)); } catch { continue; }
+    if (typeof map !== 'object' || map === null) continue;
+    const { imports, scopes } = map as { imports?: unknown; scopes?: unknown };
+    const take = (o: unknown) => {
+      if (typeof o !== 'object' || o === null) return;
+      for (const [k, v] of Object.entries(o)) if (typeof v === 'string') out.push([k, v]);
+    };
+    take(imports);
+    if (typeof scopes === 'object' && scopes !== null) for (const s of Object.values(scopes)) take(s);
+  }
   return out;
 }
 
