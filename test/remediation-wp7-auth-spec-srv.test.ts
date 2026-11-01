@@ -311,4 +311,19 @@ describe('F043 local mode: a local authorization server with an untrusted certif
     expect(evaluate(byId('AUTH-010'), s)).toMatchObject([{ severity: 'error' }]);
   });
 });
+
+describe('F060 SPEC-010 content for a missing resource URI', () => {
+  const withRead = (result: unknown) => snap({
+    resources: [{ uri: 'file:///a.txt', name: 'a' }],
+    set: (s) => { s.transport.probes.resourceMissing = { kind: 'jsonrpc', label: 'resourceMissing', durationMs: 1, result }; },
+  });
+
+  it('a catch-all answer with content is an info observation', () => {
+    expect(evaluate(byId('SPEC-010'), withRead({ contents: [{ uri: 'mcp-review-check://does-not-exist', text: 'hello' }] }))).toMatchObject([{ severity: 'info', message: expect.stringMatching(/returned content instead of an error/) }]);
+  });
+
+  it('empty contents stay an error', () => {
+    expect(evaluate(byId('SPEC-010'), withRead({ contents: [] }))).toMatchObject([{ severity: 'error' }]);
+  });
+});
 // @end

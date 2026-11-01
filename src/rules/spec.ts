@@ -213,6 +213,9 @@ export const SPEC_009 = defineRule(
   },
 );
 
+/** The URI the resourceMissing probes read (src/probe/wire.ts). */
+const MISSING_URI = 'mcp-review-check://does-not-exist';
+
 export const SPEC_010 = defineRule(
   {
     id: 'SPEC-010', title: 'Resource not found → error, never empty contents', severity: { spec: 'error' }, needs: ['resources'],
@@ -226,6 +229,11 @@ export const SPEC_010 = defineRule(
       if (!v || v.transportError) return;
       if (isObj(v.result) && Array.isArray(v.result.contents) && v.result.contents.length === 0) {
         out.push({ message: 'resources/read of a missing URI returned empty contents instead of an error' });
+        return;
+      }
+      // Content for a URI no server can hold: a catch-all handler; it may be deliberate, so an observation.
+      if (isObj(v.result) && Array.isArray(v.result.contents) && v.result.contents.length > 0) {
+        out.push({ severity: 'info', message: `resources/read of a missing URI (${MISSING_URI}) returned content instead of an error (catch-all handler?); clients cannot tell a missing resource` });
         return;
       }
       const code = v.error?.code;
