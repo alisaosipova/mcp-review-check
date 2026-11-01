@@ -135,3 +135,16 @@ export function isGenericError(text: string): boolean {
 export function words(text: string): string[] {
   return text.trim().split(/\s+/).filter(Boolean);
 }
+
+// Scripts written without spaces between words: whitespace splitting counts a whole sentence as one word.
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+let segmenter: Intl.Segmenter | undefined;
+
+/** The number of words, by Unicode word segmentation for Chinese, Japanese, Thai and similar scripts. */
+export function wordCount(text: string): number {
+  if (!UNSPACED.test(text)) return words(text).length;
+  segmenter ??= new Intl.Segmenter(undefined, { granularity: 'word' });
+  let n = 0;
+  for (const seg of segmenter.segment(text)) if (seg.isWordLike) n++;
+  return n;
+}

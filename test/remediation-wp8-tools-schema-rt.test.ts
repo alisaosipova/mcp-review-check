@@ -259,4 +259,15 @@ describe('F070 TOOL-019 resolves $ref to an embedded resource inside the documen
       .toEqual(['$ref points outside the document: urn:acme:other']);
   });
 });
+
+describe('F068 TOOL-008 counts Chinese and Japanese words by segmentation', () => {
+  it('a full sentence is not thin', () => {
+    for (const description of ['按关键字搜索用户文档并返回匹配的文档标识和标题列表。', 'キーワードでユーザーのメモを検索し、一致するメモのIDとタイトルを返します。']) {
+      expect(messages('TOOL-008', one(tool({ description }))), description).toEqual([]);
+    }
+  });
+  it('a two-word description is still thin', () => {
+    expect(messages('TOOL-008', one(tool({ description: '搜索笔记' })))[0]).toMatch(/only 2 words/);
+  });
+});
 //@@END

@@ -4,7 +4,7 @@ import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
 import { deref, walkSchema } from './util/schemaWalk.js';
-import { firstVerb, snippet, tokenize, toolKind, words } from './util/text.js';
+import { firstVerb, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
 import { TEXT_CAP } from '../limits.js';
 
 const MCP_TOOLS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools';
@@ -168,7 +168,8 @@ export const TOOL_008 = defineRule(
     const reasons: string[] = [];
     const platforms = new Set<'claude' | 'chatgpt'>();
     const w = words(d);
-    if (w.length < 6 && d.length < 40) { reasons.push(`only ${w.length} words`); platforms.add('chatgpt'); }
+    const n = wordCount(d);
+    if (n < 6 && d.length < 40) { reasons.push(`only ${n} words`); platforms.add('chatgpt'); }
     if (d.length < 20) { reasons.push(`only ${d.length} characters`); platforms.add('claude'); }
     const nameToks = new Set(tokenize(name));
     const descToks = w.map((x) => x.toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean);
