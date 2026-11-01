@@ -385,4 +385,25 @@ describe('F055 SRV-015 ordinary uses of the word "sampling"', () => {
     }
   });
 });
+
+describe('F057 AUTH-006 checks the authorization servers ChatGPT tries', () => {
+  it('a bad second entry is a ChatGPT finding with its index', () => {
+    const f = evaluate(byId('AUTH-006'), authSnap({ prm: { authorization_servers: [ISSUER, 'http://other.test/as?x=1'] } }));
+    expect(f.find((x) => /authorization_servers\[1\]/.test(x.message))).toMatchObject({ platforms: ['chatgpt'], severity: 'error' });
+    expect(f.some((x) => /authorization_servers\[0\]/.test(x.message))).toBe(false);
+  });
+});
+
+describe('F058 AUTH-007 leaves an unparsable issuer to AUTH-006', () => {
+  it('no "tried nothing" error for an issuer that is not a URL', () => {
+    const s = authSnap({ prm: { authorization_servers: ['not a url'] }, probe: { as: [{ issuer: 'not a url', attempts: [] }] } });
+    expect(evaluate(byId('AUTH-006'), s)).toMatchObject([{ severity: 'error' }]);
+    expect(evaluate(byId('AUTH-007'), s)).toEqual([]);
+  });
+
+  it('a valid issuer without metadata is still an AUTH-007 error', () => {
+    const s = authSnap({ probe: { as: [{ issuer: ISSUER, attempts: [exchange({ method: 'GET', status: 404, url: `${ISSUER}/.well-known/oauth-authorization-server` })] }] } });
+    expect(evaluate(byId('AUTH-007'), s)).toMatchObject([{ severity: 'error' }]);
+  });
+});
 // @end

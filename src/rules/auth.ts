@@ -210,6 +210,13 @@ export const AUTH_005 = defineRule(
   },
 );
 
+/** An https (or local-mode local http) issuer identifier without query or fragment. */
+function isIssuerUrl(snap: Snapshot, entry: unknown): boolean {
+  if (!isStr(entry) || !httpsOrLocal(snap, entry)) return false;
+  const u = new URL(entry);
+  return !u.search && !u.hash && !entry.includes('#');
+}
+
 export const AUTH_006 = defineRule(
   {
     id: 'AUTH-006', title: 'PRM authorization_servers', severity: { claude: 'error', chatgpt: 'error', spec: 'error' }, needs: ['auth'],
@@ -223,10 +230,11 @@ export const AUTH_006 = defineRule(
     const list = prm.json.authorization_servers;
     if (!Array.isArray(list) || list.length === 0) return [{ message: 'authorization_servers is missing, not an array, or empty' }];
     const out: RawFinding[] = [];
-    const first = list[0];
-    let bad = !isStr(first) || !httpsOrLocal(snap, first);
-    if (!bad) { const u = new URL(first as string); bad = !!u.search || !!u.hash || (first as string).includes('#'); }
-    if (bad) out.push({ message: `authorization_servers[0] ${JSON.stringify(first)} is not an https issuer without query or fragment` });
+    // [0] for every platform; ChatGPT also tries [1] and [2], so a bad one there is a ChatGPT finding.
+    list.slice(0, 3).forEach((entry, i) => {
+      if (isIssuerUrl(snap, entry)) return;
+      out.push({ ...(i > 0 ? { platforms: ['chatgpt'] as Platform[] } : {}), message: `authorization_servers[${i}] ${JSON.stringify(entry)} is not an https issuer without query or fragment` });
+    });
     if (list.length > 1) out.push({ platforms: ['claude'], severity: 'warning', message: `${list.length} authorization servers listed; only the first is used, no fallback` });
     return out;
   },
@@ -241,6 +249,8 @@ export const AUTH_007 = defineRule(
   },
   (snap) => (snap.authProbe?.as ?? []).slice(0, 3).flatMap((as, i): RawFinding[] => {
     if (as.json) return [];
+    // An issuer that is not a URL had nothing to try: AUTH-006 already reports the entry.
+    if (!as.attempts.length && !URL.canParse(as.issuer)) return [];
     const message = `no authorization server metadata for ${as.issuer} (tried ${describeAttempts(as.attempts) || 'nothing'})`;
     const platforms: Platform[] | undefined = i === 0 ? undefined : ['chatgpt'];
     if (endedTransient(as.attempts)) return [{ platforms, severity: 'info', message: `${INCONCLUSIVE}: ${message}` }];
