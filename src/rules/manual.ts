@@ -64,7 +64,9 @@ export const MANUAL_ITEMS: ManualItem[] = [
 export function manualChecklist(snap: Snapshot): ManualItem[] {
   const active = activePlatforms(snap.options.target);
   const ui = hasUi(snap);
-  const oauth = !!snap.authProbe?.prm;
+  // OAuth found: a PRM, or authorization server metadata through legacy (2025-03-26) origin discovery.
+  const a = snap.authProbe;
+  const oauth = !!a && (!!a.prm || !!a.legacyDiscovery || a.as.some((x) => !!x.json));
   return MANUAL_ITEMS.filter((i) => i.platforms.some((p) => active.includes(p)))
     .filter((i) => (i.feature === 'ui' ? ui : i.feature === 'oauth' ? oauth : true))
     .map((i) => (i.id === 'MAN-031' && snap.target.kind === 'http' ? { ...i, text: i.text.replace('<url>', displayUrl(snap.target.urlAsEntered)) } : i));
