@@ -213,9 +213,13 @@ export const TOOL_020 = defineRule(
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic#composition-keyword-resource-use'],
   },
   (snap) => perTool(snap, (t) => {
-    const { depth, count } = schemaMetrics(t.inputSchema);
-    if (depth > 10 || count > 200) return { message: `inputSchema depth ${depth}, ${count} subschemas` };
-    return undefined;
+    // Both schemas are sent in tools/list, so both cost context tokens.
+    const out: RawFinding[] = [];
+    for (const key of ['inputSchema', 'outputSchema'] as const) {
+      const { depth, count } = schemaMetrics(t[key]);
+      if (depth > 10 || count > 200) out.push({ message: `${key} depth ${depth}, ${count} subschemas` });
+    }
+    return out;
   }),
 );
 

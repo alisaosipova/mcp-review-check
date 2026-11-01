@@ -283,4 +283,12 @@ describe('F078 escapeHidden keeps the joiner inside emoji sequences', () => {
     expect(escapeHidden('a‍💻')).toBe('a\\u{200D}💻');
   });
 });
+
+describe('F079 TOOL-020 bounds outputSchema too', () => {
+  const deep = (n: number) => Array.from({ length: n }).reduce<Record<string, unknown>>((inner) => ({ type: 'object', properties: { n: inner } }), { type: 'string' });
+  it('a deep outputSchema is reported and named', () => {
+    expect(messages('TOOL-020', one(tool({ outputSchema: deep(12) })))).toEqual(['outputSchema depth 12, 13 subschemas']);
+    expect(messages('TOOL-020', one(tool({ outputSchema: deep(4) })))).toEqual([]);
+  });
+});
 //@@END
