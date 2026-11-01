@@ -4,7 +4,7 @@ import type { ProbeObservation, Snapshot, WireProbeName } from '../snapshot.js';
 import type { ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
 import type { Tracer } from '../protocol/trace.js';
-import { challengeProbe, JSON_HEADERS, originProbes } from './network.js';
+import { challengeProbe, JSON_HEADERS, originProbes, sameHostRedirect } from './network.js';
 
 export const UNKNOWN_METHOD = 'mcp-review-check/nonexistent';
 export const UNKNOWN_TOOL = 'mcp_review_check_nonexistent_tool';
@@ -52,7 +52,10 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   }
 
   if (http) {
-    const { tracer, url, authHeaders } = http;
+    const { tracer, authHeaders } = http;
+    // The SDK client followed a same-host redirect of the entered URL; probe the URL it actually talks to.
+    // SRV-006 still reports the redirect from the preflight exchange.
+    const url = sameHostRedirect(http.url, snap.transport.preflight) ?? http.url;
     const session: Record<string, string> = {};
     if (http.sessionId) session['mcp-session-id'] = http.sessionId;
     if (http.protocolVersion && !modernOnly) session['mcp-protocol-version'] = http.protocolVersion;

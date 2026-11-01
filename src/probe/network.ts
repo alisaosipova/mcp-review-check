@@ -109,6 +109,24 @@ export async function preflight(tracer: Tracer, url: URL, timeoutMs: number, wai
   }, wait);
 }
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * The target of a same-host redirect answered to `ex` (such as /mcp -> /mcp/), or undefined.
+ * The SDK client follows such a redirect by itself, so raw probes must go to the same final URL or they only see the 3xx.
+ * A cross-host redirect, or a downgrade from https to http, is not followed: it would carry the credentials elsewhere.
+ */
+export function sameHostRedirect(url: URL, ex: HttpExchange | undefined): URL | undefined {
+  if (!ex?.status || !REDIRECT_STATUSES.has(ex.status)) return undefined;
+  const loc = ex.headers?.location;
+  if (!loc) return undefined;
+  let target: URL;
+  try { target = new URL(loc, url); } catch { return undefined; }
+  if (target.host !== url.host || target.href === url.href) return undefined;
+  if (target.protocol !== url.protocol && target.protocol !== 'https:') return undefined;
+  return target;
+}
+
 /** initialize (or server/discover for modern-only) with different Origin headers. */
 export async function originProbes(tracer: Tracer, url: URL, headers: Record<string, string>, modernOnly: boolean, timeoutMs: number, wait?: (ms: number) => Promise<void>) {
   const body = modernOnly
