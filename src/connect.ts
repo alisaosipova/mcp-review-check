@@ -324,7 +324,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   snap.localMode = opts.local ?? isLocalTarget(snap.transport.dns);
   const tls: TlsObservation[] = [];
   snap.transport.tls = tls;
-  if (url.protocol === 'https:') tls.push({ host: url.host, role: 'mcp', ...(await tlsCheckWithRetry(deps, url.hostname, Number(url.port || 443))) });
+  // The handshake obeys --timeout (capped at 10 s) and stops at the --max-duration deadline instead of retrying.
+  const tlsOpts = { timeoutMs: connectTimeout, signal: progress?.abort.signal };
+  if (url.protocol === 'https:') tls.push({ host: url.host, role: 'mcp', ...(await tlsCheckWithRetry(deps, url.hostname, Number(url.port || 443), tlsOpts)) });
 
   // 1. preflight
   const pf = await preflight(tracer, url, connectTimeout, deps.sleep);
@@ -390,7 +392,10 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
       ? authPf : last401.find((e) => e.headers?.['www-authenticate']) ?? last401[0] ?? authPf;
     const { probe, tlsHosts } = await runAuthProbe({ tracer, url: target, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
     snap.authProbe = probe;
-    for (const h of tlsHosts) tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port)) });
+    for (const h of tlsHosts) {
+      checkpoint(progress, 'auth probe'); // each AS host can take up to three handshakes
+      tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port, tlsOpts)) });
+    }
   };
   if (authFailed) rejected();
   if (trigger) await probeAuth();

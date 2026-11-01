@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSnapshot, urlBasicAuth, type BuildOptions } from '../src/connect.js';
+import type { Deps } from '../src/probe/network.js';
 import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
@@ -104,5 +105,34 @@ describe('server/discover, the auth trigger and the auth probe follow a same-hos
     expect(snap.authProbe?.challenge?.status).toBe(401);
     expect(snap.authProbe?.invalidToken?.status).toBe(401);
     expect(snap.authProbe?.invalidToken?.url).toBe(`${s.url}/`);
+  });
+});
+
+describe('the TLS checks obey --timeout and --max-duration (F031)', () => {
+  type Seen = { host: string; timeoutMs?: number; signal?: AbortSignal };
+  const fakeDeps = (seen: Seen[], check: Deps['tlsCheck'] = async () => ({ ok: true })): Deps => ({
+    resolve4: async () => ['127.0.0.1'], resolve6: async () => [], lookup: async () => ['127.0.0.1'],
+    now: () => performance.now(), sleep: async () => {},
+    tlsCheck: (host, port, o) => { seen.push({ host, timeoutMs: o?.timeoutMs, signal: o?.signal }); return check(host, port, o); },
+  });
+
+  it('passes the --timeout and the run abort signal to the MCP host check', async () => {
+    const seen: Seen[] = [];
+    await buildSnapshot({ target: { kind: 'http', url: 'https://127.0.0.1:1/mcp' }, timeoutMs: 2500 }, fakeDeps(seen));
+    expect(seen).toHaveLength(1);
+    expect(seen[0].timeoutMs).toBe(2500);
+    expect(seen[0].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('a handshake that hangs ends at the --max-duration deadline without retries', async () => {
+    const seen: Seen[] = [];
+    const hang: Deps['tlsCheck'] = (_h, _p, o) => new Promise((resolve) => o?.signal?.addEventListener('abort', () => resolve({ ok: false, code: 'ABORT_ERR' })));
+    const started = performance.now();
+    const { snap } = await buildSnapshot({ target: { kind: 'http', url: 'https://127.0.0.1:1/mcp' }, timeoutMs: 30000, maxDurationMs: 300 }, fakeDeps(seen, hang));
+    expect(performance.now() - started).toBeLessThan(5000);
+    expect(snap.limits?.stopped?.maxDurationMs).toBe(300);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen).toHaveLength(1);
+    expect(seen[0].signal?.aborted).toBe(true);
   });
 });
