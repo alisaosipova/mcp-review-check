@@ -195,7 +195,11 @@ function shownUrl(raw: string): string {
   return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
 }
 
-export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY): Promise<CliResult> {
+/**
+ * `interrupted` is aborted by SIGINT/SIGTERM (its reason the signal number): a run that still finishes in the grace
+ * period writes no report, since the checks after the signal ran against servers being killed.
+ */
+export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY, interrupted?: AbortSignal): Promise<CliResult> {
   let stderr = '';
   let redactor: Redactor | undefined;
   try {
@@ -334,6 +338,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
+    if (interrupted?.aborted) {
+      const n = typeof interrupted.reason === 'number' ? interrupted.reason : 2;
+      return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
+    }
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
     const result = runRules(snap, RULES, { ignore });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
@@ -404,11 +412,13 @@ if (isMain) {
   // a process cannot die by a signal, exit 128 + its number. A second signal SIGKILLs every server at once.
   const signals = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGTERM: 15 };
   let signalled = false;
+  const interrupted = new AbortController();
   for (const [signal, n] of Object.entries(signals)) {
     process.on(signal, () => {
       void endAllNow(signalled).finally(() => process.exit());
       if (signalled) return;
       signalled = true;
+      interrupted.abort(n);
       process.once('exit', () => {
         if (process.platform === 'win32') { process.exitCode = 128 + n; return; }
         for (const s of Object.keys(signals)) process.removeAllListeners(s);
@@ -416,7 +426,7 @@ if (isMain) {
       });
     });
   }
-  runCli(process.argv.slice(2)).then(({ code, stdout, stderr }) => {
+  runCli(process.argv.slice(2), process.env, !!process.stdout.isTTY, interrupted.signal).then(({ code, stdout, stderr }) => {
     // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB.
     process.stderr.write(stderr, () => process.stdout.write(stdout, () => process.exit(code)));
   });

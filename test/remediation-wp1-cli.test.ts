@@ -2,7 +2,7 @@
 // --list-rules output, the summary line, the entry-point check and signal handling. In process through runCli
 // where the run needs no real process, the built CLI (cli()) where the process itself is under test.
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -158,6 +158,18 @@ describe('the entry point without its extension (R005)', () => {
       execFile(process.execPath, [CLI.replace(/\.js$/, ''), '--version'], { cwd: ROOT }, (err, stdout) => done({ code: err ? (err as { code?: number }).code ?? 1 : 0, stdout }));
     });
     expect(r).toEqual({ code: 0, stdout: `${VERSION}\n` });
+  });
+});
+
+describe('a signal during the run (R004)', () => {
+  it('runCli writes no --output and prints no report once interrupted, and exits 128 + the signal number', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'mrc-wp1-')), 'report.json');
+    const ac = new AbortController();
+    const running = runCli(['--format', 'json', '--output', out, '--stdio', GOOD], {}, false, ac.signal);
+    ac.abort(15); // SIGTERM while the snapshot is still being built
+    const r = await running;
+    expect(r).toEqual({ code: 143, stdout: '', stderr: expect.stringContaining('interrupted by a signal; no report written') });
+    expect(existsSync(out)).toBe(false);
   });
 });
 
