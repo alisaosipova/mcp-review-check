@@ -8,8 +8,20 @@ import { uiResources } from './util/ui.js';
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
 
-const MONEY_NAME = /(send|transfer|wire|pay|payout|withdraw|deposit|remit|swap|bridge|stake|buy|sell|trade|place_?order|execute_?(trade|order|payment|transaction)|sign_?transaction|broadcast_?(tx|transaction))/i;
+// Matched against whole name tokens: "sell" inside get_bestsellers or "stake" inside list_stakeholders is not a transfer.
+const MONEY_VERB = /^(transfer|wire|pay|payment|payout|withdraw(al)?|deposit|remit(tance)?|swap|bridge|stake|trade)s?$/;
+// Generic verbs count only when the name also names money ("send_email" mentioning a bank holiday is e-mail).
+const GENERIC_MONEY_VERB = /^(send|buy|sell)s?$/;
+const MONEY_PAIR = /\b(place order|execute (trade|order|payment|transaction)|sign transaction|broadcast (tx|transaction))\b/;
 const MONEY_WORDS = /\b(money|funds?|payments?|ach|sepa|swift|iban|bank|crypto(currency)?|bitcoin|btc|eth(ereum)?|usdc|usdt|stablecoin|wallet|securities|stocks?|shares)\b/i;
+
+/** The name looks like a money or asset transfer: a transfer verb token, a compound such as place_order, or send/buy/sell next to a money token. */
+export function moneyName(name: string): boolean {
+  const tokens = tokenize(name);
+  const joined = tokens.join(' ');
+  if (tokens.some((t) => MONEY_VERB.test(t)) || MONEY_PAIR.test(joined)) return true;
+  return tokens.some((t) => GENERIC_MONEY_VERB.test(t)) && MONEY_WORDS.test(joined);
+}
 
 export const POL_001 = defineRule(
   {
@@ -20,7 +32,7 @@ export const POL_001 = defineRule(
   },
   (snap) => snap.tools.flatMap((t): RawFinding[] => {
     const name = toolName(t);
-    if (annotations(t).readOnlyHint === true || !MONEY_NAME.test(name)) return [];
+    if (annotations(t).readOnlyHint === true || !moneyName(name)) return [];
     const text = `${tokenize(name).join(' ')} ${isStr(t.description) ? t.description : ''}`;
     return MONEY_WORDS.test(text) ? [{ tool: name, message: 'looks like a money or asset transfer; unsupported unless Anthropic has expressly permitted it in writing' }] : [];
   }),
