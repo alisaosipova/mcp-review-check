@@ -4,6 +4,7 @@ import type { ModernClient, ModernRequestOptions } from '../src/protocol/modern.
 import { runWireProbes } from '../src/probe/wire.js';
 import { capSnapshot, HTML_CAP } from '../src/limits.js';
 import { APPS_014 } from '../src/rules/apps.js';
+import { SRV_018 } from '../src/rules/server.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, exchange, snap, tool } from './helpers.js';
 
@@ -46,5 +47,18 @@ describe('R027: APPS-014 does not claim a missing connect() in a widget cut at H
     const s = widget(`${head}</script>`);
     capSnapshot(s);
     expect(evaluate(APPS_014, s).map((f) => f.message)).toEqual(['uses the ext-apps App but never calls connect()']);
+  });
+});
+
+describe('C003-followup: SRV-018 counts every non-JSON-RPC line, not only the kept ones', () => {
+  it('uses transport.stdio.nonJsonTotal and names JSON-RPC', () => {
+    const kept = Array.from({ length: 50 }, (_, i) => `line ${i}`);
+    const s = snap({ set: (x) => { x.transport.stdio = { nonJsonStdout: kept, nonJsonTotal: 1200, stderrTail: '' }; } });
+    expect(evaluate(SRV_018, s).map((f) => f.message)).toEqual(['1200 non-JSON-RPC line(s) on stdout: "line 0", "line 1", "line 2"']);
+  });
+
+  it('falls back to the kept lines when the total is missing (older snapshots)', () => {
+    const s = snap({ set: (x) => { x.transport.stdio = { nonJsonStdout: ['banner'], stderrTail: '' }; } });
+    expect(evaluate(SRV_018, s).map((f) => f.message)).toEqual(['1 non-JSON-RPC line(s) on stdout: "banner"']);
   });
 });

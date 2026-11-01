@@ -469,9 +469,11 @@ export const SRV_018 = defineRule(
   },
   (snap) => {
     const lines = snap.transport.stdio?.nonJsonStdout ?? [];
-    if (!lines.length) return [];
+    // connect.ts keeps only the first lines but counts them all; JSON log lines that are not JSON-RPC count too.
+    const total = Math.max(snap.transport.stdio?.nonJsonTotal ?? 0, lines.length);
+    if (!total) return [];
     const shown = lines.slice(0, 3).map((l) => (l.length > 120 ? l.slice(0, 120) + '…' : l));
-    return [{ message: `${lines.length} non-JSON line(s) on stdout: ${shown.map((l) => JSON.stringify(l)).join(', ')}` }];
+    return [{ message: `${total} non-JSON-RPC line(s) on stdout${shown.length ? `: ${shown.map((l) => JSON.stringify(l)).join(', ')}` : ''}` }];
   },
 );
 

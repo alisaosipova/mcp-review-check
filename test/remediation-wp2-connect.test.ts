@@ -95,7 +95,7 @@ describe('stdio servers that write to stdout (C003, R046)', () => {
     const r = await cli(['--stdio', server('pino'), '--format', 'json']);
     const f = r.json.findings.find((x: any) => x.ruleId === 'SRV-018');
     expect(f, r.stderr).toBeDefined();
-    expect(f.message).toMatch(/^6 non-JSON line\(s\) on stdout: .*level.*request initialize/);
+    expect(f.message).toMatch(/^6 non-JSON-RPC line\(s\) on stdout: .*level.*request initialize/);
   });
 
   it('a flood of stdout lines before initialize is counted without keeping every line', async () => {
