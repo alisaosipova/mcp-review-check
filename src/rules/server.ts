@@ -229,12 +229,21 @@ export const SRV_009 = defineRule(
   (snap) => {
     const ex = allExchanges(snap).filter((e) => e.status !== undefined);
     const out: RawFinding[] = [];
-    const cf = ex.find((e) => (e.headers?.['cf-mitigated'] ?? '').toLowerCase() === 'challenge');
-    if (cf) out.push({ message: `${cf.label}: cf-mitigated: challenge` });
-    const jam = ex.find((e) => /Just a moment\.\.\./.test(e.bodySnippet ?? '') && /html/i.test(e.contentType ?? 'text/html'));
-    if (jam) out.push({ message: `${jam.label}: "Just a moment..." bot challenge page` });
-    const waf = ex.find((e) => (e.status === 403 || e.status === 429) && /cloudflare|akamai/i.test(e.headers?.server ?? '') && !/json/i.test(e.contentType ?? ''));
-    if (waf) out.push({ message: `${waf.label}: ${waf.status} from ${waf.headers?.server} with a non-JSON body` });
+    // Each signal is reported once, at the first exchange that shows it; the signals of one exchange (a Cloudflare
+    // challenge page shows all three) make one finding.
+    const seen = new Set<string>();
+    for (const e of ex) {
+      const found: Array<[string, string]> = [];
+      if ((e.headers?.['cf-mitigated'] ?? '').toLowerCase() === 'challenge') found.push(['cf', 'cf-mitigated: challenge']);
+      if (/Just a moment\.\.\./.test(e.bodySnippet ?? '') && /html/i.test(e.contentType ?? 'text/html')) found.push(['jam', '"Just a moment..." bot challenge page']);
+      if ((e.status === 403 || e.status === 429) && /cloudflare|akamai/i.test(e.headers?.server ?? '') && !/json/i.test(e.contentType ?? '')) {
+        found.push(['waf', `${e.status} from ${e.headers?.server} with a non-JSON body`]);
+      }
+      const fresh = found.filter(([k]) => !seen.has(k));
+      if (!fresh.length) continue;
+      for (const [k] of fresh) seen.add(k);
+      out.push({ message: `${e.label}: ${fresh.map(([, text]) => text).join('; ')}` });
+    }
     if (ex.length >= 2 && ex.every((e) => e.status === 403 && /text\/plain/i.test(e.contentType ?? '') && !e.headers?.['www-authenticate'])) {
       out.push({ message: 'every endpoint (including well-known) returns 403 text/plain without WWW-Authenticate' });
     }

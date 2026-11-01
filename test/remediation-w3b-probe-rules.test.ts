@@ -4,7 +4,7 @@ import type { ModernClient, ModernRequestOptions } from '../src/protocol/modern.
 import { runWireProbes } from '../src/probe/wire.js';
 import { capSnapshot, HTML_CAP } from '../src/limits.js';
 import { APPS_014 } from '../src/rules/apps.js';
-import { SRV_018 } from '../src/rules/server.js';
+import { SRV_009, SRV_018 } from '../src/rules/server.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, exchange, snap, tool } from './helpers.js';
 
@@ -60,5 +60,30 @@ describe('C003-followup: SRV-018 counts every non-JSON-RPC line, not only the ke
   it('falls back to the kept lines when the total is missing (older snapshots)', () => {
     const s = snap({ set: (x) => { x.transport.stdio = { nonJsonStdout: ['banner'], stderrTail: '' }; } });
     expect(evaluate(SRV_018, s).map((f) => f.message)).toEqual(['1 non-JSON-RPC line(s) on stdout: "banner"']);
+  });
+});
+
+describe('C-imp-2-rest: SRV-009 reports one Cloudflare challenge page once', () => {
+  const page = (label: string) => exchange({
+    label, status: 403, contentType: 'text/html; charset=UTF-8', bodySnippet: '<!DOCTYPE html><title>Just a moment...</title>',
+    headers: { 'cf-mitigated': 'challenge', server: 'cloudflare' },
+  });
+
+  it('the three signals of one exchange make one finding, and later exchanges with the same signals add none', () => {
+    const s = snap({ url: 'https://mcp.acme.test/mcp', set: (x) => { x.transport.preflight = page('preflight'); x.transport.exchanges = [page('sdk initialize')]; } });
+    expect(evaluate(SRV_009, s).map((f) => f.message)).toEqual([
+      'sdk initialize: cf-mitigated: challenge; "Just a moment..." bot challenge page; 403 from cloudflare with a non-JSON body',
+    ]);
+  });
+
+  it('signals seen on different exchanges are still reported, each at its first exchange', () => {
+    const s = snap({ url: 'https://mcp.acme.test/mcp', set: (x) => {
+      x.transport.exchanges = [exchange({ label: 'sdk initialize', status: 403, contentType: 'application/json', headers: { 'cf-mitigated': 'challenge' } })];
+      x.transport.preflight = exchange({ label: 'preflight', status: 429, contentType: 'text/plain', headers: { server: 'AkamaiGHost' } });
+    } });
+    expect(evaluate(SRV_009, s).map((f) => f.message).sort()).toEqual([
+      'preflight: 429 from AkamaiGHost with a non-JSON body',
+      'sdk initialize: cf-mitigated: challenge',
+    ]);
   });
 });
