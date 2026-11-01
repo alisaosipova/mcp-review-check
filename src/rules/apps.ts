@@ -1,5 +1,6 @@
 // APPS: MCP Apps and widgets (§2.7).
 import { createHash } from 'node:crypto';
+import type { Snapshot } from '../snapshot.js';
 import { defineRule, type Platform, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiMeta, uiTools, uiUriOf } from './util/access.js';
 import { extractOrigins, originMatches, stripComments, type OriginKind } from './util/html.js';
@@ -361,11 +362,19 @@ export const APPS_014 = defineRule(
     // narrows the "uses" test; the "connects" test reads the raw HTML so a mis-stripped string cannot hide a call.
     const usesApp = /@modelcontextprotocol\/ext-apps|new App\(/.test(stripComments(r.html));
     const connects = /\.connect\s*\(|useApp\s*\(|["'`]ui\/initialize["'`]/.test(r.html);
-    if (usesApp && !connects) out.push({ resource: r.uri, message: 'uses the ext-apps App but never calls connect()' });
+    // HTML over the cap was cut (limits.ts): a connect() past the cut, as at the end of a single-file bundle, is not seen,
+    // so a missing call proves nothing there.
+    if (usesApp && !connects && !htmlTruncated(snap, r.uri)) out.push({ resource: r.uri, message: 'uses the ext-apps App but never calls connect()' });
     if (/sendSizeChanged\s*\([^)]{0,500}height\s*:\s*0\b/.test(r.html)) out.push({ resource: r.uri, message: 'sendSizeChanged reports height 0' });
     return out;
   }),
 );
+
+/** Whether capSnapshot cut the read content of UI resource `uri` (its `where` names the URI cut to 80 characters). */
+function htmlTruncated(snap: Snapshot, uri: string): boolean {
+  const where = `UI resource ${uri.slice(0, 80)}`;
+  return (snap.limits?.truncated ?? []).some((t) => t.where === where || t.where === `${where} (blob)`);
+}
 
 export const APPS_015 = defineRule(
   {
