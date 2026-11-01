@@ -154,4 +154,25 @@ describe('F050 missing initialize.serverInfo is reported once', () => {
     expect(evaluate(byId('SPEC-001'), s)).toEqual([]);
   });
 });
+
+describe('F049 modern-only GET and session findings come from SPEC-015 alone', () => {
+  const s = modern((x) => {
+    x.transport.probes.get = exchange({ method: 'GET', status: 200, contentType: 'text/html' });
+    x.transport.probes.delete = exchange({ method: 'DELETE', status: 404 });
+    x.transport.sessionId = '6f1c2a0e-3b7d-4c55-9a51-0e2d8c1b7f42';
+  });
+
+  it('SPEC-015 lists the session, GET and DELETE; SPEC-005 and SPEC-006 stay silent', () => {
+    expect(evaluate(byId('SPEC-015'), s).map((f) => f.message).sort()).toEqual([
+      'DELETE returned 404, expected 405', 'GET returned 200, expected 405', 'server mints or echoes Mcp-Session-Id',
+    ]);
+    expect(evaluate(byId('SPEC-005'), s)).toEqual([]);
+    expect(evaluate(byId('SPEC-006'), s)).toEqual([]);
+  });
+
+  it('SPEC-006 still checks the session id format on a modern-only server', () => {
+    const bad = modern((x) => { x.transport.sessionId = 'bad id'; });
+    expect(evaluate(byId('SPEC-006'), bad)).toMatchObject([{ severity: 'error' }]);
+  });
+});
 // @end

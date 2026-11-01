@@ -177,7 +177,7 @@ describe('e2e http', () => {
   it('modern bad server: caching and session findings', async () => {
     const s = track(await startModernServer({ bad: true }));
     const ids = ruleIds((await cli([s.url, '--format', 'json'])).json);
-    for (const id of ['SPEC-013', 'SPEC-015', 'SPEC-006']) expect(ids, id).toContain(id);
+    for (const id of ['SPEC-013', 'SPEC-015']) expect(ids, id).toContain(id);
   });
 
   it('dual-era server (2026-07-28 and 2025-11-25 on one endpoint): era dual, clean, exit 0', async () => {

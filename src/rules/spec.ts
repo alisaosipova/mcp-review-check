@@ -118,7 +118,8 @@ export const SPEC_005 = defineRule(
     const ex = probeExchange(snap, 'get');
     if (!ex?.status || ex.status === 401 || snap.transport.kind === 'sse') return [];
     const sse = ex.status === 200 && mediaType(ex.contentType) === 'text/event-stream';
-    if (isModernOnly(snap)) return ex.status === 405 ? [] : [{ message: `GET returned ${ex.status}; modern servers must return 405` }];
+    // A modern-only server's GET is SPEC-015's check (sessions and streams belong to earlier revisions).
+    if (isModernOnly(snap)) return [];
     if (sse || ex.status === 405 || (ex.status === 400 && !snap.transport.sessionId)) return [];
     return [{ message: `GET returned ${ex.status}${ex.contentType ? ` (${ex.contentType})` : ''}; expected 200 text/event-stream or 405` }];
   },
@@ -147,7 +148,7 @@ export const SPEC_006 = defineRule(
       if (!/^[\x21-\x7E]+$/.test(id)) out.push({ message: `session id ${JSON.stringify(id.slice(0, 40))} contains non-visible-ASCII characters` });
       else if (id.length < 16) out.push({ severity: 'info', message: `session id is only ${id.length} characters` });
     }
-    if (isModernOnly(snap) && sessionIds(snap).length) out.push({ severity: 'warning', message: 'modern-only server mints or echoes Mcp-Session-Id (see SPEC-015)' });
+    // That a modern-only server uses sessions at all is SPEC-015's finding; the format is checked here for every era.
     return out;
   },
 );
