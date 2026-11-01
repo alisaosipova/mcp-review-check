@@ -142,6 +142,8 @@ export const INJ_002 = defineRule(
 
 // Bounded so that server-controlled text with many '<system' openers and no '>' cannot backtrack quadratically.
 const PSEUDO_TAG = /<\/?(system|important|instructions?|admin|assistant|secret|hidden)\b[^>]{0,200}>/i;
+/** The tag is named as markup ("Returns the <Secret> element of the KeyVault XML response"), not used as one. */
+const NAMED_AS_MARKUP = /^\s+(xml |html )?(elements?|tags?|nodes?|attributes?|fields?)\b/i;
 
 /** First `<!-- ... -->` comment, found with indexOf (a lazy regex is quadratic on many '<!--' without '-->'). */
 export function htmlComment(text: string): RegExpExecArray | null {
@@ -163,8 +165,15 @@ export const INJ_003 = defineRule(
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
       const text = nfkc(e.text);
-      const m = htmlComment(text) ?? PSEUDO_TAG.exec(text);
-      if (m) out.push(finding(e, text, m));
+      const comment = htmlComment(text);
+      const m = comment ?? PSEUDO_TAG.exec(text);
+      if (!m) continue;
+      const f = finding(e, text, m);
+      if (!comment && NAMED_AS_MARKUP.test(text.slice(m.index + m[0].length))) {
+        f.severity = 'info';
+        f.message += ' (named as a markup element: fine when it documents a data format)';
+      }
+      out.push(f);
     }
     return out;
   },
