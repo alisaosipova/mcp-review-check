@@ -22,7 +22,8 @@ function cleanCopy(): string {
   return dir;
 }
 
-describe('npm pack', () => {
+// Needs git (the tracked file list): skipped in a source archive without .git, as repo-config.test.ts is.
+describe.skipIf(!existsSync(join(ROOT, '.git')))('npm pack', () => {
   it('npm pack from a clean copy ships dist/cli.js with a shebang (prepack)', () => {
     const dir = cleanCopy();
     try {
