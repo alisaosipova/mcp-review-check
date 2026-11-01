@@ -5,7 +5,7 @@ import _AjvDraft7 from 'ajv';
 import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr } from './util/access.js';
-import { schemaMetrics, walkSchema } from './util/schemaWalk.js';
+import { deref, schemaMetrics, walkSchema } from './util/schemaWalk.js';
 
 type AjvLike = {
   validateSchema(s: unknown): boolean | Promise<unknown>;
@@ -233,7 +233,14 @@ export const TOOL_021 = defineRule(
         if (seen.has(k)) out.push({ path: v.path, message: `x-mcp-header "${h}" duplicates ${seen.get(k)}.${suffix}` });
         else seen.set(k, v.path);
       }
-      if (!['string', 'integer', 'boolean'].includes(String(v.node.type))) out.push({ path: v.path, message: `x-mcp-header on a ${JSON.stringify(v.node.type)} property.${suffix}` });
+      // A local $ref carries the type in its target; whether a client resolves it is not deterministic, so a primitive
+      // target is not reported.
+      const target = deref(t.inputSchema, v.node);
+      const type = v.node.type ?? (isObj(target) ? target.type : undefined);
+      if (!['string', 'integer', 'boolean'].includes(String(type))) {
+        const what = type === undefined ? 'a property without a type' : `a ${JSON.stringify(type)} property`;
+        out.push({ path: v.path, message: `x-mcp-header on ${what}.${suffix}` });
+      }
       if (!v.pure) out.push({ path: v.path, message: `x-mcp-header is not on a plain properties chain.${suffix}` });
     });
     return out;

@@ -164,4 +164,17 @@ describe('F104 RT-010 does not call keys declared in outputSchema internal', () 
     expect(f.map((x) => x.message)).toEqual(['result exposes internal keys: trace_id']);
   });
 });
+
+describe('F066 TOOL-021 names a missing type and reads a $ref target type', () => {
+  const t021 = (inputSchema: Record<string, unknown>) => messages('TOOL-021', one(tool({ inputSchema })));
+  it('a property without a type', () => {
+    expect(t021({ type: 'object', properties: { h: { description: 'H', 'x-mcp-header': 'X-Tenant' } } }))
+      .toEqual(['x-mcp-header on a property without a type. Streamable HTTP clients will drop this tool.']);
+  });
+  it('a $ref to a primitive is not reported; a $ref to an object is', () => {
+    expect(t021({ type: 'object', properties: { h: { $ref: '#/$defs/S', 'x-mcp-header': 'X-Tenant' } }, $defs: { S: { type: 'string' } } })).toEqual([]);
+    expect(t021({ type: 'object', properties: { h: { $ref: '#/$defs/S', 'x-mcp-header': 'X-Tenant' } }, $defs: { S: { type: 'object' } } }))
+      .toEqual(['x-mcp-header on a "object" property. Streamable HTTP clients will drop this tool.']);
+  });
+});
 //@@END
