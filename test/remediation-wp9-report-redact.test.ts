@@ -1,13 +1,18 @@
 // Regression tests for the WP9 report and redaction fixes (review 2026-11-01).
-import { describe, expect, it } from 'vitest';
-import { runRules, subjectOf } from '../src/rules/engine.js';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { runRules, sortFindings, subjectOf, unmetNeed } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
 import { defineRule, type Finding } from '../src/rules/types.js';
-import { annotations } from '../src/report/github.js';
+import { annotations, appendStepSummary, fitSummary } from '../src/report/github.js';
 import { buildReport, visibleText } from '../src/report/index.js';
+import { toJson } from '../src/report/json.js';
 import { renderMarkdown } from '../src/report/markdown.js';
 import { toSarif } from '../src/report/sarif.js';
-import { renderText } from '../src/report/text.js';
+import { failed } from '../src/report/score.js';
+import { fixSnippets, renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { REDACTED } from '../src/protocol/trace.js';
 import { buildRedactor, scrub } from '../src/redact.js';
@@ -156,6 +161,90 @@ describe('a rule that throws is never lost (F124, F123)', () => {
     const sarif = toSarif({ ...r, findings: [...r.findings, ...runRules(s, [chatgptOnly]).findings] }) as Record<string, any>;
     expect(rulesOf(sarif).filter((x: string) => x === 'INTERNAL')).toHaveLength(1);
     expect(sarif.runs[0].tool.driver.rules.at(-1)).toMatchObject({ id: 'INTERNAL', shortDescription: { text: 'Internal rule error' }, help: { text: 'Please report this bug.' } });
+  });
+});
+
+describe('fix snippets do not depend on the wording of TOOL-006 (F134)', () => {
+  it('a TOOL-006 finding gives a snippet when the snapshot has no title, whatever its message; a long title gives none', () => {
+    const s = loadSnapshot('minimal-http');
+    const r = report(s);
+    const t0 = s.tools[0] as Record<string, unknown>;
+    const name = String(t0.name);
+    const titled = { ...r, findings: [f('TOOL-006', 'error', { tool: name, message: 'reworded: the title is missing' })], snap: { ...s, tools: [{ ...t0, title: undefined, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }] } };
+    const out = fixSnippets(titled);
+    expect(out).toHaveLength(1);
+    expect(out[0].startsWith(`${name}: {"title":"`)).toBe(true);
+    expect(out[0]).not.toContain('annotations'); // every hint is set
+    const long = { ...titled, snap: { ...s, tools: [{ ...t0, title: 'A very long title', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }] } };
+    expect(fixSnippets(long)).toEqual([]);
+  });
+});
+
+describe('JSON explains the score and keeps argv whole (F129, F128)', () => {
+  it('summary.rootCauses is the basis of summary.score', () => {
+    const r = report(loadSnapshot('minimal-http'));
+    const j = toJson(r) as Record<string, any>;
+    expect(j.summary.rootCauses).toEqual(r.rootCauses);
+    expect(j.summary.score).toBe(Math.max(0, 100 - 12 * r.rootCauses.errors - 4 * r.rootCauses.warnings));
+  });
+
+  it('server.argv keeps an argument with spaces as one item; server.command stays for display', () => {
+    const s = snap({ set: (x) => { x.target = { kind: 'stdio', command: 'node', args: ['srv.js', 'a b', '--flag=x y'] }; } });
+    const j = toJson(report(s)) as Record<string, any>;
+    expect(j.server.argv).toEqual(['node', 'srv.js', 'a b', '--flag=x y']);
+    expect(j.server.command).toBe('node srv.js a b --flag=x y');
+    expect(toJson(report(loadSnapshot('minimal-http'))).server).not.toHaveProperty('argv');
+  });
+});
+
+describe('engine order and needs (F125, F133)', () => {
+  it('findings sort by code unit, not by locale', () => {
+    const list = ['b', 'B', 'a', '_x', 'ä'].map((t) => f('TOOL-001', 'error', { tool: t }));
+    expect(sortFindings(list).map((x) => x.tool)).toEqual(['B', '_x', 'a', 'b', 'ä']);
+  });
+
+  it('the legacy need is met by the era alone, for stdio too', () => {
+    const s = snap();
+    expect(unmetNeed(s, 'legacy')).toBeUndefined();
+    s.era = 'modern';
+    expect(unmetNeed(s, 'legacy')).toBe('era modern');
+  });
+});
+
+describe('failed() gates like the CLI by default (R022)', () => {
+  it('a spec-only error does not fail by default, but does with spec passed', () => {
+    const spec = f('SPEC-004', 'error', { platforms: ['spec'], severityByPlatform: { spec: 'error' } });
+    expect(failed([spec], 'error')).toBe(false);
+    expect(failed([spec], 'error', ['claude', 'chatgpt', 'spec'])).toBe(true);
+    expect(failed([f('A', 'error')], 'error')).toBe(true);
+  });
+});
+
+describe('the job summary stays within the 1 MiB step limit (F131)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mrc-wp9-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('a small report is appended whole', () => {
+    expect(fitSummary('# a\n| x |', 100)).toBe('# a\n| x |\n');
+  });
+
+  it('a large report is cut at a line end with a note, counting what the file already holds', () => {
+    const file = join(dir, 'summary.md');
+    writeFileSync(file, 'x'.repeat(300));
+    const md = Array.from({ length: 100 }, (_, i) => `| row ${i} | ${'e'.repeat(20)} |`).join('\n');
+    expect(appendStepSummary(file, md, 2000)).toBe('');
+    const out = readFileSync(file, 'utf8');
+    expect(Buffer.byteLength(out)).toBeLessThanOrEqual(2000);
+    expect(out).toContain('| row 0 |');
+    expect(out).not.toContain('| row 99 |');
+    expect(out).toMatch(/\|\n\n> The report was cut to fit the 1 MiB job summary limit of GitHub; `--output` writes it in full\.\n$/);
+  });
+
+  it('a full summary file gets nothing and a stderr warning', () => {
+    const file = join(dir, 'full.md');
+    writeFileSync(file, 'x'.repeat(2000));
+    expect(appendStepSummary(file, '# report', 2000)).toMatch(/^warning: \$GITHUB_STEP_SUMMARY is full/);
+    expect(readFileSync(file, 'utf8')).toBe('x'.repeat(2000));
   });
 });
 

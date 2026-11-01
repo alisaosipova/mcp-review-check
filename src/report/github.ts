@@ -1,6 +1,6 @@
 // GitHub Actions mode: workflow-command annotations on stderr and the markdown report appended to the job
 // summary. On only when GITHUB_ACTIONS=true; there is no separate switch.
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, statSync } from 'node:fs';
 import { subjectOf } from '../rules/engine.js';
 import { platformSeverity } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
@@ -34,10 +34,37 @@ export function annotations(r: Report): string[] {
   return out;
 }
 
-/** Appends the markdown report to the job summary file ($GITHUB_STEP_SUMMARY); a write failure is a stderr warning. */
-export function appendStepSummary(file: string, markdown: string): string {
+/** GitHub drops a step's job summary over 1 MiB ("step summary upload aborted"). */
+export const STEP_SUMMARY_LIMIT = 1024 * 1024;
+const TRUNCATED = '\n> The report was cut to fit the 1 MiB job summary limit of GitHub; `--output` writes it in full.\n';
+
+/** The markdown cut at a line end so that it and the truncation note take at most `room` bytes; empty when even the note does not fit. */
+export function fitSummary(markdown: string, room: number): string {
+  const whole = `${markdown}\n`;
+  if (Buffer.byteLength(whole) <= room) return whole;
+  let left = room - Buffer.byteLength(TRUNCATED);
+  if (left < 0) return '';
+  const kept: string[] = [];
+  for (const line of markdown.split('\n')) {
+    const n = Buffer.byteLength(line) + 1;
+    if (n > left) break;
+    kept.push(line);
+    left -= n;
+  }
+  return `${kept.map((l) => `${l}\n`).join('')}${TRUNCATED}`;
+}
+
+/**
+ * Appends the markdown report to the job summary file ($GITHUB_STEP_SUMMARY), cut to what is left of the step's 1 MiB
+ * (the file may already hold an earlier summary of the same step); a write failure is a stderr warning.
+ */
+export function appendStepSummary(file: string, markdown: string, limit = STEP_SUMMARY_LIMIT): string {
   try {
-    appendFileSync(file, `${markdown}\n`);
+    let used = 0;
+    try { used = statSync(file).size; } catch { /* a new file */ }
+    const text = fitSummary(markdown, limit - used);
+    if (!text) return 'warning: $GITHUB_STEP_SUMMARY is full (1 MiB); the report was not appended\n';
+    appendFileSync(file, text);
     return '';
   } catch (e) {
     return `warning: cannot append the report to $GITHUB_STEP_SUMMARY: ${(e as Error).message}\n`;
