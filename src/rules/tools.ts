@@ -215,7 +215,13 @@ function enumValues(node: Obj): unknown[] | undefined {
 }
 
 function isFreeString(node: Obj): boolean {
-  return (node.type === 'string' || node.type === undefined) && enumValues(node) === undefined && node.pattern === undefined && node.format === undefined;
+  // A `$ref` that did not resolve locally has an unknown shape: not evidence of a free-form string.
+  return (node.type === 'string' || node.type === undefined) && typeof node.$ref !== 'string' && enumValues(node) === undefined && node.pattern === undefined && node.format === undefined;
+}
+
+/** Top-level input properties with each local `$ref` resolved, so an enum kept in `$defs` still counts. */
+function resolvedProperties(schema: unknown): Obj {
+  return Object.fromEntries(Object.entries(properties(schema)).map(([k, v]) => [k, deref(schema, v)]));
 }
 
 export const TOOL_023 = defineRule(
@@ -230,7 +236,10 @@ export const TOOL_023 = defineRule(
     let methodProp: Obj | undefined;
     let methodPath = '';
     walkSchema(t.inputSchema, (v) => {
-      if (!methodProp && v.viaProperty && /^(method|http_?method|verb|request_?method)$/i.test(v.name)) { methodProp = v.node; methodPath = v.path; }
+      if (methodProp || !v.viaProperty || !/^(method|http_?method|verb|request_?method)$/i.test(v.name)) return;
+      const target = deref(t.inputSchema, v.node);
+      methodProp = isObj(target) ? target : v.node;
+      methodPath = v.path;
     });
     if (methodProp) {
       const vals = (enumValues(methodProp) ?? []).filter(isStr).map((s) => s.toUpperCase());
@@ -292,7 +301,7 @@ export const TOOL_025 = defineRule(
   (snap) => {
     const hasDiscovery = snap.tools.some((t) => DISCOVERY.test(toolName(t)));
     return perTool(snap, (t, name) => {
-      const props = properties(t.inputSchema);
+      const props = resolvedProperties(t.inputSchema);
       const opProp = Object.entries(props).find(([k, v]) => OP_PROP.test(k) && isObj(v) && isFreeString(v));
       const argsObj = Object.values(props).some((v) => isObj(v) && isFreeObject(v));
       if (hasDiscovery && opProp && argsObj) return { message: `dispatcher: takes "${opProp[0]}" plus a free-form arguments object next to a discovery tool` };
@@ -335,7 +344,7 @@ export const TOOL_026 = defineRule(
     sources: [CLAUDE_REVIEW],
   },
   (snap) => perTool(snap, (t, name) => {
-    const props = properties(t.inputSchema);
+    const props = resolvedProperties(t.inputSchema);
     const hasMethod = Object.keys(props).some((k) => METHOD_PROP.test(k));
     const hit = Object.entries(props).find(([k, v]) => (RAW_QUERY.test(k) || (hasMethod && RAW_TARGET.test(k))) && isObj(v) && (isFreeString(v) || isFreeObject(v)));
     if (!hit) return undefined;

@@ -36,3 +36,24 @@ describe('F062 TOOL-017 and RT-006 accept http and https ids of every known dial
     expect(messages('TOOL-017', one(tool({ inputSchema: { $schema: 'https://json-schema.org/draft-07/schema#', type: 'strang' } })))).toHaveLength(1);
   });
 });
+
+describe('F063 TOOL-023/025/026 resolve a $ref parameter before judging it', () => {
+  const withRef = (name: string, key: string, target: Record<string, unknown>) => one(tool({
+    name, description: 'Run it against the warehouse and return rows.', inputSchema: { type: 'object', properties: { [key]: { $ref: '#/$defs/T', description: 'X' } }, $defs: { T: target } },
+  }));
+  it('TOOL-023 sees the method enum kept in $defs', () => {
+    const f = evaluate(byId('TOOL-023'), withRef('api_request', 'method', { type: 'string', enum: ['GET', 'POST', 'DELETE'] }));
+    expect(f).toMatchObject([{ severity: 'error', message: expect.stringMatching(/both safe and unsafe/) }]);
+    // the enum also counts when the tool name is not a generic HTTP name
+    expect(evaluate(byId('TOOL-023'), withRef('manage_items', 'method', { type: 'string', enum: ['GET', 'DELETE'] }))).toHaveLength(1);
+  });
+  it('TOOL-025 does not call an enum behind $ref free-form', () => {
+    expect(evaluate(byId('TOOL-025'), withRef('call_api', 'endpoint', { type: 'string', enum: ['/a', '/b'] }))).toEqual([]);
+    expect(evaluate(byId('TOOL-025'), withRef('call_api', 'endpoint', { type: 'string' }))).toHaveLength(1);
+  });
+  it('TOOL-026 does not call an enum behind $ref free-form', () => {
+    expect(evaluate(byId('TOOL-026'), withRef('run_query', 'sql', { type: 'string', enum: ['SELECT 1'] }))).toEqual([]);
+    expect(evaluate(byId('TOOL-026'), withRef('run_query', 'sql', { type: 'string' }))).toHaveLength(1);
+  });
+});
+//@@END
