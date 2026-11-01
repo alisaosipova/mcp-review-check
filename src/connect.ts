@@ -6,7 +6,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
-import { describeCause, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
+import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
@@ -180,6 +180,7 @@ interface LegacyConn {
   /** The failing initialize response (for the connection diagnostics). */
   contentType?: string;
   body?: string;
+  headers?: Record<string, string>;
   /** The HTTP+SSE fallback after a 400/404/405 also failed: its HTTP status (401 on a GET-only auth route), its error,
    *  and whether its GET opened a stream (the URL is a legacy SSE endpoint). */
   sse?: { status?: number; message: string; reached: boolean };
@@ -217,7 +218,7 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
       last = {
         ok: false, status, message: cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts
-        cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
+        cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet, headers: failed?.headers,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
         const before = tracer.exchanges.length;
@@ -357,7 +358,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const connected = conn.ok || snap.era === 'modern';
   if (!connected && !authFailed) {
     const d = conn.status === 403
-      ? { kind: 'http' as const, status: 403, summary: 'HTTP 403 (forbidden)' }
+      ? describeForbidden(conn)
       : conn.cause ? describeCause(url, conn.cause)
       : conn.sse?.reached ? describeSseFailure(url, conn.sse.message)
       : describeHttpFailure(url, { status: conn.status, contentType: conn.contentType, body: conn.body, message: conn.message });

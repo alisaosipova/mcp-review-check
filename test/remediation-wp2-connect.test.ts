@@ -9,6 +9,7 @@ import { RecordingTransport, TRANSPORT_ERRORS_KEPT } from '../src/protocol/recor
 import { createRedactor } from '../src/protocol/trace.js';
 import { cli } from './cli-runner.js';
 import { listen, type Started } from './fixtures/http-bridge.js';
+import { describeForbidden } from '../src/diagnose.js';
 
 const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
 const server = (...args: string[]) => `node "${WP2}" ${args.join(' ')}`;
@@ -188,5 +189,21 @@ describe('auth detection (F006, R044, R045)', () => {
     expect(snap.authProbe?.challenge?.status).toBe(401);
     expect(snap.listMeta).toEqual({});
     expect(snap.transport.probes.unknownMethod).toBeUndefined();
+  });
+});
+
+describe('403 diagnosis (C-imp-2)', () => {
+  it('a Cloudflare challenge page is named as the cause of the failed handshake', async () => {
+    const s = await http((_req, res) => {
+      res.writeHead(403, { 'content-type': 'text/html', 'cf-mitigated': 'challenge', server: 'cloudflare' });
+      res.end('<!DOCTYPE html><html><head><title>Just a moment...</title></head><body></body></html>');
+    });
+    const snap = await build(s.url);
+    expect(snap.connectDiagnosis).toMatchObject({ kind: 'http', status: 403, summary: 'HTTP 403: blocked by a Cloudflare bot challenge ("Just a moment...")' });
+    expect(snap.fatal).toContain('allow the MCP endpoint through Cloudflare');
+  });
+
+  it('a plain 403 stays "forbidden"', () => {
+    expect(describeForbidden({ status: 403, headers: { 'content-type': 'application/json' }, body: '{}' })).toEqual({ kind: 'http', status: 403, summary: 'HTTP 403 (forbidden)' });
   });
 });

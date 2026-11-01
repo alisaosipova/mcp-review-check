@@ -89,6 +89,28 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   return { kind: 'http', status, summary: f.message ?? (status !== undefined ? `HTTP ${status}` : 'unknown error'), ...(sse && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}) };
 }
 
+/** A 403 to initialize: a bot challenge or WAF block names its cause, an HTML page its title. */
+export function describeForbidden(f: HttpFailure & { headers?: Record<string, string> }): ConnectDiagnosis {
+  const h = f.headers ?? {};
+  const title = htmlTitle(f.body);
+  const server = (h.server ?? '').toLowerCase();
+  const cloudflare = !!h['cf-mitigated'] || server === 'cloudflare' || /^(just a moment|attention required)/i.test(title ?? '');
+  const waf = cloudflare ? 'Cloudflare'
+    : /akamai/.test(server) || Object.keys(h).some((k) => k.startsWith('akamai-')) ? 'Akamai'
+    : Object.keys(h).some((k) => k.startsWith('x-amzn-waf')) || /^awselb|cloudfront/.test(server) ? 'AWS WAF'
+    : /incapsula|imperva/i.test(`${server} ${h['x-cdn'] ?? ''}`) || !!h['x-iinfo'] ? 'Imperva'
+    : undefined;
+  const challenge = h['cf-mitigated'] === 'challenge' || /^just a moment/i.test(title ?? '');
+  if (waf) {
+    return {
+      kind: 'http', status: 403,
+      summary: `HTTP 403: blocked by ${challenge ? `a ${waf} bot challenge` : `the ${waf} firewall`}${title ? ` ("${title}")` : ''}`,
+      hint: `allow the MCP endpoint through ${waf} (bot protection, challenge and WAF rules): MCP clients cannot solve browser challenges`,
+    };
+  }
+  return { kind: 'http', status: 403, summary: `HTTP 403 (forbidden)${title ? ` with an HTML page ("${title}")` : ''}` };
+}
+
 /** The URL opened an HTTP+SSE stream, but the SSE handshake failed (no endpoint event, an endpoint on another origin
  *  behind a proxy, no initialize answer): its error is the cause, not the Streamable HTTP POST's 404 or 405. */
 export function describeSseFailure(url: URL, message: string): ConnectDiagnosis {
