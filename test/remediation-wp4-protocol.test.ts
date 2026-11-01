@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildRedactor, redactDeep } from '../src/redact.js';
 import { capBody, createRedactor, createTracer, parseSseMessages, scrub } from '../src/protocol/trace.js';
 import { ModernClient } from '../src/protocol/modern.js';
+import { LIST_BYTE_BUDGET, listAll, paginate } from '../src/protocol/legacy.js';
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
 type Handler = (req: IncomingMessage, body: string, res: ServerResponse) => void;
 const servers: Array<() => Promise<void>> = [];
@@ -170,5 +172,50 @@ describe('a size cap on the responses the SDK reads (F138)', () => {
     expect(await res.json()).toMatchObject({ id: 7, result: { tools: [] } });
     await tracer.flush();
     expect(tracer.exchanges[0].json).toMatchObject({ id: 7 });
+  });
+});
+
+describe('listings: one pagination for both eras (F136, F032, R011, F137)', () => {
+  /** A fake SDK client that serves the given pages in order (the cursor is the page index). */
+  const fakeClient = (pages: Array<Record<string, unknown>>) => ({
+    request: async (req: { params: { cursor?: string } }) => pages[Number(req.params.cursor ?? 0)],
+  }) as unknown as Client;
+
+  it('a page with 200 000 entries is listed, not a call-stack overflow', async () => {
+    const r = await listAll(fakeClient([{ tools: Array.from({ length: 200_000 }, () => ({ name: 't' })) }]), 'tools/list', 'tools', 1000);
+    expect(r.items).toHaveLength(200_000);
+    expect(r.error).toBeUndefined();
+  });
+
+  it('entries that are not objects are dropped and reported the same way in both eras', async () => {
+    const page = { tools: [{ name: 'a' }, 'b', 3] };
+    const legacy = await listAll(fakeClient([page]), 'tools/list', 'tools', 1000);
+    const url = await serve((_req, body, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: page })); });
+    const modern = await new ModernClient(url, createTracer(createRedactor()), {}, 4000).listAll('tools/list', 'tools');
+    for (const r of [legacy, modern]) {
+      expect(r.items).toEqual([{ name: 'a' }]);
+      expect(r.error).toBe('2 tools entries are not objects');
+    }
+  });
+
+  it('a nextCursor that is not a string stops the listing with an error; null or "" ends it', async () => {
+    const r = await listAll(fakeClient([{ tools: [{ name: 'a' }], nextCursor: 1 }, { tools: [{ name: 'b' }] }]), 'tools/list', 'tools', 1000);
+    expect(r).toMatchObject({ items: [{ name: 'a' }], error: 'nextCursor is not a string (got number)' });
+    for (const end of [null, '']) expect((await listAll(fakeClient([{ tools: [{ name: 'a' }], nextCursor: end }]), 'tools/list', 'tools', 1000)).error).toBeUndefined();
+    const ok = await listAll(fakeClient([{ tools: [{ name: 'a' }], nextCursor: '1' }, { tools: [{ name: 'b' }] }]), 'tools/list', 'tools', 1000);
+    expect([ok.items, ok.pages.length, ok.error]).toEqual([[{ name: 'a' }, { name: 'b' }], 2, undefined]);
+  });
+
+  it('a listing stops once its pages pass the byte budget, keeping the pages read before', async () => {
+    let n = 0;
+    const r = await paginate(async () => ({ result: { tools: [{ name: `t${n}` }], nextCursor: `c${++n}` }, bytes: LIST_BYTE_BUDGET / 4 }), 'tools/list', 'tools');
+    expect(r.error).toBe(`listing exceeded ${LIST_BYTE_BUDGET} bytes`);
+    expect(r.pages).toHaveLength(4);
+  });
+
+  it('the 2026-07-28 client counts the body bytes of each page', async () => {
+    const url = await serve((_req, body, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: { tools: [] } })); });
+    const r = await new ModernClient(url, createTracer(createRedactor()), {}, 4000).request('tools/list');
+    expect(r.bytes).toBe(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [] } }).length);
   });
 });

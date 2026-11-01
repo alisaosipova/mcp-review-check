@@ -135,6 +135,8 @@ export interface BodyRead {
   stoppedAtResponse: boolean;
   /** The body ended. */
   done: boolean;
+  /** Bytes read, kept or not. */
+  bytes: number;
 }
 
 /**
@@ -143,7 +145,7 @@ export interface BodyRead {
  * `drainTo`: past `cap`, keep reading (without keeping the bytes) up to this many, to see when the response ends.
  */
 async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap): Promise<BodyRead> {
-  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false };
+  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false, bytes: 0 };
   if (!res.body) { out.done = true; return out; }
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -166,6 +168,7 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
   } catch { /* aborted */ }
   clearTimeout(handle);
   reader.cancel().catch(() => {});
+  out.bytes = size;
   out.text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
   return out;
 }
@@ -235,7 +238,7 @@ export interface Tracer {
    * `fullBody`: a JSON-RPC call whose result is needed. The body is read up to FULL_READ_CAP within the request's
    * own timeoutMs (probes use a 256 KB cap and at most 10 s), and truncation is reported as `exchange.error`.
    */
-  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean }): Promise<{ exchange: HttpExchange; response?: Response }>;
+  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number }>;
   flush(): Promise<void>;
   now(): number;
 }
@@ -333,6 +336,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     try {
       const res = await fetch(url, { redirect: 'manual', ...fetchInit, signal: ctrl.signal });
       finishHeaders(ex, res, started);
+      let bodyBytes: number | undefined;
       if (abortAfterHeaders) {
         res.body?.cancel().catch(() => {});
         ctrl.abort();
@@ -345,10 +349,11 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
         ex.bodyMs = now() - started;
         finishBody(ex, body.text);
         sample(ex, body, false);
+        bodyBytes = body.bytes;
         if (fullBody && body.truncated) ex.error = { name: 'BodyTruncated', message: `response body exceeded ${FULL_READ_CAP} bytes and was truncated` };
         else if (fullBody && (body.timedOut || ctrl.signal.aborted) && ex.json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
       }
-      return { exchange: ex, response: res };
+      return { exchange: ex, response: res, bodyBytes };
     } catch (err) {
       ex.durationMs = now() - started;
       ex.error = errorInfo(err);

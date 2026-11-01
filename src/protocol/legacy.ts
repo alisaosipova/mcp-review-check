@@ -25,26 +25,58 @@ export async function rpc(client: Client, label: string, method: string, params:
   return obs;
 }
 
-export async function listAll(client: Client, method: string, key: string, timeoutMs: number, maxPages = 100): Promise<{ items: Record<string, unknown>[]; pages: unknown[]; error?: string }> {
+export interface Listing { items: Record<string, unknown>[]; pages: unknown[]; error?: string }
+
+/** One page of a list method: the result, or why there is none; `bytes`: the page's size, for the listing budget. */
+export interface ListPage { result?: Record<string, unknown>; error?: string; bytes: number }
+
+/** Bytes one listing may take over all its pages (one page alone may be as large): past it the listing stops with an error. */
+export const LIST_BYTE_BUDGET = 64 * 1024 * 1024;
+
+/**
+ * Follow nextCursor up to `maxPages` (both eras). A listing fails, keeping what it read, on a repeated cursor, a
+ * nextCursor that is not a string, entries that are not objects (a host's schema check rejects such a result, so it
+ * cannot list either) and past LIST_BYTE_BUDGET bytes, so a hostile server cannot fill the memory page by page.
+ */
+export async function paginate(fetchPage: (cursor: string | undefined) => Promise<ListPage>, method: string, key: string, maxPages = 100): Promise<Listing> {
   const items: Record<string, unknown>[] = [];
   const pages: unknown[] = [];
   const seen = new Set<string>();
   let cursor: string | undefined;
+  let bytes = 0;
+  let nonObjects = 0;
+  const done = (error?: string): Listing => {
+    const bad = nonObjects ? `${nonObjects} ${key} ${nonObjects === 1 ? 'entry is' : 'entries are'} not objects` : undefined;
+    const e = [error, bad].filter(Boolean).join('; ');
+    return e ? { items, pages, error: e } : { items, pages };
+  };
   for (let i = 0; i < maxPages; i++) {
-    let res: Record<string, unknown>;
-    try {
-      res = await client.request({ method, params: cursor ? { cursor } : {} } as never, LooseResult, { timeout: timeoutMs });
-    } catch (e) {
-      return { items, pages, error: (e as Error).message };
-    }
-    pages.push(res);
-    const list = res[key];
-    if (Array.isArray(list)) items.push(...list.map((x) => (isObj(x) ? x : { name: x })));
-    const next = res.nextCursor;
-    if (typeof next !== 'string' || !next) return { items, pages };
-    if (seen.has(next)) return { items, pages, error: 'repeated cursor' };
+    const page = await fetchPage(cursor);
+    if (!page.result) return done(page.error ?? `${method} returned no result`);
+    bytes += page.bytes;
+    if (bytes > LIST_BYTE_BUDGET) return done(`listing exceeded ${LIST_BYTE_BUDGET} bytes`);
+    pages.push(page.result);
+    const list = page.result[key];
+    // One push per entry: spreading a page of 100k+ entries into push() overflows the call stack.
+    if (Array.isArray(list)) for (const x of list) { if (isObj(x)) items.push(x); else nonObjects++; }
+    const next = page.result.nextCursor;
+    if (next === undefined || next === null || next === '') return done();
+    if (typeof next !== 'string') return done(`nextCursor is not a string (got ${Array.isArray(next) ? 'array' : typeof next})`);
+    if (seen.has(next)) return done('repeated cursor');
     seen.add(next);
     cursor = next;
   }
-  return { items, pages, error: `more than ${maxPages} pages` };
+  return done(`more than ${maxPages} pages`);
+}
+
+/** A list method through the SDK client; a page's size is measured as its JSON text. */
+export async function listAll(client: Client, method: string, key: string, timeoutMs: number, maxPages = 100): Promise<Listing> {
+  return paginate(async (cursor) => {
+    try {
+      const result = await client.request({ method, params: cursor ? { cursor } : {} } as never, LooseResult, { timeout: timeoutMs });
+      return { result, bytes: JSON.stringify(result).length };
+    } catch (e) {
+      return { error: (e as Error).message, bytes: 0 };
+    }
+  }, method, key, maxPages);
 }

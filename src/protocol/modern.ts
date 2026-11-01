@@ -4,6 +4,7 @@ import { idMatches, type Tracer } from './trace.js';
 import { isObj } from '../rules/util/access.js';
 import { VERSION } from '../version.js';
 import { CLIENT_CAPABILITIES } from './clientCaps.js';
+import { paginate, type Listing } from './legacy.js';
 
 export const MODERN_VERSION = '2026-07-28';
 export const CLIENT_INFO = { name: 'mcp-review-check', version: VERSION };
@@ -14,6 +15,8 @@ export interface ModernResponse {
   error?: { code?: unknown; message?: unknown; data?: unknown };
   /** The response answered another request id: its result is not taken (a real client cannot match it). */
   idMismatch?: string;
+  /** Size of the response body in bytes. */
+  bytes?: number;
 }
 
 export interface ModernRequestOptions {
@@ -78,12 +81,12 @@ export class ModernClient {
     if (mh !== null) headers['mcp-method'] = mh;
     const nh = opts.nameHeader === undefined ? mcpNameOf(method, params) : opts.nameHeader;
     if (nh !== null && nh !== undefined) headers['mcp-name'] = nh;
-    const { exchange } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
+    const { exchange, bodyBytes } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
       method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: true,
     });
     const msgs = Array.isArray(exchange.json) ? exchange.json.filter(isObj) : isObj(exchange.json) ? [exchange.json] : [];
     const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];
-    const res: ModernResponse = { exchange };
+    const res: ModernResponse = { exchange, bytes: bodyBytes };
     if (isObj(msg)) {
       // An error with id null (the request could not be read) answers any request; anything else must echo the id.
       const echoed = idMatches(msg.id, id) || (msg.id === null && isObj(msg.error));
@@ -97,24 +100,12 @@ export class ModernClient {
     return res;
   }
 
-  /** Follow nextCursor up to `maxPages`; detects repeated cursors. */
-  async listAll(method: string, key: string, maxPages = 100): Promise<{ items: Record<string, unknown>[]; pages: unknown[]; error?: string }> {
-    const items: Record<string, unknown>[] = [];
-    const pages: unknown[] = [];
-    const seen = new Set<string>();
-    let cursor: string | undefined;
-    for (let i = 0; i < maxPages; i++) {
+  /** Follow nextCursor up to `maxPages` (see paginate: repeated or non-string cursors, non-object entries, the byte budget). */
+  async listAll(method: string, key: string, maxPages = 100): Promise<Listing> {
+    return paginate(async (cursor) => {
       const r = await this.request(method, cursor ? { cursor } : {});
-      if (!r.result) return { items, pages, error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}`) };
-      pages.push(r.result);
-      const list = r.result[key];
-      if (Array.isArray(list)) items.push(...list.filter(isObj));
-      const next = r.result.nextCursor;
-      if (typeof next !== 'string' || !next) return { items, pages };
-      if (seen.has(next)) return { items, pages, error: 'repeated cursor' };
-      seen.add(next);
-      cursor = next;
-    }
-    return { items, pages, error: `more than ${maxPages} pages` };
+      if (r.result) return { result: r.result, bytes: r.bytes ?? 0 };
+      return { error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}`), bytes: 0 };
+    }, method, key, maxPages);
   }
 }
