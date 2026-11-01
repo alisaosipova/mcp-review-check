@@ -406,4 +406,12 @@ describe('F058 AUTH-007 leaves an unparsable issuer to AUTH-006', () => {
     expect(evaluate(byId('AUTH-007'), s)).toMatchObject([{ severity: 'error' }]);
   });
 });
+
+describe('F053 AUTH-008 metadata without issuer', () => {
+  it('says the issuer is missing instead of printing undefined', () => {
+    const f = evaluate(byId('AUTH-008'), authSnap({ as: { issuer: undefined } }));
+    expect(f).toMatchObject([{ severity: 'error', message: `metadata has no issuer (RFC 8414 REQUIRED); expected ${ISSUER}` }]);
+    expect(f[0].message).not.toMatch(/undefined/);
+  });
+});
 // @end

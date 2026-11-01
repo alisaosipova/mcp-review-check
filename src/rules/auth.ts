@@ -281,6 +281,8 @@ export const AUTH_008 = defineRule(
   },
   (snap) => forEachAs(snap, (as, m) => {
     if (m.issuer === as.issuer) return [];
+    if (m.issuer === undefined) return [{ message: `metadata has no issuer (RFC 8414 REQUIRED); expected ${as.issuer}` }];
+    if (!isStr(m.issuer)) return [{ message: `metadata issuer ${JSON.stringify(m.issuer)} is not a string; expected ${as.issuer}` }];
     // Origin-only issuers that differ only by the root '/' parse to the same URL; strict string equality still fails
     // RFC 8414, so this is an observation. Issuers with a path keep strict equality.
     if (isStr(m.issuer) && sameOriginOnlyIssuer(m.issuer, as.issuer)) {
