@@ -216,4 +216,23 @@ describe('F073 TOOL-031 reads a root $ref outputSchema', () => {
     expect(messages('TOOL-031', profile({ $ref: '#/$defs/P', $defs: { P } }))).toEqual(['profile outputSchema lacks a required string id']);
   });
 });
+
+describe('F069, F077 a write verb joined by and/or/then makes a read-verb name a write tool', () => {
+  const hints = (a: Record<string, unknown>) => ({ annotations: a });
+  it('TOOL-014 does not call search_and_replace a read tool', () => {
+    const t = one(tool({ name: 'search_and_replace', description: 'Replace text in notes.', ...hints({ readOnlyHint: false, destructiveHint: true, openWorldHint: false }) }));
+    expect(messages('TOOL-014', t)).toEqual([]);
+    const noRead = one(tool({ name: 'search_and_replace', description: 'Replace text in notes.', ...hints({ destructiveHint: true }) }));
+    expect(messages('TOOL-014', noRead)).toEqual([]);
+  });
+  it('TOOL-014 reports readOnlyHint on a joined write verb and a joined destructive verb without destructiveHint', () => {
+    expect(messages('TOOL-014', one(tool({ name: 'get_or_create_note', description: 'Get or create a note.' })))).toEqual(['marked readOnlyHint but name contains write verb "create"']);
+    expect(messages('TOOL-014', one(tool({ name: 'find_and_delete', description: 'Find notes and delete them.', annotations: undefined })))).toEqual(['"delete" tool without destructiveHint: true']);
+  });
+  it('TOOL-027 is not a collection read for search_and_replace; nouns after a read verb do not count', () => {
+    expect(evaluate(byId('TOOL-027'), one(toolWithProps('search_and_replace', { pattern: prop() }, { annotations: undefined, description: 'Replace text.' })))).toEqual([]);
+    // get_order and list_posts stay read tools
+    expect(messages('TOOL-014', one(tool({ name: 'get_order_status', description: 'Get the status of an order.' })))).toEqual([]);
+  });
+});
 //@@END

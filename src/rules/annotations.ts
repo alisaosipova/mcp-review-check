@@ -4,7 +4,7 @@ import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isObj, isStr } from './util/access.js';
 import { walkSchema } from './util/schemaWalk.js';
-import { firstVerb, tokenize, toolKind } from './util/text.js';
+import { compoundWriteVerb, firstVerb, tokenize, toolKind } from './util/text.js';
 
 const SCHEMA_TS = 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts';
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -98,21 +98,26 @@ export const TOOL_014 = defineRule(
   (snap) => perTool(snap, (t, name) => {
     const a = annotations(t);
     const v = firstVerb(name);
+    // search_and_replace, get_or_create: the joined write verb decides, the leading read verb does not.
+    const joined = v && READ_VERBS.has(v) ? compoundWriteVerb(name) : undefined;
+    const readVerb = v && READ_VERBS.has(v) && !joined ? v : undefined;
     const d = isStr(t.description) ? t.description : '';
     const out: RawFinding[] = [];
     if (a.readOnlyHint === true) {
-      const w = v && WRITE_VERBS.has(v) ? undefined : WRITE_DESC.exec(behaviorText(d));
+      const w = (v && WRITE_VERBS.has(v)) || joined ? undefined : WRITE_DESC.exec(behaviorText(d));
       // The name is a strong signal; a word in the description alone is a weak one (informational).
       if (v && WRITE_VERBS.has(v)) out.push({ message: `marked readOnlyHint but name starts with write verb "${v}"` });
+      else if (joined) out.push({ message: `marked readOnlyHint but name contains write verb "${joined}"` });
       else if (w) out.push({ severity: 'info', message: `marked readOnlyHint but the description says "${w[0]}"; check that the tool does not write` });
     }
-    if (v && HARD_DESTRUCTIVE.has(v) && a.destructiveHint !== true) out.push({ message: `"${v}" tool without destructiveHint: true` });
-    if (v && READ_VERBS.has(v) && a.destructiveHint === true) out.push({ message: `read verb "${v}" but destructiveHint: true` });
+    const hard = [v, joined].find((x) => x && HARD_DESTRUCTIVE.has(x));
+    if (hard && a.destructiveHint !== true) out.push({ message: `"${hard}" tool without destructiveHint: true` });
+    if (readVerb && a.destructiveHint === true) out.push({ message: `read verb "${readVerb}" but destructiveHint: true` });
     if (a.readOnlyHint === false && a.destructiveHint === false && (tokenize(name).some((x) => IRREVERSIBLE.has(x)) || IRREV_DESC.test(d))) {
       out.push({ platforms: ['chatgpt'], message: 'destructiveHint: false on a tool that looks irreversible' });
     }
     // Without an annotations object TOOL-011 and TOOL-012 already report the missing hints.
-    if (v && READ_VERBS.has(v) && isObj(t.annotations) && a.readOnlyHint === undefined) out.push({ platforms: ['spec'], message: `read verb "${v}" but readOnlyHint is absent (treated as destructive and open-world by default)` });
+    if (readVerb && isObj(t.annotations) && a.readOnlyHint === undefined) out.push({ platforms: ['spec'], message: `read verb "${readVerb}" but readOnlyHint is absent (treated as destructive and open-world by default)` });
     return out;
   }),
 );

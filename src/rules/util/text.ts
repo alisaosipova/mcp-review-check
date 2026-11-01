@@ -19,18 +19,31 @@ export function firstVerb(name: string): string | undefined {
   return tokenize(name).find((t) => ALL_VERBS.has(t));
 }
 
+const CONJUNCTIONS = new Set(['and', 'or', 'then']);
+
+/**
+ * A write verb joined to the name by a conjunction (search_and_replace, get_or_create, find_then_delete): such a tool
+ * writes whatever its first verb says. A write word without a conjunction (get_order, list_posts) is a noun.
+ */
+export function compoundWriteVerb(name: string): string | undefined {
+  const toks = tokenize(name);
+  for (let i = 1; i < toks.length - 1; i++) if (CONJUNCTIONS.has(toks[i]) && WRITE_VERBS.has(toks[i + 1])) return toks[i + 1];
+  return undefined;
+}
+
 export type ToolKind = 'read' | 'write' | 'unknown';
 
 /**
  * The shared read/write classifier: annotations first (readOnlyHint true → read; readOnlyHint false or
- * destructiveHint true → write), then the first verb of the name. Rules use this so they never disagree.
+ * destructiveHint true → write), then the first verb of the name, where a joined write verb (search_and_replace)
+ * makes a read verb a write tool. Rules use this so they never disagree.
  */
 export function toolKind(t: Obj): ToolKind {
   const a = annotations(t);
   if (a.readOnlyHint === true) return 'read';
   if (a.readOnlyHint === false || a.destructiveHint === true) return 'write';
   const v = firstVerb(toolName(t));
-  if (v && READ_VERBS.has(v)) return 'read';
+  if (v && READ_VERBS.has(v)) return compoundWriteVerb(toolName(t)) ? 'write' : 'read';
   if (v && WRITE_VERBS.has(v)) return 'write';
   return 'unknown';
 }
