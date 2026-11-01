@@ -77,8 +77,9 @@ export const DATA_001 = defineRule(
       (v, root) => (isRoleContentArray(v, root) ? { message: `parameter "${v.rawName}" is an array of {role, content} messages` } : undefined),
     ),
     // Text detection is a regex heuristic, so it is a warning (§1.2). The nouns are anchored to the chat itself:
-    // "full history of status changes" is not conversation data.
-    ...scanText(snap, /\b(entire|full|whole|complete) (conversation|chat|transcript)s?\b|\b(include|pass|send|provide) (the )?(user'?s )?(previous|prior|all) (chat |conversation )?messages\b|\bcontents of (your|the (chat|conversation)'?s?) memory\b/i, 'asks for conversation data', 'warning'),
+    // "full history of status changes" is not conversation data, and "send all messages matching the filter" in a
+    // messaging tool is the channel's messages, so `all` needs a chat or conversation qualifier.
+    ...scanText(snap, /\b(entire|full|whole|complete) (conversation|chat|transcript)s?\b|\b(include|pass|send|provide) (the )?(user'?s )?((previous|prior) (chat |conversation )?|all (chat |conversation ))messages\b|\bcontents of (your|the (chat|conversation)'?s?) memory\b/i, 'asks for conversation data', 'warning'),
     // A capture verb and a user/conversation object, within one sentence: querying an analytics product is fine.
     ...scanText(snap, /\b(log|logs|logged|record|records|store|stores|send|sends|collect|collects)\b[^.]{0,30}\b(the )?(user'?s? )?(?<!\blog )(prompts?|messages?|quer(y|ies)|conversations?)\b[^.]{0,30}\b(for )?(logging|analytics|telemetry|tracking)\b/i, 'captures prompts for logging/analytics', 'warning'),
   ],
