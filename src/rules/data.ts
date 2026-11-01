@@ -98,6 +98,11 @@ export const DATA_002 = defineRule(
 );
 
 const SECRET_NAMES = /^(password|passwd|pwd|pass_?phrase|api_?key|apikey|secret|client_?secret|access_?token|refresh_?token|bearer|auth_?token|session_?token|otp|totp|mfa(_?code)?|2fa(_?code)?|verification_?code|private_?key|seed_?phrase|mnemonic)$/i;
+// Compound names whose last segment is a secret (new_password, github_token, aws_secret_access_key) are a word-list
+// match, so a warning (§1.2). The last segment decides: password_policy and token_count are not secrets.
+const SECRET_SUFFIX = /^([a-z0-9]+_)+(password|passwd|pass_?phrase|token|secret|api_?key|access_?key|secret_?key|private_?key)$|^(credentials?|authorization)$/i;
+// Pagination and request tokens are not credentials.
+const NOT_SECRET = /(^|_)(page|next|cursor|continuation|sync|idempotency|request|max|num|input|output)_token$/i;
 
 export const DATA_003 = defineRule(
   {
@@ -107,7 +112,11 @@ export const DATA_003 = defineRule(
     sources: [OAI_GUIDE],
   },
   (snap) => [
-    ...scanNames(snap, [{ re: SECRET_NAMES, label: 'solicits a secret' }, { re: /^pin$/i, severity: 'warning', label: 'may be a PIN code' }]),
+    ...scanNames(snap, [
+      { re: SECRET_NAMES, label: 'solicits a secret' },
+      { re: SECRET_SUFFIX, severity: 'warning', label: 'may solicit a secret', skip: (v) => isNonText(v.node) || NOT_SECRET.test(v.name) },
+      { re: /^pin$/i, severity: 'warning', label: 'may be a PIN code' },
+    ]),
     ...scanText(snap, /(provide|enter|paste|include|send) (your|the user'?s) (password|api key|token|secret|otp|one-time code|system prompt)/i, 'asks for a secret'),
   ],
 );
