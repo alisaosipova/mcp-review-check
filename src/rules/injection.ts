@@ -253,6 +253,7 @@ export const INJ_005 = defineRule(
   (snap) => scanCorpus(snap, INJ_005_PATTERNS),
 );
 
+const MEASURE = String.raw`\s+(the |a |an |its |their |your )?((given|specified|configured|previous|current|minimum|maximum|target|expected|required) )?((thresholds?|average|baseline|median|mean|minimum|maximum|min|max|limits?|targets?|cutoffs?|benchmarks?|scores?|ratings?|values?|expected|previous|last|before|zero|chance|random)\b|[-+<>=%$.\d])`;
 const SELF = String.raw`(this|these|our)(\s+(tool|skill|server|plugin|connector|app|resource|prompt|function)s?)?`;
 const CONDITIONAL = String.raw`${SELF}(\s+first)?\s+(when(ever)?|if|for|to|before|after|whenever)\b`;
 
@@ -265,7 +266,8 @@ export const INJ_006_PATTERNS: Pattern[] = [
   // "Always use this tool when/to/for ..." says when the tool applies (MS Learn, Hugging Face skills): informational.
   { re: new RegExp(String.raw`\balways (use|call|prefer) ${CONDITIONAL}`, 'i'), severity: 'info', note: 'conditional: fine when it describes when this applies' },
   // The conditional form above is not matched again here, so "better than ..." next to it is still a warning.
-  { re: new RegExp(String.raw`\b(always (use|call|prefer) (?!${CONDITIONAL})(this|these|our)\b|prefer (this|our) (tool|plugin|server)|better than|superior to|unlike (other|competitor))`, 'i') },
+  // A comparison with a number, threshold or statistic ("rating better than the given threshold") is not disparagement.
+  { re: new RegExp(String.raw`\b(always (use|call|prefer) (?!${CONDITIONAL})(this|these|our)\b|prefer (this|our) (tool|plugin|server)|(better than|superior to)(?!${MEASURE})|unlike (other|competitor))`, 'i') },
 ];
 
 /** The fix for the kind of object that was flagged: a tool, a skill (skill:// resource), another resource, a prompt or the instructions. */
