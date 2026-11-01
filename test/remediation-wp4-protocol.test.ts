@@ -280,3 +280,16 @@ describe('the deadline signal cancels probes (F034)', () => {
     expect(exchange.error?.name).toBe('AbortError');
   });
 });
+
+describe('ModernClient probes can skip the full-body read (F025)', () => {
+  it('fullBody: false reads with the probe cap: a large answer is cut at 256 KB without a truncation error', async () => {
+    const url = await serve((_req, body, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: { pad: 'p'.repeat(400_000) } })); });
+    const modern = new ModernClient(url, createTracer(createRedactor()), {}, 4000);
+    const probe = await modern.request('tools/list', {}, { label: 'headerMismatch (none)', fullBody: false });
+    expect(probe.exchange.error).toBeUndefined();
+    expect(probe.result).toBeUndefined(); // the cut body does not parse: a probe does not need it
+    expect(probe.bytes).toBeLessThan(400_000);
+    const full = await modern.request('tools/list');
+    expect((full.result?.pad as string).length).toBe(400_000);
+  });
+});

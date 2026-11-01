@@ -27,6 +27,12 @@ export interface ModernRequestOptions {
   /** undefined → derived from params (name or uri, see mcpNameOf); null → omit header; string → send this value. */
   nameHeader?: string | null;
   timeoutMs?: number;
+  /**
+   * Default true: the result is needed, so the body is read up to 64 MiB within the whole timeout. false (a probe that
+   * only looks at the status and the error): the probes' 256 KB and 10 s cap, so a server that keeps an SSE stream open
+   * without answering costs at most 10 s.
+   */
+  fullBody?: boolean;
 }
 
 const NAME_PARAM: Record<string, 'name' | 'uri'> = {
@@ -82,7 +88,7 @@ export class ModernClient {
     const nh = opts.nameHeader === undefined ? mcpNameOf(method, params) : opts.nameHeader;
     if (nh !== null && nh !== undefined) headers['mcp-name'] = nh;
     const { exchange, bodyBytes } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
-      method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: true,
+      method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: opts.fullBody ?? true,
     });
     const msgs = Array.isArray(exchange.json) ? exchange.json.filter(isObj) : isObj(exchange.json) ? [exchange.json] : [];
     const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];
