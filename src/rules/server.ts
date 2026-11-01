@@ -394,7 +394,8 @@ export const SRV_015 = defineRule(
     if (isObj(caps.resources) && caps.resources.subscribe === true) used.push('resources.subscribe');
     if (isObj(caps.experimental) && Object.keys(caps.experimental).length) used.push('experimental');
     if (caps.tasks !== undefined) used.push('tasks');
-    if (corpus(snap).some((e) => /sampling\/createMessage|\bsampling\b/i.test(e.text))) used.push('sampling');
+    // "sampling" alone is ordinary vocabulary (audio sampling rate, statistical sampling): only MCP sampling wording.
+    if (corpus(snap).some((e) => /sampling\/createMessage|\bMCP sampling\b|\bsampling (requests?|capabilit(y|ies))\b/i.test(e.text))) used.push('sampling');
     return used.length ? [{ message: `uses ${used.join(', ')}` }] : [];
   },
 );
