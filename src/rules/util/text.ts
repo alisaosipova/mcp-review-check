@@ -52,14 +52,20 @@ export function nfkc(text: string): string {
   return text.normalize('NFKC');
 }
 
-/** Escape invisible / control characters as \u{...} for display. */
+const EMOJI = /\p{Extended_Pictographic}/u;
+// What may end the emoji before a joiner: the pictograph, a skin-tone modifier or the emoji presentation selector.
+const EMOJI_END = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F]/u;
+
+/** Escape invisible / control characters as \u{...} for display. A zero-width joiner inside an emoji sequence (👨‍💻) is kept. */
 export function escapeHidden(text: string): string {
+  const chars = [...text];
   let out = '';
-  for (const ch of text) {
+  chars.forEach((ch, i) => {
     const cp = ch.codePointAt(0)!;
-    if (/[\p{Cf}\p{Cc}]/u.test(ch) && ch !== '\n' && ch !== '\t') out += `\\u{${cp.toString(16).toUpperCase()}}`;
+    const emojiJoiner = cp === 0x200d && i > 0 && EMOJI_END.test(chars[i - 1]) && EMOJI.test(chars[i + 1] ?? '');
+    if (/[\p{Cf}\p{Cc}]/u.test(ch) && ch !== '\n' && ch !== '\t' && !emojiJoiner) out += `\\u{${cp.toString(16).toUpperCase()}}`;
     else out += ch;
-  }
+  });
   return out;
 }
 

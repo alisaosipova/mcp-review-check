@@ -6,6 +6,7 @@ import { schemaRules, validateAgainst } from '../src/rules/schema.js';
 import { toolRules } from '../src/rules/tools.js';
 import type { ActiveCall, Snapshot } from '../src/snapshot.js';
 import { schemaMetrics, walkSchema } from '../src/rules/util/schemaWalk.js';
+import { escapeHidden } from '../src/rules/util/text.js';
 import { evaluate, snap, tool, toolWithProps } from './helpers.js';
 
 const all = [...toolRules, ...annotationRules, ...schemaRules, ...runtimeRules];
@@ -268,6 +269,18 @@ describe('F068 TOOL-008 counts Chinese and Japanese words by segmentation', () =
   });
   it('a two-word description is still thin', () => {
     expect(messages('TOOL-008', one(tool({ description: '搜索笔记' })))[0]).toMatch(/only 2 words/);
+  });
+});
+
+describe('F078 escapeHidden keeps the joiner inside emoji sequences', () => {
+  it('emoji ZWJ sequences display as written', () => {
+    expect(escapeHidden('Search 👨‍💻 docs')).toBe('Search 👨‍💻 docs');
+    expect(escapeHidden('👩🏽‍💻 and 🏳️‍🌈 and 👨‍👩‍👧')).toBe('👩🏽‍💻 and 🏳️‍🌈 and 👨‍👩‍👧');
+  });
+  it('a joiner between letters or at the edge of an emoji is still escaped', () => {
+    expect(escapeHidden('ig‍nore')).toBe('ig\\u{200D}nore');
+    expect(escapeHidden('👨‍ docs')).toBe('👨\\u{200D} docs');
+    expect(escapeHidden('a‍💻')).toBe('a\\u{200D}💻');
   });
 });
 //@@END
