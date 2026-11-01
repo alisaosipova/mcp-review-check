@@ -140,6 +140,8 @@ function parseHeader(raw: string): [string, string] {
   const k = raw.slice(0, i).trim();
   const v = raw.slice(i + 1).trim();
   if (/[\r\n]/.test(k) || /[\r\n]/.test(v)) throw new UsageError('--header values must not contain CR or LF');
+  // An RFC 9110 token, or fetch rejects the name on every request and the run looks like a connect failure (exit 3).
+  if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(k)) throw new UsageError('--header name must be an HTTP token: letters, digits and !#$%&\'*+.^_`|~- (the value is not shown)');
   return [k, v];
 }
 
@@ -224,14 +226,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (!sarifLocation || /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(sarifLocation) || sarifLocation.split(/[\\/]/).includes('..')) throw new UsageError('--sarif-location must be a relative path without a scheme or ".." (the value is not shown)');
     const failOn = values['fail-on'] as FailOn;
     if (!['error', 'warning', 'never'].includes(failOn)) throw new UsageError('--fail-on must be error, warning or never');
-    const timeoutMs = Number(values.timeout);
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new UsageError('--timeout must be a positive number of milliseconds');
+    // Digits only: Number() would also take 0x10, 1e2, 1.5 and blanks.
+    const timeoutMs = /^\d+$/.test(values.timeout!) ? Number(values.timeout) : NaN;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new UsageError('--timeout must be a positive whole number of milliseconds');
     // Node clamps larger setTimeout delays to 1 ms; withTimeout adds a 1000 ms margin on top.
     if (timeoutMs > MAX_TIMEOUT_MS) throw new UsageError(`--timeout must be at most ${MAX_TIMEOUT_MS} ms`);
     let maxDurationMs: number | undefined;
     if (values['max-duration'] !== undefined) {
-      maxDurationMs = Number(values['max-duration']);
-      if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > MAX_TIMEOUT_MS) throw new UsageError(`--max-duration must be a positive number of milliseconds (at most ${MAX_TIMEOUT_MS})`);
+      maxDurationMs = /^\d+$/.test(values['max-duration']) ? Number(values['max-duration']) : NaN;
+      if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > MAX_TIMEOUT_MS) throw new UsageError(`--max-duration must be a positive whole number of milliseconds (at most ${MAX_TIMEOUT_MS})`);
     }
 
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
