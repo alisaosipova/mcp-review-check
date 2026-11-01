@@ -170,6 +170,36 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
   return out;
 }
 
+/** Where the last SSE event in a chunk ends (after its blank line), or -1; an event split across chunks is missed, which only delays the reset. */
+function lastEventEnd(chunk: Uint8Array): number {
+  const b = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+  return Math.max(...(['\n\n', '\r\r', '\r\n\r\n'] as const).map((sep) => { const i = b.lastIndexOf(sep); return i < 0 ? -1 : i + sep.length; }));
+}
+
+const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
+
+/**
+ * The response handed to the SDK, whose body errors once it passes `cap` bytes (on an SSE stream: within one event),
+ * so a hostile server cannot make the SDK buffer and parse an unbounded answer. The SDK reports the error as a failed
+ * request. `url` and `redirected` are kept (the SSE client reads them).
+ */
+export function capBody(res: Response, cap: number): Response {
+  if (!res.body || NULL_BODY_STATUS.has(res.status)) return res;
+  const perEvent = /text\/event-stream/i.test(res.headers.get('content-type') ?? '');
+  let size = 0;
+  const limited = res.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, ctrl) {
+      size += chunk.byteLength;
+      if (perEvent) { const end = lastEventEnd(chunk); if (end >= 0) size = chunk.byteLength - end; }
+      if (size > cap) ctrl.error(new Error(`response body exceeded ${cap} bytes`));
+      else ctrl.enqueue(chunk);
+    },
+  }));
+  const out = new Response(limited, { status: res.status, statusText: res.statusText, headers: res.headers });
+  Object.defineProperties(out, { url: { value: res.url }, redirected: { value: res.redirected } });
+  return out;
+}
+
 /** A parsed body (one message or a batch) holds a result for request `id`. */
 function hasResultFor(json: unknown, id: unknown): boolean {
   return (Array.isArray(json) ? json : [json]).some((m) => !!m && typeof m === 'object' && idMatches((m as { id?: unknown }).id, id) && 'result' in m);
@@ -271,7 +301,8 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       const res = await fetch(url, stop?.aborted ? { ...init, signal: stop } : init);
       finishHeaders(ex, res, started);
       const isStream = ex.method === 'GET' && /event-stream/i.test(ex.contentType ?? '');
-      if (!isStream && res.body) {
+      if (!res.body) return res;
+      if (!isStream) {
         const clone = res.clone();
         const rpcId = (ex.requestJson as { id?: unknown } | undefined)?.id;
         // Past READ_CAP the copy is still read (not kept) to see when the response ends, for the latency sample.
@@ -281,7 +312,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
           sample(ex, b, true);
         }));
       }
-      return res;
+      return capBody(res, FULL_READ_CAP); // after the clone: the copy for the record is read on its own
     } catch (err) {
       ex.durationMs = now() - started;
       ex.error = errorInfo(err);

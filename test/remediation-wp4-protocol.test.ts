@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildRedactor, redactDeep } from '../src/redact.js';
-import { createRedactor, createTracer, parseSseMessages, scrub } from '../src/protocol/trace.js';
+import { capBody, createRedactor, createTracer, parseSseMessages, scrub } from '../src/protocol/trace.js';
 import { ModernClient } from '../src/protocol/modern.js';
 
 type Handler = (req: IncomingMessage, body: string, res: ServerResponse) => void;
@@ -136,5 +136,39 @@ describe('latency samples for SRV-010 (F021, R008)', () => {
     await tracer.request('discover', new URL('/json', base), { ...post(rpcBody('initialize', 5)), timeoutMs: 4000, fullBody: true });
     expect(tracer.timings.initialize).toHaveLength(1);
     expect(tracer.timings.initialize[0]).toBeGreaterThanOrEqual(250);
+  });
+});
+
+describe('a size cap on the responses the SDK reads (F138)', () => {
+  const stream = (parts: string[]) => new ReadableStream<Uint8Array>({ start(c) { for (const p of parts) c.enqueue(new TextEncoder().encode(p)); c.close(); } });
+
+  it('a JSON body past the cap fails the read instead of being buffered whole', async () => {
+    const res = capBody(new Response(stream(['{"a":"', 'x'.repeat(600), '"}']), { headers: { 'content-type': 'application/json' } }), 256);
+    await expect(res.json()).rejects.toThrow('response body exceeded 256 bytes');
+  });
+
+  it('a body under the cap passes unchanged, with the status, headers, url and redirect flag', async () => {
+    const orig = new Response(stream(['{"ok":', 'true}']), { status: 202, headers: { 'content-type': 'application/json' } });
+    Object.defineProperties(orig, { url: { value: 'http://127.0.0.1/x' }, redirected: { value: true } });
+    const res = capBody(orig, 256);
+    expect([res.status, res.headers.get('content-type'), res.url, res.redirected]).toEqual([202, 'application/json', 'http://127.0.0.1/x', true]);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('an SSE stream is capped per event, so a long-lived stream of small events goes on', async () => {
+    const events = Array.from({ length: 20 }, (_, i) => `data: {"n":${i},"pad":"${'p'.repeat(40)}"}\n\n`);
+    const ok = capBody(new Response(stream(events), { headers: { 'content-type': 'text/event-stream' } }), 128);
+    expect(parseSseMessages(await ok.text())).toHaveLength(20);
+    const big = capBody(new Response(stream(['data: {"pad":"', 'p'.repeat(300), '"}\n\n']), { headers: { 'content-type': 'text/event-stream' } }), 128);
+    await expect(big.text()).rejects.toThrow('response body exceeded 128 bytes');
+  });
+
+  it('the SDK fetch hands out the capped response and still records the exchange', async () => {
+    const url = await serve((_req, body, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: { tools: [] } })); });
+    const tracer = createTracer(createRedactor());
+    const res = await tracer.fetch(url, post(rpcBody('tools/list', 7)));
+    expect(await res.json()).toMatchObject({ id: 7, result: { tools: [] } });
+    await tracer.flush();
+    expect(tracer.exchanges[0].json).toMatchObject({ id: 7 });
   });
 });
