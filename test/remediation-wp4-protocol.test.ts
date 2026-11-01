@@ -257,3 +257,26 @@ describe('recorded URLs are masked like displayed ones (F035)', () => {
     expect(redactUrl('https://h.example/mcp', r)).toBe('https://h.example/mcp');
   });
 });
+
+describe('the deadline signal cancels probes (F034)', () => {
+  it('a probe in flight ends with an AbortError when the deadline fires, and one after it is not sent', async () => {
+    let hits = 0;
+    const url = await serve((_req, _body, res) => { hits++; sseOpen(res, ': waiting\n\n'); });
+    const stop = new AbortController();
+    const tracer = createTracer(createRedactor(), undefined, stop.signal);
+    setTimeout(() => stop.abort(), 200);
+    const t0 = Date.now();
+    const { exchange } = await tracer.request('slow', url, { ...post(rpcBody('tools/list', 1)), timeoutMs: 5000, fullBody: true });
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(exchange.error?.name).toBe('BodyTimeout');
+    const after = await tracer.request('late', url, { ...post(rpcBody('tools/list', 2)), timeoutMs: 5000 });
+    expect(after.exchange.error?.name).toBe('AbortError');
+    expect(hits).toBe(1);
+  });
+
+  it('the request timeout still aborts with an AbortError', async () => {
+    const url = await serve(() => { /* never answers */ });
+    const { exchange } = await createTracer(createRedactor(), undefined, new AbortController().signal).request('hang', url, { ...post(rpcBody('tools/list', 1)), timeoutMs: 300 });
+    expect(exchange.error?.name).toBe('AbortError');
+  });
+});

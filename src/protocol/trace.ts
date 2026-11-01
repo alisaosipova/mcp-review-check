@@ -255,14 +255,6 @@ export interface Tracer {
   now(): number;
 }
 
-/** Abort `ctrl` when `stop` aborts, at once if it already has (by hand: AbortSignal.any is not in Node 18.19); returns the unlink. */
-function linkAbort(ctrl: AbortController, stop: AbortSignal | undefined): () => void {
-  const abort = () => ctrl.abort();
-  if (stop?.aborted) abort();
-  else stop?.addEventListener('abort', abort, { once: true });
-  return () => stop?.removeEventListener('abort', abort);
-}
-
 /** `stop` (the --max-duration deadline): once it aborts, nothing more is sent and probes in flight are cancelled. */
 export function createTracer(redactor: Redactor, now: () => number = () => performance.now(), stop?: AbortSignal): Tracer {
   const exchanges: HttpExchange[] = [];
@@ -341,12 +333,12 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     const started = now();
     const ctrl = new AbortController();
     const timeoutMs = init.timeoutMs ?? 30000;
-    const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
-    const unlink = linkAbort(ctrl, stop);
+    const timeout = setTimeout(() => ctrl.abort(), timeoutMs); // not AbortSignal.timeout: the timeout checks expect an AbortError
+    const signal = stop ? AbortSignal.any([ctrl.signal, stop]) : ctrl.signal;
     // Tracer-only options are not passed to fetch.
     const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, ...fetchInit } = init;
     try {
-      const res = await fetch(url, { redirect: 'manual', ...fetchInit, signal: ctrl.signal });
+      const res = await fetch(url, { redirect: 'manual', ...fetchInit, signal });
       finishHeaders(ex, res, started);
       let bodyBytes: number | undefined;
       if (abortAfterHeaders) {
@@ -363,7 +355,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
         sample(ex, body, false);
         bodyBytes = body.bytes;
         if (fullBody && body.truncated) ex.error = { name: 'BodyTruncated', message: `response body exceeded ${FULL_READ_CAP} bytes and was truncated` };
-        else if (fullBody && (body.timedOut || ctrl.signal.aborted) && ex.json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
+        else if (fullBody && (body.timedOut || signal.aborted) && ex.json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
       }
       return { exchange: ex, response: res, bodyBytes };
     } catch (err) {
@@ -372,7 +364,6 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       return { exchange: ex };
     } finally {
       clearTimeout(timeout);
-      unlink();
     }
   };
 
