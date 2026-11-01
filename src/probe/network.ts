@@ -102,11 +102,24 @@ export function initializeBody(id: number | string = 0, clientName = 'mcp-review
 
 export const JSON_HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
 
+/**
+ * Best-effort DELETE of the session a raw initialize probe made the server mint, so a stateful server does not keep
+ * one open session per probe. Sent once (no retries) with a short timeout; the answer does not matter.
+ */
+export async function closeProbeSession(tracer: Tracer, url: string | URL, ex: HttpExchange, headers: Record<string, string>, timeoutMs: number): Promise<void> {
+  const id = ex.status !== undefined && ex.status >= 200 && ex.status < 300 ? ex.headers?.['mcp-session-id'] : undefined;
+  // A redacted or malformed id (not visible ASCII) cannot name the session.
+  if (!id || !/^[\x21-\x7E]+$/.test(id)) return;
+  await tracer.request(`${ex.label} (close session)`, url, { method: 'DELETE', headers: { ...headers, 'mcp-session-id': id }, timeoutMs: Math.min(timeoutMs, 5000) });
+}
+
 /** Unauthenticated POST initialize with redirect: manual (retried on transient failures). */
 export async function preflight(tracer: Tracer, url: URL, timeoutMs: number, wait?: (ms: number) => Promise<void>): Promise<HttpExchange> {
-  return requestRetried(tracer, 'preflight', url, {
+  const ex = await requestRetried(tracer, 'preflight', url, {
     method: 'POST', headers: { ...JSON_HEADERS }, body: JSON.stringify(initializeBody()), timeoutMs,
   }, wait);
+  await closeProbeSession(tracer, url, ex, {}, timeoutMs);
+  return ex;
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -144,7 +157,11 @@ export async function originProbes(tracer: Tracer, url: URL, headers: Record<str
     const extra: Record<string, string> = mode === 'discover' ? { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' } : {};
     return { method: 'POST', headers: { ...headers, ...JSON_HEADERS, ...extra, ...o }, body: JSON.stringify(body), timeoutMs };
   };
-  const send = (label: string, origin?: string) => requestRetried(tracer, label, url, init(origin), wait);
+  const send = async (label: string, origin?: string) => {
+    const ex = await requestRetried(tracer, label, url, init(origin), wait);
+    if (mode === 'initialize') await closeProbeSession(tracer, url, ex, headers, timeoutMs);
+    return ex;
+  };
   return {
     originNone: await send('origin (none)'),
     originClaude: await send('origin claude.ai', 'https://claude.ai'),

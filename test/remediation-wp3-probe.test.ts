@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { placeholder, runActive, synthesizeArgs, wrongTypeValue } from '../src/probe/active.js';
-import { sameHostRedirect } from '../src/probe/network.js';
+import { closeProbeSession, originProbes, preflight, sameHostRedirect } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
 import type { Snapshot } from '../src/snapshot.js';
@@ -134,6 +134,37 @@ describe('R009: Origin is probed on legacy HTTP+SSE servers too', () => {
     const { s } = await sseProbe(true);
     expect(s.transport.probes.originEvil).toMatchObject({ status: 403 });
     expect(evaluate(byId('SRV-008'), s).filter((f) => f.severity === 'error')).toEqual([]);
+  });
+});
+
+describe('F030: sessions minted by raw initialize probes are closed', () => {
+  it('sends one DELETE per minted session after the preflight and the Origin probes, and none when no session is minted', async () => {
+    let n = 0;
+    const { base, seen } = await listen((req, res) => {
+      if (req.method === 'DELETE') { res.writeHead(200); res.end(); return; }
+      if (req.method === 'POST' && req.headers.origin !== 'https://evil.mcp-review-check.invalid') {
+        json(res, 200, { jsonrpc: '2.0', id: 0, result: {} }, { 'mcp-session-id': `probe-session-${++n}-0123456789` });
+        return;
+      }
+      json(res, 403, { error: 'forbidden' });
+    });
+    const url = new URL(`${base}/mcp`);
+    const tracer = createTracer(createRedactor());
+    const pf = await preflight(tracer, url, 5000, async () => {});
+    expect(pf.status).toBe(200);
+    await originProbes(tracer, url, { authorization: 'Bearer t' }, 'initialize', 5000, async () => {});
+    const deletes = seen.filter((r) => r.method === 'DELETE');
+    // preflight + 3 accepted Origins; the 403 to the foreign Origin minted nothing
+    expect(deletes.map((r) => r.headers['mcp-session-id'])).toEqual([1, 2, 3, 4].map((i) => `probe-session-${i}-0123456789`));
+    expect(deletes.slice(1).every((r) => r.headers.authorization === 'Bearer t')).toBe(true);
+    expect(tracer.exchanges.filter((e) => e.method === 'DELETE').map((e) => e.label)).toEqual(['preflight (close session)', 'origin (none) (close session)', 'origin claude.ai (close session)', 'origin chatgpt.com (close session)']);
+  });
+
+  it('does not send a redacted or malformed session id', async () => {
+    const tracer = createTracer(createRedactor());
+    await closeProbeSession(tracer, 'http://127.0.0.1:9/mcp', exchange({ status: 200, headers: { 'mcp-session-id': '«redacted»' } }), {}, 5000);
+    await closeProbeSession(tracer, 'http://127.0.0.1:9/mcp', exchange({ status: 404, headers: { 'mcp-session-id': 'abc' } }), {}, 5000);
+    expect(tracer.exchanges).toEqual([]);
   });
 });
 

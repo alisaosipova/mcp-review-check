@@ -4,7 +4,7 @@ import type { AsObservation, AuthProbe, HttpExchange } from '../snapshot.js';
 import type { Tracer } from '../protocol/trace.js';
 import { isObj, isStr } from '../rules/util/access.js';
 import { parseWwwAuthenticate } from '../rules/util/wwwAuth.js';
-import { initializeBody, JSON_HEADERS, lookupHost, requestRetried, requestWithRetry, type Deps } from './network.js';
+import { closeProbeSession, initializeBody, JSON_HEADERS, lookupHost, requestRetried, requestWithRetry, type Deps } from './network.js';
 
 export interface AuthProbeInput {
   tracer: Tracer;
@@ -117,9 +117,11 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
   }
 
   // Invalid token
+  const invalidAuth = { authorization: 'Bearer mcp-review-check-invalid-token' };
   probe.invalidToken = await requestRetried(tracer, 'auth invalid-token', url, {
-    method: 'POST', headers: { ...JSON_HEADERS, authorization: 'Bearer mcp-review-check-invalid-token' }, body: JSON.stringify(initializeBody()), timeoutMs,
+    method: 'POST', headers: { ...JSON_HEADERS, ...invalidAuth }, body: JSON.stringify(initializeBody()), timeoutMs,
   }, input.deps.sleep);
+  await closeProbeSession(tracer, url, probe.invalidToken, invalidAuth, timeoutMs);
 
   // DNS and TLS for the authorization server
   const tlsHosts = new Map<string, TlsHost>();
