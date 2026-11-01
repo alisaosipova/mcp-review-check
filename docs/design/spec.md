@@ -1324,7 +1324,7 @@ That totals about 20 requests per run with no writes. When the preflight gets a 
 
 ### 4.4 Node compatibility
 The plan targeted Node 18; the implementation requires **Node 20.19 or newer** (`engines.node: ">=20.19"`), the oldest release line CI tests. The Node 18 constraints below (forbidden packages, vitest 3, `@types/node@^18`) are historical; what holds today:
-- `engines.node: ">=20.19"`; CI runs Node 20.19, 22 and 24.
+- `engines.node: ">=20.19"`; CI runs Node 22 and 24 on Linux, macOS and Windows and Node 20.19 on Linux (Node 20 reached end of life on 2026-04-30; raising `engines` is an open maintainer decision for 0.2.0).
 - Dev dependencies: vitest 4, `@types/node` 20 (it tracks the oldest supported Node), TypeScript `~5.9`.
 - `lib: ["ES2022"]` without DOM: `@types/node` types `fetch`, `Response`, `Headers` and `AbortSignal.timeout`, and the DOM globals (`name`, `status`, `close`, …) would hide typos in Node code.
 - Releases are published to npm only from CI (`.github/workflows/release.yml`, see CONTRIBUTING.md); the "no publishing in this phase" note below is historical.

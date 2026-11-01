@@ -16,7 +16,7 @@ node dist/cli.js --stdio "node test/fixtures/good-server.mjs"
 
 `MCP_REVIEW_CHECK_LIVE=1 npm test` adds smoke tests against public servers; they are not part of CI. `MCP_REVIEW_CHECK_SKIP_BUILD=1` skips the build in the vitest global setup when `dist/` is already fresh.
 
-CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 20.19, 22 and 24 on Linux, macOS and Windows, checks that `docs/RULES.md` and the generated parts of the README and `docs/design/spec.md` are regenerated, and packs and smoke-tests the tarball.
+CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 22 and 24 on Linux, macOS and Windows and on Node 20.19 (the oldest supported release) on Linux, checks that `docs/RULES.md` and the generated parts of the README and `docs/design/spec.md` are regenerated, and packs and smoke-tests the tarball.
 
 ## Ground rules for rules
 

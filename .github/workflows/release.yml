@@ -26,7 +26,8 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
-      - run: npm ci
+      # No dependency install scripts while building the release tarball (see ci.yml).
+      - run: npm ci --ignore-scripts
       - name: Tag matches package.json version
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: npm run build
@@ -49,6 +50,9 @@ jobs:
     environment: npm
     permissions:
       id-token: write # npm trusted publishing and provenance
+    env:
+      # Secrets cannot be read in `if:`; this exposes only whether NPM_TOKEN is set, never its value.
+      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -59,12 +63,20 @@ jobs:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: package
-      - name: Publish to npm
-        # Pre-release tags (v0.2.0-rc.1) go to the "next" dist-tag.
+      # Pre-release tags (v0.2.0-rc.1) go to the "next" dist-tag.
+      # Trusted publishing (OIDC): no token in the environment, so npm cannot fall back to a long-lived one.
+      - name: Publish to npm (trusted publishing)
+        if: env.HAS_NPM_TOKEN != 'true'
         run: npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
+      # Only for the very first publish (a trusted publisher can be configured only once the package exists):
+      # a short-lived granular token in the NPM_TOKEN secret. Delete the secret right afterwards, so later
+      # releases take the step above.
+      - name: Publish to npm (first release, NPM_TOKEN)
+        if: env.HAS_NPM_TOKEN == 'true'
+        run: |
+          echo "::warning::Publishing with the NPM_TOKEN secret. Configure the trusted publisher on npmjs.com and delete the secret."
+          npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
         env:
-          # Only for the very first publish (a trusted publisher can be configured only once the package exists):
-          # a short-lived granular token in the NPM_TOKEN secret. Delete the secret afterwards; OIDC is used when it is empty.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   gh-release:
