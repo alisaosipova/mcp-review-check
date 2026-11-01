@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildRedactor, redactDeep } from '../src/redact.js';
-import { capBody, createRedactor, createTracer, parseSseMessages, scrub, snippetOf } from '../src/protocol/trace.js';
+import { capBody, createRedactor, createTracer, parseSseMessages, redactUrl, scrub, snippetOf } from '../src/protocol/trace.js';
 import { ModernClient } from '../src/protocol/modern.js';
 import { LIST_BYTE_BUDGET, listAll, paginate } from '../src/protocol/legacy.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -235,5 +235,25 @@ describe('the body snippet scrubs a prefix, not the whole body (F036)', () => {
     const atCut = 'a'.repeat(4090) + ' sk-live-ABCDEFGHIJKLMNOP tail';
     expect(snippetOf(atCut, r)).toBe(scrub(atCut, r).slice(0, 4096));
     expect(snippetOf(atCut, r)).not.toContain('sk-li');
+  });
+});
+
+describe('recorded URLs are masked like displayed ones (F035)', () => {
+  const r = createRedactor([], ['user-SECRET-01!x']);
+  const QTOK = 'sk-live-ABCDEFGHIJKLMNOPQRSTUV';
+  const PTOK = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456';
+
+  it('masks known-format tokens under any query name, in path segments and in the fragment', () => {
+    expect(redactUrl(`https://h.example/mcp?q=${QTOK}&page=2`, r)).toBe('https://h.example/mcp?q=«redacted»&page=2');
+    expect(redactUrl(`https://h.example/${PTOK}/mcp`, r)).toBe('https://h.example/«redacted»/mcp');
+    expect(redactUrl('https://h.example/cb#access_token=abc123&state=x', r)).toBe('https://h.example/cb#access_token=«redacted»&state=x');
+  });
+
+  it('still masks secret-named parameters and known values, also when the query is re-serialised', () => {
+    expect(redactUrl('https://h.example/mcp?token=abc&x=1', r)).toBe('https://h.example/mcp?token=«redacted»&x=1');
+    const out = redactUrl(`https://h.example/mcp?note=user-SECRET-01!x&q=${QTOK}`, r);
+    expect(out).not.toMatch(/SECRET/);
+    expect(out).toBe('https://h.example/mcp?note=«redacted»&q=«redacted»');
+    expect(redactUrl('https://h.example/mcp', r)).toBe('https://h.example/mcp');
   });
 });

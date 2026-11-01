@@ -1,6 +1,6 @@
 // Tracing fetch wrapper: records every HTTP exchange (redacted) for the rules.
 import type { HttpExchange } from '../snapshot.js';
-import { isSecretName } from '../rules/util/net.js';
+import { displayUrl } from '../rules/util/net.js';
 
 export const REDACTED = '«redacted»';
 const SNIPPET = 4096;
@@ -52,17 +52,13 @@ export function scrub(text: string, r: Redactor): string {
   return text.replace(patternOf(r), REDACTED);
 }
 
+/**
+ * A recorded URL: the known secret values first (as written, before the URL is re-serialised), then what displayUrl
+ * masks by form: userinfo, secret-named query and fragment parameters, known-format tokens in any query value or path
+ * segment (a PRM, authorization server or redirect URL the run did not get from the user).
+ */
 export function redactUrl(raw: string, r: Redactor): string {
-  try {
-    const u = new URL(raw);
-    let changed = false;
-    for (const k of [...u.searchParams.keys()]) {
-      if (isSecretName(k)) { u.searchParams.set(k, 'REDACTED'); changed = true; }
-    }
-    return scrub(changed ? u.href.replace(/=REDACTED/g, '=' + REDACTED) : raw, r);
-  } catch {
-    return scrub(raw, r);
-  }
+  return scrub(displayUrl(scrub(raw, r)), r);
 }
 
 export function headersToRecord(h: Headers | Record<string, string> | [string, string][] | undefined): Record<string, string> {
