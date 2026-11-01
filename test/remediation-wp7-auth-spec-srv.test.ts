@@ -362,4 +362,27 @@ describe('F056 SPEC-017 icon sizes type and image/jpg', () => {
     expect(icons({ mimeType: 'image/jpeg', sizes: ['48x48'] })).toEqual([]);
   });
 });
+
+describe('F054 SRV-006 GET-only cross-host redirect', () => {
+  it('is a warning while POST works, and an error on the POST handshake', () => {
+    const getOnly = snap({ url: URL_OK, set: (s) => { s.transport.preflight = exchange({ status: 200 }); s.transport.probes.get = exchange({ method: 'GET', status: 302, headers: { location: 'https://docs.acme.test/' } }); } });
+    expect(evaluate(byId('SRV-006'), getOnly)).toMatchObject([{ severity: 'warning', message: expect.stringMatching(/^GET redirects \(302\) to another host/) }]);
+    const post = snap({ url: URL_OK, set: (s) => { s.transport.preflight = exchange({ status: 307, headers: { location: 'https://other.test/mcp' } }); } });
+    expect(evaluate(byId('SRV-006'), post)).toMatchObject([{ severity: 'error' }]);
+  });
+});
+
+describe('F055 SRV-015 ordinary uses of the word "sampling"', () => {
+  it('an audio sampling rate is not MCP sampling', () => {
+    const s = snap({ tools: [{ name: 'get_rate', description: 'Returns the audio sampling rate of a file', inputSchema: { type: 'object' } }] });
+    expect(evaluate(byId('SRV-015'), s)).toEqual([]);
+  });
+
+  it('sampling/createMessage and "MCP sampling" still count', () => {
+    for (const d of ['Uses sampling/createMessage to summarize', 'Requires MCP sampling support', 'Sends sampling requests to the client']) {
+      const s = snap({ tools: [{ name: 'summarize', description: d, inputSchema: { type: 'object' } }] });
+      expect(evaluate(byId('SRV-015'), s), d).toMatchObject([{ message: 'uses sampling' }]);
+    }
+  });
+});
 // @end

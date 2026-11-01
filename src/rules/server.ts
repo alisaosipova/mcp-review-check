@@ -167,7 +167,9 @@ export const SRV_006 = defineRule(
         : `${ex.method} redirects (${ex.status}) to ${target.href}; register the final URL`;
       if (seen.has(msg)) continue;
       seen.add(msg);
-      out.push({ message: msg, severity: cross ? undefined : 'warning' });
+      // Claude's handshake is the POST: a cross-host redirect there loses Authorization. A GET-only one (the root
+      // redirecting to docs while POST works) is a warning; SPEC-005 covers the GET status itself.
+      out.push({ message: msg, severity: cross && ex.method !== 'GET' ? undefined : 'warning' });
     }
     return out;
   },
