@@ -371,12 +371,37 @@ export const APPS_015 = defineRule(
   },
   (snap) => uiResources(snap).flatMap((r): RawFinding[] => {
     if (!r.html) return [];
-    const m = /(^|[^.\w])(window\.)?(alert|confirm|prompt)\s*\(/m.exec(r.html) ?? /navigator\.clipboard/.exec(r.html);
-    return m ? [{ resource: r.uri, message: `uses blocked browser API: ${m[0].trim()}` }] : [];
+    const m = blockedDialog(stripComments(r.html)) ?? blockedClipboard(r.html, r.ui);
+    return m ? [{ resource: r.uri, message: `uses blocked browser API: ${m}` }] : [];
   }),
 );
 
-const TRACKERS = ['doubleclick.net', 'googlesyndication.com', 'adservice.google.com', 'facebook.net'];
+/**
+ * The first alert/confirm/prompt call in comment-free HTML. A bare call to a name the widget declares itself
+ * (`function prompt(`, `const confirm =`, a parameter) is its own function; `window.prompt(` is always the browser's.
+ */
+function blockedDialog(html: string): string | undefined {
+  const own = (name: string) =>
+    new RegExp(`\\b(?:function\\s*\\*?\\s*|(?:const|let|var|class)\\s+)${name}\\b|\\bfunction\\b[^(){};]{0,80}\\([^()]*\\b${name}\\b[^()]*\\)|\\([^()]*\\b${name}\\b[^()]*\\)\\s*=>|\\b${name}\\s*=>`).test(html);
+  for (const m of html.matchAll(/(^|[^.\w$])(window\.)?(alert|confirm|prompt)\s*\(/gm)) {
+    if (m[2] || !own(m[3])) return m[0].slice(m[1].length).trim();
+  }
+  return undefined;
+}
+
+/** navigator.clipboard, except writes when the resource declares the clipboardWrite permission. */
+function blockedClipboard(html: string, ui: Record<string, unknown>): string | undefined {
+  const canWrite = isObj(ui.permissions) && isObj(ui.permissions.clipboardWrite);
+  for (const m of stripComments(html).matchAll(/navigator\.clipboard(?:\s*\.\s*(\w+))?/g)) {
+    if (!(canWrite && (m[1] === 'writeText' || m[1] === 'write'))) return m[0];
+  }
+  return undefined;
+}
+
+const TRACKERS = [
+  'doubleclick.net', 'googlesyndication.com', 'adservice.google.com', 'facebook.net',
+  'googletagmanager.com', 'google-analytics.com', 'static.hotjar.com', 'cdn.segment.com', 'api.segment.io',
+];
 
 export const APPS_016 = defineRule(
   {
@@ -391,7 +416,8 @@ export const APPS_016 = defineRule(
     const out: RawFinding[] = [];
     if (/\b(localStorage|sessionStorage)\b/.test(h)) out.push({ resource: r.uri, message: 'uses localStorage/sessionStorage (avoid for core state)' });
     if (/@font-face|fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net/.test(h)) out.push({ resource: r.uri, message: 'loads custom fonts' });
-    if ([...h.matchAll(/<img\b[^<>]*>/gi)].some((m) => !/\balt\s*=/i.test(m[0]))) out.push({ resource: r.uri, message: '<img> without alt' });
+    // alt must be its own attribute: data-alt= or aria-alt= is not alt text.
+    if ([...h.matchAll(/<img\b[^<>]*>/gi)].some((m) => !/[\s"'/]alt\s*=/i.test(m[0]))) out.push({ resource: r.uri, message: '<img> without alt' });
     const tr = TRACKERS.filter((t) => h.includes(t));
     if (tr.length) out.push({ resource: r.uri, severity: 'warning', message: `ad or tracker origins: ${tr.join(', ')}` });
     return out;

@@ -179,3 +179,45 @@ describe('APPS-006 entry checks (R033, R034, R035, R043, F106)', () => {
     ]);
   });
 });
+
+describe('APPS-015 blocked browser APIs (R037, F108)', () => {
+  const run = (script: string, meta: Record<string, unknown> = META) => messages(evaluate(APPS_015, ui({ meta, html: `<!doctype html><script>${script}</script>` })));
+  const withClipboard = { ...META, ui: { ...META.ui, permissions: { clipboardWrite: {} } } };
+
+  it('R037: a clipboard write with the declared clipboardWrite permission passes; a read still does not', () => {
+    expect(run('navigator.clipboard.writeText(x)', withClipboard)).toEqual([]);
+    expect(run('navigator.clipboard.writeText(x)')).toEqual(['uses blocked browser API: navigator.clipboard.writeText']);
+    expect(run('navigator.clipboard.readText()', withClipboard)).toEqual(['uses blocked browser API: navigator.clipboard.readText']);
+  });
+
+  it('R037: a dialog named only in a comment is not a use', () => {
+    expect(run('// never use alert() here\n/* confirm("x") */ render()')).toEqual([]);
+  });
+
+  it('F108: the widget\'s own prompt/confirm/alert functions and parameters are not browser dialogs', () => {
+    expect(run('const prompt = (q) => q; prompt("x");')).toEqual([]);
+    expect(run('function confirm(msg) { return show(msg) } confirm("delete?")')).toEqual([]);
+    expect(run('const ask = (prompt) => prompt("x");')).toEqual([]);
+    expect(run('function run(alert) { alert("x") }')).toEqual([]);
+  });
+
+  it('F108: browser dialogs are still found, also window.prompt beside an own prompt', () => {
+    expect(run('if (x) alert("hi")')).toEqual(['uses blocked browser API: alert(']);
+    expect(run('const prompt = (q) => q; window.prompt("x")')).toEqual(['uses blocked browser API: window.prompt(']);
+    expect(run('console.log(confirm); confirm("sure?")')).toEqual(['uses blocked browser API: confirm(']);
+  });
+});
+
+describe('R040: APPS-016 trackers and alt text', () => {
+  const run = (html: string) => messages(evaluate(APPS_016, ui({ html: `<!doctype html>${html}` })));
+
+  it('Google Tag Manager and Google Analytics are trackers', () => {
+    expect(run('<script async src="https://www.googletagmanager.com/gtag/js?id=G-1"></script>')).toEqual(['ad or tracker origins: googletagmanager.com']);
+    expect(run('<script src="https://www.google-analytics.com/analytics.js"></script>')).toEqual(['ad or tracker origins: google-analytics.com']);
+  });
+
+  it('data-alt is not alt text; a real alt attribute is', () => {
+    expect(run('<img src="x.png" data-alt="y">')).toEqual(['<img> without alt']);
+    expect(run('<img data-alt="y" src="x.png" alt="logo"><img alt="" src="z.png">')).toEqual([]);
+  });
+});
