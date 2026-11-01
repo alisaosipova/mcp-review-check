@@ -14,6 +14,10 @@ import { createBridgeHandler, listen, type Started } from './fixtures/http-bridg
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
 import { describeForbidden } from '../src/diagnose.js';
+import { capSnapshot, ID_CAP, limitsNotice, TEXT_CAP, UI_READS_CAP } from '../src/limits.js';
+import { RULES, runRules } from '../src/rules/index.js';
+import type { Snapshot } from '../src/snapshot.js';
+import { snap, tool, toolWithProps } from './helpers.js';
 
 const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
 const server = (...args: string[]) => `node "${WP2}" ${args.join(' ')}`;
@@ -280,4 +284,70 @@ describe('Streamable HTTP sessions (R012)', () => {
     expect(deleted.every((id) => created.includes(id))).toBe(true);
     expect(snap.transport.exchanges.some((e) => e.method === 'DELETE')).toBe(false);
   });
+});
+
+describe('input caps keep identifiers and schema syntax intact (R024, R025, R026, R028, F013, F139)', () => {
+  const ids = (s: Snapshot, id: string) => runRules(s, RULES).findings.filter((f) => f.ruleId === id);
+
+  it('a long valid pattern still compiles after the caps (no TOOL-017)', () => {
+    const pattern = `^(?:${Array.from({ length: 3000 }, (_, i) => `value_${i}`).join('|')})$`;
+    expect(pattern.length).toBeGreaterThan(TEXT_CAP);
+    const s = snap({ tools: [toolWithProps('pick', { v: { type: 'string', description: 'A value', pattern } })] });
+    capSnapshot(s);
+    expect(((s.tools[0].inputSchema as any).properties.v.pattern as string).length).toBe(pattern.length);
+    expect(ids(s, 'TOOL-017')).toEqual([]);
+  });
+
+  it('two long names with a common prefix stay distinct, with their real length (no TOOL-003)', () => {
+    const s = snap({ tools: [tool({ name: `${'a'.repeat(TEXT_CAP + 100)}_one` }), tool({ name: `${'a'.repeat(TEXT_CAP + 100)}_two` })] });
+    capSnapshot(s);
+    expect(ids(s, 'TOOL-003')).toEqual([]);
+    expect(ids(s, 'TOOL-001')[0]?.message).toContain(`${TEXT_CAP + 104} characters`);
+  });
+
+  it('a long ui:// URI still finds its read, so the HTML checks run (APPS-007)', () => {
+    const uri = `ui://widget/${'x'.repeat(TEXT_CAP + 10)}.html`;
+    const s = snap({
+      tools: [tool({ name: 'show', _meta: { ui: { resourceUri: uri } } })],
+      resources: [{ uri, name: 'w', mimeType: 'text/html;profile=mcp-app' }],
+      set: (x) => { x.resourceReads[uri] = { ok: true, durationMs: 1, raw: { contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: '<!doctype html><script src="https://evil.cdn.example/x.js"></script>' }] } }; },
+    });
+    capSnapshot(s);
+    expect(ids(s, 'APPS-007').map((f) => f.message).join(' ')).toContain('evil.cdn.example');
+  });
+
+  it('a property name over the identifier cap is cut and reported', () => {
+    const big = 'k'.repeat(ID_CAP + 5);
+    const s = snap({ tools: [toolWithProps('keys', { [big]: { type: 'string', description: 'x' }, ok: { type: 'string', description: 'y' } })] });
+    const t = capSnapshot(s);
+    const props = (s.tools[0].inputSchema as any).properties;
+    expect(Object.keys(props).map((k) => k.length)).toEqual([ID_CAP, 2]);
+    expect(t).toEqual([{ where: 'tool keys', length: ID_CAP + 5, cap: ID_CAP }]);
+  });
+
+  it('raw list pages, the text-only list and tool call results are capped too', () => {
+    const long = 'd'.repeat(TEXT_CAP * 2);
+    const s = snap({
+      set: (x) => {
+        x.listMeta.tools = { pages: 1, rawPages: [{ tools: [{ name: 'p', description: long }] }] };
+        x.toolsWithoutUi = [{ name: 'p', description: long }];
+        x.active = { calls: [{ tool: 'p', kind: 'valid', args: {}, result: { content: [{ type: 'text', text: long }] }, durationMs: 1 }] };
+      },
+    });
+    const t = capSnapshot(s);
+    expect(t.map((x) => x.where)).toEqual(['tools list pages', 'text-only tools/list', 'tools/call p result']);
+  });
+
+  it('the UI read cap is reported as a count', () => {
+    const s = snap({ set: (x) => { x.limits = { truncated: [{ where: 'UI resources read', length: 80, cap: UI_READS_CAP, unit: 'items' }] }; } });
+    expect(limitsNotice(s)).toBe(`1 oversized input truncated before pattern checks: UI resources read (80 items, cap ${UI_READS_CAP}).`);
+  });
+
+  it('identifiers at the identifier cap keep the rules fast', () => {
+    const s = snap({ tools: [toolWithProps(`n${'a'.repeat(ID_CAP)}`, { [`p${'_x'.repeat(ID_CAP / 2)}`]: { type: 'string', description: 'A key' }, v: { type: 'string', description: 'A value', pattern: `^${'a?'.repeat(ID_CAP / 4)}$` } })] });
+    capSnapshot(s);
+    const t0 = performance.now();
+    runRules(s, RULES);
+    expect(performance.now() - t0).toBeLessThan(5000);
+  }, 60000);
 });

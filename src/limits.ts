@@ -5,35 +5,73 @@ import { isObj, isStr, toolName } from './rules/util/access.js';
 
 /** Tool, prompt and resource metadata strings (descriptions, schema text, instructions). */
 export const TEXT_CAP = 16 * 1024;
+/** Identifiers and structural schema strings (names, URIs, patterns, property names): the rules compare, count and
+ *  compile them, so a cut at TEXT_CAP would make false duplicates, wrong lengths and broken regexes; this bound only
+ *  keeps memory and the rules' run time finite. */
+export const ID_CAP = 1024 * 1024;
 /** UI resource content (resources/read text or base64 blob, decoded size). */
 export const HTML_CAP = 2 * 1024 * 1024;
 /** SDK error messages (they can carry a whole HTML error page) before cleanErrorMessage. */
 export const ERROR_BODY_CAP = 64 * 1024;
+/** UI resources read per run (resources/read for every ui:// URI the tools and resources list). */
+export const UI_READS_CAP = 50;
+
+/** Keys whose string values identify something or are schema syntax rather than prose. */
+const ID_KEYS = new Set([
+  'name', 'uri', 'uriTemplate', 'resourceUri', 'ui/resourceUri', 'outputTemplate', 'openai/outputTemplate',
+  'pattern', '$ref', '$id', '$schema', '$anchor', '$dynamicRef', '$dynamicAnchor', 'format',
+]);
 
 type Truncated = NonNullable<Snapshot['limits']>['truncated'];
 
-/** Truncate every string over `cap` inside `value` (in place); reports `where` once per object with the largest length.
+/** `key` cut to ID_CAP, made unique among `taken` (a cut can make two keys equal). */
+function cutKey(key: string, taken: Set<string>): string {
+  const base = key.slice(0, ID_CAP);
+  let k = base;
+  for (let i = 2; taken.has(k); i++) k = `${base}~${i}`;
+  return k;
+}
+
+/** Truncate every string over `cap` inside `value` (in place); identifiers (ID_KEYS values, object keys) at ID_CAP;
+ * reports `where` once per object with the largest length.
  * Iterative and without a depth limit: the schema walkers go deeper than any fixed JSON depth. */
 function capStrings(value: object, cap: number, where: string, out: Truncated): void {
   let longest = 0;
+  let unit = cap;
   const stack: object[] = [value];
   const seen = new Set<object>();
   for (let o = stack.pop(); o; o = stack.pop()) {
     if (seen.has(o)) continue;
     seen.add(o);
     const rec = o as Record<string, unknown>;
-    for (const k of Object.keys(rec)) {
+    let keys = Object.keys(rec);
+    if (!Array.isArray(o) && keys.some((k) => k.length > ID_CAP)) {
+      // Rebuilt in order: a long property name (or patternProperties regex) is cut like any identifier.
+      const entries = keys.map((k) => [k, rec[k]] as const);
+      for (const k of keys) delete rec[k];
+      const taken = new Set<string>();
+      for (const [k, v] of entries) {
+        let nk = k;
+        if (k.length > ID_CAP) { if (k.length > longest) { longest = k.length; unit = ID_CAP; } nk = cutKey(k, taken); }
+        taken.add(nk);
+        rec[nk] = v;
+      }
+      keys = Object.keys(rec);
+    }
+    for (const k of keys) {
       const v = rec[k];
-      if (isStr(v) && v.length > cap) {
-        longest = Math.max(longest, v.length);
-        rec[k] = v.slice(0, cap);
+      const limit = ID_KEYS.has(k) && !Array.isArray(o) ? ID_CAP : cap;
+      if (isStr(v) && v.length > limit) {
+        if (v.length > longest) { longest = v.length; unit = limit; }
+        rec[k] = v.slice(0, limit);
       } else if (v !== null && typeof v === 'object') stack.push(v);
     }
   }
-  if (longest) out.push({ where, length: longest, cap });
+  if (longest) out.push({ where, length: longest, cap: unit });
 }
 
-/** Apply TEXT_CAP to listed metadata and HTML_CAP to read UI content; returns the truncations (also on snap.limits). */
+/** Apply TEXT_CAP to listed metadata (and the raw pages, the text-only list and tool call results the rules also
+ *  read) and HTML_CAP to read UI content; returns the truncations (also on snap.limits). */
 export function capSnapshot(snap: Snapshot): Truncated {
   const out: Truncated = [];
   for (const t of snap.tools) capStrings(t, TEXT_CAP, `tool ${toolName(t).slice(0, 80)}`, out);
@@ -44,6 +82,21 @@ export function capSnapshot(snap: Snapshot): Truncated {
   if (isStr(snap.instructions) && snap.instructions.length > TEXT_CAP) {
     out.push({ where: 'instructions', length: snap.instructions.length, cap: TEXT_CAP });
     snap.instructions = snap.instructions.slice(0, TEXT_CAP);
+  }
+  // The same items as listed above, in the raw pages (a separate copy after redaction): SPEC-018 scans them.
+  for (const [key, meta] of Object.entries(snap.listMeta)) capStrings(meta.rawPages, TEXT_CAP, `${key} list pages`, out);
+  if (snap.toolsWithoutUi) capStrings(snap.toolsWithoutUi, TEXT_CAP, 'text-only tools/list', out);
+  for (const c of snap.active?.calls ?? []) {
+    if (c.result !== null && typeof c.result === 'object') capStrings(c.result, TEXT_CAP, `tools/call ${c.tool.slice(0, 80)} result`, out);
+    else if (isStr(c.result) && c.result.length > TEXT_CAP) { out.push({ where: `tools/call ${c.tool.slice(0, 80)} result`, length: c.result.length, cap: TEXT_CAP }); c.result = c.result.slice(0, TEXT_CAP); }
+  }
+  if (snap.transport.modernResults) capStrings(snap.transport.modernResults, TEXT_CAP, '2026-07-28 results', out);
+  // A UI URI over ID_CAP is cut in the tool that links it: the read is filed under the same cut URI.
+  for (const uri of Object.keys(snap.resourceReads)) {
+    if (uri.length <= ID_CAP) continue;
+    const read = snap.resourceReads[uri];
+    delete snap.resourceReads[uri];
+    snap.resourceReads[uri.slice(0, ID_CAP)] ??= read;
   }
   for (const [uri, read] of Object.entries(snap.resourceReads)) {
     const contents = isObj(read.raw) && Array.isArray(read.raw.contents) ? read.raw.contents : [];
@@ -71,7 +124,8 @@ export function limitsNotice(snap: Snapshot): string | undefined {
   const parts: string[] = [];
   const t = snap.limits?.truncated ?? [];
   if (t.length) {
-    const shown = t.slice(0, 3).map((x) => `${x.where} (${x.length} chars, cap ${kb(x.cap)})`).join(', ');
+    const size = (x: (typeof t)[number]) => (x.unit === 'items' ? `${x.length} items, cap ${x.cap}` : `${x.length} chars, cap ${kb(x.cap)}`);
+    const shown = t.slice(0, 3).map((x) => `${x.where} (${size(x)})`).join(', ');
     parts.push(`${t.length} oversized input${t.length === 1 ? '' : 's'} truncated before pattern checks: ${shown}${t.length > 3 ? ', …' : ''}`);
   }
   const s = snap.limits?.stopped;

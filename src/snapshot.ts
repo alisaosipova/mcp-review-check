@@ -100,7 +100,8 @@ export interface ConnectDiagnosis {
 
 /** Input caps applied before the regex rules and the --max-duration stop. */
 export interface Limits {
-  truncated: Array<{ where: string; length: number; cap: number }>;
+  /** `unit` items: `length` counts things (UI resources) rather than characters. */
+  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' }>;
   stopped?: { maxDurationMs: number; phase: string };
 }
 

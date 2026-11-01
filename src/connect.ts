@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontex
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
-import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
+import { capSnapshot, ERROR_BODY_CAP, UI_READS_CAP } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
@@ -140,7 +140,9 @@ async function readUiResources(snap: Snapshot, read: Reader, now: () => number):
   const uris = new Set<string>();
   for (const t of snap.tools) { const u = uiUriOf(t); if (isStr(u) && u.startsWith('ui://')) uris.add(u); }
   for (const r of snap.resources) if (isStr(r.uri) && r.uri.startsWith('ui://')) uris.add(r.uri);
-  for (const uri of uris) {
+  // Each read can hold up to 64 MB until the input caps: a listing with thousands of UI URIs reads only the first ones.
+  if (uris.size > UI_READS_CAP) (snap.limits ??= { truncated: [] }).truncated.push({ where: 'UI resources read', length: uris.size, cap: UI_READS_CAP, unit: 'items' });
+  for (const uri of [...uris].slice(0, UI_READS_CAP)) {
     const started = now();
     const r = await read(uri);
     snap.resourceReads[uri] = { ...r, durationMs: now() - started };
