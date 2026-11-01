@@ -23,10 +23,13 @@ const AjvDraft7 = unwrap(_AjvDraft7);
 const TOOLS_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28/server/tools#tool';
 const AJV_OPTS = { strict: false, validateSchema: true, logger: false, allErrors: false, addUsedSchema: false };
 
-const DIALECTS: Array<[RegExp, AjvCtor]> = [
-  [/^https?:\/\/json-schema\.org\/draft\/2020-12\/schema#?$/, Ajv2020],
-  [/^https?:\/\/json-schema\.org\/draft\/2019-09\/schema#?$/, Ajv2019],
-  [/^https?:\/\/json-schema\.org\/draft-07\/schema#?$/, AjvDraft7],
+// Each dialect is accepted with http or https and with or without a trailing '#', but Ajv registers its
+// meta-schema under one canonical id only (http for draft-07, https for 2019-09 and 2020-12): the copy handed
+// to Ajv carries the canonical id, or Ajv throws "no schema with key or ref" for a valid schema.
+const DIALECTS: Array<[RegExp, AjvCtor, string]> = [
+  [/^https?:\/\/json-schema\.org\/draft\/2020-12\/schema#?$/, Ajv2020, 'https://json-schema.org/draft/2020-12/schema'],
+  [/^https?:\/\/json-schema\.org\/draft\/2019-09\/schema#?$/, Ajv2019, 'https://json-schema.org/draft/2019-09/schema'],
+  [/^https?:\/\/json-schema\.org\/draft-07\/schema#?$/, AjvDraft7, 'http://json-schema.org/draft-07/schema#'],
 ];
 
 // One Ajv per dialect: building an instance compiles the meta-schema, which dominated runtime on large servers.
@@ -47,6 +50,16 @@ export function ajvFor(schema: Record<string, unknown>): { ajv: AjvLike; unknown
   return { ajv: instance(Ajv2020), unknownDialect: String(s) };
 }
 
+/** A shallow copy for Ajv: a known dialect's `$schema` set to its canonical id, an unknown one removed. */
+function ajvCopy(schema: Record<string, unknown>): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...schema };
+  if (copy.$schema === undefined) return copy;
+  const hit = isStr(copy.$schema) ? DIALECTS.find(([re]) => re.test(copy.$schema as string)) : undefined;
+  if (hit) copy.$schema = hit[2];
+  else delete copy.$schema;
+  return copy;
+}
+
 /** Compile and drop the compiled schema from the shared instance's cache. */
 function compileOnce(ajv: AjvLike, schema: Record<string, unknown>): unknown {
   try {
@@ -62,8 +75,7 @@ export function validateAgainst(schema: unknown, data: unknown): string | undefi
   if (!isObj(schema)) return undefined;
   try {
     const { ajv } = ajvFor(schema);
-    const copy = { ...schema };
-    if (!DIALECTS.some(([re]) => isStr(copy.$schema) && re.test(copy.$schema))) delete copy.$schema;
+    const copy = ajvCopy(schema);
     const validate = compileOnce(ajv, copy) as ((d: unknown) => boolean) & { errors?: unknown };
     return validate(data) ? undefined : ajv.errorsText(validate.errors);
   } catch (e) {
@@ -114,11 +126,8 @@ export const TOOL_017 = defineRule(
       const s = t[key];
       if (!isObj(s)) continue;
       const { ajv, unknownDialect } = ajvFor(s);
-      const copy: Record<string, unknown> = { ...s };
-      if (unknownDialect) {
-        out.push({ severity: 'warning', path: key, message: `${key} uses unknown $schema dialect ${unknownDialect}` });
-        delete copy.$schema;
-      }
+      const copy = ajvCopy(s);
+      if (unknownDialect) out.push({ severity: 'warning', path: key, message: `${key} uses unknown $schema dialect ${unknownDialect}` });
       try {
         const ok = ajv.validateSchema(copy);
         if (ok === false) { out.push({ path: key, message: `${key} is not a valid schema: ${ajv.errorsText(ajv.errors)}` }); continue; }
