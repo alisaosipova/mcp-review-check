@@ -69,8 +69,11 @@ const HINTS = ['readOnlyHint', 'destructiveHint', 'openWorldHint'];
  * title from the name, and the annotations with missing hints guessed from the name (read-only for read verbs).
  */
 export function fixSnippets(r: Report): string[] {
-  const flagged = new Set(r.findings.filter((f) => ['TOOL-011', 'TOOL-012'].includes(f.ruleId) || (f.ruleId === 'TOOL-006' && f.message === 'no title')).map((f) => f.tool));
-  return r.snap.tools.filter((t) => flagged.has(toolName(t))).map((t) => {
+  const by = (ids: string[]) => new Set(r.findings.filter((f) => ids.includes(f.ruleId)).map((f) => f.tool));
+  const hints = by(['TOOL-011', 'TOOL-012']), titled = by(['TOOL-006']);
+  // TOOL-006 also reports a long or conflicting title: a tool counts here only when the snapshot has no title for it.
+  const noTitle = (t: Record<string, unknown>) => !isNonEmptyStr(t.title ?? annotations(t).title);
+  return r.snap.tools.filter((t) => hints.has(toolName(t)) || (titled.has(toolName(t)) && noTitle(t))).map((t) => {
     const a = annotations(t);
     const read = toolKind(t) === 'read';
     const guess: Record<string, boolean> = { readOnlyHint: read, destructiveHint: !read, openWorldHint: true };
