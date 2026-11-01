@@ -73,4 +73,19 @@ describe('F065 TOOL-026 treats body/payload as a raw request only in a request c
     expect(t026('run_query', { sql: prop() }, 'Run a query.')).toHaveLength(1);
   });
 });
+
+describe('F064 TOOL-004 ambiguous words count only when they rate the tool', () => {
+  it('domain names with top, preferred, official, leading are not promotional', () => {
+    for (const name of ['get_top_stories', 'top_headlines', 'set_preferred_language', 'get_official_rate', 'list_leading_indicators']) {
+      expect(messages('TOOL-004', one(tool({ name, title: 'Neutral' }))), name).toEqual([]);
+    }
+    expect(messages('TOOL-004', one(tool({ name: 'list_tracks', title: 'Top tracks' })))).toEqual([]);
+  });
+  it('self-rating phrases and plain promotional words still count', () => {
+    expect(messages('TOOL-004', one(tool({ name: 'top_rated_search' })))).toEqual(['promotional word "top" in name or title']);
+    expect(messages('TOOL-004', one(tool({ name: 'search', title: 'The official tool for notes' })))).toEqual(['promotional word "official" in name or title']);
+    expect(messages('TOOL-004', one(tool({ name: 'best_search' })))).toHaveLength(1);
+    expect(messages('TOOL-004', one(tool({ name: 'number1_search' })))).toHaveLength(1);
+  });
+});
 //@@END

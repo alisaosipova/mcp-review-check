@@ -69,7 +69,17 @@ export const TOOL_003 = defineRule(
   },
 );
 
-const PROMO = new Set(['best', 'top', 'official', 'ultimate', 'premium', 'recommended', 'preferred', 'number1', 'no1', 'greatest', 'perfect', 'superior', 'leading']);
+const PROMO = new Set(['best', 'ultimate', 'premium', 'recommended', 'number1', 'no1', 'greatest', 'perfect', 'superior']);
+// Ordinary domain words too (get_top_stories, set_preferred_language, get_official_rate): promotional only when they
+// rate the tool itself ("top_rated_tool", "official_tool", "preferred choice").
+const PROMO_AMBIGUOUS = new Set(['top', 'official', 'preferred', 'leading']);
+const PROMO_SELF = new Set(['tool', 'tools', 'choice', 'pick', 'option', 'rated', 'ranked', 'solution', 'service', 'app', 'plugin', 'server', 'connector']);
+
+/** The promotional word in one name or title, if any. */
+function promoWord(toks: string[]): string | undefined {
+  const joined = toks.slice(1).map((x, i) => toks[i] + x);
+  return [...toks, ...joined].find((x) => PROMO.has(x)) ?? toks.find((x, i) => PROMO_AMBIGUOUS.has(x) && PROMO_SELF.has(toks[i + 1] ?? ''));
+}
 
 export const TOOL_004 = defineRule(
   {
@@ -79,9 +89,7 @@ export const TOOL_004 = defineRule(
     sources: [OAI_GUIDE],
   },
   (snap) => perTool(snap, (t, name) => {
-    const toks = [...tokenize(name), ...(isStr(t.title) ? tokenize(t.title) : [])];
-    const joined = toks.slice(1).map((x, i) => toks[i] + x);
-    const hit = [...toks, ...joined].find((x) => PROMO.has(x));
+    const hit = promoWord(tokenize(name)) ?? (isStr(t.title) ? promoWord(tokenize(t.title)) : undefined);
     if (hit) return { message: `promotional word "${hit}" in name or title` };
     if (/(use_?me|pick_?me|choose_?me)/i.test(name)) return { message: 'name asks the model to pick it' };
     return undefined;
