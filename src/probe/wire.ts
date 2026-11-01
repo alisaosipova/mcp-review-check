@@ -48,12 +48,13 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   }
 
   if (modern) {
-    p.badVersionModern = (await modern.request('server/discover', {}, { version: '1900-01-01', label: 'badVersion (modern)' })).exchange;
-    p.unknownMethodModern = (await modern.request(UNKNOWN_METHOD, {}, { label: 'unknownMethod (modern)' })).exchange;
-    if (hasResources) p.resourceMissingModern = (await modern.request('resources/read', { uri: MISSING_RESOURCE }, { label: 'resourceMissing (modern)' })).exchange;
-    p.headerMismatchNone = (await modern.request('tools/list', {}, { methodHeader: null, label: 'headerMismatch (none)' })).exchange;
-    p.headerMismatchWrong = (await modern.request('tools/list', {}, { methodHeader: 'prompts/list', label: 'headerMismatch (wrong)' })).exchange;
-    if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)' })).exchange;
+    // Only the status and the error object matter: read the body under the probes' 256 KB / 10 s cap (F025).
+    p.badVersionModern = (await modern.request('server/discover', {}, { version: '1900-01-01', label: 'badVersion (modern)', fullBody: false })).exchange;
+    p.unknownMethodModern = (await modern.request(UNKNOWN_METHOD, {}, { label: 'unknownMethod (modern)', fullBody: false })).exchange;
+    if (hasResources) p.resourceMissingModern = (await modern.request('resources/read', { uri: MISSING_RESOURCE }, { label: 'resourceMissing (modern)', fullBody: false })).exchange;
+    p.headerMismatchNone = (await modern.request('tools/list', {}, { methodHeader: null, label: 'headerMismatch (none)', fullBody: false })).exchange;
+    p.headerMismatchWrong = (await modern.request('tools/list', {}, { methodHeader: 'prompts/list', label: 'headerMismatch (wrong)', fullBody: false })).exchange;
+    if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false })).exchange;
   }
 
   if (http) {
