@@ -1,12 +1,13 @@
 // Regression tests for the WP1-cli remediation (review 2026-11-01): CLI argument validation, explain and
 // --list-rules output, the summary line, the entry-point check and signal handling. In process through runCli
 // where the run needs no real process, the built CLI (cli()) where the process itself is under test.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
-import { cli, GOOD } from './cli-runner.js';
+import { BAD, cli, GOOD } from './cli-runner.js';
 
 const URL_ = 'http://127.0.0.1:1/mcp';
 const usage = async (args: string[], env: NodeJS.ProcessEnv = {}) => runCli(args, env, false);
@@ -131,6 +132,21 @@ describe('keyword values in any case, --ignore as a comma-separated list (F016, 
     const bad = await usage([URL_, '--ignore', 'TOOL-006,TOOL-999']);
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('--ignore TOOL-999 is not a rule or MAN ID');
+  });
+});
+
+describe('the --output summary line (R021)', () => {
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // The stubborn server with --target claude has exactly one warning (its fresh connection hangs).
+  const stubborn = (dir: string) => ['--target', 'claude', '--timeout', '2000', '--stdio', `node "${fileURLToPath(new URL('./fixtures/stubborn-server.mjs', import.meta.url))}" "${join(dir, 'pids')}" --hang-fresh`];
+  it.each([['BAD', BAD], ['GOOD', GOOD], ['stubborn', null]])('%s: "1 error" and "1 warning" in the singular, other counts in the plural', async (name, stdio) => {
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-wp1-'));
+    const out = join(dir, 'report.json');
+    const r = await cli(['--format', 'json', '--output', out, ...(stdio ? ['--stdio', stdio] : stubborn(dir))]);
+    const s = JSON.parse(readFileSync(out, 'utf8')).summary;
+    if (name === 'stubborn') expect(s.warnings, r.stderr).toBe(1);
+    expect(r.stderr).toContain(` · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info · `);
+    expect(r.stderr).not.toMatch(/\b1 (errors|warnings)\b/);
   });
 });
 

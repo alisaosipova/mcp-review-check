@@ -361,7 +361,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on
     const s = report.summary;
-    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ${s.info} info · ${resultLine(report)}`;
+    const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info · ${resultLine(report)}`;
     if (values.output) {
       try {
         writeFileSync(values.output, body);
