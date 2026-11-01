@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 296,
+  "title": "SRV-012: пустая строка в serverInfo.title не даёт fallback на name",
+  "description": "`snap.serverInfo?.title ?? snap.serverInfo?.name` — `??` не срабатывает на `''`, поэтому сервер с `title: ''` и `name: 'weather'` не проверяется. SRV-013 тоже не ругается на пустой title (не обязателен), так что случай проходит незамеченным.",
+  "evidence": "Репро: serverInfo={name:'weather', title:'', version:'1'} -> `[]` (ожидалось «generic single word»).",
+  "suggested_fix": "`const n = isNonEmptyStr(si.title) ? si.title : si.name;`",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F047"
+}

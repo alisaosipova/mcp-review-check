@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/protocol/modern.ts",
+  "line": 164,
+  "title": "OOM: rawPages удерживает до 100 страниц × 64 МБ, capSnapshot их не режет",
+  "description": "ModernClient.listAll читает каждую страницу с FULL_READ_CAP = 64 МБ (trace.ts:298) и сохраняет весь result в `pages` → snap.listMeta[*].rawPages (connect.ts:115). Страниц до 100 на листинг, листингов 4 (tools/resources/templates/prompts). Сервер может вернуть страницы вида `{\"tools\":[],\"nextCursor\":\"n\",\"pad\":\"AAAA…60MB\"}` — суммарно до ~6+ ГБ строк в памяти; затем redactDeep делает полную копию снапшота (ещё ×2), а capSnapshot (limits.ts) обходит только tools/prompts/resources/serverInfo/instructions/resourceReads — произвольные ключи страницы в rawPages не ограничены. Кроме того modern.results (modern.ts:148) дублирует каждый result.",
+  "evidence": "trace.ts:298 `FULL_READ_CAP = 64 * 1024 * 1024`; modern.ts:156 `maxPages = 100`, :164 `pages.push(r.result)`; connect.ts:115 `rawPages: r.pages`; limits.ts:704-731 не трогает listMeta; redact.ts:888 redactDeep копирует всё (`SERVER_DATA` включает 'rawPages').",
+  "suggested_fix": "Ввести общий байтовый бюджет на листинг (например 16 МБ на метод, считая длину тела каждой страницы) и прекращать пагинацию с error='listing exceeded N bytes'; снизить FULL_READ_CAP до разумного (8–16 МБ) и/или хранить в rawPages только нужные правилам ключи (tools/nextCursor/_meta); не дублировать результат в modern.results.",
+  "confidence": 0.85,
+  "dimension": "security-lens",
+  "id": "F137"
+}

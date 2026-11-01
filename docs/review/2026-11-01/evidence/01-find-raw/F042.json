@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/auth.ts",
+  "line": 346,
+  "title": "AUTH-012: при CIMD без \"none\" и без DCR выдаются два противоречивых claude-warning",
+  "description": "Для `cimd && !none && !dcr` срабатывают одновременно строка 344 («CIMD ignored, falls back to DCR» — хотя DCR нет) и строка 346 («neither CIMD nor DCR» — хотя CIMD объявлен). Пользователь получает две взаимоисключающие инструкции в одном отчёте.",
+  "evidence": "Репро: `client_id_metadata_document_supported:true, token_endpoint_auth_methods_supported:['client_secret_basic']`, без registration_endpoint -> `warning [claude] CIMD advertised without token auth method \"none\": CIMD ignored, falls back to DCR` + `warning [claude] neither CIMD nor DCR: Claude requires Anthropic-held credentials ...`.",
+  "suggested_fix": "Разветвить: `if (cimd && !none) message = dcr ? 'CIMD ignored, falls back to DCR' : 'CIMD advertised without \"none\" and no DCR: add \"none\" to token_endpoint_auth_methods_supported or pre-register credentials'`; строку 346 выполнять только при `!cimd`.",
+  "confidence": 0.85,
+  "dimension": "rules-server-spec-auth",
+  "id": "F042"
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 416,
+  "title": "APPS-019 молчит, когда сервер отказывает text-only клиенту целиком (initialize или tools/list падает без UI-расширения)",
+  "description": "`if (!without) return []` трактует любой сбой text-only листинга как «проверка не выполнялась». Но сервер, который отвергает клиента без `io.modelcontextprotocol/ui` (ошибка initialize или tools/list), — это худший случай нарушения text-only fallback, а правило его пропускает. snapshot не различает «не запускали» и «упало».",
+  "evidence": "apps.ts:415-416; connect.ts:358/500: `snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES })` — freshTools возвращает undefined и при `!conn.ok`, и при `r.error`, без сохранения причины.",
+  "suggested_fix": "Сохранять результат text-only листинга с ошибкой (например, snap.toolsWithoutUiError). Если обычный fresh() тем же путём прошёл успешно, а text-only упал, выдавать APPS-019 «server rejects clients without the UI extension».",
+  "confidence": 0.55,
+  "failure_scenario": "Сервер требует UI-расширение в initialize и отвечает ошибкой text-only клиенту: APPS-019 ничего не сообщает.",
+  "dimension": "limits-apps",
+  "id": "R039"
+}

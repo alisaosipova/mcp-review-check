@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 286,
+  "title": "APPS-012: общий sandbox-домен в другом регистре (`HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM`) не распознаётся",
+  "description": "Валидность проверяется через URL (регистр нормализуется), а сравнение с общим доменом идёт по сырой строке с учётом регистра. Неуникальный домен в верхнем или смешанном регистре проходит без warning.",
+  "evidence": "r2apps.out: `APPS-012 shared sandbox uppercase` → `(no findings)`.",
+  "suggested_fix": "Сравнивать `new URL(d).origin === 'https://web-sandbox.oaiusercontent.com'`.",
+  "confidence": 0.8,
+  "failure_scenario": "openai/widgetDomain с общим sandbox-доменом в другом регистре не получает предупреждение «not unique».",
+  "dimension": "limits-apps",
+  "id": "R041",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R041",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "В src/rules/apps.ts:286 валидность проверяется через new URL (схема и хост приводятся к нижнему регистру), а сравнение с общим доменом идёт по сырой строке `String(d).replace(/\\/$/, '') === 'https://web-sandbox.oaiusercontent.com'` с учётом регистра. spec.md формулирует условие как «Equal to https://web-sandbox.oaiusercontent.com», и семантически речь об origin, а не о строке. Домен в верхнем регистре на практике встречается редко, поэтому severity low.",
+      "repro": "12 upper []  (openai/widgetDomain='HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM')\n12 lower [{\"severity\":\"warning\",\"message\":\"widget domain is the shared default sandbox (not unique)\"}]",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "12 upper []  (openai/widgetDomain='HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM')\n12 lower [{\"severity\":\"warning\",\"message\":\"widget domain is the shared default sandbox (not unique)\"}]"
+}

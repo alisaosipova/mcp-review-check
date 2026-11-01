@@ -1,0 +1,20 @@
+{
+  "id": "F046",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F046",
+      "refuted": true,
+      "confidence": 0.65,
+      "reasoning": "Механика описана верно: в src/rules/spec.ts:301 (строка актуальна) `(scopes[method] ??= new Set()).add(result.cacheScope)` добавляет в Set любое значение, в том числе невалидное. Поэтому для страниц 'public' и 'PUBLIC' правило выдаёт два error. Но ложным второй финдинг назвать нельзя. Значения cacheScope на страницах действительно разные: 'public' !== 'PUBLIC', а undefined !== 'public'. docs/design/spec.md:341-342 задаёт оба условия как независимые: «cacheScope is not in {public, private} → error» и «cacheScope differs between pages of the same list → error». Ни там, ни в тестах нет требования сравнивать только валидные значения или подавлять второй финдинг (test/rules/spec.test.ts:142 проверяет только пару public/private). Кроме того, если на всех страницах одно и то же невалидное значение, «differs» не выдаётся, то есть специально задваивать финдинги правило не пытается. Остаётся косметическое дублирование: оба сообщения корректны и соответствуют спецификации. Это возможное улучшение UX, но не баг корректности. При сомнении вердикт — refuted.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f046.mjs (SPEC_013.check из dist/rules/spec.js; страницы tools/list с cacheScope 'public' и 'PUBLIC') -> [{\"message\":\"tools/list: cacheScope is not \\\"public\\\" or \\\"private\\\"\"},{\"message\":\"tools/list: cacheScope differs between pages\"}]",
+      "corrected_severity": "low",
+      "corrected_description": "Если хотя бы одна страница содержит невалидный cacheScope, SPEC-013 выдаёт два error: «not public/private» и «differs between pages». Формально оба верны и соответствуют docs/design/spec.md. Это избыточное дублирование, а не ложный финдинг. Если это нужно исправить, то как UX-улучшение (enhancement), а не как bug.",
+      "lens": "reader-batch"
+    }
+  ]
+}

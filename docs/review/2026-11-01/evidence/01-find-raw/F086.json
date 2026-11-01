@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 96,
+  "title": "DATA-003: SECRET_NAMES заякорен на всё имя — new_password, db_password, github_token, credentials не ловятся",
+  "description": "`/^(password|...|api_?key|...)$/` требует точного совпадения, поэтому `old_password`, `new_password`, `smtp_password`, `aws_secret_access_key`, `github_token`, `credentials`, `authorization` проходят мимо (chatgpt=error FN). При этом в util/net.ts уже есть fail-closed `isSecretName()` (суффиксы/сегменты + исключения *_id, *_file), используемый редакцией и AUTH-001.",
+  "evidence": "DATA_003.check на схеме с old_password,new_password,db_password,aws_secret_access_key,github_token,apiKey,credentials,authorization → единственная находка /properties/apiKey. isSecretName('new_password')=true, isSecretName('github_token')=true.",
+  "suggested_fix": "В scanNames для DATA-003 использовать `isSecretName(v.rawName) || SECRET_NAMES.test(v.name)`; оставить `pin` отдельной warning-веткой.",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F086"
+}

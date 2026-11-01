@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 649,
+  "title": "Остановленный snapshot теряет уже собранные данные (active-вызовы, wire probes, observedErrors, modernResults), и часть правил молча проходит, а не помечается stopped",
+  "description": "README обещает: «the report covers what ran». На деле snap.active (стр. 362, 503) и snap.transport.probes (стр. 344, 486) присваиваются только после завершения runActive/runWireProbes целиком. transport.observedErrors и modernResults заполняются только в конце buildHttp/buildStdio (стр. 370-373, 510-511), а stoppedSnapshot их не копирует. Последствия: (1) при остановке во время --active выброшены даже завершённые tools/call, и все RT-правила пропущены; (2) при остановке во время wire probes правила с needs:['tools'], читающие probes (например SPEC-009), считаются выполненными и прошедшими: их нет ни среди находок, ни среди skipped; (3) по коду так же «проходят» SPEC-016 (observedErrors, needs: []) и SPEC-012/013 (modernResults) в HTTP-прогонах, остановленных после листинга.",
+  "evidence": "Сценарий (2), `--max-duration 2000 --env DELAY_tools_call=5000`: limits.stopped.phase='wire probes'. SPEC-009 нет ни в findings, ни в skipped, хотя в полном прогоне он есть: «tools/call for a non-existent tool returned a result…». Сценарий (1), `--active --max-duration 3000 --env DELAY_tools_call=1000`: по логу сервера get_x ответил через 2265 мс после старта CLI, то есть до дедлайна. Тем не менее «12 RT rules skipped» с причиной 'stopped by --max-duration'. Код: probe/active.ts:79-103 копит calls[] локально и возвращает результат только в конце. Лог: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/EVIDENCE.txt",
+  "suggested_fix": "Передавать в runActive/runWireProbes накопитель из progress (например progress.partialActive / progress.partialProbes) и копировать его в stoppedSnapshot. В stoppedSnapshot вызывать collectErrors(progress.tracer, rec) и копировать modern.results через progress. Правила, чьи данные собираются в незавершённой фазе, помечать skipped 'stopped by --max-duration' по фазе, а не только по coverage.",
+  "confidence": 0.8,
+  "failure_scenario": "Сервер на unknown tool отвечает result вместо ошибки. При остановке в фазе wire probes отчёт не содержит SPEC-009 и не помечает его как пропущенный. Пользователь считает, что правило пройдено.",
+  "dimension": "deadline-signals",
+  "id": "R003"
+}

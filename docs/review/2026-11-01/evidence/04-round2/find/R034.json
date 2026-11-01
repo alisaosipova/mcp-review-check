@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 140,
+  "title": "APPS-006: wildcard в середине или в конце хоста (`https://api.*.example.com`, `https://*.example.*`) и `data:`/`blob:` обрабатываются неверно",
+  "description": "`v.replace('*.', 'wildcard.')` заменяет только первое вхождение, а WHATWG URL принимает `*` в hostname. Поэтому `https://api.*.example.com` считается валидным origin (в CSP такой wildcard недопустим: хост просто не совпадёт), выдаётся лишь spec info. `data:` и `blob:` получают вводящее в заблуждение «has a path, query, fragment or trailing slash» (pathname ''), а не «scheme-source, not an origin / overly broad».",
+  "evidence": "r2apps.out: `https://api.*.example.com` и `https://*.example.*` → только `{spec:info} wildcard ... outside resourceDomains`; `new URL https://api.*.example.com host= api.*.example.com`; `connectDomains: \"data:\" has a path, query, fragment or trailing slash`, то же для `blob:`.",
+  "suggested_fix": "Разрешать `*` только как ведущую метку (`^\\*\\.`), иначе → «invalid wildcard». Схемы без `//` (`data:`, `blob:`, `mediastream:`) отдельно помечать как scheme-source (overly broad / not an origin).",
+  "confidence": 0.75,
+  "failure_scenario": "resourceDomains: [\"https://cdn.*.example.com\"]: хост такую запись отбросит или не сопоставит, ресурсы не загрузятся, а линтер считает её корректной.",
+  "dimension": "limits-apps",
+  "id": "R034"
+}

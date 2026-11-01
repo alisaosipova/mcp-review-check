@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/util/html.ts",
+  "line": 62,
+  "title": "extractOrigins: CSS-regex `url\\(` с флагом i ловит JS `new URL(\"https://…\")` как resource-origin с confidence tag",
+  "description": "`/url\\(\\s*[\"']?([^\"')\\s]+)[\"']?\\s*\\)/gi` матчит `URL(\"https://api.example.com/v1\")`. Origin классифицируется как `resource` (а не `connect`) с уверенностью `tag`, поэтому APPS-007 выдаёт chatgpt=error даже когда домен объявлен в connectDomains.",
+  "evidence": "extractOrigins('<script>const u = new URL(\"https://api.example.com/v1\"); fetch(u)</script>') → [{kind:'resource', origin:'https://api.example.com', evidence:'URL(\"https://api.example.com/v1\")', confidence:'tag'}]; APPS_007 с csp.connectDomains=['https://api.example.com'] → 'resource origin https://api.example.com is not declared in the CSP'.",
+  "suggested_fix": "Запретить идентификатор перед `url(`: `/(?<![\\w.$])url\\(/gi` (или проверять, что совпадение внутри `<style>`/атрибута style), а `new URL(lit)` добавить в jsPatterns как `connect` с confidence js.",
+  "confidence": 0.95,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F084"
+}

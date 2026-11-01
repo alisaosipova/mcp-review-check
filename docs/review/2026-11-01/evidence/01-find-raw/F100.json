@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/util/ui.ts",
+  "line": 49,
+  "title": "uiResources: _meta берётся целиком либо из read-item, либо из list-entry — CSP на list-entry теряется, если у item есть любая своя _meta",
+  "description": "`r.meta = Object.keys(itemMeta).length ? itemMeta : metaOf(r.listEntry)` — выбор «всё или ничего». Если сервер кладёт csp в resources/list, а в resources/read возвращает item с `_meta.ui.prefersBorder`, csp исчезает → APPS-005 даёт chatgpt=error «no CSP declared» и APPS-007 помечает все origin-ы.",
+  "evidence": "APPS_005.check при list._meta.ui.csp={connectDomains:[…]} и item._meta.ui={prefersBorder:true} → 'no CSP declared (_meta.ui.csp or openai/widgetCSP)' + claude info.",
+  "suggested_fix": "Сливать мета: `r.meta = {...metaOf(listEntry), ...itemMeta}` и `r.ui = {...listUi, ...itemUi}` (item приоритетнее по ключам). Отдельным info сообщать о расхождении list vs read.",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F100"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "F068",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF068 zh [ 'warning [chatgpt] description is too thin: only 1 words' ]  // '按关键字搜索用户文档并返回匹配的文档标识和标题列表。'\nF068 ja [ 'warning [chatgpt] description is too thin: only 1 words' ]  // 'キーワードでユーザーのメモを検索し、一致するメモのIDとタイトルを返します。'",
+  "votes": [
+    {
+      "id": "F068",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Строка 161 актуальна: `if (w.length < 6 && d.length < 40)`, а words() в src/rules/util/text.ts:122-124 режет текст по `\\s+`. В CJK-тексте пробелов нет, поэтому выходит одно «слово», и предложение короче 40 символов (а в CJK это уже полноценная фраза) получает chatgpt warning. В spec.md порог задан только в словах и символах, CJK и другие письменности без пробелов в нём не упоминаются, тестов на такой ввод нет. Значит, это не намеренное решение, а неучтённый случай. Подтверждено на китайском и на японском. Severity low: это warning, и он срабатывает только на коротких описаниях (меньше 40 code units).",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF068 zh [ 'warning [chatgpt] description is too thin: only 1 words' ]  // '按关键字搜索用户文档并返回匹配的文档标识和标题列表。'\nF068 ja [ 'warning [chatgpt] description is too thin: only 1 words' ]  // 'キーワードでユーザーのメモを検索し、一致するメモのIDとタイトルを返します。'",
+      "lens": "reader-batch"
+    }
+  ]
+}

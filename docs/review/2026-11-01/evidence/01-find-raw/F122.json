@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/report/sarif.ts",
+  "line": 52,
+  "title": "SARIF level берётся из максимальной severity по всем платформам, а не по gated — code scanning покажет error там, где exit code = PASS",
+  "description": "Для `--target chatgpt` правило с {spec:'error', chatgpt:'warning'} даёт finding.severity='error' (spec всегда активен), и SARIF выставляет level 'error'. При этом gate (без --fail-on-spec) не считает spec, run проходит (failed=false), а GitHub-аннотация корректно выдаёт ::warning. В GitHub code scanning появится error-алерт, противоречащий результату и аннотациям.",
+  "evidence": "node repro (--target chatgpt, правило spec:error/chatgpt:warning): results => [['YY-001','error'], ...]; summary.failed: false; annotations: ['::warning title=YY-001 server::[spec, chatgpt: warning] m...']",
+  "suggested_fix": "В toSarif вычислять level как максимум platformSeverity по r.summary.gate.platforms (как в github.ts annotations), а полную severity сохранять в properties; или давать опцию `--sarif-level gated|max`.",
+  "confidence": 0.8,
+  "dimension": "report-redact-engine",
+  "id": "F122"
+}

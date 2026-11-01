@@ -1,0 +1,20 @@
+{
+  "id": "F099",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "extractLinks (src/rules/util/html.ts:105) собирает `href` любого тега, включая `<link rel=stylesheet|icon|preload>` и `<base>`. pathWord делит сегмент по '.', поэтому ресурс вроде /css/pricing.css или /billing.css распознаётся как upsell-ссылка, и POL-004 выдаёт ложное chatgpt=warning. Как исправить: брать href только из `<a>` и `<area>` либо исключить `<link>` и `<base>`.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f099.mjs\nextractLinks('<link rel=\"stylesheet\" href=\"https://cdn.example.com/css/pricing.css\"><script src=\"/js/billing.js\"></script>') -> [ 'https://cdn.example.com/css/pricing.css' ]; linkKind -> [ 'upsell' ] (POL-004 выдаст chatgpt=warning 'widget links to https://cdn.example.com/css/pricing.css')",
+  "votes": [
+    {
+      "id": "F099",
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Строка 105 в src/rules/util/html.ts актуальна: extractLinks берёт значение любого атрибута `href=` и не смотрит на имя тега. Значит, туда попадают `<link rel=stylesheet>`, `<base>` и `<area>`. Единственный вызов — POL_004 в src/rules/policy.ts:123. Ниже по стеку фильтрации нет: linkKind проверяет только CODE_HOSTS, а pathWord делит сегмент по [-_.], поэтому 'pricing.css' даёт часть 'pricing' из UPSELL_WORDS. Тест test/rules/content.test.ts:242 проверяет только пропуск шаблонных URL в `<a>`. Тестов, где ресурсные `<link>` считались бы ссылками намеренно, нет. В spec.md §POL-004 сказано «links whose path matches …». По смыслу правила (upsell/checkout-ссылки для пользователя) это навигационные ссылки, а не подключаемые ресурсы. Утверждение подтверждено. Severity low: ложное warning только для chatgpt, правило эвристическое, и нужно, чтобы имя ресурса совпало со словом из списка. Уточнение: `<script src>` через extractLinks не проходит, затронут только `href`.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f099.mjs\nextractLinks('<link rel=\"stylesheet\" href=\"https://cdn.example.com/css/pricing.css\"><script src=\"/js/billing.js\"></script>') -> [ 'https://cdn.example.com/css/pricing.css' ]; linkKind -> [ 'upsell' ] (POL-004 выдаст chatgpt=warning 'widget links to https://cdn.example.com/css/pricing.css')",
+      "corrected_severity": "low",
+      "corrected_description": "extractLinks (src/rules/util/html.ts:105) собирает `href` любого тега, включая `<link rel=stylesheet|icon|preload>` и `<base>`. pathWord делит сегмент по '.', поэтому ресурс вроде /css/pricing.css или /billing.css распознаётся как upsell-ссылка, и POL-004 выдаёт ложное chatgpt=warning. Как исправить: брать href только из `<a>` и `<area>` либо исключить `<link>` и `<base>`.",
+      "lens": "reader-batch"
+    }
+  ]
+}

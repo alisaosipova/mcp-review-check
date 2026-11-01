@@ -1,0 +1,14 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 144,
+  "title": "APPS-006 выдаёт claude-находку (CDN info), хотя правило, RULES.md и spec.md заявляют только chatgpt/spec",
+  "description": "severity правила — `{ chatgpt: 'warning', spec: 'warning' }`, а CDN-ветка возвращает `platforms: ['claude']`. В каталоге (`--list-rules`, explain, docs/RULES.md:107) Claude у APPS-006 не указан, но Claude-находки от этого правила появляются. spec.md §2.7 упоминает claude info, а строка severity — нет.",
+  "evidence": "apps.ts:121 severity без claude; apps.ts:144 `platforms: ['claude']`; docs/RULES.md:107 `APPS-006 ... chatgpt: warning, spec: warning`.",
+  "suggested_fix": "Добавить `claude: 'info'` в severity APPS-006 (каталог и RULES.md перегенерируются) либо вынести CDN-подсказку в отдельное правило.",
+  "confidence": 0.7,
+  "failure_scenario": "Пользователь фильтрует или игнорирует правила по каталогу платформ и не ожидает claude-находок от APPS-006.",
+  "dimension": "limits-apps",
+  "id": "R043"
+}

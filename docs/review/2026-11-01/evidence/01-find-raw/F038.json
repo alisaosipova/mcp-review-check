@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "high",
+  "file": "src/rules/auth.ts",
+  "line": 508,
+  "title": "AUTH-020: страница логина, содержащая строку redirect_uri, считается отказом в redirect_uri (claude error)",
+  "description": "Условие `ex.status === 400 || /redirect_uri/i.test(body)` проверяется ДО ветки «login page» (строка 509). Практически любая страница логина Keycloak/Auth0/Okta/Entra содержит `redirect_uri` в hidden-input или JS-конфиге, поэтому корректный AS с 200 login-page получает ошибку уровня claude=error («/authorize rejected redirect_uri ...») и вердикт BLOCKED при --active-auth. Это противоречит §1.2 (error только при детерминированном обнаружении).",
+  "evidence": "Мини-репро на dist: bodySnippet = `<form ...><input type=\"hidden\" name=\"redirect_uri\" value=\"https://claude.ai/api/mcp/auth_callback\">...` при status 200 -> `error [claude] /authorize rejected redirect_uri https://claude.ai/api/mcp/auth_callback (200)`. Код: `if (ex.status === 400 || /redirect_uri/i.test(body)) return [{ message: ... }]` стоит перед `if (ex.status === 200 && /<form|login|sign in/i.test(body))`.",
+  "suggested_fix": "Сначала распознавать login-page (200 + `<form|login|sign in`) -> info «verify manually». Отказ считать только при 400, при JSON/параметре `error=invalid_request|invalid_redirect_uri|unauthorized_client` в теле или в `Location` 302-редиректа, либо при тексте вида /invalid[ _-]?redirect[ _-]?uri|redirect_uri (is|not) (invalid|allowed|registered)/i. Добавить тест с login-page, содержащей redirect_uri.",
+  "confidence": 0.85,
+  "dimension": "rules-server-spec-auth",
+  "id": "F038"
+}

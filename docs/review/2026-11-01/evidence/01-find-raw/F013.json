@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 37,
+  "title": "Input caps не покрывают listMeta.rawPages, toolsWithoutUi и active.calls[].result, по которым тоже бегают правила",
+  "description": "capSnapshot режет tools/prompts/resources/serverInfo/instructions/resourceReads. После redactDeep (глубокая копия) `rawPages` — отдельные объекты, и SPEC-018 (spec.ts:471) сканирует их целиком; `toolsWithoutUi` (apps.ts:415) и `active.calls[].result` (runtime.ts, AUTH_TEXT/TOKEN_RE над textOf) не ограничены. Цель limits.ts — защитить regex-правила от огромного ввода — выполняется не полностью.",
+  "evidence": "limits.ts:37-62 — список полей; spec.ts:471 `for (const page of m.rawPages) scan(page, …)`; connect.ts:541 redactDeep делает копию, разрывая общие ссылки между tools и rawPages.",
+  "suggested_fix": "Добавить в capSnapshot проход по `listMeta[*].rawPages`, `toolsWithoutUi`, `active.calls[*].result` с TEXT_CAP (и/или отдельным CALL_CAP).",
+  "confidence": 0.6,
+  "dimension": "cli-connect",
+  "id": "F013"
+}

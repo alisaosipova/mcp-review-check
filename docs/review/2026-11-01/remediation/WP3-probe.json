@@ -1,0 +1,95 @@
+{
+ "package": "WP3-probe",
+ "owned_files": [
+  "src/probe/active.ts",
+  "src/probe/auth.ts",
+  "src/probe/network.ts",
+  "src/probe/wire.ts"
+ ],
+ "items": [
+  {
+   "id": "F031",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/probe/network.ts",
+   "title": "TLS-проверка с фиксированным 10 с таймаутом и до 3 попыток не подчиняется --timeout/--max-duration",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F031.json"
+  },
+  {
+   "id": "F030",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/probe/network.ts",
+   "title": "Сырые initialize-пробы (preflight, 4 origin, invalid-token, redirect-хопы) создают на сервере сессии, которые никогда не закрываются",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F030.json"
+  },
+  {
+   "id": "F029",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/probe/active.ts",
+   "title": "Синтез аргументов игнорирует format/pattern/min*/enum-в-items/вложенные required — «synthetic» вызовы массово падают на валидации",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F029.json"
+  },
+  {
+   "id": "F019",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/probe/network.ts",
+   "title": "Same-host редирект (trailing slash) ломает все сырые пробы: ложные SPEC-005/SPEC-007, пропуск SRV-008, неверная era",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F019.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F019.json"
+  },
+  {
+   "id": "F144",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/probe/active.ts",
+   "title": "--tool-args: поиск аргументов по имени инструмента через прототип (`constructor`, `__proto__`, `toString`)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F144.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F144.json"
+  },
+  {
+   "id": "F018",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/probe/wire.ts",
+   "title": "GET-проба переиспользует живую сессию SDK → 409 от эталонного SDK-сервера → ложное SPEC-005",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F018.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F018.json"
+  },
+  {
+   "id": "F037",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/probe/auth.ts",
+   "title": "PRM-кандидат из заголовка дублирует well-known путь → лишние запросы и тайминг-сэмплы; retry-бюджет auth probe не ограничен сверху",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F037.json"
+  },
+  {
+   "id": "F023",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/probe/active.ts",
+   "title": "wrongTypeValue для union-/нетипизированных схем даёт валидное значение → ложное RT-002",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F023.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F023.json"
+  },
+  {
+   "id": "C002",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/probe/active.ts",
+   "title": "--active: дубликат имени обходит safety-контракт — вызывается имя, у которого другая запись destructiveHint:true",
+   "src": "docs/review/2026-11-01/evidence/03-critic/C002.json"
+  },
+  {
+   "id": "R009",
+   "kind": "security",
+   "sev": "medium",
+   "file": "src/probe/wire.ts",
+   "title": "Для legacy HTTP+SSE Origin-пробы пропускаются, и SRV-008 молча «проходит» на локальных SSE-серверах (DNS rebinding)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R009.json"
+  }
+ ]
+}

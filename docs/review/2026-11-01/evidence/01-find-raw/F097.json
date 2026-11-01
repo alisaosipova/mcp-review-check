@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 255,
+  "title": "INJ-007: паттерн брендов `(slack|github|…) (tool|connector)` флагует first-party сервер того же бренда",
+  "description": "Slack-сервер, описывающий «Post a message via the Slack connector», получает warning «coercing calls to software the user did not request», хотя ссылается на себя. Паттерн не учитывает serverInfo.name/title.",
+  "evidence": "INJ_007.check с serverInfo.name='Slack' и описанием 'Post a message via the Slack connector.' → evidence 'Slack connector'.",
+  "suggested_fix": "В ownToolFilter добавить в `own` токены из serverInfo.name/title и пометить паттерн 4 `ownToolExempt: true` (referencedIdentifiers расширить на бренд-слово перед tool|connector).",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F097"
+}

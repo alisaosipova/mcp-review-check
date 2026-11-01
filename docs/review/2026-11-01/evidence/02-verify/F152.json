@@ -1,0 +1,20 @@
+{
+  "id": "F152",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "README.md:7 (и docs/design/spec.md:8) содержат число правил 144, которое не генерируется scripts/rules-table.mjs и не проверяется test/docs.test.ts. Сейчас совпадает с каталогом (144 правила, 31 MAN), но добавление правила оставит README неверным без падения CI. Риск дрейфа, а не текущая ошибка.",
+  "repro": "node -e \"import('./dist/rules/index.js').then(m=>console.log(m.RULES.length, m.MANUAL_ITEMS?.length))\" -> `144 31`; grep -rn \"144\\|automated rules\" test -> нет совпадений; rules-table.mjs:16-19 — три .replace без счётчика правил.",
+  "votes": [
+    {
+      "id": "F152",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "README.md:7 действительно содержит захардкоженное «144 automated rules», docs/design/spec.md:8 — «144 automated rules … 31 manual checklist items». scripts/rules-table.mjs --write заменяет только блок RULES:START/END, спаны <!-- CATALOG_DATE --> и дату в `mcp-review-check \\S+ · rules <date>`; число правил не трогает (только печатает RULES.length в stderr). test/docs.test.ts проверяет первые 5 строк README (purpose/npx), заголовок примера отчёта с CATALOG_DATE, разделы и опции --help, но не число правил; grep по test/ на «144|automated rules» пусто (единственный RULES.length — в report.test.ts для SARIF). Сейчас значения совпадают (144/31), так что это только риск дрейфа документации, а не текущее несоответствие. spec.md явно помечен как design document, «may differ from the implementation», поэтому часть про spec.md менее значима; основное — README.",
+      "repro": "node -e \"import('./dist/rules/index.js').then(m=>console.log(m.RULES.length, m.MANUAL_ITEMS?.length))\" -> `144 31`; grep -rn \"144\\|automated rules\" test -> нет совпадений; rules-table.mjs:16-19 — три .replace без счётчика правил.",
+      "corrected_description": "README.md:7 (и docs/design/spec.md:8) содержат число правил 144, которое не генерируется scripts/rules-table.mjs и не проверяется test/docs.test.ts. Сейчас совпадает с каталогом (144 правила, 31 MAN), но добавление правила оставит README неверным без падения CI. Риск дрейфа, а не текущая ошибка.",
+      "lens": "reader-batch"
+    }
+  ]
+}

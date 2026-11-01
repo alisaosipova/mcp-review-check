@@ -1,0 +1,19 @@
+{
+  "id": "F045",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r.mjs -> F045 [{\"platforms\":[\"claude\"],\"message\":\"401 has no scope=; Claude will request: (no scope)\"}] (challenge: DPoP resource_metadata=\"https://x.example/...\", scope=\"a b\"; prm {json:{}})",
+  "votes": [
+    {
+      "id": "F045",
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Строка 406 актуальна: в AUTH_015 стоит `a.challenge?.parsed.find((c) => c.scheme === 'bearer')`. Схему DPoP принимают и AUTH-002 (стр. 71), и AUTH-013 (стр. 369), и сам probe src/probe/auth.ts:73. docs/design/spec.md:842 тоже прямо приравнивает DPoP к Bearer. В test/ нет ни одного теста с DPoP, так что намеренным такое поведение не выглядит. При challenge вида `DPoP ..., scope=\"a b\"` правило ложно сообщает, что scope= нет. Ущерб небольшой: это info-финдинг только для claude. Но если PRM scopes_supported широкий, правило может ещё и выдать ложный warning «requested scope set is broad».",
+      "corrected_severity": "low",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r.mjs -> F045 [{\"platforms\":[\"claude\"],\"message\":\"401 has no scope=; Claude will request: (no scope)\"}] (challenge: DPoP resource_metadata=\"https://x.example/...\", scope=\"a b\"; prm {json:{}})",
+      "lens": "reader-batch"
+    }
+  ]
+}

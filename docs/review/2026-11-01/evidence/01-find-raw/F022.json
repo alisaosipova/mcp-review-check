@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/protocol/trace.ts",
+  "line": 25,
+  "title": "Set-Cookie ответов не редактируется по имени (и несколько Set-Cookie схлопываются до последнего)",
+  "description": "`createRedactor.headerNames` содержит только `authorization`, `cookie`, `proxy-authorization` + имена из --header. Заголовки ответа проходят через тот же `redactHeaders`, поэтому `set-cookie` (session-cookie сервера/AS) попадает в `exchange.headers` в открытом виде; `redactDeep` маскирует внутри `headers` только известные значения секретов, не по имени. Дополнительно `headersToRecord` при нескольких `Set-Cookie` перезаписывает значение последним (lossy). Сейчас exchanges не рендерятся в отчёты напрямую, но они живут в Snapshot (попадают в evidence правил вроде SRV-009 и в любые будущие dump/verbose-режимы).",
+  "evidence": "Репро: mock fetch с `set-cookie: sid=SECRETCOOKIEVALUE…; HttpOnly` и `set-cookie: other=zzz` → `resp headers: {\"content-type\":…,\"mcp-session-id\":\"sess-…\",\"set-cookie\":\"other=zzz\"}`; после `redactDeep` → `set-cookie: other=zzz` (не замаскировано; первая cookie потеряна). Код: trace.ts:25 `new Set(['authorization', 'cookie', 'proxy-authorization', …])`, trace.ts:53 `out[k.toLowerCase()] = String(v)`.",
+  "suggested_fix": "Добавить `set-cookie` (и `www-authenticate` не трогать) в headerNames; в headersToRecord использовать `Headers.getSetCookie()` и объединять дубликаты через `, `. Рассмотреть маскирование по `isSecretName(k)` для заголовков ответа (кроме whitelist: mcp-session-id, www-authenticate).",
+  "confidence": 0.85,
+  "dimension": "protocol-probe",
+  "id": "F022"
+}

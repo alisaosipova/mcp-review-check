@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 17,
+  "title": "Нет правил о количестве инструментов и общем объёме описаний (контекстный бюджет), которые директории реально проверяют",
+  "description": "Ревью Claude/OpenAI обращает внимание на «слишком много инструментов» и раздутые описания (суммарный размер tools/list в токенах). Правила проверяют только отдельные описания (>1024). Серверные метрики (число tools, суммарный размер JSON tools/list, доля инструментов без аннотаций) были бы полезны как info с порогами (linter-defined) и как строка в отчёте.",
+  "evidence": "src/rules/tools.ts — все TOOL-правила per-tool, кроме TOOL-003/028/031; нет SRV/TOOL-правила по snap.tools.length или суммарной длине description.",
+  "suggested_fix": "Добавить info-правило «Tool list budget»: N tools > 40 или JSON.stringify(tools).length > 64 КБ (пороги linter-defined, вынести в limits.ts), с сообщением о токенах контекста и рекомендацией объединять/прятать редкие инструменты.",
+  "confidence": 0.5,
+  "dimension": "rules-tools-schema",
+  "id": "F080"
+}

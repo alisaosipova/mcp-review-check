@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/protocol/trace.ts",
+  "line": 189,
+  "title": "SRV-010 latency: timings[method] пополняется всеми пробами (origin, badVersion, invalid-token, редирект-хопы)",
+  "description": "`finishHeaders` пишет длительность в `timings[requestJson.method]` для КАЖДОГО exchange, включая сырые пробы: preflight и 4 origin-пробы — это `initialize`, badVersion/headerMismatch — `tools/list`, auth invalid-token — `initialize`, а при same-host редиректе каждый SDK-вызов записывается дважды (308-хоп и 200). SRV-010 берёт медиану по `initialize`/`tools/list` и получает выборку, где большинство точек — ответы на пробы (часто быстрые ошибки 400/403 или 3xx), а не реальная латентность handshake/listing.",
+  "evidence": "Репро с mock fetch: `tracer.request('badVersion', …, body tools/list)` и `tracer.request('origin evil', …, body initialize)` → `timings: {\"tools/list\":[1.2],\"initialize\":[0.19]}`. Живой репро против SDK-сервера: `initialize: 7` сэмплов (preflight + 4 origin + 2 sdk), при редиректе `initialize: 9, tools/list: 7`. Код: trace.ts:189-190 `const method = (ex.requestJson…).method; if (typeof method === 'string') (timings[method] ??= []).push(ex.durationMs)`.",
+  "suggested_fix": "Писать timings только для exchanges с label `sdk *`/`modern *` и статусом 2xx (или передавать флаг `measure: true` из ModernClient/sdkFetch), а пробы (`preflight`, `origin*`, `badVersion`, `headerMismatch*`, `auth *`) исключить. Для 3xx-хопов не писать.",
+  "confidence": 0.9,
+  "dimension": "protocol-probe",
+  "id": "F021"
+}

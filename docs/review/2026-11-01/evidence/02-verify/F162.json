@@ -1,0 +1,18 @@
+{
+  "id": "F162",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F162",
+      "refuted": true,
+      "confidence": 0.6,
+      "reasoning": "Строки src/cli.ts:227-228 и 233-234 актуальны, и поведение воспроизводится: `Number()` принимает `0x10`, `1e3`, ` 500 `, `0b11`, причём и для --timeout, и для --max-duration. Но это не дефект. Значение разбирается однозначно и так, как его понимает JavaScript: `0x10` действительно 16 ms. Текст ошибки «must be a positive number of milliseconds» и README («--timeout <ms>») этому не противоречат, `1e3` даже полезен. Нечисловые и пустые значения отсекаются с exit 2, верхняя граница MAX_TIMEOUT_MS тоже проверяется. Описанный сценарий надуман: никто не пишет `0x10`, имея в виду 10 ms. Неверного вывода или краша нет. В spec.md (строка 1132) требований к лексическому формату нет. Самое большее это пожелание ужесточить валидацию, а не баг. При сомнении по умолчанию refuted.",
+      "repro": "node scratchpad/r162.mjs (runCli из dist/cli.js):\n[\"--timeout\",\"0x10\"] => code 3 (принято, стартовал stdio)\n[\"--timeout\",\"1e3\"] => code 3\n[\"--timeout\",\" 500 \"] => code 3\n[\"--timeout\",\"0b11\"] => code 3\n[\"--timeout\",\"abc\"] => code 2 \"error: --timeout must be a positive number of milliseconds\"\n[\"--timeout\",\"\"] => code 2\n[\"--max-duration\",\"0x10\"] => code 3",
+      "lens": "reader-batch"
+    }
+  ]
+}

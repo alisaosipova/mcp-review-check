@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/apps.ts",
+  "line": 342,
+  "title": "APPS-015: пользовательские функции с именами prompt/confirm/alert ловятся как браузерные диалоги",
+  "description": "`(^|[^.\\w])(window\\.)?(alert|confirm|prompt)\\s*\\(` матчит объявление/вызов локальной `const prompt = …; prompt(\"x\")`, а также `prompt(` в строках/комментариях (например, при работе с MCP prompts в виджете).",
+  "evidence": "APPS_015.check для '<script>const prompt = (q)=>q; prompt(\"x\");</script>' → 'uses blocked browser API: prompt('.",
+  "suggested_fix": "Пропускать, если в HTML есть объявление `(const|let|var|function)\\s+(alert|confirm|prompt)\\b` или параметр с таким именем; применять stripComments перед поиском.",
+  "confidence": 0.6,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F108"
+}

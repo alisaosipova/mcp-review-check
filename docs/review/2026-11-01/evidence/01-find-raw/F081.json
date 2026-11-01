@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/util/schemaWalk.ts",
+  "line": 56,
+  "title": "Дедупликация `seen` по объекту в walkSchema скрывает повторно используемые $ref-цели у второго и последующих параметров",
+  "description": "При `a: {$ref:'#/$defs/F'}, b: {$ref:'#/$defs/F'}` дочерние свойства F посещаются только под `/properties/a/$ref/...`; для `b` цель не обходится. Для TOOL-009 это приемлемо (меньше дублей), но TOOL-021 (`pure`), TOOL-015/022 получают пути только для первого параметра, а сообщения указывают на `/properties/a/$ref/properties/url`, что для пользователя неочевидно.",
+  "evidence": "node против dist: walkSchema -> ['/', '/properties/a', '/properties/a/$ref', '/properties/a/$ref/properties/url', '/properties/b'].",
+  "suggested_fix": "Хранить `seen` как множество пар (node, path-prefix) или ограничивать защитой от циклов только текущий стек (ancestors), а не глобальным Set; тогда повторная цель обходится один раз на каждый вход, цикл всё равно обрывается.",
+  "confidence": 0.6,
+  "dimension": "rules-tools-schema",
+  "id": "F081"
+}

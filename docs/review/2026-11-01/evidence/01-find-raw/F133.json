@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/engine.ts",
+  "line": 46,
+  "title": "Need 'legacy' считается выполненным для stdio с era 'modern'",
+  "description": "unmetNeed('legacy') возвращает «met» для любого stdio-таргета с известной эрой (`!isHttp && snap.era !== 'unknown'`), включая 'modern'. SPEC-001 (needs ['legacy']) будет запускаться на modern-only stdio-сервере, хотя его проверка initialize-формы ориентирована на legacy. Если это намеренно (у stdio нет деления эр), стоит зафиксировать комментарием и тестом; сейчас поведение неочевидно.",
+  "evidence": "engine.ts:46 `return LEGACY_ERAS.has(snap.era) || (!isHttp && snap.era !== 'unknown') ? undefined : `era ${snap.era}`;` — grep needs 'legacy': SPEC-001, SPEC-004.",
+  "suggested_fix": "Либо `LEGACY_ERAS.has(snap.era)` для всех транспортов, либо комментарий «stdio has no era split; legacy-shaped checks always apply» + тест в engine.test.ts.",
+  "confidence": 0.4,
+  "dimension": "report-redact-engine",
+  "id": "F133"
+}

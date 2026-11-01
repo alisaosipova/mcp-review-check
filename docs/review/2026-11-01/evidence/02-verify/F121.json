@@ -1,0 +1,28 @@
+{
+  "id": "F121",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "manualChecklist (src/rules/manual.ts:67) определяет OAuth только по `authProbe.prm`. У серверов с legacy discovery (2025-03-26, `legacyDiscovery=true`, AS на origin) из «Manual checklist» пропадают все пункты [oauth]: MAN-007/008/013/014/026/028. Остальные правила и authSummary при этом считают такой сервер OAuth. Это противоречит spec §2.10 («[oauth] when the auth probe found OAuth»). На score и exit code не влияет.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f121.mjs (против dist/rules/manual.js), вывод:\nlegacy: MAN-007=false MAN-013=false MAN-028=false\nprm: true",
+  "votes": [
+    {
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Строка 67 в src/rules/manual.ts актуальна: `const oauth = !!snap.authProbe?.prm;`. Если PRM нет, src/probe/auth.ts:87-96 делает legacy-fallback: ставит `legacyDiscovery=true` и добавляет AS-метаданные в `as[]`. Остальной код считает такой сервер OAuth: src/rules/auth.ts:78/140/370 и src/report/index.ts:81 проверяют `prm || legacyDiscovery`. Только manualChecklist учитывает один `prm`. В spec §2.10 сказано: «[oauth] when the auth probe found OAuth». Legacy discovery 2025-03-26 — это найденный OAuth, так что код расходится со spec. Тестов, которые закрепляли бы такое поведение как намеренное, нет (grep по test/ не нашёл manual+legacy). Чеклист не влияет на score и exit code. Но пользователь с legacy-OAuth-сервером не получит важные напоминания: MAN-008 (callback URL), MAN-013 (token audience), MAN-026/028. Это неполный результат в реальном, хотя и устаревающем случае. Поэтому severity: low–medium; ставлю low, потому что затронуты только информационные напоминания.",
+      "corrected_severity": "low",
+      "corrected_description": "manualChecklist (src/rules/manual.ts:67) определяет OAuth только по `authProbe.prm`. У серверов с legacy discovery (2025-03-26, `legacyDiscovery=true`, AS на origin) из «Manual checklist» пропадают все пункты [oauth]: MAN-007/008/013/014/026/028. Остальные правила и authSummary при этом считают такой сервер OAuth. Это противоречит spec §2.10 («[oauth] when the auth probe found OAuth»). На score и exit code не влияет.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f121.mjs (против dist/rules/manual.js), вывод:\nlegacy: MAN-007=false MAN-013=false MAN-028=false\nprm: true",
+      "lens": "reader"
+    },
+    {
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "corrected_description": "В src/rules/manual.ts:67 manualChecklist признаёт OAuth только по `!!snap.authProbe?.prm`. Сервер, который поддерживает только legacy discovery по спецификации 2025-03-26 (src/probe/auth.ts:93 выставляет legacyDiscovery=true и кладёт as[0]), тоже является OAuth-сервером. Тем не менее все пункты с feature='oauth' (MAN-007/008/013/014/026/028) из ручного чеклиста отфильтровываются. При этом authSummary в том же отчёте печатает «OAuth (legacy discovery, no PRM, DCR)», а правила в src/rules/auth.ts обрабатывают legacyDiscovery как OAuth, так что отчёт противоречит сам себе. На score и exit code чеклист не влияет (§2.10), поэтому это неполный вывод в редком сценарии (legacy-only сервер), а не неверный результат проверки. Минимальное исправление: `const oauth = !!snap.authProbe && (!!snap.authProbe.prm || !!snap.authProbe.legacyDiscovery);`",
+      "reasoning": "Находка подтверждена фактическим запуском против dist. Для authProbe с legacyDiscovery=true и без prm (ровно такое состояние создаёт src/probe/auth.ts:88-96) manualChecklist не возвращает ни одного oauth-пункта, а authSummary в том же отчёте называет сервер OAuth. С prm все 6 oauth-пунктов на месте. Остальной код (src/rules/auth.ts:78,140,370; src/report/index.ts:81) считает legacyDiscovery равноправным признаком OAuth, и manual.ts — единственное место, где это не так. Severity снижаю до low: ручной чеклист по замыслу не влияет на score и exit code, сценарий legacy-only без PRM встречается редко, а последствие — пропущенные напоминания в чеклисте, а не ложный результат. Предложенную автором ветку `as.length > 0` добавлять не нужно: без prm массив as заполняется только при legacyDiscovery.",
+      "repro": "Скрипт: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f121.mjs (emptySnapshot + authProbe, импорты dist/rules/manual.js и dist/report/index.js)\nВывод:\nlegacy authSummary= \"OAuth (legacy discovery, no PRM, DCR)\" oauth items= []\nprm authSummary= \"OAuth\" oauth items= [ 'MAN-007', 'MAN-008', 'MAN-013', 'MAN-014', 'MAN-026', 'MAN-028' ]",
+      "lens": "repro"
+    }
+  ]
+}

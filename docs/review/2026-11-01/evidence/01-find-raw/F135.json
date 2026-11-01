@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "high",
+  "file": "src/report/text.ts",
+  "line": 52,
+  "title": "Инъекция ANSI-escape и GitHub workflow-команд через серверные строки в текстовом отчёте",
+  "description": "renderText печатает имена инструментов/ресурсов, serverInfo.title/name/version, coverage.reason и fatal-сообщения как есть: управляющие символы (ESC, CR/LF) не экранируются. Злой сервер задаёт name = \"\\u001b[32mgood_tool\\u001b[0m\\n::warning::injected\" — в терминале это перекрашивает/очищает экран (\\u001b[2J), а в GitHub Actions строка stdout, начинающаяся с \"::warning::\"/\"::error::\"/\"::add-mask::\"/\"::stop-commands::\", интерпретируется runner'ом как workflow-команда (подделка аннотаций, маскирование текста лога). То же для --verbose: `[stdio stderr]` печатается сырым (src/cli.ts:321), а stderr stdio-сервера полностью под контролем сервера. Правило TOOL-001 даже обнаруживает \\u001b в имени, но при этом само печатает сырое имя в subject. Markdown-рендерер экранирует HTML/ссылки, но ESC и bidi-символы (U+202E) тоже пропускает.",
+  "evidence": "Мини-репро на dist (снапшот с serverInfo.name='Evil\\u001b[2J\\u001b[31m SERVER\\n::error::fake…' и tool.name='\\u001b[32mgood_tool\\u001b[0m\\n::warning::injected'): renderText вернул строки \"Server  Evil\\u001b[2J\\u001b[31m SERVER\", \"::error::fake annotation from server 1 · https://x.example/mcp\", \"  x TOOL-006 [claude] \\u001b[32mgood_tool\\u001b[0m\", \"::warning::injected: no title\" (всего 20 строк с ESC или ведущим '::'); renderMarkdown: `md has ESC: true`. Код: text.ts:52 `${subject(f)}: ${f.message}`, :97 `Server  ${serverName(snap)}`, :107 coverage.reason; cli.ts:321 `stderr += `[stdio stderr]\\n${stderrTail}\\n``. Тесты (test/report.test.ts:197) проверяют только отсутствие собственных ANSI при color:false, не серверные.",
+  "suggested_fix": "Ввести одну функцию sanitize (на базе escapeHidden из rules/util/text.ts: \\p{Cc}/\\p{Cf} → \\u{..}, CR/LF → пробел) и применять её в renderText ко всем строкам, пришедшим от сервера (subject, message, serverName, coverage.reason, fatal, fixSnippets, skipped.reason), к `[stdio stderr]`/`[http]` в --verbose и в markdown text()/cell(). В режиме GITHUB_ACTIONS дополнительно гарантировать, что ни одна строка stdout/stderr не начинается с '::' (например, префикс пробелом или замена '::' на ': :'). Добавить тест с ESC/CRLF/'::' в name, serverInfo и stderr.",
+  "confidence": 0.95,
+  "dimension": "security-lens",
+  "id": "F135"
+}

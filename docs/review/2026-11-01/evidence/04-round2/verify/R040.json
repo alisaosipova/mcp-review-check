@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 363,
+  "title": "APPS-016: нет Google Analytics/GTM в списке трекеров; `data-alt=` засчитывается как alt",
+  "description": "TRACKERS не включает googletagmanager.com, google-analytics.com — самые распространённые трекеры. А `\\balt\\s*=` совпадает с `data-alt=` (граница слова между '-' и 'a'), поэтому `<img data-alt=...>` без alt не помечается.",
+  "evidence": "r2apps.out, `APPS-016 GA/GTM`: HTML с `<script src=\"https://www.googletagmanager.com/gtag/js?id=G-1\">` и `<img src=\"x.png\" data-alt=\"y\">` → `(no findings)`.",
+  "suggested_fix": "Добавить googletagmanager.com, google-analytics.com, connect.facebook.net (уже покрыт facebook.net), hotjar.com, segment.com и т.п.; alt искать как `(?:^|\\s)alt\\s*=`.",
+  "confidence": 0.8,
+  "failure_scenario": "Виджет с gtag.js проходит APPS-016 без предупреждения о трекере.",
+  "dimension": "limits-apps",
+  "id": "R040",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R040",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "corrected_description": "Сопоставление `\\balt\\s*=` в APPS-016 (src/rules/apps.ts:363) засчитывает `data-alt=` (а также `aria-alt=` и т.п.) как атрибут alt: граница слова проходит между '-' и 'a'. Поэтому `<img data-alt=...>` без настоящего alt не помечается. Пропуск googletagmanager.com и google-analytics.com в TRACKERS совпадает со списком в docs/design/spec.md §APPS-016 (doubleclick.net, googlesyndication.com, adservice.google.com, facebook.net). Значит, это неполнота спецификации, а не расхождение кода с ней. Как дополнение к списку трекеров предложение разумно.",
+      "reasoning": "Repro против dist подтверждает обе части: HTML с gtag.js и `<img src=\"x.png\" data-alt=\"y\">` даёт [], контроль `<img src=\"x.png\">` даёт '<img> without alt'. Ошибка с alt — настоящий баг регулярного выражения. Список трекеров соответствует spec.md, поэтому это скорее улучшение. Подсказка уровня info/warning, значит severity low.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2.mjs\n16 gtag+data-alt []\n16 control img [{\"resource\":\"ui://w\",\"message\":\"<img> without alt\"}]",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "Сопоставление `\\balt\\s*=` в APPS-016 (src/rules/apps.ts:363) засчитывает `data-alt=` (а также `aria-alt=` и т.п.) как атрибут alt: граница слова проходит между '-' и 'a'. Поэтому `<img data-alt=...>` без настоящего alt не помечается. Пропуск googletagmanager.com и google-analytics.com в TRACKERS совпадает со списком в docs/design/spec.md §APPS-016 (doubleclick.net, googlesyndication.com, adservice.google.com, facebook.net). Значит, это неполнота спецификации, а не расхождение кода с ней. Как дополнение к списку трекеров предложение разумно.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2.mjs\n16 gtag+data-alt []\n16 control img [{\"resource\":\"ui://w\",\"message\":\"<img> without alt\"}]"
+}

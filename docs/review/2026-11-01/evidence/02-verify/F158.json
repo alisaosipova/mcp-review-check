@@ -1,0 +1,20 @@
+{
+  "id": "F158",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "test/pack.test.ts:15 (а не :192: в файле всего 48 строк): cleanCopy() вызывает `execFileSync('git', ['ls-files','-z'], { cwd: ROOT })`, а describe('npm pack') на строке 25 не обёрнут в skipIf. Если .git нет (GitHub «Download ZIP», tarball исходников, Docker-контекст без .git) или git не установлен, тест падает с исключением `fatal: not a git repository` и не пропускается. В соседнем test/repo-config.test.ts:23 для того же случая есть `describe.skipIf(!existsSync(join(ROOT, '.git')))`. Опубликованного npm-пакета это не касается: test/ не попадает в package.json files.",
+  "repro": "cd /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/nogit && node -e \"require('child_process').execFileSync('git',['ls-files','-z'],{cwd:process.cwd(),encoding:'utf8',stdio:['ignore','pipe','pipe']})\"\n-> Error: Command failed: git ls-files -z\n   fatal: not a git repository (or any parent up to mount point /)\nВ cleanCopy() (test/pack.test.ts:15) тот же вызов, поэтому без .git тест 'npm pack from a clean copy...' падает, а не пропускается.",
+  "votes": [
+    {
+      "id": "F158",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "corrected_description": "test/pack.test.ts:15 (а не :192: в файле всего 48 строк): cleanCopy() вызывает `execFileSync('git', ['ls-files','-z'], { cwd: ROOT })`, а describe('npm pack') на строке 25 не обёрнут в skipIf. Если .git нет (GitHub «Download ZIP», tarball исходников, Docker-контекст без .git) или git не установлен, тест падает с исключением `fatal: not a git repository` и не пропускается. В соседнем test/repo-config.test.ts:23 для того же случая есть `describe.skipIf(!existsSync(join(ROOT, '.git')))`. Опубликованного npm-пакета это не касается: test/ не попадает в package.json files.",
+      "reasoning": "Утверждение подтверждается по существу, но номер строки в нём неверный: файл короче 48 строк, вызов git стоит на строке 15. Перед вызовом git в cleanCopy нет ни try/catch, ни проверки существования .git; в describe/it на строках 25–26 нет skipIf. В vitest.config.ts и package.json (\"test\": \"vitest run\") никакой обработки этого случая нет. Что тест намеренно требует git, нигде не сказано. Наоборот, в repo-config.test.ts:23 для той же зависимости от .git явно стоит skipIf, то есть для этого случая в проекте принято пропускать тест. В текущем дереве .git есть и git установлен (/usr/bin/git), так что прямо сейчас тест не падает. Падение возможно только при сборке из архива исходников, поэтому severity остаётся low.",
+      "repro": "cd /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/nogit && node -e \"require('child_process').execFileSync('git',['ls-files','-z'],{cwd:process.cwd(),encoding:'utf8',stdio:['ignore','pipe','pipe']})\"\n-> Error: Command failed: git ls-files -z\n   fatal: not a git repository (or any parent up to mount point /)\nВ cleanCopy() (test/pack.test.ts:15) тот же вызов, поэтому без .git тест 'npm pack from a clean copy...' падает, а не пропускается.",
+      "lens": "reader-batch"
+    }
+  ]
+}

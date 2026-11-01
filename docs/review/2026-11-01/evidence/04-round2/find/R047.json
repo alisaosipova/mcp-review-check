@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 423,
+  "title": "stdio: сообщение больше 10 МБ (лимит SDK ReadBuffer по умолчанию) рвёт соединение, а причина теряется: «Connection closed», ложный APPS-001 и каскад «Not connected»",
+  "description": "GroupStdioTransport создаётся без maxBufferSize, поэтому действует STDIO_DEFAULT_MAX_BUFFER_SIZE = 10 МБ из SDK (shared/stdio.js:2). Для HTTP линтер принимает до 64 МБ (FULL_READ_CAP), а у SDK-пути лимита нет совсем. Ответ tools/list или resources/read больше 10 МБ на stdio вызывает исключение ReadBuffer, транспорт закрывается и сервер убивается. Текст «ReadBuffer exceeded maximum size of 10485760 bytes» попадает только в rec.transportErrors, который никто не читает, а пользователь видит «MCP error -32000: Connection closed». Последствия: APPS-001 error «resources/read failed for the UI resource», coverage list-failed и SPEC-020, все wire-пробы получают «Not connected», toolsRelist молча пропадает. Обработчик 'data' не снимается после close, поэтому переполнение срабатывает повторно (наблюдалось 4 вызова close()). На вопрос о строке больше 512 МБ (MAX_STRING_LENGTH): этот случай недостижим, потому что SDK обрывает приём на 10 МБ раньше, а наш tap-буфер до закрытия процесса растёт ограниченно по времени (см. переоценку F141).",
+  "evidence": "Репро rules.mjs bigui 11 (UI-ресурс 11 МБ), вывод bigui11.txt:\nresourceReads {\"ui://widget/main.html\":{\"ok\":false,\"error\":\"MCP error -32000: Connection closed\"}}\nprobes {\"unknownMethod\":\"Error: Not connected\",\"unknownTool\":\"Error: Not connected\",\"resourceMissing\":\"Error: Not connected\"}\nrelist undefined\nerror APPS-001 - resources/read failed for the UI resource\nrun.mjs bigjson 12 (bigjson12.txt): coverage list-failed «tools/list failed: MCP error -32000: Connection closed»\nСчётчик в инструментированной копии dist (run-count.mjs, count-noline.txt): closes 4, transportErrors {\"ReadBuffer exceeded maximum size of 10485760 bytes\": 4}, fatal «Connection closed».\nВсе файлы лежат в /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/",
+  "suggested_fix": "Передавать maxBufferSize (например FULL_READ_CAP) в параметры StdioClientTransport, чтобы лимит совпадал с HTTP. Последнюю transportError с «ReadBuffer exceeded» добавлять к fatal, listMeta.error и resourceReads.error («server message exceeded 10 MB stdio buffer»). Снимать stdout-listener после первого переполнения.",
+  "confidence": 0.8,
+  "failure_scenario": "stdio MCP-App сервер отдаёт UI-ресурс с инлайновыми ассетами на 11 МБ: отчёт выдаёт APPS-001 error «resources/read failed», wire-пробы и re-list не выполнены, а реальная причина (лимит буфера клиента) нигде не названа.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R047"
+}

@@ -1,0 +1,180 @@
+{
+ "package": "WP1-cli",
+ "owned_files": [
+  "src/cli.ts",
+  "src/explain.ts",
+  "src/version.ts",
+  "src/catalog.ts",
+  "test/compat.test.ts"
+ ],
+ "items": [
+  {
+   "id": "F008",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "Несуществующий --cwd даёт «spawn node ENOENT» (выглядит как отсутствие node), exit 3",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F008.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F008.json"
+  },
+  {
+   "id": "F165",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "test/compat.test.ts",
+   "title": "Замороженный список ID правил дублируется в compat.test.ts и catalog.test.ts, CONTRIBUTING упоминает только один",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F165.json"
+  },
+  {
+   "id": "F161",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--tool-args принимается без --active, а неизвестные/не read-only имена инструментов в нём молча игнорируются",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F161.json"
+  },
+  {
+   "id": "F001",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--bearer / MCP_REVIEW_CHECK_TOKEN / --header при --stdio молча выставляют options.authenticated=true и отключают RT-009",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F001.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F001.json"
+  },
+  {
+   "id": "F004",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--active-auth, --tool-args, --sarif-location молча принимаются там, где не действуют (например --active-auth при --stdio печатает пугающий DCR-notice)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F004.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F004.json"
+  },
+  {
+   "id": "F002",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "Имя заголовка в --header не валидируется: невалидное имя даёт exit 3 «could not connect» вместо usage error",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F002.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F002.json"
+  },
+  {
+   "id": "F015",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--timeout/--max-duration принимают 0x10, 1e2, 1.5 через Number()",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F015.json"
+  },
+  {
+   "id": "F009",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--output \"\" молча игнорируется: отчёт уходит в stdout",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F009.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F009.json"
+  },
+  {
+   "id": "F011",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "Один и тот же exit 3 для «не подключились» и «остановлено --max-duration» — CI не может различить",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F011.json"
+  },
+  {
+   "id": "F010",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "`--stdio foo -- node x` даёт нерелевантное «expected a single <url>»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F010.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F010.json"
+  },
+  {
+   "id": "F003",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "URL с userinfo (https://user:pass@host/mcp) принимается, но fetch его отвергает — всегда exit 3 с невнятной причиной",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F003.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F003.json"
+  },
+  {
+   "id": "F005",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--header \"Authorization: …\" вместе с --bearer: оба заголовка уходят на сервер и склеиваются в «Bearer A, Bearer B»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F005.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F005.json"
+  },
+  {
+   "id": "F016",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--target/--format/--fail-on чувствительны к регистру, а --ignore и explain — нет",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F016.json"
+  },
+  {
+   "id": "R016",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/explain.ts",
+   "title": "--list-rules <prefix> --format markdown печатает пустую таблицу правил или чек-листа (только заголовок)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R016.json"
+  },
+  {
+   "id": "R013",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "Неполная проверка (auth-required / token-rejected) завершается exit 0 «PASS» и без GitHub-аннотации: просроченный или отсутствующий токен в CI даёт зелёный job",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R013.json"
+  },
+  {
+   "id": "R005",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "isMain ложен при запуске без расширения (`node dist/cli`): CLI молча ничего не делает и выходит с 0",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R005.json"
+  },
+  {
+   "id": "R021",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "Плюрализация в summary-строке: «1 errors · 1 warnings»",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R021.json"
+  },
+  {
+   "id": "R004",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "После Ctrl+C/SIGTERM проверка stdio продолжается, пишет полный отчёт в --output с coverage 'ok' и только потом умирает с 130",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R004.json"
+  },
+  {
+   "id": "R015",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/explain.ts",
+   "title": "explain и --list-rules не показывают needs правила и feature MAN-пункта; explain MAN не печатает подсказку --ignore, обещанную README",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R015.json"
+  },
+  {
+   "id": "R018",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/cli.ts",
+   "title": "--ignore со списком через запятую отвергается сообщением, которое скрывает значение: «--ignore value is not a rule or MAN ID»",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R018.json"
+  }
+ ]
+}

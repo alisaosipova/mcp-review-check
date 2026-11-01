@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 300,
+  "title": "401 на listing не запускает auth probe: при публичных server/discover или initialize AUTH-правила пропускаются, а 401 превращаются в ложные SPEC-ошибки",
+  "description": "trigger и authFailed вычисляются только по preflight (initialize), по SDK-initialize и по discover (строки 286, 300). Возьмём сервер 2026-07-28, у которого server/discover публичный, initialize отвергается 400/-32020 (проверка версии стоит раньше auth), а tools/list и всё остальное требуют токен и отвечают 401 с Bearer-challenge. Тогда era='modern', connected=true, authFailed=false, и auth probe не запускается. Все 19 AUTH-правил получают skipped с причиной «server did not request auth». Coverage становится 'list-failed', хотя должна быть 'auth-required', а пользователь не видит подсказки «pass --bearer». Wire-пробы получают 401, и SPEC-008/SPEC-014 выдают error «got HTTP 401 / code -32001; expected …», а SPEC-020 выдаёт error. Тот же класс есть у legacy: initialize публичный, tools/list отвечает 401, итог тот же: list-failed и пропущенный auth probe.",
+  "evidence": "Репро: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/modern401.mjs. Вывод (modern401.txt):\npreflight 400 era modern coverage {\"toolLevel\":\"list-failed\",\"reason\":\"tools/list failed: -32001 unauthorized\"} authProbe ran: false\nAUTH skipped: 19 server did not request auth\nerror SPEC-008 - unknown method got HTTP 401 / code -32001; expected 404 / -32601\nerror SPEC-014 - missing Mcp-Method: got HTTP 401 / code -32001; expected 400 / -32020\nerror SPEC-014 - wrong Mcp-Method: got HTTP 401 / code -32001; expected 400 / -32020\nerror SPEC-020 - tools/list failed: -32001 unauthorized\n(SPEC-007/012 в выводе относятся к упрощённому фейковому серверу и к делу не относятся.)",
+  "suggested_fix": "После listEverything проверять, получил ли tools/list (или первый list) HTTP 401 с WWW-Authenticate. Если да, выставлять authFailed/coverage как в шаге 4 и запускать runAuthProbe с challengeExchange из этого ответа. Wire-пробы при auth-required не запускать или помечать их 401 как inconclusive.",
+  "confidence": 0.75,
+  "failure_scenario": "Modern-only сервер с публичным server/discover и OAuth на всех методах без --bearer: отчёт показывает SPEC-error про коды ошибок и «tools/list failed», AUTH-проверки не выполнены, совета передать --bearer нет.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R045"
+}

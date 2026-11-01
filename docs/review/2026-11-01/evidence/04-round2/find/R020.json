@@ -1,0 +1,14 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 282,
+  "title": "--ignore повышает score, а README говорит только об исключении из exit code",
+  "description": "engine исключает ignored-находки из scored, поэтому `--ignore` поднимает score: при всех находках в ignore получается 100/100 и NO AUTOMATED BLOCKERS. В README:282 сказано только, что --ignore «drops it from the exit code (it stays in JSON under ignored)». В описании score (README:158) он назван «one number per server», хотя число зависит от CLI-флагов. Для сравнения score между прогонами или публикации бейджа это важно.",
+  "evidence": "gate.out, случай 3: правило X-3 claude=error с `--ignore X-3` → `PASS (--fail-on error) 100/100`, verdicts NO AUTOMATED BLOCKERS. engine.ts:126 `if (!ignore.has(rule.id)) scored.push(finding);`.",
+  "suggested_fix": "В README (score и FAQ) указать: «ignored rules are left out of the score too». Опционально помечать score при непустом ignored (например, «87/100 (2 rules ignored)»).",
+  "confidence": 0.7,
+  "failure_scenario": "Команда сравнивает score двух серверов, не зная, что у одного из них в CI стоит --ignore на 5 правил.",
+  "dimension": "score-gate-github-explain",
+  "id": "R020"
+}

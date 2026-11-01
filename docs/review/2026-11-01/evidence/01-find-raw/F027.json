@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/util/net.ts",
+  "line": 24,
+  "title": "isNonPublicIPv6 не распознаёт несжатые/hex-формы loopback и mapped-адресов, multicast и documentation-префикс",
+  "description": "Проверка смотрит только на первый hextet и на литералы `::1`/`::`. Пропускаются `0:0:0:0:0:0:0:1`, `::ffff:7f00:1` (IPv4-mapped в hex-записи), `ff00::/8` (multicast), `2001:db8::/32` (documentation), `64:ff9b::/96`, `2002::/16`. `isLoopbackHost` аналогично не узнаёт `0:0:0:0:0:0:0:1` и `::ffff:127.0.0.1`. Влияет на localMode/SRV-004 для IPv6-only хостов.",
+  "evidence": "node против dist: `0:0:0:0:0:0:0:1 false`, `::ffff:7f00:1 false`, `ff02::1 false`, `2001:db8::1 false`, `isLoopbackHost('0:0:0:0:0:0:0:1') false`, `isLoopbackHost('::ffff:127.0.0.1') false` (при этом `::ffff:127.0.0.1 true`, `fd00::1 true`).",
+  "suggested_fix": "Нормализовать адрес через `new URL(`http://[${ip}]`).hostname` или ручное разворачивание в 8 hextet'ов, затем сравнивать по префиксам (включая `::ffff:0:0/96` → проверка IPv4-части, `ff00::/8`, `2001:db8::/32`). Использовать ту же нормализацию в isLoopbackHost.",
+  "confidence": 0.85,
+  "dimension": "protocol-probe",
+  "id": "F027"
+}

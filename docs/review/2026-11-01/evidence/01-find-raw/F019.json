@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "high",
+  "file": "src/probe/network.ts",
+  "line": 107,
+  "title": "Same-host редирект (trailing slash) ломает все сырые пробы: ложные SPEC-005/SPEC-007, пропуск SRV-008, неверная era",
+  "description": "Все сырые пробы идут через tracer.request с `redirect: 'manual'` (trace.ts:233) по URL как введён. Если сервер отвечает 301/308 на `/mcp` → `/mcp/` (очень частый кейс у reverse-proxy/фреймворков), то preflight, discover, get, badVersion, все origin-пробы, auth invalid-token получают 3xx и никогда не доходят до сервера. SDK-клиент при этом сам следует same-origin редиректу и подключается, так что run выглядит успешным, но: era-детекция по discover невозможна (dual/modern сервер будет помечен legacy), SPEC-007 жалуется на «answered with 308», SPEC-005 — «GET returned 308», SRV-008 молчит (origin evil = 308 ≠ 2xx), 401 на preflight не виден → auth probe не запускается. SRV-006 корректно выдаёт warning о редиректе, но остальные находки — шум/пропуски.",
+  "evidence": "Живой репро: сервер 308 `/mcp`→`/mcp/` + SDK-сервер за ним. Для `http://127.0.0.1:PORT/mcp`: `preflight 308 discover 308 get 308 badVersion 308 originEvil 308 originNone 308`; findings: `SPEC-005 warning GET returned 308; expected 200 text/event-stream or 405`, `SPEC-007 warning MCP-Protocol-Version: 1900-01-01 was answered with 308, expected 400`, при этом `SRV-008 … accepts a foreign Origin (DNS rebinding risk)`, который выдавался для `/mcp/`, пропал. В exchanges видно, что SDK дублирует каждый вызов: `sdk initialize:308, sdk initialize:200, …`.",
+  "suggested_fix": "После preflight: если 301/302/307/308 и Location same-host — один раз зафиксировать `finalUrl` и выполнять discover/wire/auth пробы по нему (сохранив SRV-006 по исходному preflight). При cross-host редиректе — не следовать, но явно пометить пробы как «не выполнены из-за редиректа» (needs/skip), чтобы SPEC-005/007 не срабатывали на 3xx. Минимум: в rules игнорировать статусы 3xx для проб.",
+  "confidence": 0.9,
+  "dimension": "protocol-probe",
+  "id": "F019"
+}

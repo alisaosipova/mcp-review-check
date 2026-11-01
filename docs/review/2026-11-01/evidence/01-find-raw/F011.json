@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 324,
+  "title": "Один и тот же exit 3 для «не подключились» и «остановлено --max-duration» — CI не может различить",
+  "description": "README/HELP оговаривают это поведение, но для пайплайна «сервер лежит» и «подними дедлайн» — разные действия; JSON отличает (`limits.stopped` vs `fatal`), а код возврата нет. Рынок (lint-инструменты в CI) обычно даёт отдельный код для timeout.",
+  "evidence": "cli.ts:324 `const code = snap.fatal || snap.limits?.stopped ? 3 : …`.",
+  "suggested_fix": "Ввести exit 4 для `limits.stopped && !fatal` (с флагом совместимости или в 0.2.0), задокументировать в HELP/README/spec §3.2.",
+  "confidence": 0.6,
+  "dimension": "cli-connect",
+  "id": "F011"
+}

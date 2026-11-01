@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/runtime.ts",
+  "line": 214,
+  "title": "RT-010 TOKEN_RE дублирует и сужает KNOWN_TOKEN из util/net.ts",
+  "description": "TOKEN_RE знает только JWT, `sk-`, `ghp_`, `AKIA`. В net.ts KNOWN_TOKEN покрывает также sk_live/rk_live (Stripe), gh[pousr]_, github_pat_, glpat-, xox[abprse]-, ASIA, AIza, npm_, hf_. Два источника истины расходятся.",
+  "evidence": "runtime.ts:214 `const TOKEN_RE = /eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+|\\bsk-[A-Za-z0-9_-]{16,}|\\bghp_[A-Za-z0-9]{20,}|\\bAKIA[0-9A-Z]{16}\\b/;` vs net.ts:98 KNOWN_TOKEN.",
+  "suggested_fix": "Экспортировать из net.ts не-заякоренную версию KNOWN_TOKEN (или `findKnownTokens(text)`) и использовать в RT-010.",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F105"
+}

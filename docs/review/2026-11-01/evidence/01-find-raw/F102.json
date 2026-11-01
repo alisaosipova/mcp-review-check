@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/apps.ts",
+  "line": 304,
+  "title": "APPS-013: `<a href=\"https://…\" target=\"_blank\">` не считается navigate — правило срабатывает только на openExternal/ui/open-link",
+  "description": "Обычные ссылки в виджете — самый частый способ навигации; ChatGPT показывает подтверждение для таких же доменов вне redirect_domains. extractOrigins не возвращает kind 'navigate' для `<a>`, поэтому APPS-013 молчит.",
+  "evidence": "APPS_013.check для '<a href=\"https://shop.example.com/x\" target=\"_blank\">buy</a>' при redirect_domains=[] → [].",
+  "suggested_fix": "В extractOrigins добавить `a` в tagRe и `add('navigate', attr(tag,'href'), tag, 'tag')`; с confidence tag, но severity warning (уже дефолт правила).",
+  "confidence": 0.75,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F102"
+}

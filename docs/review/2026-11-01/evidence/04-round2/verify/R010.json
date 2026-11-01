@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/protocol/modern.ts",
+  "line": 143,
+  "title": "ModernClient принимает result с чужим id (одиночный JSON и SSE fallback msgs[0]) и не сообщает о несовпадении",
+  "description": "Для не-массива `msg = exchange.json` id не сверяется. trace.parseBody для SSE тоже возвращает `msgs[0]`, если ответа с нужным id нет. В итоге результат с другим id (или id другого типа) принимается как ответ на запрос: listAll проходит успешно, tools попадают в снапшот. collectErrors записывает responseId только для error-ответов, поэтому SPEC-016 («ids must echo the request») для успешных modern-ответов ничего не проверяет. Реальный 2026-07-28 клиент такой ответ не сопоставит и зависнет до таймаута.",
+  "evidence": "g_wrongid.mjs (сервер всегда отвечает id:999):\nrequest id 1 response id 999 -> listAll {\"names\":[\"a\"]}\nКод: modern.ts:143 `const msg = Array.isArray(exchange.json) ? exchange.json.find((m) => isObj(m) && m.id === id) : exchange.json;`",
+  "suggested_fix": "Если `msg.id !== id` (и это не error с id null), не принимать result. Записывать ObservedError/наблюдение «response id X does not match request id Y», чтобы SPEC-016 увидел его, а запрос считать неуспешным.",
+  "confidence": 0.75,
+  "failure_scenario": "Modern-only сервер с багом эха id получает чистый отчёт по листингу, хотя хосты не смогут с ним работать.",
+  "dimension": "sse-legacy-modern",
+  "id": "R010",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R010",
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Подтверждено. Номер строки в утверждении устарел: файл src/protocol/modern.ts короче 143 строк. Нужный код находится на строке 84 src/protocol/modern.ts: `const msg = Array.isArray(exchange.json) ? exchange.json.find((m) => isObj(m) && m.id === id) : exchange.json;`. Для одиночного JSON-ответа id не сверяется. Для SSE trace.parseBody (src/protocol/trace.ts:132) возвращает `msgs.find(id match) ?? msgs[0]`, то есть при отсутствии совпадения берёт первое сообщение. После этого request() кладёт msg.result в res.result и в this.results, а listAll принимает страницу. Выше по стеку несовпадение тоже никто не ловит. collectErrors (src/connect.ts:255-263) записывает ObservedError только когда в сообщении есть error, а RecordingTransport.errors относится к SDK-пути. SPEC-016 (src/rules/spec.ts:367) сравнивает responseId и requestId только по observedErrors. Других проверок responseId для успешных ответов в src/rules нет: rpcView заполняет responseId, но для успешных ответов это поле никто не сравнивает. Тестов, которые фиксировали бы такое поведение как намеренное, не нашёл. spec.md этому не противоречит, а rationale самой SPEC-016 прямо требует «ids must echo the request». Влияние ограничено modern-only серверами: на dual-era сервере SDK-путь с неверным id упадёт и проблема проявится иначе. Сам баг эха id на сервере встречается редко, поэтому severity low оставляю.",
+      "corrected_severity": "low",
+      "corrected_description": "В src/protocol/modern.ts:84 (а не :143) ModernClient.request принимает result из ответа, чей id не совпадает с id запроса. Для одиночного JSON id не сверяется вовсе, для SSE используется fallback msgs[0] в trace.parseBody (trace.ts:132). Успешный ответ с чужим id не попадает в observedErrors, поэтому SPEC-016 его не видит. В итоге modern-only сервер, который не возвращает id запроса, получает чистый листинг tools/resources/prompts, хотя настоящий клиент 2026-07-28 не сопоставит такой ответ с запросом.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r010.mjs запускает локальный http-сервер, который всегда отвечает id:999 с result {tools:[{name:'a'}]}, и вызывает ModernClient из dist.\n$ node r010.mjs\nrequest id 1\njson listAll {\"names\":[\"a\"]}\n$ node r010.mjs sse\nrequest id 1\nsse listAll {\"names\":[\"a\"]}\nОшибки нет: оба ответа приняты.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "В src/protocol/modern.ts:84 (а не :143) ModernClient.request принимает result из ответа, чей id не совпадает с id запроса. Для одиночного JSON id не сверяется вовсе, для SSE используется fallback msgs[0] в trace.parseBody (trace.ts:132). Успешный ответ с чужим id не попадает в observedErrors, поэтому SPEC-016 его не видит. В итоге modern-only сервер, который не возвращает id запроса, получает чистый листинг tools/resources/prompts, хотя настоящий клиент 2026-07-28 не сопоставит такой ответ с запросом.",
+  "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r010.mjs запускает локальный http-сервер, который всегда отвечает id:999 с result {tools:[{name:'a'}]}, и вызывает ModernClient из dist.\n$ node r010.mjs\nrequest id 1\njson listAll {\"names\":[\"a\"]}\n$ node r010.mjs sse\nrequest id 1\nsse listAll {\"names\":[\"a\"]}\nОшибки нет: оба ответа приняты."
+}

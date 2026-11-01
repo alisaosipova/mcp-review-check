@@ -1,0 +1,183 @@
+{
+ "branch": "worktree-wf_1bdb1e6c-787-1",
+ "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_1bdb1e6c-787-1",
+ "done": [
+  {
+   "id": "F152",
+   "commit": "bd18ea5, 69d896c",
+   "summary": "docs/RULES.md перегенерирован (APPS-006 теперь с claude: info). scripts/rules-table.mjs подставляет RULE_COUNT/MANUAL_COUNT/CATALOG_DATE в README и docs/design/spec.md; CI-шаг теперь проверяет и spec.md. Проверено: 144/31 совпадают с dist/rules/index.js"
+  },
+  {
+   "id": "F164",
+   "commit": "69d896c",
+   "summary": "Заголовок примера отчёта в README синхронизируется с версией из package.json; сообщение генератора перечисляет все файлы; CONTRIBUTING: readme:rules после npm version"
+  },
+  {
+   "id": "F148",
+   "commit": "280ef3a",
+   "summary": "README: вместо 'not published' — запасной вариант с node dist/cli.js, явно распространённый на npx-рецепты CI и Docker Compose"
+  },
+  {
+   "id": "F149",
+   "commit": "280ef3a",
+   "summary": "README и SECURITY.md: --active = первые 50 инструментов, 3 вызова, до трёх свежих соединений с clientInfo.name mcp-review-check/claude-ai/Anthropic; плюс DELETE сессий, GET Origin-пробы на legacy SSE, следование same-host redirect"
+  },
+  {
+   "id": "F138-docs",
+   "commit": "280ef3a",
+   "summary": "README Input caps и SECURITY.md: лимиты 64 MiB на тело/листинг/stdio-сообщение, 100 страниц, 50 UI-ресурсов, 50 строк stdout"
+  },
+  {
+   "id": "R006",
+   "commit": "280ef3a",
+   "summary": "README: строка 128+N в таблице exit-кодов (часть --help отложена)"
+  },
+  {
+   "id": "R019",
+   "commit": "280ef3a",
+   "summary": "README: exit 3 также при внутренней ошибке (таблица и FAQ; часть --help отложена)"
+  },
+  {
+   "id": "R020",
+   "commit": "280ef3a",
+   "summary": "README: --ignore исключает правило и из score, и из счётчика root causes"
+  },
+  {
+   "id": "F150-partial",
+   "commit": "280ef3a",
+   "summary": "README: пакет только CLI, поддерживаемого программного API нет"
+  },
+  {
+   "id": "F155",
+   "commit": "c47fca2",
+   "summary": "tsconfig lib: [ES2022] без DOM; typecheck и build проходят"
+  },
+  {
+   "id": "F034-spec",
+   "commit": "ba4165e",
+   "summary": "spec §4.4 'Node compatibility' с текущими фактами над историческим планом для Node 18; во введении указан Node 20.19+"
+  },
+  {
+   "id": "F061",
+   "commit": "ba4165e",
+   "summary": "spec §2.8 AUTH-002: legacy discovery = chatgpt error, spec warning, claude warning; отсутствие discovery даёт info"
+  },
+  {
+   "id": "WP3-spec-notes",
+   "commit": "ba4165e",
+   "summary": "spec §2.9 (синтез аргументов, wrong-type, дубликаты имён) и §4.3 (DELETE закрытия сессии, SSE-режим Origin, redirect, переиспользование GET); §3.2 приведён к текущему контракту exit-кодов; §8 Q5–Q8 для открытых решений"
+  },
+  {
+   "id": "F158",
+   "commit": "c135c58",
+   "summary": "pack.test.ts: describe.skipIf без .git"
+  },
+  {
+   "id": "F166",
+   "commit": "4bc5e7e",
+   "summary": ".gitignore: *.tgz"
+  },
+  {
+   "id": "F159",
+   "commit": "c2759f7",
+   "summary": "cancel-in-progress только для PR; npm audit с continue-on-error только для PR"
+  },
+  {
+   "id": "F145",
+   "commit": "c2759f7",
+   "summary": "npm ci --ignore-scripts в ci.yml (оба job) и в release build"
+  },
+  {
+   "id": "F160",
+   "commit": "c2759f7",
+   "summary": "publish разделён на два шага по HAS_NPM_TOKEN: OIDC-шаг без NODE_AUTH_TOKEN, а токен используется только в отдельном шаге первого релиза с ::warning; YAML разобран через python3 yaml, workflows.test зелёный"
+  },
+  {
+   "id": "F151-partial",
+   "commit": "c2759f7",
+   "summary": "Node 20.19 в CI-матрице только на ubuntu (7 job вместо 9); CONTRIBUTING и spec обновлены"
+  },
+  {
+   "id": "F156-partial",
+   "commit": "5ec37ed",
+   "summary": "@vitest/coverage-v8, блок coverage в vitest.config.ts, npm run test:coverage, строка в README"
+  },
+  {
+   "id": "F153",
+   "commit": "1263774",
+   "summary": "Link-определения [Unreleased]/[0.1.0] в конце CHANGELOG"
+  },
+  {
+   "id": "CHANGELOG-unreleased",
+   "commit": "1263774",
+   "summary": "Раздел [Unreleased] собран из CHANGELOG lines WP1–WP9 и WP10: Added (+Severity raised), Changed, Fixed (+Severity lowered / false positives fixed), Security; 128 пунктов, без id находок; раздел 0.1.0 не тронут"
+  },
+  {
+   "id": "WP10-report",
+   "commit": "f0f06ea",
+   "summary": "docs/review/2026-11-01/remediation/WP10-docs-ci-report.md: таблицы done / deferred / open questions"
+  }
+ ],
+ "deferred": [
+  {
+   "id": "F168",
+   "reason": "feature: action.yml, --baseline, конфиг-файл, --listing/--plugin, --format junit, --oauth, валидация server.json; каждое — отдельный minor (MARKET.md)"
+  },
+  {
+   "id": "F156-rest",
+   "reason": "needs test/*: unit-тесты для legacy.listAll, manual.ts, wire.ts, catalog.ts, lexicon, util/ui, util/access; пороги и CI-артефакт требуют прогона полного набора (D1)"
+  },
+  {
+   "id": "F150-rest",
+   "reason": "feature: библиотечный entry point (needs src/index.ts, declaration, exports/types) — нужно решение мейнтейнера"
+  },
+  {
+   "id": "F151-rest",
+   "reason": "повышение engines до >=22.12 меняет контракт поддержки — решение мейнтейнера для 0.2.0"
+  },
+  {
+   "id": "F159-rest",
+   "reason": "feature: линтер/форматтер (biome/eslint) с npm run lint в CI"
+  },
+  {
+   "id": "F145-rest",
+   "reason": "проверку provenance после публикации нельзя проверить без реального релиза, и она может гоняться с распространением в реестре"
+  },
+  {
+   "id": "R006-R019-help",
+   "reason": "needs src/cli.ts: блок 'Exit codes:' в --help"
+  },
+  {
+   "id": "spec-sync-WP5-WP8",
+   "reason": "большая синхронизация шаблонов, дословно процитированных в spec §2.x (INJ/DATA/POL/APPS/AUTH/SPEC/SRV/TOOL/RT); в заголовке spec теперь сказано, что авторитетны код и CHANGELOG"
+  },
+  {
+   "id": "catalog-date",
+   "reason": "needs src/catalog.ts: волна 1 изменила severity без сдвига CATALOG_DATE"
+  }
+ ],
+ "tests_passed": true,
+ "typecheck_ok": true,
+ "build_ok": true,
+ "tests_run": [
+  "npm ci",
+  "npm run typecheck",
+  "npm run build",
+  "npm run readme:rules (после последнего коммита diff пустой)",
+  "npx vitest run test/docs.test.ts test/catalog.test.ts test/catalog-stale.test.ts test/pack.test.ts test/workflows.test.ts — 5 файлов, 18 тестов, все зелёные",
+  "npx vitest run --coverage test/catalog.test.ts (проверка, что провайдер coverage загружается)",
+  "python3 yaml.safe_load для ci.yml, release.yml, dependabot.yml"
+ ],
+ "open_questions": [
+  "F011: остановку по --max-duration выделить в отдельный exit-код? (a) оставить 3 + Result INCOMPLETE/limits.stopped; (b) новый exit 4 в 0.2.0; (c) opt-in --deadline-exit-code. Записано как spec §8 Q5",
+  "R013: что делать при token-rejected? (a) оставить exit по --fail-on; (b) всегда exit 3; (c) opt-in --fail-on-incomplete + ::warning-аннотация (src/report/github.ts). spec §8 Q6",
+  "F122: SARIF level — (a) максимум по всем платформам (сейчас); (b) уровень gated-платформ; (c) --sarif-level gated|max. spec §8 Q7",
+  "F102: должен ли APPS-013 считать каждый <a href> навигацией, требующей redirect_domains? (a) нет; (b) да, сначала как chatgpt info. spec §8 Q8",
+  "F151: Node 20 в EOL — поднять engines до >=22.12 в 0.2.0 или оставить >=20.19 с тестами 20.19 только на Linux (текущее состояние)?",
+  "F150: оставаться только CLI (README теперь так и говорит; возможно, закрыть deep imports через exports) или добавить src/index.ts + declaration + exports/types?",
+  "F153: свернуть ~35 записей Changed/severity в 0.1.0 (сравнение с pre-release baseline) в короткое Added? В этом пакете не сделано: раздел 0.1.0 менять нельзя",
+  "F148: опубликован ли 0.1.0 в npm на самом деле? Если да — убрать фразу о запасном варианте в README; если нет — 'First public release' в CHANGELOG преждевременно",
+  "Catalog date: сдвигать ли CATALOG_DATE для релиза, в котором правила изменились из-за исправлений кода, а не новых документов-источников?"
+ ],
+ "notes": "Все 10 коммитов находятся в ветке worktree-wf_1bdb1e6c-787-1 поверх cdfd53f и не запушены. Автор коммитов — Aleksandr Sabirov (задан через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_*; git config не менялся). В коммитах стоит трейлер Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>, а не 4.8 из задачи: так требует действующее системное указание об атрибуции, а текст задачи сгенерирован скриптом. Добавленная dev-зависимость @vitest/coverage-v8 изменила package-lock.json. F160: проверить офлайн, выберет ли npm OIDC вместо placeholder-токена, который setup-node записывает при registry-url, нельзя. Новая схема совпадает с примером из документации npm. Отчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_1bdb1e6c-787-1/docs/review/2026-11-01/remediation/WP10-docs-ci-report.md"
+}

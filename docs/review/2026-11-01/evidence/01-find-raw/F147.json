@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/markdown.ts",
+  "line": 63,
+  "title": "Markdown-рендерер не экранирует управляющие/невидимые символы (ESC, bidi U+202E, zero-width)",
+  "description": "text()/cell() защищают от markdown/HTML-инъекций (проверено: `<`, `[`, @, ://), но пропускают \\p{Cc}/\\p{Cf}. В GITHUB_STEP_SUMMARY bidi-override (U+202E) позволяет визуально переставить текст находки (например, сделать 'FAIL' похожим на 'PASS' в соседней ячейке), а ESC попадает в сырой .md при --output. У проекта уже есть escapeHidden для сниппетов INJ-правил.",
+  "evidence": "Репро: renderMarkdown на снапшоте с ESC в tool.name → `md has ESC: true`. markdown.ts:57 ESC-карта не содержит управляющих символов; text.ts:167 escapeHidden существует, но не применяется в рендерерах.",
+  "suggested_fix": "Применять escapeHidden (или замену \\p{Cc}\\p{Cf} на \\u{..}) внутри text() и cell() для всех серверных строк; в code() — тоже (внутри code span управляющие символы всё равно не нужны).",
+  "confidence": 0.7,
+  "dimension": "security-lens",
+  "id": "F147"
+}

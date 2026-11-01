@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/json.ts",
+  "line": 33,
+  "title": "JSON не содержит rootCauses, из которых считается score — summary.score невоспроизводим из JSON",
+  "description": "summary.score считается по result.scored (все платформы), а summary.errors/warnings и findings — только по --target. Report.rootCauses помечен «not in JSON». Потребитель JSON (CI-дашборд) видит score 64 при 0 errors и не может объяснить; текст/markdown при этом печатают «N root causes».",
+  "evidence": "src/report/index.ts:20 `/** Root causes on the score's basis ... not in JSON. */`; json.ts выдаёт только `summary: r.summary`.",
+  "suggested_fix": "Добавить `summary.rootCauses: {errors, warnings}` (аддитивно) и опционально `scoredFindings` ids; задокументировать в README.",
+  "confidence": 0.75,
+  "dimension": "report-redact-engine",
+  "id": "F129"
+}

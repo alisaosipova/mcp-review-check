@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/protocol/modern.ts",
+  "line": 80,
+  "title": "ModernClient всегда читает тело с fullBody (64 MiB / полный timeout), включая пробы badVersion/unknownMethod/headerMismatch",
+  "description": "`request()` передаёт `fullBody: true` всегда. Для проб (wire.ts:46-51) результат не нужен, но тело читается до FULL_READ_CAP=64 MiB или до `timeoutMs` (30 с), если сервер держит SSE-поток открытым и не отвечает ожидаемым id (например, на неизвестный метод ничего не присылает). 5 modern-проб × 30 с = до 2,5 мин ожидания, плюс до 64 MiB в памяти на каждую. Сырые пробы через tracer.request используют 256 KB/10 с — непоследовательно.",
+  "evidence": "modern.ts:79-81: `this.tracer.request(opts.label ?? \\`modern ${method}\\`, this.url, { method: 'POST', headers, body: JSON.stringify(body), timeoutMs: …, fullBody: true })`; trace.ts:241-243 — ветка fullBody читает `Math.max(0, timeoutMs - elapsed)` с кэпом FULL_READ_CAP.",
+  "suggested_fix": "Добавить в ModernRequestOptions `fullBody?: boolean` (по умолчанию true только для tools/list, resources/read, server/discover) и передавать false из wire.ts.",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F025"
+}

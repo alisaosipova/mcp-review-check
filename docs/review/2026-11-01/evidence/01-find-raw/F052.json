@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/rules/auth.ts",
+  "line": 452,
+  "title": "AUTH-017: claude=error по одному медленному сэмплу из трёх — недетерминированная метрика как блокер",
+  "description": "`Math.max(...xs)` по 3 замерам; одиночный сетевой всплеск >10 с (например cold start AS, DNS-задержка на первой попытке — первый сэмпл это последняя retry-попытка) даёт error и BLOCKED для Claude. §1.2 требует детерминизма для error.",
+  "evidence": "Код: `const max = Math.max(...xs); if (max > AUTH_LATENCY.errorMs) out.push({ message: ... })` без явного severity → rule.severity claude=error. test/rules/auth.test.ts:80 закрепляет error на `[100, 11000]`.",
+  "suggested_fix": "Использовать медиану (как SRV-010) или требовать ≥2 из 3 сэмплов выше порога для error; одиночный выброс — warning с текстом «1 of 3 samples».",
+  "confidence": 0.6,
+  "dimension": "rules-server-spec-auth",
+  "id": "F052"
+}

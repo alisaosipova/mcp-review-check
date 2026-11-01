@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 201,
+  "title": "Сообщение об ошибке --list-rules --format перечисляет text/json/markdown, хотя sarif принимается",
+  "description": "Проверка допускает `['text','json','markdown','sarif']`, а текст UsageError говорит «--list-rules --format must be text, json or markdown». Пользователь с `--format yaml` получит список без sarif, хотя sarif принимается (с предупреждением). Мелкая несогласованность текста и кода.",
+  "evidence": "src/cli.ts:201 `if (!['text', 'json', 'markdown', 'sarif'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');` и :203 `if (values.format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\\n';`",
+  "suggested_fix": "Либо «must be text, json or markdown (sarif prints text)», либо убрать принятие sarif для --list-rules в 0.2.0.",
+  "confidence": 0.9,
+  "dimension": "docs-tests-ci",
+  "id": "F163"
+}

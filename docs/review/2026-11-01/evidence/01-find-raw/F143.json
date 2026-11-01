@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 166,
+  "title": "SRV-006 печатает Location редиректа без редакции; set-cookie/location в записанных заголовках не маскируются",
+  "description": "redactHeaders маскирует только authorization/cookie/proxy-authorization и имена --header. Заголовок ответа `location` (может содержать ?code=/?token=/access_token) и `set-cookie` (сессия, выданная линтеру) сохраняются в ex.headers открытым текстом, а SRV-006 выводит `target.href` целиком в message отчёта — в отличие от targetLabel/displayUrl для собственного URL. Сценарий: сервер отвечает на preflight 302 на `https://other.host/cb?access_token=…` → токен в markdown/JSON отчёте и в step summary.",
+  "evidence": "server.ts:166-167: ``${ex.method} redirects (${ex.status}) to another host: ${target.href}``; trace.ts:313 `headerNames: new Set(['authorization', 'cookie', 'proxy-authorization', …])` — без set-cookie/location; trace.ts:475 `ex.headers = redactHeaders(headersToRecord(res.headers), redactor)`.",
+  "suggested_fix": "В SRV-006 использовать displayUrl(target.href); в redactHeaders добавить 'set-cookie' в headerNames и прогонять 'location' через redactUrl.",
+  "confidence": 0.7,
+  "dimension": "security-lens",
+  "id": "F143"
+}

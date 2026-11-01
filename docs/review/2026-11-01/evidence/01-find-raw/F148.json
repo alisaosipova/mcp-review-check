@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "medium",
+  "file": "README.md",
+  "line": 66,
+  "title": "README одновременно утверждает «не опубликовано в npm» и даёт рецепты через npx mcp-review-check@0.1",
+  "description": "Строка 66 говорит «This version is not published to npm yet. From a checkout: npm install && npm run build…», при этом строка 5 предлагает `npx mcp-review-check https://…` (no install), а разделы CI recipes (строки ~196, ~221) и Docker Compose (~243) используют `npx -y mcp-review-check@0.1`. Либо фраза устарела, либо все npx-рецепты в README сейчас не работают. Пользователь не может понять, какой путь установки верный.",
+  "evidence": "README.md:5 «Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account)»; README.md:66 «This version is not published to npm yet.»; README.md:196 «- run: npx -y mcp-review-check@0.1 --target claude --stdio -- node dist/server.js»; README.md:243 «command: npx -y mcp-review-check@0.1 http://mcp:8080/mcp --target claude». git tag v0.1.0 существует (git log 2026-10-25), статус публикации в npm офлайн не проверить.",
+  "suggested_fix": "После публикации удалить строку 66; до публикации — явно пометить npx-рецепты «after the npm release» и дать вариант `node dist/cli.js`/`npm link` в CI-рецептах. Добавить в test/docs.test.ts проверку, что README не содержит одновременно «not published» и `npx -y mcp-review-check@`.",
+  "confidence": 0.85,
+  "dimension": "docs-tests-ci",
+  "id": "F148"
+}

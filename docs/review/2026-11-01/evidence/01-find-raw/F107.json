@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/apps.ts",
+  "line": 61,
+  "title": "normalizeMime не снимает кавычки параметра — `text/html; profile=\"mcp-app\"` считается неверным MIME",
+  "description": "RFC 2045 допускает quoted-string в значениях параметров. normalizeMime лишь триммит и опускает регистр, поэтому валидный вариант даёт error на всех трёх платформах.",
+  "evidence": "APPS_003.check при read.mimeType='text/html; profile=\"mcp-app\"' → 'mimeType is \"text/html; profile=\\\"mcp-app\\\"\", expected text/html;profile=mcp-app' + warning о расхождении с list.",
+  "suggested_fix": "В normalizeMime раскавычивать значение: `p.replace(/^([^=]+)=\"?([^\"]*)\"?$/, (_, k, v) => k.toLowerCase() + '=' + v)`.",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F107"
+}

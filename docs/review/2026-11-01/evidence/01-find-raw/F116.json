@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/redact.ts",
+  "line": 55,
+  "title": "Cookie-заголовок редактируется только целиком: отдельное значение cookie (session id), эхо-возвращённое сервером, утекает",
+  "description": "headerSecrets для Cookie возвращает всю строку `a=1; session=X`. В Redactor попадает только полная строка и её encodeURIComponent-форма. Если сервер вернёт в теле/ошибке только значение cookie (`session S3cr3t...`), scrub его не заменит и оно попадёт в bodySnippet/json отчёта. Для Authorization: Bearer X токен выделяется отдельно (withSchemeToken), для Cookie — нет.",
+  "evidence": "node repro: buildRedactor({headers:{Cookie:'theme=dark; session=S3cr3tSess10nValue'}}).values =>\n[ 'theme%3Ddark%3B%20session%3DS3cr3tSess10nValue', 'theme=dark; session=S3cr3tSess10nValue' ]\nscrub('server echoed session S3cr3tSess10nValue in error') => 'server echoed session S3cr3tSess10nValue in error' (не отредактировано)",
+  "suggested_fix": "В headerSecrets для имени cookie разбивать значение по `;` и добавлять каждое `name=value` и отдельно `value` (≥4 символов, не TRIVIAL). Аналогично для Basic: декодировать base64 и добавлять user:pass и pass отдельно (см. следующий пункт).",
+  "confidence": 0.9,
+  "dimension": "report-redact-engine",
+  "id": "F116"
+}

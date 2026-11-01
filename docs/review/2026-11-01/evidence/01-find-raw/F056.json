@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/spec.ts",
+  "line": 409,
+  "title": "SPEC-017: `sizes` строкой (не массивом) молча принимается; `image/jpg` в allow-list не является валидным MIME",
+  "description": "Схема Icon задаёт `sizes?: string[]`; код оборачивает скаляр в массив и не репортит нарушение типа. В `ICON_MIME` присутствует `image/jpg` — незарегистрированный тип, хосты могут его не отрендерить; корректно `image/jpeg`.",
+  "evidence": "Репро: icons=[{src:'https://x/i.png', sizes:'48x48'}] -> `[]`. Код: `const sizes = Array.isArray(icon.sizes) ? icon.sizes : [icon.sizes];` и `const ICON_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', ...])`.",
+  "suggested_fix": "При не-массиве sizes — warning «sizes must be string[]»; `image/jpg` перенести в info-ветку («use image/jpeg»).",
+  "confidence": 0.7,
+  "dimension": "rules-server-spec-auth",
+  "id": "F056"
+}

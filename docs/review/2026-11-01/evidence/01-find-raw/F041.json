@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/spec.ts",
+  "line": 252,
+  "title": "SPEC-011: при era='modern' через discSignal (400/-3202x) `discoverRaw` не задан — сообщение «result is not an object» вводит в заблуждение",
+  "description": "connect.ts:293,307-309: эра становится 'modern' и при `discSignal` (server/discover ответил 400 с -32020/-32021/-32022) без успешного результата; `snap.discoverRaw` остаётся undefined. SPEC-011 тогда сообщает «server/discover result is not an object» как spec error, хотя реальная причина — сервер отверг наш запрос (например -32022 «unsupported version» или -32020 header mismatch). Пользователь не получает статус/код.",
+  "evidence": "Репро: era='modern', discoverRaw=undefined -> `error [spec] server/discover result is not an object`. Код: `const r = snap.discoverRaw; if (!isObj(r)) return [{ message: 'server/discover result is not an object' }];` без учёта `probeExchange(snap,'discover')`.",
+  "suggested_fix": "Если `discoverRaw === undefined`, взять `probeRpc(snap,'discover')` и сообщить `server/discover answered HTTP ${status} / code ${code}: ${message}` (для -32022 — «server does not support 2026-07-28 as sent; data.supported=...»), либо вернуть inconclusive info. Ветка «not an object» — только когда status 200 и тело не объект.",
+  "confidence": 0.7,
+  "dimension": "rules-server-spec-auth",
+  "id": "F041"
+}

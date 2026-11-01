@@ -1,0 +1,165 @@
+{
+ "package": "WP5-apps",
+ "owned_files": [
+  "src/rules/apps.ts",
+  "src/rules/util/ui.ts",
+  "src/rules/util/html.ts",
+  "src/rules/util/access.ts"
+ ],
+ "items": [
+  {
+   "id": "F084",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/util/html.ts",
+   "title": "extractOrigins: CSS-regex `url\\(` с флагом i ловит JS `new URL(\"https://…\")` как resource-origin с confidence tag",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F084.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F084.json"
+  },
+  {
+   "id": "F102",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-013: `<a href=\"https://…\" target=\"_blank\">` не считается navigate — правило срабатывает только на openExternal/ui/open-link",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F102.json"
+  },
+  {
+   "id": "F108",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-015: пользовательские функции с именами prompt/confirm/alert ловятся как браузерные диалоги",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F108.json"
+  },
+  {
+   "id": "F101",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/util/html.ts",
+   "title": "extractOrigins не видит ES-module импорты и importmap — APPS-007 пропускает самый частый способ подключения ext-apps",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F101.json"
+  },
+  {
+   "id": "F107",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "normalizeMime не снимает кавычки параметра — `text/html; profile=\"mcp-app\"` считается неверным MIME",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F107.json"
+  },
+  {
+   "id": "F099",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/util/html.ts",
+   "title": "POL-004: extractLinks собирает любой `href=`, включая `<link rel=stylesheet>` — pricing.css = upsell",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F099.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F099.json"
+  },
+  {
+   "id": "F106",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-006: при одновременном ui.csp и openai/widgetCSP одна и та же запись репортится дважды",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F106.json"
+  },
+  {
+   "id": "R041",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-012: общий sandbox-домен в другом регистре (`HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM`) не распознаётся",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R041.json"
+  },
+  {
+   "id": "R030",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/util/ui.ts",
+   "title": "Content item с uri, отличным от запрошенного: _meta item-а игнорируется, HTML-правила молча пропускаются, APPS-005/012 дают ложные error",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R030.json"
+  },
+  {
+   "id": "R042",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-017: `_meta.ui` не-объект (строка, массив) молча превращается в `{}` — нет находки о типе",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R042.json"
+  },
+  {
+   "id": "R033",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-006: незашифрованный `ws://` в connectDomains не помечается (проверяется только `http:`)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R033.json"
+  },
+  {
+   "id": "R032",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-006: wildcard на многоуровневых публичных суффиксах (`https://*.co.uk`, `*.com.au`) и общих облачных доменах не считается overly broad",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R032.json"
+  },
+  {
+   "id": "R043",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-006 выдаёт claude-находку (CDN info), хотя правило, RULES.md и spec.md заявляют только chatgpt/spec",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R043.json"
+  },
+  {
+   "id": "R040",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-016: нет Google Analytics/GTM в списке трекеров; `data-alt=` засчитывается как alt",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R040.json"
+  },
+  {
+   "id": "R037",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-015: navigator.clipboard помечается даже при объявленном `ui.permissions.clipboardWrite`; alert() в комментарии тоже срабатывает",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R037.json"
+  },
+  {
+   "id": "R038",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-019 приписывает UI-капабилити отсутствие инструмента, которого нет и в обычном новом соединении (toolsFreshConnection)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R038.json"
+  },
+  {
+   "id": "R034",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "APPS-006: wildcard в середине или в конце хоста (`https://api.*.example.com`, `https://*.example.*`) и `data:`/`blob:` обрабатываются неверно",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R034.json"
+  },
+  {
+   "id": "R035",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/apps.ts",
+   "title": "Запись CSP без схемы (`api.example.com`) даёт сразу APPS-006 «not an origin» и APPS-007 «not declared»",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R035.json"
+  },
+  {
+   "id": "R036",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/util/ui.ts",
+   "title": "cspOf молча игнорирует неизвестные ключи CSP (camelCase внутри openai/widgetCSP, опечатки) — APPS-007 выдаёт error без подсказки о причине",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R036.json"
+  }
+ ]
+}

@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 362,
+  "title": "После Ctrl+C/SIGTERM проверка stdio продолжается, пишет полный отчёт в --output с coverage 'ok' и только потом умирает с 130",
+  "description": "Обработчик сигнала только завершает процессы-серверы (endAllNow). Сам run не прерывается: progress.abort/stopped не выставляются, ничего не помечается как прерванное. Если сервер отвечает в пределах 1 с grace (например, игнорирует SIGTERM) или ответ уже в пути, run доходит до конца. fresh()-коннект после сигнала tap убивает SIGKILL, его результат превращается в undefined, а правило в server.ts:476 при этом молча проходит. Затем отчёт пишется в файл --output (перезаписывая прежний) со строкой «FAIL …/report written to …», и только после этого процесс умирает по сигналу. Отчёт выглядит как полный и корректный, хотя проверки после сигнала сорваны.",
+  "evidence": "Команда `node dist/cli.js --format json --output rep.json --env DELAY_initialize=1100 --env IGNTERM=1 --env CHILD=1 --env KEEP=1 --stdio -- node srv.mjs &`, затем через 1 с `kill -INT`. Итог: exit=130, в stderr «mcp-review-check: score 84/100 · … · report written to …/rep.j.json». В rep.j.json coverage={'toolLevel':'ok'}, limits=None, то есть никаких признаков прерывания. Повторяется при DELAY_initialize 700/900/1100.",
+  "suggested_fix": "В обработчике сигнала выставлять общий флаг/AbortController, который run проверяет в checkpoint (как --max-duration), и не писать --output/stdout после сигнала. Либо помечать snapshot как interrupted (coverage 'stopped', phase 'signal').",
+  "confidence": 0.75,
+  "failure_scenario": "Пользователь жмёт Ctrl+C. В report.json оказывается «полный» отчёт с coverage ok, в котором проверка tools/list на новом соединении не выполнена, и этот файл потом загружают как артефакт CI.",
+  "dimension": "deadline-signals",
+  "id": "R004",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R004",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "Код подтверждает механизм. Обработчик сигнала в cli.ts:362-371 только вызывает endAllNow() (connect.ts:606). Тот выставляет ending=true, шлёт SIGTERM/SIGKILL группам и ждёт grace, а process.exit() вызывается лишь в .finally. AbortController или флага, который runCli проверял бы перед buildReport/writeFileSync, нет. Если run завершится внутри grace-окна (типичный случай: сервер игнорирует SIGTERM), отчёт будет записан в --output вместе со строкой summary, и только потом процесс умрёт с 130. Тест test/process-tree.test.ts:128 прямо говорит «After SIGINT the check went on», то есть продолжение run после сигнала известно. Но тесты проверяют только то, что серверы не переживают CLI, и не проверяют, что --output не пишется. Spec о сигналах ничего не говорит. Последствия смягчает то, что exit=130 всё равно ненулевой и CI увидит сбой. Плюс нужен узкий случай: сервер игнорирует SIGTERM или ответ уже в пути. Поэтому severity low. Утверждение, что правило server.ts:476 молча проходит на undefined, я не перепроверял.",
+      "corrected_description": "После SIGINT/SIGTERM runCli не прерывается: обработчик только завершает stdio-серверы и вызывает process.exit() после grace. Если run успевает завершиться в этом окне, --output перезаписывается отчётом без признаков прерывания (coverage 'ok', limits нет), и лишь затем процесс умирает с 130. Exit-код остаётся ненулевым, так что на gate CI это не влияет, но артефакт вводит в заблуждение.",
+      "repro": "Только по коду: cli.ts:363 `void endAllNow(signalled).finally(() => process.exit())`, флаг прерывания в runCli отсутствует, cli.ts:327-333 пишет --output безусловно. Повтор автора (exit=130, rep.json с coverage ok) я не воспроизводил.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "После SIGINT/SIGTERM runCli не прерывается: обработчик только завершает stdio-серверы и вызывает process.exit() после grace. Если run успевает завершиться в этом окне, --output перезаписывается отчётом без признаков прерывания (coverage 'ok', limits нет), и лишь затем процесс умирает с 130. Exit-код остаётся ненулевым, так что на gate CI это не влияет, но артефакт вводит в заблуждение.",
+  "repro": "Только по коду: cli.ts:363 `void endAllNow(signalled).finally(() => process.exit())`, флаг прерывания в runCli отсутствует, cli.ts:327-333 пишет --output безусловно. Повтор автора (exit=130, rep.json с coverage ok) я не воспроизводил."
+}

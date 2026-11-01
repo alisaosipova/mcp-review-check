@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 437,
+  "title": "Непомерный рост nonJson/buf для stdio: все не-JSON строки stdout накапливаются без лимита, Buffer.concat квадратичен",
+  "description": "tap() складывает каждую не-JSON строку stdout в массив nonJson без ограничения и склеивает входящие чанки `Buffer.concat([buf, c])` (O(n²) при длинной строке без \\n). stdio-сервер, пишущий лог в stdout (миллионы строк за время проверки) или одну гигантскую строку, раздувает память линтера; SDK при этом сам обрывается на 10 МБ ReadBuffer, но наш буфер — нет. SRV-018 использует только `lines.length` и первые 3 строки.",
+  "evidence": "connect.ts:437-445: `let buf = Buffer.alloc(0); proc?.stdout?.on('data', (c) => { buf = Buffer.concat([buf, c]); … if (line.trim() && !isJsonLine(line)) nonJson.push(line); })`. rules/server.ts:454-457 использует lines.slice(0,3) и lines.length. capSnapshot (limits.ts) nonJsonStdout не ограничивает.",
+  "suggested_fix": "Хранить максимум N строк (например 50, каждая ≤ 1 КБ) плюс счётчик `dropped`; при buf.length > 1 МБ без перевода строки — сбрасывать буфер и считать как одну «длинную не-JSON строку»; isJsonLine вызывать только для строк, начинающихся не с '{'/'[' (быстрая проверка вместо JSON.parse).",
+  "confidence": 0.8,
+  "dimension": "security-lens",
+  "id": "F141"
+}

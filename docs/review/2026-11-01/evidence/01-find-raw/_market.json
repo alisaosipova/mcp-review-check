@@ -1,0 +1,294 @@
+{
+  "market": {
+    "competitors": [
+      {
+        "name": "Snyk Agent Scan (ex-Invariant mcp-scan)",
+        "what": "Сканер установленных MCP-серверов и Agent Skills на машине пользователя: tool poisoning (E001), tool shadowing между серверами (E002), toxic flows, скрытый Unicode (W021), секреты, подозрительные URL. Отправляет метаданные в Snyk, запуск серверов consent-gated. https://github.com/snyk/agent-scan , https://github.com/snyk/agent-scan/blob/main/docs/issue-codes.md",
+        "gap_vs_us": "У них: кросс-серверный анализ (shadowing, toxic flows), сканирование Skills, облачная база сигнатур. У нас: directory-критерии Claude/ChatGPT, OAuth-пробы, APPS/CSP, SARIF, нет аккаунта и телеметрии. Их аудитория — потребители серверов, наша — авторы перед сабмитом; пересечение только по INJ-правилам."
+      },
+      {
+        "name": "Cisco AI Defense MCP Scanner",
+        "what": "Python-сканер с тремя движками (YARA, LLM-as-judge, Cisco AI Defense API) + behavioral code analysis (сравнение docstring и реализации на 10 языках), pip-audit, VirusTotal, REST API-режим, оффлайн `static` режим по JSON-файлам, маппинг на Cisco AI Threat taxonomy. https://github.com/cisco-ai-defense/mcp-scanner , https://pypi.org/project/cisco-ai-mcp-scanner/",
+        "gap_vs_us": "У них: LLM-судья, анализ исходников, статический режим по сохранённому JSON, SDK, REST-сервер. У нас: детерминированные directory-правила с источниками, OAuth/транспортные пробы, per-platform verdict, SARIF/GitHub-аннотации. Нет у нас: оффлайн-режим по JSON, LLM-режим, программный API."
+      },
+      {
+        "name": "mcplint (Rust)",
+        "what": "56 правил валидации протокола + 20 security-правил, fuzzing, watch-mode, baseline (--baseline/--save-baseline/--diff-only), fingerprint compare (rug pull), форматы text/json/sarif/junit/gitlab/html, .mcplint.toml, AI explain через Ollama/Anthropic/OpenAI. https://docs.rs/crate/mcplint/latest",
+        "gap_vs_us": "У них: baseline/diff, watch, fingerprint tool-определений, конфиг-файл, JUnit/GitLab/HTML вывод. У нас: directory-специфика (Claude/ChatGPT), APPS, OAuth-дискавери, редакция секретов. Baseline, конфиг и watch — прямые пробелы."
+      },
+      {
+        "name": "AgentSeal (scan-mcp + публичный реестр)",
+        "what": "CLI с 9 анализаторами, trust score 0–100 (SAFE/REVIEW/RISKY/DANGEROUS), сравнение сигнатур tool-ов с сохранённым baseline, `--min-score` для CI, SARIF, публичный реестр просканированных серверов с бейджами-оценками. https://github.com/getagentseal/agentseal , https://agentseal.org/docs/cli/scan-mcp",
+        "gap_vs_us": "У них: hosted-реестр оценок как маркетинговый канал, min-score гейт, baseline сигнатур. У нас: верифицируемые источники правил, per-directory verdict. Нет у нас: бейдж/публичный отчёт, --min-score."
+      },
+      {
+        "name": "connector-preflight (PressoNetwork)",
+        "what": "Прямой конкурент по нише: проверка remote MCP против требований Claude connectors directory. Zero-deps CLI, GitHub Action (inputs url/token/privacy-url/fail-on-blocking, outputs blocking/ready, job summary), Claude Code plugin («Claude запускает чекер и чинит сервер»), проверка privacy/docs URL, weekly rules-watch job, открывающий issue при изменении страниц Anthropic. 0 звёзд, 3 коммита, MIT. https://github.com/PressoNetwork/connector-preflight",
+        "gap_vs_us": "У них: готовый GitHub Action в Marketplace-формате, Claude Code plugin, проверка listing-URL, автоматический мониторинг изменений источников. У нас: 144 правила против ~30, ChatGPT и spec, SARIF, --active, редакция, local mode. Их форматы дистрибуции — наш пробел."
+      },
+      {
+        "name": "mcp-spec-check (Roee-Tsur)",
+        "what": "npx-проба готовности к 2026-07-28: discover, routing-headers, session-independence (обязательные) + error-codes, cache-metadata, mrtr, deprecated-features, auth-metadata (warn). Zero deps, --json, exit codes. Просканировал все 7 850 серверов реестра: 90,8% не готовы. https://github.com/Roee-Tsur/mcp-spec-check",
+        "gap_vs_us": "У нас SPEC-011..016 покрывают то же и глубже, но нет проверки deprecated-features (Roots/Sampling/Logging/DCR по SEP-2577/2596). Их «скан реестра» — пример контент-маркетинга, который мы можем повторить с большим набором правил."
+      },
+      {
+        "name": "@modelcontextprotocol/conformance (официальный)",
+        "what": "Сценарное тестирование клиентов/серверов против wire-схемы для 2025-11-25 и 2026-07-28, `--expected-failures` YAML-baseline, composite GitHub Action `modelcontextprotocol/conformance@v0.1.11`, `--requirements` для OAuth resource server. https://github.com/modelcontextprotocol/conformance",
+        "gap_vs_us": "Ортогонально (мы ссылаемся на него в MAN-031). У них есть expected-failures baseline и Action; у нас нет ни того, ни другого."
+      },
+      {
+        "name": "MCPJam Inspector / Evals",
+        "what": "Платформа тестирования и evals для MCP/ChatGPT apps: тест-кейсы с ожидаемыми tool calls, запуск на нескольких LLM, метрики точности выбора tool-а, запуск в GitHub Actions. https://github.com/MCPJam/inspector , https://www.mcpjam.com/",
+        "gap_vs_us": "Поведенческие evals (LLM реально выбирает tool) — то, чего у нас нет; у нас статический линт. Возможная интеграция: мы генерируем 5 позитивных/3 негативных тест-кейса для OpenAI review (MAN-020) — MCPJam их прогоняет."
+      },
+      {
+        "name": "RHEcosystemAppEng/mcp-validation (Red Hat)",
+        "what": "Python CLI/библиотека: handshake, capabilities, транспорты stdio/HTTP/SSE с OAuth DCR, валидация записей MCP Registry (packages, env vars, args), интеграция mcp-scan, профили и --config, JSON-отчёт, GitHub Actions пример. https://github.com/RHEcosystemAppEng/mcp-validation",
+        "gap_vs_us": "У них: валидация server.json/registry-пакетов относительно живого сервера, профили валидаторов, библиотечный API. У нас нет registry-проверок и публичного API."
+      },
+      {
+        "name": "mcp-quality / mcpgrader / mcpscore / mcpgrade",
+        "what": "Семейство скореров качества tool-определений: mcp-quality (5 измерений, Legibility на малой LLM, остальное без LLM, единый MCP Quality Score, релиз 24.10.2026), mcpgrader (детерминированный линт описаний 0–100), mcpscore (качество+конформанс+security+spec readiness), mcpgrade (npx, --fail-on, проверка «может ли модель реально использовать tool»). Источник: результаты поиска по pypi.org/project/mcp-quality, pypi.org/project/mcpgrader, pypi.org/project/mcpscore, https://github.com/dennislwm/playradar/wiki/mcpgrade",
+        "gap_vs_us": "Единая оценка «качества для модели» и LLM-проверка читаемости описаний. У нас score считает root causes нарушений правил директорий, а не качество описаний; TOOL-008/009 — лишь эвристики."
+      },
+      {
+        "name": "RugSnare / mcpseal / leanproxy-mcp",
+        "what": "Инструменты pinning tool-определений (SHA-256 канонического JSON name+title+description+schemas), lockfile-подход, `diff` старого/нового описания, CI gate на дрейф. Источники: https://pypi.org/project/mcpseal/ , https://mcpservers.org/servers/paraphern/rugsnare , https://github.com/mmornati/leanproxy-mcp/pull/352",
+        "gap_vs_us": "Нишевые, но закрывают спрос на «не стало хуже» и rug-pull детект, которого у нас нет; при этом обе директории теперь перепроверяют tool-метаданные непрерывно (OpenAI: ежедневные сканы, held updates; Claude: автоскан Community-листингов)."
+      },
+      {
+        "name": "Glama / Smithery quality scores",
+        "what": "Glama: TDQS 0–5 (disambiguation, naming consistency, tool count — 122 tools = 1/5, overlap), hourly health check, лицензия по GitHub API; Smithery: 100 баллов (metadata 35, config UX 25, capability quality 40: описание tool-а, описание каждого параметра, outputSchema ≈ четверть секции, аннотации, консистентность имён). https://dev.to/tanod/how-smithery-and-glama-score-mcp-servers-ours-went-from-83-to-96-4kfp",
+        "gap_vs_us": "Листинги — отдельный «рынок» требований: outputSchema на каждом tool-е, описания всех параметров как error, число tool-ов, перекрытие. У нас TOOL-009 info и нет правил про outputSchema (кроме APPS-018 для UI) и про размер набора tool-ов."
+      },
+      {
+        "name": "mcp-publisher validate / mcp-registry-validator",
+        "what": "Официальный `mcp-publisher validate` (схема + семантика server.json через сетевой эндпоинт реестра) и сторонний npm `mcp-registry-validator` с lint-правилами и GitHub Action `mcp-registry-lint`; скан 50 000 манифестов: 543 нарушают схему 2025-12-11. https://github.com/modelcontextprotocol/registry/discussions/635 , https://www.npmjs.com/package/mcp-registry-validator , https://dev.to/baobabcat/i-scanned-50000-mcp-server-manifests-543-violate-the-registrys-own-schema-heres-the-data-d63",
+        "gap_vs_us": "Никто не сверяет server.json с живым сервером (remotes[].url == проверяемый URL, name/version vs serverInfo, type sse = deprecated). Это свободная ниша."
+      },
+      {
+        "name": "Invokary / sunpeak (сервисы и фреймворк)",
+        "what": "Invokary — агентство: Agent Distribution Audit $750, Connector Launch Sprint от $9 500, Connector Care (мониторинг, evals, scorecard) от $750/мес; публикует правила директорий и MCP-сервер для их запроса. sunpeak — фреймворк MCP Apps с inspector и тест-фикстурами, рекомендует политику аннотаций в CI и сверку с порталом. https://invokary.com/platforms/claude , https://sunpeak.ai/blogs/testing-mcp-tool-annotations/",
+        "gap_vs_us": "Рыночный сигнал: за pre-submission аудит и ежемесячный мониторинг платят. Наш CLI может быть бесплатным ядром, а hosted-мониторинг/«scorecard по расписанию» — монетизацией."
+      }
+    ],
+    "ideas": [
+      {
+        "title": "Опубликовать 0.1.x в npm (npx mcp-review-check должен работать)",
+        "description": "README в первой строке обещает `npx mcp-review-check <url>` и `npx -y mcp-review-check@0.1` в CI-рецептах, но в разделе Usage сказано «This version is not published to npm yet». Release workflow с provenance уже готов — нужен тег. Пока пакета нет, все рецепты README, Docker Compose и сравнение с конкурентами не воспроизводимы, а connector-preflight и mcp-spec-check уже ставятся одной командой.",
+        "why_market": "Все прямые конкуренты (connector-preflight, mcp-spec-check, mcplint, agentseal) устанавливаются одной командой; «no install, no account» — главное обещание README.",
+        "effort": "S",
+        "priority": "P0",
+        "sources": [
+          "https://github.com/alisaosipova/mcp-review-check",
+          "https://github.com/Roee-Tsur/mcp-spec-check",
+          "https://github.com/PressoNetwork/connector-preflight"
+        ]
+      },
+      {
+        "title": "GitHub Action в Marketplace (action.yml) + рецепт upload-sarif в Code Scanning",
+        "description": "Composite action `alisaosipova/mcp-review-check@v0` с inputs url/stdio/target/fail-on/fail-on-spec/format/output/token (через secrets), outputs score/verdict-claude/verdict-chatgpt/sarif-path; внутри — `npx mcp-review-check@<pinned>`. В README: шаг `github/codeql-action/upload-sarif` (SARIF с partialFingerprints уже есть). Сейчас в .github есть только ci.yml/release.yml, action.yml отсутствует.",
+        "why_market": "connector-preflight и официальный conformance уже дают Action; разработчики ищут «uses:», а не `run: npx`. SARIF без рецепта загрузки в Security tab почти не используется.",
+        "effort": "S",
+        "priority": "P0",
+        "sources": [
+          "https://github.com/PressoNetwork/connector-preflight",
+          "https://github.com/modelcontextprotocol/conformance"
+        ]
+      },
+      {
+        "title": "Baseline / diff-режим «не стало хуже» и fingerprint tool-определений",
+        "description": "`--save-baseline .mcp-review-check/baseline.json` сохраняет findings (rule+subject+message hash) и SHA-256 канонического JSON каждого tool-а (name, title, description, inputSchema, outputSchema, annotations, _meta). `--baseline <file>` падает только на новых findings и выводит секцию «Changed tool definitions» (rug-pull/drift). Внутренний механизм уже есть в test/fixtures/real/baseline-findings.json и real-servers.test.ts — вынести его в CLI. Опция `--diff-only`.",
+        "why_market": "OpenAI теперь ежедневно пересканирует и держит изменённые tool-ы (held update), Claude автоматически сканирует Community-листинги — авторам нужен тот же diff до деплоя. Baseline есть у mcplint, conformance (--expected-failures), agentseal, mcpseal, RugSnare.",
+        "effort": "M",
+        "priority": "P0",
+        "sources": [
+          "https://developers.openai.com/apps-sdk/deploy/app-review",
+          "https://docs.rs/crate/mcplint/latest",
+          "https://pypi.org/project/mcpseal/",
+          "https://github.com/modelcontextprotocol/conformance"
+        ]
+      },
+      {
+        "title": "Программный API и JSON Schema отчёта",
+        "description": "Добавить в package.json `exports` с `./dist/index.js` и типами: `check(target, options): Promise<Report>`, `runRules(snapshot)`, `renderJson/renderSarif`, экспорт типов Finding/Report/Snapshot. Сейчас `main` указывает на dist/cli.js, `exports`/`types` нет, наружу торчит только `runCli(argv)` со строковым stdout. Опубликовать `schemas/report-v1.schema.json` (schemaVersion 1 уже есть) и валидировать его в тестах; ссылку в README.",
+        "why_market": "Cisco (SDK), Red Hat mcp-validation (Python lib), mcplint — все встраиваются в чужие пайплайны; MCPJam/sunpeak могли бы вызывать нас как библиотеку. JSON Schema нужен для дашбордов и issue-форм, которые уже просят JSON-отчёт.",
+        "effort": "M",
+        "priority": "P0",
+        "sources": [
+          "https://github.com/cisco-ai-defense/mcp-scanner",
+          "https://github.com/RHEcosystemAppEng/mcp-validation"
+        ]
+      },
+      {
+        "title": "Конфиг-файл .mcp-review-check.json (policy-as-code)",
+        "description": "Поиск `.mcp-review-check.json` / ключ `mcp-review-check` в package.json: target, failOn, failOnSpec, ignore[], headers (значения только как `${env:NAME}`), toolArgs, timeout, maxDuration, local, baseline, sarifLocation, serverJson. Приоритет: CLI > конфиг. `--config <path>`, `--no-config`. Опубликовать JSON Schema конфига для автодополнения в IDE. Все `--ignore` и правила per-rule severity override (`rules: {\"TOOL-008\": \"off\"}`) — тоже сюда.",
+        "why_market": "mcplint (.mcplint.toml), mcp-validation (--config, profiles), eslint-подобные ожидания у Node-аудитории; длинные командные строки в CI-рецептах README плохо переносятся между репо.",
+        "effort": "S",
+        "priority": "P1",
+        "sources": [
+          "https://docs.rs/crate/mcplint/latest",
+          "https://github.com/RHEcosystemAppEng/mcp-validation"
+        ]
+      },
+      {
+        "title": "Оффлайн/статический режим: линт сохранённого снапшота или tools/list JSON",
+        "description": "`mcp-review-check --from-json tools.json` (массив tools или объект {tools,resources,prompts,serverInfo,capabilities}) и `--from-report report.json` (переиграть правила по снапшоту из нашего JSON-отчёта). Правила уже чистые функции над Snapshot, нужен только загрузчик и пометка «deploy/wire checks skipped». Заодно `--save-snapshot` для воспроизведения false positives, которые issue-форма просит присылать.",
+        "why_market": "Cisco `static` режим и air-gapped CI; воспроизводимость багрепортов; возможность линтить tools/list, сгенерированный из кода на этапе сборки без запуска сервера.",
+        "effort": "S",
+        "priority": "P1",
+        "sources": [
+          "https://github.com/cisco-ai-defense/mcp-scanner"
+        ]
+      },
+      {
+        "title": "Линт server.json официального MCP Registry с кросс-проверкой живого сервера",
+        "description": "`--server-json server.json`: валидация по схеме https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json (Ajv уже в зависимостях), remotes[] — массив объектов с type; `remotes[].url` (после подстановки variables) должен совпадать с проверяемым URL; `type: sse` → warning (deprecated); name/title/version vs serverInfo; headers[].isSecret для секретно-выглядящих имён; version != \"latest\"; URL публично достижим. Новая категория REG-*.",
+        "why_market": "543 из 50 000 манифестов нарушают схему; `mcp-publisher validate` требует сеть и не сверяет с сервером; GitHub MCP Registry и большинство листингов краулят официальный реестр, так что server.json — обязательный шаг дистрибуции.",
+        "effort": "M",
+        "priority": "P1",
+        "sources": [
+          "https://modelcontextprotocol.io/registry/remote-servers",
+          "https://github.com/modelcontextprotocol/registry/discussions/635",
+          "https://dev.to/baobabcat/i-scanned-50000-mcp-server-manifests-543-violate-the-registrys-own-schema-heres-the-data-d63"
+        ]
+      },
+      {
+        "title": "Автоматизировать листинг-манифесты: Claude plugin.json/.mcp.json и ChatGPT plugin package (mcp.json)",
+        "description": "README сам признаёт «Listing and plugin manifests are not linted yet». Claude: `--plugin-dir ./plugin` — наличие .claude-plugin/plugin.json, name regex ≤64 lowercase, README ≥40 слов, LICENSE или license, пины `npx pkg@x.y.z`/`uvx pkg==x.y.z` (не @latest), .mcp.json валиден, remote url https/wss или ${user_config.KEY}, нет секретов в headers, нет .npmrc при launcher, нет .mcpb/.dxt. ChatGPT: `--openai-manifest mcp.json` — displayName ≤30, shortDescription ≤30, longDescription ≤4000, 4 обязательных HTTPS URL ≤1024 без credentials, defaultPrompt ≤3×128 без @mentions, brandColor контраст ≥2:1 к #fff и #212121, ровно 5 позитивных и 3 негативных тест-кейса с tools_triggered, существующими в tools/list, нет clientSecret/test_credentials/reviewer_instructions/hooks. Переводит MAN-002, MAN-015..MAN-024 из manual в automated.",
+        "why_market": "Локальные серверы теперь попадают в Claude directory только внутри plugin, портал валидирует именно эти пункты; у OpenAI сабмит — ZIP с mcp.json, и каждая ошибка стоит цикла ревью. `claude plugin validate` проверяет только синтаксис, не правила директории.",
+        "effort": "M",
+        "priority": "P1",
+        "sources": [
+          "https://claude.com/docs/plugins/pre-submission-checklist",
+          "https://claude.com/docs/connectors/building/submission",
+          "https://developers.openai.com/apps-sdk/deploy/submission"
+        ]
+      },
+      {
+        "title": "MCP-сервер-обёртка линтера и Claude Code plugin «review-and-fix»",
+        "description": "`mcp-review-check serve` — stdio MCP-сервер с tool-ами `review_server(url|stdio, target)` (readOnlyHint:true, возвращает JSON-отчёт + structuredContent по нашей JSON Schema), `explain_rule(id)`, `list_rules(prefix)`. Плюс .claude-plugin с SKILL.md «запусти проверку, по fix-сниппетам поправь аннотации/title/CSP в коде, перезапусти». Сервер сам должен проходить собственный линт (dogfooding в тестах).",
+        "why_market": "connector-preflight уже даёт Claude Code plugin; Cisco даёт REST API; агентные IDE — основной способ, которым авторы правят MCP-серверы. Хороший маркетинг: «линтер, который Claude запускает сам».",
+        "effort": "M",
+        "priority": "P1",
+        "sources": [
+          "https://github.com/PressoNetwork/connector-preflight",
+          "https://github.com/cisco-ai-defense/mcp-scanner"
+        ]
+      },
+      {
+        "title": "Новые SPEC-правила 2026-07-28: deprecated features, serverInfo в _meta, extensions/tasks, subscriptions/listen",
+        "description": "(1) SPEC: сервер объявляет deprecated capability (`sampling`, `roots`, `logging`, HTTP+SSE как единственный транспорт, DCR без CIMD) → spec:info/warning со ссылкой на deprecated registry (SEP-2577/2596; у нас SRV-015 говорит только «Claude не поддерживает», без deprecation). (2) Результаты modern-сервера без `_meta[\"io.modelcontextprotocol/serverInfo\"]` → spec:info (SHOULD). (3) `capabilities.extensions` — валидный объект, ключи по формату `_meta`, `io.modelcontextprotocol/tasks` без tasks/get|update|cancel → error. (4) GET на эндпоинт у modern-only сервера допустим только как subscriptions/listen — уточнить SPEC-005. (5) `includeContext: thisServer|allServers` в описаниях/примерах sampling → deprecated. Также AUTH: авторизационный сервер объявляет `registration_endpoint` без `client_id_metadata_document_supported` → info «DCR deprecated; add CIMD; Claude needs both `client_id_metadata_document_supported: true` и `none` в token_endpoint_auth_methods_supported» — проверить, что AUTH-012 уже формулирует именно это условие.",
+        "why_market": "mcp-spec-check продаёт именно `deprecated-features` как отдельную проверку; 90,8% серверов реестра не готовы к 2026-07-28 — спрос на миграционный чеклист высокий.",
+        "effort": "M",
+        "priority": "P1",
+        "sources": [
+          "https://modelcontextprotocol.io/specification/2026-07-28/changelog",
+          "https://github.com/Roee-Tsur/mcp-spec-check",
+          "https://claude.com/docs/connectors/building/authentication"
+        ]
+      },
+      {
+        "title": "Правила под Claude static_headers (beta) и per-customer URL pattern",
+        "description": "(1) Если сервер не отдаёт 401 и запущен с `--header X: …`, проверить имя заголовка: `authorization`, `x-api-key`, `x-auth-token` проходят без согласования, иное имя → claude:info «Anthropic must approve the header name (mcp-review@anthropic.com)». (2) Запрос без заголовка должен давать 401/403, а не 200 с данными (расширение AUTH-003 на static-credential серверы). (3) `--url-pattern '^https://[a-z0-9-]+\\.mcp\\.example\\.com/mcp$'`: якоря ^$, хост в нижнем регистре, проверяемый URL матчится; аналогично OpenAI template URL `{name}` (имя с буквы, уникально, example URL совпадает после подстановки). (4) Info: листинг с Multiple URLs/URL pattern публикуется только после Verified.",
+        "why_market": "Новые режимы аутентификации и per-customer URL появились в документации Claude в 2026 и не покрыты ни одним конкурентом.",
+        "effort": "S",
+        "priority": "P1",
+        "sources": [
+          "https://claude.com/docs/connectors/building/authentication",
+          "https://developers.openai.com/apps-sdk/deploy/app-review"
+        ]
+      },
+      {
+        "title": "Обновить раздел «Compared with other tools» и добавить ChatGPT-терминологию",
+        "description": "Таблица датирована 2026-10-23 и упоминает только Inspector, conformance, Snyk. Добавить connector-preflight, mcp-spec-check, Cisco MCP Scanner, mcplint, AgentSeal, MCPJam, mcp-quality с честным «что берут у них». Везде в README/правилах OpenAI теперь называет сабмиты «plugins» в Apps SDK (developers.openai.com/apps-sdk/*) — проверить ссылки на /plugins/* на редиректы и дату.",
+        "why_market": "Пользователь выбирает между 5–6 инструментами одной командой; актуальное сравнение — SEO и доверие.",
+        "effort": "S",
+        "priority": "P1",
+        "sources": [
+          "https://github.com/PressoNetwork/connector-preflight",
+          "https://github.com/Roee-Tsur/mcp-spec-check",
+          "https://github.com/cisco-ai-defense/mcp-scanner",
+          "https://developers.openai.com/apps-sdk/app-developer-guidelines"
+        ]
+      },
+      {
+        "title": "Правила «качество листинга» под Glama/Smithery (--target listings или категория LST)",
+        "description": "info/warning-правила без влияния на directory verdict: outputSchema отсутствует у не-UI tool-а (Smithery ≈ ¼ секции capability); параметр без description как warning (сейчас TOOL-009 info); число tool-ов > ~30 (Glama даёт 1/5 за 122) и перекрывающиеся tool-ы (одинаковые описания/схемы — косинус по словам); dot-notation имена; отсутствующие serverInfo.title/websiteUrl/icons. Показывать как отдельную строку «Listing quality hints» в отчёте.",
+        "why_market": "Glama (~111k листингов) и Smithery публично ранжируют по этим признакам; авторы прямо описывают путь 83→96 баллов — готовый спрос на подсказки.",
+        "effort": "M",
+        "priority": "P2",
+        "sources": [
+          "https://dev.to/tanod/how-smithery-and-glama-score-mcp-servers-ours-went-from-83-to-96-4kfp"
+        ]
+      },
+      {
+        "title": "Опциональный LLM-судья (--judge) для описаний и соответствия аннотаций поведению",
+        "description": "Opt-in, BYO ключ (Anthropic/OpenAI/Ollama через env), только warning/info: оценка tool description по рубрике (purpose, when-to-use, limitations, side effects — пункты MCP-Desc-2 OpenAI), «readOnlyHint правдоподобен для описания?», disambiguation между tool-ами, предложенный переписанный description как fix-сниппет. Чётко отделить в отчёте (`source: llm`, не входит в score), не отправлять ничего без флага — сохраняет обещание «no telemetry».",
+        "why_market": "Cisco LLM analyzer, mcplint explain, mcp-quality Legibility, исследование arXiv 2602.14878 — рынок движется к гибриду детерминированных правил и LLM-оценки; это и путь к hosted-версии.",
+        "effort": "L",
+        "priority": "P2",
+        "sources": [
+          "https://github.com/cisco-ai-defense/mcp-scanner",
+          "https://docs.rs/crate/mcplint/latest",
+          "https://arxiv.org/html/2602.14878v1"
+        ]
+      },
+      {
+        "title": "Docker-образ ghcr.io, pre-commit hook и бейдж",
+        "description": "(1) Dockerfile на node:22-slim с глобально установленным пакетом, публикация в ghcr.io из release workflow с SBOM/provenance (actions/attest), README-рецепт `docker run --rm ghcr.io/.../mcp-review-check:0.1 <url>`. (2) `.pre-commit-hooks.yaml` (language: node) для stdio-серверов: `mcp-review-check --stdio -- node dist/server.js --quiet`. (3) `--badge badge.json` — shields.io endpoint-JSON (score/verdict) для README; опционально Markdown-строка. Бейдж без hosted-сервиса обновляется только из CI (commit или gh-pages).",
+        "why_market": "Стандартный набор дистрибуции линтера в 2026; у agentseal/Glama бейджи, у conformance Action, у mcplint CI-детект. Docker снимает вопрос версии Node в CI других экосистем.",
+        "effort": "S",
+        "priority": "P2",
+        "sources": [
+          "https://github.com/getagentseal/agentseal",
+          "https://github.com/jzubielik/grok-mcp/pull/8"
+        ]
+      },
+      {
+        "title": "--watch для локальной разработки",
+        "description": "В режиме `--stdio`/localhost: перезапуск проверки при изменении файлов в `--cwd` (fs.watch, debounce) или по интервалу для HTTP; вывод только дельты findings (появились/исчезли) поверх baseline из предыдущего прогона. Переиспользует diff-движок из идеи baseline.",
+        "why_market": "mcplint предлагает watch-mode; MCP-авторы итеративно правят аннотации/описания и хотят мгновенную обратную связь без полного отчёта.",
+        "effort": "M",
+        "priority": "P2",
+        "sources": [
+          "https://docs.rs/crate/mcplint/latest"
+        ]
+      },
+      {
+        "title": "Hosted мониторинг / scorecard по расписанию (коммерческий слой)",
+        "description": "Облачный раннер: раз в сутки проверяет зарегистрированный URL, хранит историю отчётов и baseline, шлёт алерт при новых findings, изменении tool-определений (rug-pull/drift), просадке OAuth-латентности (Claude: 10 с discovery/token, 30 с refresh) и росте ошибок — в терминах health-бейджа Claude (>2% «Worth a look», >5% «Degraded»). Публичная страница-бейдж «проверено mcp-review-check, 2026-11-01, score 92». Начать с GitHub Action по cron + issue при регрессии как MVP без сервера.",
+        "why_market": "Invokary продаёт «Connector Care» от $750/мес; Glama делает hourly health-check; обе директории непрерывно пересканируют. CTA в отчёте уже есть — это естественный следующий шаг монетизации.",
+        "effort": "L",
+        "priority": "P2",
+        "sources": [
+          "https://invokary.com/platforms/claude",
+          "https://claude.com/docs/connectors/building/managing-your-listing",
+          "https://developers.openai.com/apps-sdk/deploy/app-review"
+        ]
+      },
+      {
+        "title": "Отчёт «скан реестра» как контент-маркетинг",
+        "description": "Скриптом (есть scripts/capture-real.mjs) прогнать все публичные remotes из официального MCP Registry в read-only режиме (без --active/--active-auth, с --max-duration и rate limit), опубликовать агрегат: доля серверов без title/аннотаций, без PRM, с токеном в URL, не готовых к 2026-07-28. Только агрегаты, без имён серверов с уязвимостями (ответственное раскрытие).",
+        "why_market": "mcp-spec-check получил внимание именно через «7 850 серверов, 90,8% не готовы»; скан 50k манифестов server.json — аналогично. Это дешёвый способ показать покрытие 144 правил.",
+        "effort": "M",
+        "priority": "P2",
+        "sources": [
+          "https://github.com/Roee-Tsur/mcp-spec-check",
+          "https://dev.to/baobabcat/i-scanned-50000-mcp-server-manifests-543-violate-the-registrys-own-schema-heres-the-data-d63"
+        ]
+      },
+      {
+        "title": "Поддержка Microsoft Copilot Studio MCP certification как третьей директории",
+        "description": "Microsoft запустил MCP server certification (preview): verified publisher, контроль эндпоинта, JSON-манифест с tool definitions, auth и публичной документацией. Добавить `--target copilot` с правилами по их чеклисту после изучения страницы learn.microsoft.com/microsoft-copilot-studio/mcp-certification (не удалось открыть из текущей сети — требования нужно сверить вручную).",
+        "why_market": "Третья крупная директория с собственным ревью; движок уже per-platform. Уверенность низкая до чтения первоисточника.",
+        "effort": "L",
+        "priority": "P2",
+        "sources": [
+          "https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-certification"
+        ]
+      }
+    ],
+    "notes": "Метод: прочитаны README.md, docs/RULES.md (144 правила + MAN-001..031), CHANGELOG.md, оглавление docs/design/spec.md; grep по src/rules/* для проверки покрытия (SPEC-011..016, TOOL-021, AUTH CIMD, SRV-015/019, RT-010 request_id/trace_id, Mcp-Method missing/wrong в SPEC-014 — всё уже есть, в идеи не включено). Подтверждено отсутствие: action.yml, Dockerfile, .pre-commit-hooks.yaml, .claude-plugin, `exports`/`types` в package.json, JSON Schema отчёта, baseline/config/watch в CLI; пакет не опубликован в npm (README). Веб-источники проверены 2026-11-01: официальный changelog 2026-07-28, claude.com/docs (review-criteria, submission, authentication, plugins/pre-submission-checklist, managing-your-listing), developers.openai.com/apps-sdk (guidelines, submission, app-review), modelcontextprotocol.io/registry/remote-servers, GitHub-репозитории конкурентов. Не удалось открыть learn.microsoft.com и pypi.org (блок сети) — пункты про Copilot Studio и mcp-quality основаны на поисковых сниппетах, уверенность ниже. Аутентификационные ограничения Claude (10 с discovery/token, 30 с refresh, первый authorization_servers, 401 обязателен) уже отражены в AUTH-017/006/003 — не предлагаются повторно. Код проекта не менялся, тесты не запускались."
+  }
+}

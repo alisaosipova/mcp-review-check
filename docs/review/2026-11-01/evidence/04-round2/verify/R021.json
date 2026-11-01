@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 326,
+  "title": "Плюрализация в summary-строке: «1 errors · 1 warnings»",
+  "description": "Сводная строка при --output (cli.ts:326) и строка Score в text-отчёте (text.ts:149) всегда пишут множественное число, хотя рядом (score.ts plural, «root cause(s)») множественное число уже обрабатывается.",
+  "evidence": "Прогон runCli против локального 401-сервера (/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/s401.mjs): `Score n/a (partial check: auth-required) · 3 root causes · 2 errors · 1 warnings · 3 info`. cli.ts:326 `${s.errors} errors · ${s.warnings} warnings`.",
+  "suggested_fix": "Использовать общий helper plural() (как в score.ts:51) в cli.ts:326 и text.ts:149.",
+  "confidence": 0.95,
+  "failure_scenario": "Косметика: в каждом отчёте с одной ошибкой или одним предупреждением выводится «1 errors» или «1 warnings».",
+  "dimension": "score-gate-github-explain",
+  "id": "R021",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R021",
+      "refuted": false,
+      "confidence": 0.95,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено по коду. cli.ts:326 содержит `${s.errors} errors · ${s.warnings} warnings`, text.ts:149 содержит `${s.errors} errors · ${s.warnings} warnings` без плюрализации, хотя в той же строке text.ts:149 есть `root cause${causes === 1 ? '' : 's'}`, а в text.ts:151 `error${x.errors === 1 ? '' : 's'}`. Тест test/root-causes.test.ts:65 закрепляет формат `errors · `, но проверяет общий случай, а не намеренное «1 errors». Это чистая косметика. В known-round1 дубля нет.",
+      "repro": "src/cli.ts:326: `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ...` → при 1 ошибке выводит «1 errors».",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "src/cli.ts:326: `mcp-review-check: score ${scoreLabel(report)} · ${s.errors} errors · ${s.warnings} warnings · ...` → при 1 ошибке выводит «1 errors»."
+}

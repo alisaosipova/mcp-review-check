@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 141,
+  "title": "APPS-006: незашифрованный `ws://` в connectDomains не помечается (проверяется только `http:`)",
+  "description": "Проверка схемы — `u.protocol === 'http:'`. Запись `ws://api.example.com` (нешифрованный WebSocket на публичный хост) проходит без находки, хотя это та же проблема, что и http://.",
+  "evidence": "r2apps.out, секция `APPS-006 entries`: для `ws://api.example.com` нет ни одной строки (сравните с другими значениями того же списка).",
+  "suggested_fix": "`if ((u.protocol === 'http:' || u.protocol === 'ws:') && !isLoopbackHost(u.hostname))` → `uses ${u.protocol}//`.",
+  "confidence": 0.85,
+  "failure_scenario": "connectDomains: [\"ws://realtime.example.com\"]: виджет передаёт данные по нешифрованному каналу, а отчёт чистый.",
+  "dimension": "limits-apps",
+  "id": "R033"
+}

@@ -1,0 +1,19 @@
+{
+  "id": "F061",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r.mjs -> F061 [[\"Bearer challenge has no resource_metadata parameter\",{\"chatgpt\":\"error\",\"spec\":\"warning\"}],[\"...; Claude falls back to legacy origin discovery, which is deprecated\",{\"claude\":\"warning\"}]]",
+  "votes": [
+    {
+      "id": "F061",
+      "refuted": false,
+      "confidence": 0.9,
+      "reasoning": "Строки 80-81 актуальны: финдинг `{ platforms: ['chatgpt','spec'], message }` создаётся без severity. Движок (dist/rules/engine.js, runRules) в таком случае ставит каждой платформе severity правила, поэтому spec получает 'warning' (у правила spec=warning). А docs/design/spec.md:844 говорит «chatgpt and spec error». Тест test/rules/auth.test.ts:157 назван «chatgpt/spec errors», но проверяет только chatgpt. Итоговая severity финдинга — максимум по платформам, то есть error, поэтому расхождение для spec тест не ловит. Рядом на стр. 859 в AUTH-004 сказано «chatgpt and spec stay errors», и там у правила spec=error, всё совпадает. Расхождение между документацией и кодом подтверждено.",
+      "corrected_severity": "low",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r.mjs -> F061 [[\"Bearer challenge has no resource_metadata parameter\",{\"chatgpt\":\"error\",\"spec\":\"warning\"}],[\"...; Claude falls back to legacy origin discovery, which is deprecated\",{\"claude\":\"warning\"}]]",
+      "lens": "reader-batch"
+    }
+  ]
+}

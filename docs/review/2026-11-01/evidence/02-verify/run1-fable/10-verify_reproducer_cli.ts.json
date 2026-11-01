@@ -1,0 +1,13 @@
+{
+  "label": "verify:reproducer:cli.ts",
+  "agentId": "a6a6d3e6f9a2296d5",
+  "note": "first run, Fable 5.1 verifier; the finding text it verified is in the agent transcript (prompt), not in this file",
+  "result": {
+    "refuted": false,
+    "confidence": 0.95,
+    "corrected_severity": "low",
+    "reasoning": "Подтверждено фактическим репро на локальном echo-сервере (127.0.0.1). Причина: src/cli.ts:137-143 parseHeader не нормализует регистр имени, cli.ts:242 пишет `headers[k] = v` как есть; src/connect.ts:275 добавляет `authHeaders.authorization = \\`Bearer ${opts.bearer}\\``. Объект с ключами `Authorization` и `authorization` передаётся в `requestInit.headers` SDK-транспорта, конструктор Headers (регистронезависимый) склеивает дубликаты через запятую. Сервер получает невалидный Authorization. То же для `--header X-A --header x-a`. Severity остаётся low: требуется противоречивая комбинация флагов пользователем; результат — ложный «token-rejected (401)» и пропуск 73 правил, что заметно, но не утечка и не повреждение основного сценария при корректном вводе. Никакой ошибки/предупреждения CLI не выдаёт, поэтому пользователь не поймёт причину 401.",
+    "corrected_description": "`--header \"Authorization: Bearer AAA\" --bearer BBB` (а также дубликаты `--header X-A: one --header x-a: two`) не валидируются: parseHeader (src/cli.ts:137) сохраняет имя как введено, connect.ts:275 добавляет lower-case `authorization`, и fetch/Headers склеивает их в `Authorization: Bearer AAA, Bearer BBB` / `x-a: one, two`. Сервер отвечает 401, CLI молча трактует это как token-rejected и пропускает 73 правила без указания на конфликт флагов. Исправление: lower-case имён в parseHeader; UsageError при одновременном `--header authorization` и `--bearer`/MCP_REVIEW_CHECK_TOKEN; при повторе имени — ошибка или явное «последний выигрывает».",
+    "repro": "Echo-сервер: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/echo-server.mjs (127.0.0.1, отвечает 401, логирует заголовки).\nКоманда: node dist/cli.js http://127.0.0.1:45677/mcp --header \"Authorization: Bearer AAA\" --bearer BBB --header \"X-A: one\" --header \"x-a: two\" --timeout 3000\nСервер увидел:\n  2 POST /mcp authorization=\"Bearer AAA, Bearer BBB\" x-a=\"one, two\"\n  1 POST /mcp authorization=\"Bearer mcp-review-check-invalid-token\" x-a=undefined\nCLI вывел: \"Checked 0 tools ... 97 skipped (73 token rejected (401) ...)\" и \"Server rejected the token (401)\" — без упоминания конфликта заголовков."
+  }
+}

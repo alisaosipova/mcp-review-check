@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "docs/design/spec.md",
+  "line": 1131,
+  "title": "spec.md: несовпадения с кодом, не перечисленные в его собственном списке «Known differences»",
+  "description": "Шапка spec.md перечисляет известные расхождения, но не все: (1) таблица §3.1 говорит `--active` calls `min(timeout, 240000)`, код и README — 241000 (`MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000`); (2) §4.5 «Token-like values found by RT-010 are shown as their first 4 characters followed by …» — в README/SECURITY редакция описана как `«redacted»` целиком; (3) §3.2 exit 3 описан только как «could not connect», без `--max-duration`; (4) §8 Q3 и §2.10 упоминают флаги `--listing`/`--plugin` «planned for v1.1», которых нет в OPTIONS cli.ts; (5) §5.2 «cap of 3 per rule». Документ помечен «may differ», поэтому severity low, но список различий претендует на полноту.",
+  "evidence": "docs/design/spec.md §3.1 строка таблицы `--timeout`: «`--active` calls `min(timeout, 240000)`»; src/probe/active.ts:13 `const MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000;` при `CLAUDE_TOOL_TIMEOUT_MS = 240000` (src/rules/runtime.ts:12); `grep -oE -- '--[a-z-]+' docs/design/spec.md` содержит `--url`, `--plugin`, `--listing`, отсутствующие в src/cli.ts OPTIONS (строки 86-95).",
+  "suggested_fix": "Дополнить блок «Known differences» в шапке spec.md пунктами выше (или пометить §3, §4.5, §5.2 «superseded by README»). Для `--listing`/`--plugin` явно написать «not implemented; see roadmap».",
+  "confidence": 0.75,
+  "dimension": "docs-tests-ci",
+  "id": "F154"
+}

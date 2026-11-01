@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/report/markdown.ts",
+  "line": 19,
+  "title": "Zero-width space внутри URL/URI в markdown ломает копирование Target и resource-URI",
+  "description": "text() вставляет U+200B после ':' перед '//' и после 'www', чтобы GFM не делал автоссылку. Применяется к Target (строка 43) и к Subject (resource URI вида ui://..., https://...). Скопированный из отчёта URL содержит невидимый символ и не открывается/не совпадает при grep.",
+  "evidence": "node repro: renderMarkdown(...) => \"| Target | https:​//mcp.example.test/mcp |\" (в выводе `https:M-bM-^@M-^K//...`).",
+  "suggested_fix": "Оборачивать URL-подобные значения (Target, Subject-URI) в code span через code() — внутри кода GFM не автолинкует и не нужен U+200B; оставить U+200B только для свободного текста сообщений.",
+  "confidence": 0.75,
+  "dimension": "report-redact-engine",
+  "id": "F126"
+}

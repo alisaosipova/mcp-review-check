@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/engine.ts",
+  "line": 78,
+  "title": "Сортировка через localeCompare зависит от ICU/локали процесса — порядок находок в JSON/SARIF может различаться между машинами",
+  "description": "sortFindings использует String.prototype.localeCompare без явной локали. Порядок 'a' < 'B' (а не байтовый), и для не-ASCII имён (ä, Cyrillic) результат зависит от LANG/ICU-сборки Node. Для стабильных диффов JSON-отчётов в CI и partialFingerprints (нумерация n-го повтора зависит от порядка) лучше детерминированный компаратор. Там же в src/rules/index.ts:17 для byId задана явная локаль 'en' — непоследовательно.",
+  "evidence": "node repro: sortFindings([..tool:'b','B','a','_x']) => [ '_x', 'a', 'b', 'B' ] (ICU-порядок, не codepoint).",
+  "suggested_fix": "Заменить на компаратор по code units (`a < b ? -1 : a > b ? 1 : 0`) или `localeCompare(b, 'en')` везде.",
+  "confidence": 0.7,
+  "dimension": "report-redact-engine",
+  "id": "F125"
+}

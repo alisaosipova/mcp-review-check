@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 352,
+  "title": "isMain ложен при запуске без расширения (`node dist/cli`): CLI молча ничего не делает и выходит с 0",
+  "description": "Node при запуске резолвит `dist/cli` в dist/cli.js, но process.argv[1] остаётся '/…/dist/cli'. realpathSync такого пути бросает ENOENT, catch возвращает false, и runCli не вызывается. Процесс завершается с кодом 0 без вывода, и CI воспринимает это как успешную проверку.",
+  "evidence": "`node dist/cli --version` ничего не выводит, exit=0. `node dist/cli.js --version` выводит 0.1.0. Через симлинк без расширения работает (realpath разрешает симлинк).",
+  "suggested_fix": "Сравнивать через `import.meta.url === pathToFileURL(realpathSync(...)).href` с фолбэком: при ошибке realpath пробовать argv[1] + '.js'. Ещё лучше вынести запуск в отдельный bin-файл без проверки isMain (например dist/bin.js вызывает runCli).",
+  "confidence": 0.85,
+  "failure_scenario": "Скрипт CI `node node_modules/mcp-review-check/dist/cli https://… --fail-on error` всегда «проходит» с exit 0, проверка фактически не выполняется.",
+  "dimension": "deadline-signals",
+  "id": "R005",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R005",
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "reasoning": "Воспроизведено. `node dist/cli --version` ничего не выводит и завершается с exit=0, а `node dist/cli.js --version` выводит 0.1.0. В isMain (cli.ts:352) realpathSync('…/dist/cli') бросает ENOENT, catch возвращает false, runCli не вызывается. Severity low: package.json bin и main указывают на dist/cli.js, и через npx, bin-симлинк или полный путь всё работает. Сбой только при ручном вызове без расширения, зато он тихий (exit 0), и CI может принять его за успешную проверку.",
+      "repro": "$ node dist/cli --version; echo exit=$?\nexit=0\n$ node dist/cli.js --version\n0.1.0",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "$ node dist/cli --version; echo exit=$?\nexit=0\n$ node dist/cli.js --version\n0.1.0"
+}

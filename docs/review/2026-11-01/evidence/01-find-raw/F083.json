@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/policy.ts",
+  "line": 23,
+  "title": "POL-001: MONEY_NAME матчится как подстрока сырого имени — bestsellers/stakeholders/send_email",
+  "description": "`MONEY_NAME.test(name)` без границ слов: `sell` в `get_bestsellers`, `stake` в `list_stakeholders`, `send` в `send_email`. Вторая проверка MONEY_WORDS легко проходит на словах `stock`, `shares`, `bank` в описании. Результат — warning «money transfer» на инструментах каталога/CRM.",
+  "evidence": "POL_001.check: get_bestsellers ('...currently in stock'), list_stakeholders ('...their shares of the budget'), send_email ('...mention the bank holiday') → 3 находки 'looks like a money or asset transfer'.",
+  "suggested_fix": "Сопоставлять по токенам имени: `tokenize(name).some(t => MONEY_VERBS.has(t))` (есть `tokenize` в util/text.ts) вместо подстрочного regex; для `send`/`pay` требовать денежный объект в том же токен-окне.",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F083"
+}

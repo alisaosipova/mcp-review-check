@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "README.md",
+  "line": 188,
+  "title": "Рыночные возможности: GitHub Action, baseline-режим, конфиг-файл, линт листингов, JUnit, OAuth-helper",
+  "description": "Исходя из README/spec: (1) нет `action.yml` — пользователи вынуждены писать `npx -y …` вручную, а SARIF-загрузка в code scanning не описана (docs.test даже запрещает упоминать upload-sarif); готовый Action с inputs `url/stdio/target/fail-on` и выводом `sarif-file` резко снижает порог. (2) `--baseline report.json` — падать только на новых находках (механика уже есть в test/real-servers.test.ts: сравнение с baseline-findings.json). (3) Конфиг `.mcp-review-check.json` (ignore, target, headers names, tool-args) вместо длинных CLI-строк в CI. (4) Линт листинга/манифеста (`--listing`, `--plugin`, spec §8 Q3) превратит 31 ручной пункт MAN-002/015–024 в автоматические проверки — главный пробел vs конкурентов из таблицы «Compared with other tools». (5) `--format junit` для GitLab/Jenkins. (6) `--oauth` (authorization-code с локальным callback или device flow) вместо ручного «Token recipe» — для OAuth-серверов это основной барьер (coverage auth-required, score n/a). (7) Третья «директория»: валидация `server.json` официального MCP Registry.",
+  "evidence": "README.md:188-228 «CI recipes» только через npx; test/docs.test.ts:69 `expect(README).not.toMatch(/upload-sarif|codeql-action/)`; test/real-servers.test.ts:28-53 baseline-сравнение; docs/design/spec.md §8 Q3 «--listing listing.json, --plugin plugin.json … planned for v1.1»; README.md:170-186 «Token recipe» (ручной curl).",
+  "suggested_fix": "Приоритет: action.yml (composite, оборачивает npx + upload SARIF) → `--baseline` → конфиг-файл → `--listing/--plugin` → `--format junit` → `--oauth`. Каждое — minor-релиз с записью в CHANGELOG.",
+  "confidence": 0.6,
+  "dimension": "docs-tests-ci",
+  "id": "F168"
+}

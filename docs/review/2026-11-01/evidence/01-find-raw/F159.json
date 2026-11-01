@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": ".github/workflows/ci.yml",
+  "line": 13,
+  "title": "cancel-in-progress: true для всех ref — отменяет и запуски на main; npm audit в PR-CI делает сборку красной от чужих advisories",
+  "description": "`concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }` при двух быстрых push в main отменяет CI первого коммита — в истории main остаются коммиты без завершённого прогона (release.yml не зависит от него, но «зелёный main» теряется). Отдельно: шаг `npm audit --omit=dev --audit-level=high` в package-job зависит от сети и от появления advisory в зависимостях (zod/ajv/sdk) — PR без изменений кода внезапно краснеет; это задача Dependabot security updates/scheduled workflow. Также в проекте нет ни одного линтера/форматтера (eslint/biome/prettier отсутствуют в devDependencies), стиль держится на ревью.",
+  "evidence": ".github/workflows/ci.yml:13-15 `concurrency:\\n  group: ci-${{ github.ref }}\\n  cancel-in-progress: true`; :61 `run: npm audit --omit=dev --audit-level=high`; package.json devDependencies: только @types/node, typescript, vitest.",
+  "suggested_fix": "`cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. Перенести npm audit в `schedule: cron` workflow (или `continue-on-error: true` в PR). Добавить biome/eslint с `npm run lint` в CI.",
+  "confidence": 0.7,
+  "dimension": "docs-tests-ci",
+  "id": "F159"
+}

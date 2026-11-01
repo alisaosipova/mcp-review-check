@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/json.ts",
+  "line": 23,
+  "title": "JSON server.command склеивает argv пробелами — необратимо для аргументов с пробелами",
+  "description": "`[command, ...args].join(' ')` теряет границы аргументов; targetLabel для stdio делает то же (index.ts:64) и попадает в SARIF properties.target. Потребитель JSON не сможет восстановить команду. Для перезапуска есть cmdQuote в src/protocol/stdioArgs.ts, но тут не используется.",
+  "evidence": "node repro: toJson(r).server.command => 'node srv.js a b --flag=x y' для args ['srv.js','a b','--flag=x y'].",
+  "suggested_fix": "Добавить в JSON `server.argv: string[]` (и оставить command как display через cmdQuote). Поскольку это добавление поля, JSON_SCHEMA_VERSION можно не поднимать.",
+  "confidence": 0.8,
+  "dimension": "report-redact-engine",
+  "id": "F128"
+}

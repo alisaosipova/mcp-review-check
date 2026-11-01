@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "tsconfig.json",
+  "line": 5,
+  "title": "lib: DOM ради типов fetch втягивает все браузерные глобалы в Node-код",
+  "description": "`\"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"]` добавляет глобалы `name`, `location`, `close`, `open`, `status`, `event` и т.д. Опечатка вроде `name` вместо `toolName` компилируется молча (`string`). @types/node 20.x уже даёт типы `fetch`/`Response`/`Headers`/`AbortSignal.timeout` через undici-types; spec.md §4.4 называл DOM лишь запасным вариантом («If fetch types are missing…»).",
+  "evidence": "tsconfig.json:5 `\"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"]`; docs/design/spec.md §4.4 «If fetch types are missing, add lib: [\"ES2022\",\"DOM\"]. Verify this in milestone M0.» Не проверял typecheck без DOM (возможны точечные ошибки типов в src/probe/network.ts или rules/util/html.ts).",
+  "suggested_fix": "Убрать DOM/DOM.Iterable, прогнать `npm run typecheck`; недостающие типы (например `RequestInit`) брать из `undici-types` или `node:` глобалов. Если без DOM не собирается — зафиксировать причину комментарием в tsconfig.",
+  "confidence": 0.5,
+  "dimension": "docs-tests-ci",
+  "id": "F155"
+}

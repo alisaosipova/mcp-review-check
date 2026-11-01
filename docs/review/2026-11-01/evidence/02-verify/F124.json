@@ -1,0 +1,20 @@
+{
+  "id": "F124",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "В runRules (src/rules/engine.ts:108-113) исключение правила превращается в INTERNAL-находку только при applies=true. Правило вне --target всё равно выполняется ради score, и если оно бросает исключение, ошибка теряется молча: в skipped остаётся только 'not applicable to --target X'. Это расходится с spec §4.2, где INTERNAL обещан для любого исключения. Score от target не зависит: правило бросает исключение при любом target, и его находки выпадают из scored в обоих случаях. Но при узком --target пользователь не видит, что score занижен из-за внутренней ошибки, а не из-за чистоты сервера.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f124.mjs (правило XX-002 с severity {chatgpt:'error'}, check бросает Error('boom'), против dist/rules/engine.js):\nclaude {\"findings\":[],\"skipped\":[{\"ruleId\":\"XX-002\",\"reason\":\"not applicable to --target claude\"}],\"scored\":0}\nall {\"findings\":[\"XX-002 threw: boom\"],\"skipped\":[],\"scored\":0}",
+  "votes": [
+    {
+      "id": "F124",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Строка 109 актуальна: в src/rules/engine.ts:106-113 catch добавляет INTERNAL-находку только при `if (applies)`. При этом правило вне --target всё равно выполняется ради score (комментарий в строке 96, строки 98-107). Выше по стеку исключение никто не обрабатывает, потому что runRules ловит его сам. В skipped попадает только 'not applicable to --target X', про исключение там ничего нет. Спека (docs/design/spec.md §4.2, строка ~1291) требует без оговорок: engine «catches exceptions thrown by a rule and turns them into an INTERNAL info finding», исключения для правил вне target там нет. test/engine.test.ts:29-31 проверяет INTERNAL только для активного target, так что намеренность подавления тестом не подтверждается. Одну часть описания стоит уточнить. «score считается без этого правила» верно, но это не зависит от target: при --target all правило тоже бросает исключение и тоже ничего не даёт в scored (INTERNAL в scored не пишется ни в одной ветке). Значит, score при claude и при all одинаков, а реальный дефект только в диагностике: при узком --target сбой правила ничем не виден. Severity low.",
+      "corrected_description": "В runRules (src/rules/engine.ts:108-113) исключение правила превращается в INTERNAL-находку только при applies=true. Правило вне --target всё равно выполняется ради score, и если оно бросает исключение, ошибка теряется молча: в skipped остаётся только 'not applicable to --target X'. Это расходится с spec §4.2, где INTERNAL обещан для любого исключения. Score от target не зависит: правило бросает исключение при любом target, и его находки выпадают из scored в обоих случаях. Но при узком --target пользователь не видит, что score занижен из-за внутренней ошибки, а не из-за чистоты сервера.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f124.mjs (правило XX-002 с severity {chatgpt:'error'}, check бросает Error('boom'), против dist/rules/engine.js):\nclaude {\"findings\":[],\"skipped\":[{\"ruleId\":\"XX-002\",\"reason\":\"not applicable to --target claude\"}],\"scored\":0}\nall {\"findings\":[\"XX-002 threw: boom\"],\"skipped\":[],\"scored\":0}",
+      "lens": "reader-batch"
+    }
+  ]
+}

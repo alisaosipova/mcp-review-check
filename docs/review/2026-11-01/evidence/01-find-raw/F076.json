@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/rules/tools.ts",
+  "line": 28,
+  "title": "Нет платформенного правила на точку `.` и символы имени для Claude/OpenAI (API обоих вендоров принимают только `[a-zA-Z0-9_-]`)",
+  "description": "TOOL-001 разрешает `.` по MCP-спеке (spec warning), но API Anthropic (tool `name` pattern `^[a-zA-Z0-9_-]{1,64}$`) и OpenAI function calling (`^[a-zA-Z0-9_-]+$`, ≤64) не принимают точки — хосты либо переименовывают инструмент, либо отклоняют. Инструмент `notes.search_v2-beta` в тестах считается «негативным» (чистым) кейсом. Для целевого рынка (прохождение ревью директорий) это заметный пропуск: linter молчит, а сабмишен падает. Также нет chatgpt-варианта лимита 64 (только claude в TOOL-002).",
+  "evidence": "test/rules/tools.test.ts:15 neg: 'notes.search_v2-beta'; src/rules/tools.ts:45-50 TOOL-002 только `{ claude: 'error' }`. Паттерны вендорских API — по памяти, нужна сверка с актуальной документацией Anthropic Messages API и OpenAI function tools.",
+  "suggested_fix": "Добавить правило (например TOOL-033) `claude: error, chatgpt: error`: имя не матчит `^[A-Za-z0-9_-]{1,64}$` (с перечислением символов), и расширить TOOL-002 на chatgpt. Проверить лимиты по официальным ссылкам и указать их в sources.",
+  "confidence": 0.6,
+  "dimension": "rules-tools-schema",
+  "id": "F076"
+}

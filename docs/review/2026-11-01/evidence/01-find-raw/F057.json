@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/auth.ts",
+  "line": 210,
+  "title": "AUTH-006 валидирует только authorization_servers[0], хотя ChatGPT-правила опрашивают до 3 серверов",
+  "description": "Нестроковые/http-записи [1..2] отбрасываются молча (probe/auth.ts:100 `.filter(isStr)`), а AUTH-007/008/009… для них помечаются платформой chatgpt. Пользователь не узнаёт, что вторая запись невалидна.",
+  "evidence": "Код: `const first = list[0]; let bad = !isStr(first) || !httpsOrLocal(snap, first);` — остальные элементы не проверяются; comment в форматировании forEachAs говорит «[1..2] for ChatGPT only».",
+  "suggested_fix": "Пройти по `list.slice(0,3)`, для i>0 выдавать `platforms:['chatgpt']` с тем же сообщением и индексом.",
+  "confidence": 0.8,
+  "dimension": "rules-server-spec-auth",
+  "id": "F057"
+}

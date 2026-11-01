@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/cli.ts",
+  "line": 267,
+  "title": "URL с userinfo (https://user:pass@host/mcp) принимается, но fetch его отвергает — всегда exit 3 с невнятной причиной",
+  "description": "undici fetch не умеет URL с credentials; каждый запрос падает TypeError «Request cannot be constructed from a URL that includes credentials», SDK-коннект ретраится как сетевой сбой, итог — connect-failed/exit 3. При этом redact.ts/urlSecrets и shownUrl специально обрабатывают userinfo, т.е. такой ввод считается ожидаемым, но проверить сервер с Basic-auth невозможно.",
+  "evidence": "`node dist/cli.js 'http://user:pass@127.0.0.1:9/mcp' --format json --timeout 3000` -> exit=3, coverage.reason = `Request cannot be constructed from a URL that includes credentials: http://«redacted»:«redacted»@127.0.0.1:9/mcp`. (Порт 9 закрыт, но причина — не ECONNREFUSED, а TypeError до коннекта.)",
+  "suggested_fix": "В cli.ts: если `u.username || u.password` — либо UsageError с подсказкой `--header \"Authorization: Basic <b64>\"`, либо автоматически вырезать userinfo из URL и добавить заголовок Authorization: Basic (с редакцией). Сохранить urlAsEntered для правил.",
+  "confidence": 0.85,
+  "dimension": "cli-connect",
+  "id": "F003"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 125,
+  "title": "Число resources/read для ui:// не ограничено; каждое чтение до 64 МБ удерживается до capSnapshot",
+  "description": "readUiResources собирает все ui:// URI из tools и resources (их число не ограничено, см. также пункт про размер листинга) и последовательно читает каждый. Результат (`raw`, до 64 МБ для modern и без лимита для SDK) складывается в snap.resourceReads; HTML_CAP 2 МБ применяется только в capSnapshot после завершения всех чтений и после redactDeep-копии. 1000 ui:// ресурсов × 64 МБ = OOM; также это 1000 сетевых запросов без общего бюджета (при отсутствии --max-duration).",
+  "evidence": "connect.ts:126-133: `const uris = new Set<string>(); for (const t of snap.tools) …uris.add(u); for (const r of snap.resources) …; for (const uri of uris) { const r = await read(uri); snap.resourceReads[uri] = {...} }` — нет slice/лимита. limits.ts:715-728 режет c.text/c.blob уже после.",
+  "suggested_fix": "Ограничить число читаемых UI-ресурсов (например 25, остальное — в snap.limits.truncated с заметкой в отчёте) и общий байтовый бюджет; резать text/blob до HTML_CAP сразу в reader'е, а не в capSnapshot.",
+  "confidence": 0.8,
+  "dimension": "security-lens",
+  "id": "F139"
+}

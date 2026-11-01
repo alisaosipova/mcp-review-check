@@ -1,0 +1,19 @@
+{
+  "id": "F005",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f005.mjs (http-сервер на 127.0.0.1, отвечает 401 и логирует req.headers.authorization; runCli([url,'--header','Authorization: Bearer AAA','--bearer','BBB','--format','json'])) -> exit 1 auth values seen: [ 'undefined', 'Bearer AAA, Bearer BBB', 'Bearer mcp-review-check-invalid-token' ]",
+  "votes": [
+    {
+      "id": "F005",
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "reasoning": "parseHeader (cli.ts:137-144) сохраняет имя заголовка как введено, без нормализации регистра; cli.ts:242 `headers[k] = v`. В connect.ts:274-275 authHeaders = {...headers} и затем `authHeaders.authorization = Bearer ...` — получаются два ключа, различающихся регистром. Дальше они уходят в ModernClient (modern.ts:70) и в SDK-транспорт (`requestInit.headers`) и попадают в fetch. При построении Headers из объекта дубликаты склеиваются через запятую. Ни выше, ни ниже по стеку это не обрабатывается. В spec.md:1127/1170 сказано только, что «bearer plus --header values» передаются вместе; конфликт не оговорён и тестов на это намеренное поведение нет. Строка 241 актуальна (объявление headers, присваивание на 242). Репро против локального эхо-сервера подтверждает. Последствие ограничено: это ошибка пользователя (задал два источника токена), а результат — ложный 401 / token-rejected, так что low корректно.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f005.mjs (http-сервер на 127.0.0.1, отвечает 401 и логирует req.headers.authorization; runCli([url,'--header','Authorization: Bearer AAA','--bearer','BBB','--format','json'])) -> exit 1 auth values seen: [ 'undefined', 'Bearer AAA, Bearer BBB', 'Bearer mcp-review-check-invalid-token' ]",
+      "lens": "reader-batch"
+    }
+  ]
+}

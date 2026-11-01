@@ -1,0 +1,20 @@
+{
+  "id": "F070",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "TOOL-019 (src/rules/schema.ts:177-180): локальной считается только ссылка на корневой `$id`. Если `$ref` указывает на `$id` вложенного ресурса внутри `$defs` (например `urn:acme:addr`), правило выдаёт warning «$ref points outside the document», хотя ссылка резолвится внутри документа. Это расходится с docs/design/spec.md («resolves (against $id) to an absolute URI outside the document»). На практике в MCP-схемах такое встречается редко. Вторая часть, где относительный ref без корневого `$id` пропускается молча, — это не баг по spec: такой ref не резолвится в абсолютный URI. Это скорее предложение по улучшению.",
+  "repro": "TOOL-019 {properties:{a:{$ref:'urn:acme:addr'}},$defs:{Addr:{$id:'urn:acme:addr',type:'string'}}} -> [[\"inputSchema/properties/a\",\"$ref points outside the document: urn:acme:addr\"]]\nTOOL-019 {properties:{a:{$ref:'other.json'}}} -> []",
+  "votes": [
+    {
+      "id": "F070",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "corrected_description": "TOOL-019 (src/rules/schema.ts:177-180): локальной считается только ссылка на корневой `$id`. Если `$ref` указывает на `$id` вложенного ресурса внутри `$defs` (например `urn:acme:addr`), правило выдаёт warning «$ref points outside the document», хотя ссылка резолвится внутри документа. Это расходится с docs/design/spec.md («resolves (against $id) to an absolute URI outside the document»). На практике в MCP-схемах такое встречается редко. Вторая часть, где относительный ref без корневого `$id` пропускается молча, — это не баг по spec: такой ref не резолвится в абсолютный URI. Это скорее предложение по улучшению.",
+      "reasoning": "Строки актуальны, ссылка при этом URL-конструктор на 177, сам push на 180. В test/rules/tools.test.ts для TOOL-019 есть только pos (https-ref) и neg (#/$defs), про embedded $id тестов нет, так что поведение не задумано явно. Spec-формулировка 'outside the document' поддерживает finding. Репро на dist подтверждает. Пропуск относительного ref тоже подтверждён (возвращается []), но spec требует абсолютный URI, поэтому это не нарушение.",
+      "repro": "TOOL-019 {properties:{a:{$ref:'urn:acme:addr'}},$defs:{Addr:{$id:'urn:acme:addr',type:'string'}}} -> [[\"inputSchema/properties/a\",\"$ref points outside the document: urn:acme:addr\"]]\nTOOL-019 {properties:{a:{$ref:'other.json'}}} -> []",
+      "lens": "reader-batch"
+    }
+  ]
+}

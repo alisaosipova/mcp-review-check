@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 221,
+  "title": "INJ-006 паттерн 2: «rather than the default full web page» — не стиринг",
+  "description": "`(instead of|rather than)[^.]{0,40}(other|built-?in|default|any)[^.]{0,20}(tools?|search|web|plugins?)` ловит `default … web` в описании формата результата.",
+  "evidence": "INJ_006.check для 'Returns a compact summary rather than the default full web page.' → evidence 'rather than the default full web'.",
+  "suggested_fix": "Заменить `web` на `web search|browsing|browser` и требовать глагол использования перед конструкцией: `\\b(use|call|prefer)\\b[^.]{0,40}(instead of|rather than)`.",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F111"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/schema.ts",
+  "line": 24,
+  "title": "TOOL-017 с `strict:false` не ловит типовые ошибки схем, которые ломают хосты: неизвестные ключевые слова/опечатки (`require`, `propeties`), `format` неизвестного типа, `required` с несуществующими свойствами",
+  "description": "Мета-схема пропускает опечатки в ключевых словах (они просто игнорируются), `required: ['foo']` без `properties.foo`, неизвестные `format`. Для сабмита в директории это частые реальные дефекты (генерация схем руками/LLM), а линтер молчит. Также TOOL-020 оценивает только inputSchema, не outputSchema.",
+  "evidence": "src/rules/schema.ts:24 `AJV_OPTS = { strict: false, ... }`; TOOL-020 (schema.ts:196) `schemaMetrics(t.inputSchema)` без outputSchema.",
+  "suggested_fix": "Добавить info-правило: `required` ссылается на отсутствующие свойства (кроме схем с additionalProperties/patternProperties); опечатки известных ключевых слов по расстоянию Левенштейна ≤1 (`require`, `propeties`, `additionalProperty`); неизвестный `format` вне списка JSON Schema/OpenAPI. Прогонять TOOL-020 и для outputSchema.",
+  "confidence": 0.6,
+  "dimension": "rules-tools-schema",
+  "id": "F079"
+}

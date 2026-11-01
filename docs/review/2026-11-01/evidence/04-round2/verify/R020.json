@@ -1,0 +1,28 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 282,
+  "title": "--ignore повышает score, а README говорит только об исключении из exit code",
+  "description": "engine исключает ignored-находки из scored, поэтому `--ignore` поднимает score: при всех находках в ignore получается 100/100 и NO AUTOMATED BLOCKERS. В README:282 сказано только, что --ignore «drops it from the exit code (it stays in JSON under ignored)». В описании score (README:158) он назван «one number per server», хотя число зависит от CLI-флагов. Для сравнения score между прогонами или публикации бейджа это важно.",
+  "evidence": "gate.out, случай 3: правило X-3 claude=error с `--ignore X-3` → `PASS (--fail-on error) 100/100`, verdicts NO AUTOMATED BLOCKERS. engine.ts:126 `if (!ignore.has(rule.id)) scored.push(finding);`.",
+  "suggested_fix": "В README (score и FAQ) указать: «ignored rules are left out of the score too». Опционально помечать score при непустом ignored (например, «87/100 (2 rules ignored)»).",
+  "confidence": 0.7,
+  "failure_scenario": "Команда сравнивает score двух серверов, не зная, что у одного из них в CI стоит --ignore на 5 правил.",
+  "dimension": "score-gate-github-explain",
+  "id": "R020",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R020",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено как пробел в документации, хотя само поведение намеренное. src/rules/engine.ts:126 `if (!ignore.has(rule.id)) scored.push(finding);`. Тест test/report.test.ts:126 называется 'buildReport scores every platform whatever --target (deepwiki-like: one score); ignored rules do not count', то есть исключение ignored из score задумано. Но в README это не отражено: README.md:88 и :282 говорят только о JSON `ignored` и exit code, а README.md:158 подчёркивает «The score is one number per server: it counts the findings of every platform whatever --target». Это создаёт впечатление, что score не зависит от флагов запуска. Spec (docs/design/spec.md) и RULES.md про взаимодействие ignore и score ничего не говорят. От F129 (rootCauses нет в JSON) и F124 (исключение в правиле вне target) находка отличается.",
+      "corrected_description": "Ignored-находки намеренно исключаются из score (engine.ts:126, тест report.test.ts:126), поэтому --ignore повышает score вплоть до 100/100. README (строки 88, 282 и описание score на строке 158, где score назван «one number per server ... whatever --target») об этом не говорит, и score выглядит независимым от флагов запуска.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "Ignored-находки намеренно исключаются из score (engine.ts:126, тест report.test.ts:126), поэтому --ignore повышает score вплоть до 100/100. README (строки 88, 282 и описание score на строке 158, где score назван «one number per server ... whatever --target») об этом не говорит, и score выглядит независимым от флагов запуска."
+}

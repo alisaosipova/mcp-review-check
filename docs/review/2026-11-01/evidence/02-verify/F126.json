@@ -1,0 +1,19 @@
+{
+  "id": "F126",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F126",
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Поведение описано верно (src/report/markdown.ts:19, text() ставит U+200B в '://' и 'www.'; применяется к Target в строке 43 и к Subject в строке 62), но оно намеренное и закреплено. 1) В doc-комментарии на строках 17-18 прямо сказано: «one inside \"://\" and \"www.\" keeps GFM from linking a bare URL». 2) В test/report.test.ts:327-337 есть отдельный тест «a bare https:// or www. URL in server text is no GFM autolink», который ожидает '| Target | stdio:node https:​//e.example/t |' и '| WWW​.e.example | ... |' для Subject. Ещё строки 321-324 проверяют '| Target | ... https:​//...'. Это осознанная защита: строки Target/Subject/resource URI приходят от сервера или из argv, и автоссылка на них в отчёте — вектор фишинга. 3) Неискажённый адрес цели в отчёте всё равно есть: строка 33 печатает `target: ${snap.options.target}` без text(), так что для копирования и grep он доступен. Предложенная правка (code span) меняет задуманный рендер и ломает существующие тесты, поэтому это не баг, а в лучшем случае UX-пожелание. Кодовые ссылки в утверждении актуальны.",
+      "corrected_severity": "low",
+      "repro": "Мини-репро не запускалось: ожидаемый U+200B в Target уже зафиксирован в test/report.test.ts:322 и :334 ('| Target | stdio:node https:​//e.example/t |'), значит поведение задумано.",
+      "lens": "reader-batch"
+    }
+  ]
+}

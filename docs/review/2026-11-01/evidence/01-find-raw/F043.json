@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/auth.ts",
+  "line": 305,
+  "title": "AUTH-010: self-signed локальный AS в local mode остаётся error на всех платформах, тогда как SRV-001 для того же сертификата даёт Deploy-time info",
+  "description": "§1.4 заявляет цель local mode — «лint до деплоя без стены ошибок». SRV-001 через `localize()` понижает TLS-ошибку MCP-хоста до info, но AUTH-010 для `role:'as'` на localhost/приватном IP в local mode оставляет `claude/chatgpt/spec = error`. Типичный dev-стек (локальный Keycloak/Auth0-mock на https с self-signed) получает BLOCKED.",
+  "evidence": "Репро: localMode=true, tls=[{host:'localhost:4000', role:'as', ok:false, code:'DEPTH_ZERO_SELF_SIGNED_CERT'}] -> `error [claude,chatgpt,spec] TLS handshake with localhost:4000 failed`; SRV-001 с тем же кодом на localhost:3000 -> `info [claude,chatgpt] Deploy-time check: ...`.",
+  "suggested_fix": "В AUTH-010 для `t.role==='as'` при `snap.localMode && (isLoopbackHost(hostname) || isNonPublicIp(hostname) || dotless)` понижать до info с префиксом DEPLOY (экспортировать `localize`/DEPLOY из server.ts в util). Упомянуть AUTH-010 в §1.4 и в local-баннере.",
+  "confidence": 0.75,
+  "dimension": "rules-server-spec-auth",
+  "id": "F043"
+}

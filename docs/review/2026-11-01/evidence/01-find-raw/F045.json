@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/auth.ts",
+  "line": 406,
+  "title": "AUTH-015 игнорирует DPoP-challenge, хотя AUTH-002/AUTH-013 принимают схему dpop",
+  "description": "`a.challenge?.parsed.find((c) => c.scheme === 'bearer')` — для `WWW-Authenticate: DPoP resource_metadata=..., scope=\"a b\"` правило считает, что scope отсутствует, и печатает «401 has no scope=; Claude will request: (no scope)», хотя scope объявлен. Несогласованно с AUTH-002 (`bearer || dpop`) и AUTH-013.",
+  "evidence": "Репро с challenge `DPoP resource_metadata=\"...\", scope=\"a b\"` -> `info [claude] 401 has no scope=; Claude will request: (no scope)`.",
+  "suggested_fix": "Использовать тот же предикат `c.scheme === 'bearer' || c.scheme === 'dpop'` (вынести в util/wwwAuth.ts `isBearerLike`).",
+  "confidence": 0.8,
+  "dimension": "rules-server-spec-auth",
+  "id": "F045"
+}

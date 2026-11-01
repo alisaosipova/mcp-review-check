@@ -1,0 +1,92 @@
+[
+ {
+  "id": "F003",
+  "reason": "needs src/connect.ts: правильное исправление — вырезать userinfo из URL до fetch и отправлять его как Authorization: Basic (с редакцией), сохранив urlAsEntered. Usage error в CLI превратил бы намеренные тесты редакции user:pass@ в test/e2e-redaction.test.ts и test/sarif.test.ts в пустые или падающие и сделал бы серверы с Basic-auth непроверяемыми.",
+  "wp": "WP1-cli"
+ },
+ {
+  "id": "R027",
+  "reason": "needs src/rules/apps.ts: APPS-014 должен учитывать snap.limits.truncated для обрезанного UI-ресурса",
+  "wp": "WP2-connect"
+ },
+ {
+  "id": "R003-rest",
+  "reason": "needs src/probe/active.ts, src/probe/wire.ts (публиковать частичные результаты через накопитель в Progress) и src/rules/engine.ts (правила незавершённой фазы помечать как skipped 'stopped by --max-duration')",
+  "wp": "WP2-connect"
+ },
+ {
+  "id": "C-imp-2-rest",
+  "reason": "needs src/rules/server.ts: SRV-009 должен давать одну находку на exchange, а не три на одну страницу Cloudflare",
+  "wp": "WP2-connect"
+ },
+ {
+  "id": "R012-rest",
+  "reason": "needs src/probe/network.ts, src/probe/wire.ts: сырые initialize-пробы (preflight и origin) должны отправлять DELETE с полученным Mcp-Session-Id",
+  "wp": "WP2-connect"
+ },
+ {
+  "id": "C003-followup",
+  "reason": "needs src/rules/server.ts: SRV-018 должен брать счётчик из transport.stdio.nonJsonTotal (хранится не больше 50 строк) и писать 'non-JSON-RPC line(s)'",
+  "wp": "WP2-connect"
+ },
+ {
+  "id": "F019",
+  "reason": "needs src/connect.ts: the remaining part (server/discover for era detection, the auth trigger on a 401 behind the redirect, and the runAuthProbe URL) should use sameHostRedirect(url, pf) from src/probe/network.ts right after preflight() in buildHttp. The wire-probe part is already fixed (1af41e0).",
+  "wp": "WP3-probe"
+ },
+ {
+  "id": "F031",
+  "reason": "needs src/connect.ts: pass { timeoutMs: connectTimeout, signal: progress?.abort.signal } to both tlsCheckWithRetry calls in buildHttp (the MCP host and the AS-host loop) and add a checkpoint between AS hosts. The API in network.ts is ready (7e28e4a).",
+  "wp": "WP3-probe"
+ },
+ {
+  "id": "F025-wiring",
+  "reason": "needs src/probe/wire.ts: передать fullBody: false в пять modern.request-проб (опция уже есть в ModernClient, b35b970)",
+  "wp": "WP4-protocol"
+ },
+ {
+  "id": "R008-legacy-sse",
+  "reason": "needs src/protocol/recording.ts: для legacy HTTP+SSE (POST→202, ответ по GET-потоку) задержку нужно мерить в RecordingTransport от send(id) до record(id); tracer больше не пишет 202 как сэмпл",
+  "wp": "WP4-protocol"
+ },
+ {
+  "id": "F024/R010-SPEC-016",
+  "reason": "needs src/connect.ts: collectErrors должен записывать ObservedError для успешного modern-ответа с id другого типа или значения (ModernResponse.idMismatch), чтобы это отрепортил SPEC-016",
+  "wp": "WP4-protocol"
+ },
+ {
+  "id": "F137-rawPages-cap",
+  "reason": "needs src/limits.ts: capSnapshot не обрезает строки в listMeta[*].rawPages; память теперь ограничена бюджетом листинга, но regex-лимиты на rawPages не распространяются",
+  "wp": "WP4-protocol"
+ },
+ {
+  "id": "F109",
+  "reason": "needs src/rules/util/text.ts (и, возможно, src/rules/types.ts + src/report/*): имя промпта теряется в locationOf(), которым пользуются все corpus-правила (INJ, DATA, POL, TOOL). Если чинить только в injection.ts, DATA/POL останутся без имени, а после фикса locationOf имя продублируется. Предлагаемый фикс: locationOf выводит prompt \"<name>\" для записей prompt.*, либо RawFinding получает поле prompt, которое рендерят репортеры.",
+  "wp": "WP6-inj-data-pol"
+ },
+ {
+  "id": "F132",
+  "reason": "needs src/rules/util/net.ts (displayUrl/isKnownToken), and it goes against the documented 'no entropy guess' design. It would be a feature: heuristic redaction of hex/base64 URL path segments and neutral-named query values, plus a --no-redact-heuristic opt-out in src/cli.ts.",
+  "wp": "WP9-report-redact"
+ },
+ {
+  "id": "F135-verbose-stderr",
+  "reason": "needs src/cli.ts. The '[stdio stderr]' and '[http]' --verbose trace is printed raw there. visibleText() is exported from src/report/index.ts for that fix.",
+  "wp": "WP9-report-redact"
+ },
+ {
+  "id": "F156-rest",
+  "reason": "needs test/*: unit-тесты для legacy.listAll, manual.ts, wire.ts, catalog.ts, lexicon, util/ui, util/access; пороги и CI-артефакт требуют прогона полного набора (D1)",
+  "wp": "WP10-docs-ci"
+ },
+ {
+  "id": "R006-R019-help",
+  "reason": "needs src/cli.ts: блок 'Exit codes:' в --help",
+  "wp": "WP10-docs-ci"
+ },
+ {
+  "id": "catalog-date",
+  "reason": "needs src/catalog.ts: волна 1 изменила severity без сдвига CATALOG_DATE",
+  "wp": "WP10-docs-ci"
+ }
+]

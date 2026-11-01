@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 66,
+  "title": "parseSseMessages не поддерживает CR-only разделители строк из спецификации SSE",
+  "description": "SSE допускает `\\r\\n`, `\\n` и одиночный `\\r` как конец строки. Парсер делит по `/\\r?\\n\\r?\\n/` и `/\\r?\\n/`, поэтому поток с CR-only терминаторами не распарсится (ни одного сообщения).",
+  "evidence": "`parseSseMessages('data: {\"a\":1}\\r\\rdata: {\"b\":2}\\r\\r')` → `[]`.",
+  "suggested_fix": "Нормализовать `text.replace(/\\r\\n?/g, '\\n')` перед разбором (и в sseResponseWatcher — с учётом границы чанка).",
+  "confidence": 0.9,
+  "dimension": "protocol-probe",
+  "id": "F028"
+}

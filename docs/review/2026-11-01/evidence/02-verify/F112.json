@@ -1,0 +1,17 @@
+{
+  "id": "F112",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F112",
+      "refuted": true,
+      "confidence": 0.75,
+      "reasoning": "Строка 614 указывает на абзац INJ-001 (regex ignore previous instructions), а не на INJ-006/INJ-008/APPS-014. Утверждение, что APPS-019 есть только в строке 8, по сути подтверждает, что шапка расхождение признаёт: «the catalog has 144 automated rules (APPS-019 added)». Остальные пункты описаны в CHANGELOG.md, на который ссылается шапка spec.md: APPS-019 — :43, APPS-014 ui/initialize и комментарии — :56, INJ-006 conditional/info — :58 и :94, INJ-004 JSON-курсор/JWT — :60, INJ-008 — :65. Шапка прямо называет авторитетными для правил src/rules/ и RULES.md. Документ намеренно не синхронизируется с кодом, теста на это в test/docs.test.ts нет.",
+      "lens": "reader-batch"
+    }
+  ]
+}

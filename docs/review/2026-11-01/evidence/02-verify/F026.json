@@ -1,0 +1,17 @@
+{
+  "id": "F026",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F026",
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Фактическая часть верна. В src/probe/auth.ts:76 кандидаты PRM берутся из resource_metadata, на :107 идёт GET по каждому issuer, на :158, :182 и :189 делаются запросы DCR, authorize и token, и всё это без проверки protocol или isNonPublicIp. Но поведение намеренное и задокументировано. В SECURITY.md, раздел 'Threat model and safe use', прямо сказано: 'The OAuth probe follows URLs chosen by the server. A malicious server can point those URLs at internal addresses (for example cloud metadata endpoints ...), and the tool will request them. ... Run checks of unknown servers from an unprivileged machine or CI runner.' В разделе 'What the tool sends' тоже указано: '**following the URLs the server advertises**'. Это принятый остаточный риск, а не дефект. Предложенный фикс (только https и запрет non-public адресов) ломает основной сценарий: README.md:162 описывает local mode, где сервер и AS работают на localhost, 10/8 или в контейнере (http://mcp:8080), а правила AUTH сами сообщают о non-https/private URL как о находке (src/rules/auth.ts:37). Значит, инструменту нужно получать эти метаданные, чтобы о них отчитаться. Смягчающие факторы: Bearer на сторонние URL не отправляется, у fetch стоит redirect: 'manual' (src/protocol/trace.ts:233), на сервер приходит не больше 3 AS, --active-auth включается только явным флагом. Spec о защите от SSRF ничего не требует. Остаётся максимум пожелание hardening (например, опция --no-follow-private), а не баг.",
+      "lens": "reader-batch"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "low",
+  "file": "src/probe/auth.ts",
+  "line": 76,
+  "title": "Auth-discovery и --active-auth ходят по URL, продиктованным сервером, без ограничений схемы/адреса (SSRF-подобное поведение инструмента)",
+  "description": "`resource_metadata` из WWW-Authenticate, `authorization_servers` из PRM и `registration_endpoint`/`authorization_endpoint`/`token_endpoint` из AS-metadata используются как есть: допускается `http://`, адреса RFC1918/link-local (169.254.169.254), любые хосты. `--active-auth` делает POST (DCR, token) на эти адреса. Bearer при этом не пересылается (хорошо), но инструмент, запущенный в CI/внутри периметра, можно использовать как «пробник» внутренней сети по подсказке проверяемого сервера.",
+  "evidence": "auth.ts:76 `for (const cand of prmCandidates(url, bearer?.params.resource_metadata))`; auth.ts:107 `getRetried(input, …, u)` для каждого issuer; auth.ts:158 `tracer.request('auth dcr', meta.registration_endpoint, { method: 'POST' …})`; auth.ts:182 GET на `meta.authorization_endpoint`; никаких проверок `protocol`/isNonPublicIp перед запросом.",
+  "suggested_fix": "Перед запросом проверять `new URL(x).protocol === 'https:'` (в localMode допускать http к loopback) и, при включённом DNS, отвергать резолв в non-public адреса (уже есть isNonPublicIp/lookupHost); зафиксировать в snapshot как `skipped: 'non-https/non-public metadata URL'` и дать правилу AUTH-00x об этом сообщить.",
+  "confidence": 0.7,
+  "dimension": "protocol-probe",
+  "id": "F026"
+}

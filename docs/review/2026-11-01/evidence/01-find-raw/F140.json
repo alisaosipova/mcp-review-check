@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/probe/auth.ts",
+  "line": 128,
+  "title": "SSRF/оракул портов через URL из WWW-Authenticate и OAuth-метаданных: нет фильтра схем и приватных адресов (data:, 169.254.*, 10.*)",
+  "description": "Линтер делает GET по `resource_metadata` из заголовка сервера (любая схема, в т.ч. data:), затем по authorization_servers из PRM (вкл. http:// и приватные IP), делает DNS-lookup и TLS-коннект к issuer/authorization_endpoint/token_endpoint/registration_endpoint/jwks_uri (произвольные host:port), а с --active-auth ещё POST'ит на registration_endpoint/token_endpoint. Результаты (статус, код ошибки TLS: ECONNREFUSED/ETIMEDOUT/ok, DNS) попадают в findings (AUTH-010, asDns) и --verbose `[http]` строки — т.е. это оракул сканирования внутренней сети из CI-раннера, а bodySnippet (4 КБ) внутренних ответов сохраняется в снапшоте. SECURITY.md честно описывает это как known risk («следует URL, выбранным сервером»), но технические меры отсутствуют; data: URL позволяет серверу подсунуть «валидный» PRM без собственного хостинга.",
+  "evidence": "Репро на dist: `tracer.request('auth prm header', 'data:application/json,%7B%22authorization_servers%22…')` → `200 application/json {\"authorization_servers\":[\"http://169.254.169.254/latest\"]}`; `prmCandidates(new URL('https://mcp.example/mcp'), 'http://169.254.169.254/latest/meta-data/iam/security-credentials/')` → первый кандидат ровно этот URL; `asDiscoveryUrls('http://10.0.0.5:8500/v1/kv')` → три URL на 10.0.0.5:8500. auth.ts:128 `new URL(headerUrl).href` без проверки protocol; :235 lookupHost(host); :244 tlsHosts для любого https host:port; :262/:278/:293 запросы на registration/authorization/token endpoint.",
+  "suggested_fix": "Валидатор URL для всех server-advertised адресов: только http(s) (http — лишь при snap.localMode), отказ при isNonPublicIp по результату DNS (isNonPublicIp уже есть в rules/util/net.ts) когда сам таргет публичный, отказ для data:/file:/blob:; запрет нестандартных портов для TLS-проб или ограничение их тем же registrable domain; логировать отказ как AUTH-находку (\"metadata points to non-public address\"). Описать политику в SECURITY.md.",
+  "confidence": 0.85,
+  "dimension": "security-lens",
+  "id": "F140"
+}

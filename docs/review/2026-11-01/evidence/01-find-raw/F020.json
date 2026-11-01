@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/util/wwwAuth.ts",
+  "line": 38,
+  "title": "Незакавыченный URL в WWW-Authenticate порождает фантомный challenge и обрезанный resource_metadata",
+  "description": "При `Bearer resource_metadata=https://host/.well-known/…` (без кавычек; формально нарушение RFC 9110, но встречается) парсер читает значение как token → `https`, затем остаток `://host/...` интерпретируется как новый challenge со схемой `host` и token68 `/.well-known/...`. В итоге probe.challenge.parsed содержит мусорную схему, а `bearer.params.resource_metadata === 'https'` → prmCandidates пытается `new URL('https')` (бросает, молча пропускается) и PRM по заголовку не находится. Также `Bearer realm=` (пустое значение) парсится как token68 `realm=`.",
+  "evidence": "node против dist: `parseWwwAuthenticate('Bearer resource_metadata=https://api.example.com/.well-known/oauth-protected-resource')` → `[{\"scheme\":\"bearer\",\"params\":{\"resource_metadata\":\"https\"}},{\"scheme\":\"api.example.com\",\"params\":{},\"token68\":\"/.well-known/oauth-protected-resource\"}]`; `parseWwwAuthenticate('Bearer realm=')` → `[{\"scheme\":\"bearer\",\"params\":{},\"token68\":\"realm=\"}]`.",
+  "suggested_fix": "В ветке auth-params при незакавыченном значении читать до следующей `,` или конца строки (lenient-режим) и помечать challenge флагом `malformed: true`, чтобы AUTH-правило могло выдать отдельную находку «resource_metadata must be a quoted-string». Для `name=` с пустым значением возвращать `params[name] = ''`, а не token68. Добавить тесты в test/util.test.ts.",
+  "confidence": 0.9,
+  "dimension": "protocol-probe",
+  "id": "F020"
+}

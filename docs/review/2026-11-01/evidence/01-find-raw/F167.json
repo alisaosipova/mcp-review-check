@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 3,
+  "title": "Непоследовательное название второй директории: «ChatGPT plugin directory» vs «ChatGPT Apps / plugin directory»",
+  "description": "README/package.json description говорят «ChatGPT plugin directory», issue-шаблоны — «ChatGPT Apps / plugin directory», источники правил — developers.openai.com/plugins/…, docs/RULES.md MAN-* — «Apps». Для SEO/npm keywords и понимания пользователями (OpenAI называет продукт Apps SDK / app directory) стоит выбрать один термин.",
+  "evidence": "README.md:3 «**ChatGPT plugin directory**»; package.json:3 «ChatGPT plugin directory»; .github/ISSUE_TEMPLATE/false-positive.yml «ChatGPT Apps / plugin directory»; package.json keywords без `apps`, `sarif`, `linter`.",
+  "suggested_fix": "Единое «ChatGPT app directory (Apps SDK)» в README/package.json/шаблонах; добавить keywords `mcp-apps`, `apps-sdk`, `sarif`, `linter`, `security`.",
+  "confidence": 0.6,
+  "dimension": "docs-tests-ci",
+  "id": "F167"
+}

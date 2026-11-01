@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "high",
+  "file": "src/report/text.ts",
+  "line": 97,
+  "title": "Терминальная инъекция: ANSI/OSC/CR из данных сервера печатаются в text-отчёт без экранирования",
+  "description": "renderText выводит serverInfo.name/version, имена tools/resources, сообщения правил и limitsNotice как есть. Сервер (недоверенный) может вставить ESC-последовательности: перекрасить вывод, стереть строку (\\x1b[2K\\r) и подменить вердикт поддельной строкой «TOOL-999 ... all good», вставить OSC 8 гиперссылку на attacker-URL. Ни один слой (connect.ts, rules, report) не вырезает C0-контролы; INJ-001 проверяет только \\p{Cf} и диапазоны tag/bidi, поэтому ESC (U+001B, категория Cc) даже не флагуется как находка. Markdown-отчёт также содержит сырой ESC (text() экранирует только markdown-синтаксис).",
+  "evidence": "Репро против dist (serverInfo.name с ESC, tool.name с \\x1b[2K\\r):\n[\"Server  Evil\\u001b[32m PASS \\u001b[0m\\u001b]8;;https://attacker.test\\u0007click\\u001b]8;;\\u0007 1 · https://mcp.example.test/mcp\", ...]\nESC in text report: true CR in text report: true\nESC in markdown: true\nINJ-001 findings: []  (ESC не распознан)\nfindings mentioning ESC raw: [ 'TOOL-001', 'TOOL-008', 'TOOL-005', 'TOOL-018' ]\nКод: src/report/text.ts:97 `out.push(`Server  ${serverName(snap)} · ${targetLabel(snap)}`)`; src/rules/injection.ts:64-78 hiddenChars учитывает только \\p{Cf}.",
+  "suggested_fix": "Единая точка санитизации перед рендером (аналогично redactDeep): пройти все строки Report и заменить \\p{Cc} (кроме \\n, \\t там, где они допустимы) через escapeHidden из src/rules/util/text.ts или вырезать. Для text-формата дополнительно схлопывать \\r/\\x1b/\\x9b/\\x07 в видимые \\u{..}. Также расширить INJ-001 hiddenChars на C0/C1 (\\p{Cc} кроме \\t\\n\\r) как hard-маркер — это детерминированный признак инъекции.",
+  "confidence": 0.95,
+  "dimension": "report-redact-engine",
+  "id": "F115"
+}

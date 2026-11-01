@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 29,
+  "title": "TEXT_CAP → TOOL-003/TOOL-001/TOOL-002: обрезка имени даёт ложные дубли и неверную длину в сообщениях",
+  "description": "`name` тоже попадает под обрезку. Два разных инструмента с одинаковыми первыми 16384 символами имени становятся одинаковыми: TOOL-003 сообщает «name appears 2 times» (chatgpt error). TOOL-001 и TOOL-002 пишут «name is 16384 characters» вместо реальной длины, а `tool` в находке — это обрезанная строка длиной 16 KB.",
+  "evidence": "r2apps.out (секция cap): `TOOL-003 name appears 2 times | tool len 16384`, `TOOL-001 name is 16384 characters (> 128)`, `TOOL-002 name is 16384 characters (> 64)` для имён длиной 16484 символа (a×16484+'_one'/'_two').",
+  "suggested_fix": "Не обрезать `name`/`uri`/`uriTemplate` (это идентификаторы, а не текст для regex): сохранять оригинальную длину или ограничивать имя отдельно, после проверок длины. Как минимум — писать в сообщениях «over 16384».",
+  "confidence": 0.75,
+  "failure_scenario": "Сервер с двумя сгенерированными инструментами с именами >16 KB и общим префиксом: ложный TOOL-003 error для chatgpt и неверная длина в TOOL-001/002.",
+  "dimension": "limits-apps",
+  "id": "R025"
+}

@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/explain.ts",
+  "line": 36,
+  "title": "--list-rules <prefix> --format markdown печатает пустую таблицу правил или чек-листа (только заголовок)",
+  "description": "rulesMarkdown всегда выводит обе таблицы. При фильтре по префиксу, который совпадает только с MAN-пунктами или только с правилами, вторая таблица состоит из одного заголовка и разделителя, а для правил ещё и с подписью «Manual checklist».",
+  "evidence": "lr.out: `--list-rules MAN-00 --format markdown` → `| ID | Title | Severity by platform | Source |\\n|---|---|---|---|\\n\\n**Manual checklist** ...`. `--list-rules RT-001 --format markdown` → после таблицы правил идут «**Manual checklist** ...» и пустая таблица `| ID | Platform | Reminder |`.",
+  "suggested_fix": "В rulesMarkdown не выводить таблицу, если соответствующий список пуст: `if (rules.length)` / `if (manual.length)`.",
+  "confidence": 0.9,
+  "failure_scenario": "`mcp-review-check --list-rules MAN --format markdown > checklist.md`: в файле оказывается пустая таблица правил.",
+  "dimension": "score-gate-github-explain",
+  "id": "R016",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R016",
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. rulesMarkdown (src/explain.ts:38-43) всегда выводит обе шапки таблиц, проверок `rules.length`/`manual.length` в коде нет. В src/cli.ts:197-200 оба списка фильтруются по одному префиксу, и ошибка выдаётся только когда пусты ОБА списка. Если пуст только один, rulesMarkdown получает пустой массив, и соответствующая таблица остаётся из одного заголовка. В test/cli-rules.test.ts markdown проверяется только без префикса, когда оба списка заполнены, поэтому теста, который закреплял бы такое поведение как намеренное, нет. docs/RULES.md строится из полного каталога, и там дефект не проявляется. В spec.md вывод с фильтром не описан, а README прямо обещает фильтр по префиксу вида `MAN`. В известных находках первого раунда этой проблемы нет: про --list-rules там только находка о тексте ошибки для --format. Вывод получается синтаксически правильным markdown, просто с пустой таблицей. Это косметика.",
+      "repro": "$ node dist/cli.js --list-rules MAN-00 --format markdown | head -8\n| ID | Title | Severity by platform | Source |\n|---|---|---|---|\n\n**Manual checklist** (printed as reminders; never scored):\n\n| ID | Platform | Reminder |\n|---|---|---|\n| MAN-001 | claude | Privacy policy URL ...\n---\n$ node dist/cli.js --list-rules RT-001 --format markdown\n| ID | Title | Severity by platform | Source |\n|---|---|---|---|\n| RT-001 | Error messages are specific | claude: error | [link](...) |\n\n**Manual checklist** (printed as reminders; never scored):\n\n| ID | Platform | Reminder |\n|---|---|---|",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "$ node dist/cli.js --list-rules MAN-00 --format markdown | head -8\n| ID | Title | Severity by platform | Source |\n|---|---|---|---|\n\n**Manual checklist** (printed as reminders; never scored):\n\n| ID | Platform | Reminder |\n|---|---|---|\n| MAN-001 | claude | Privacy policy URL ...\n---\n$ node dist/cli.js --list-rules RT-001 --format markdown\n| ID | Title | Severity by platform | Source |\n|---|---|---|---|\n| RT-001 | Error messages are specific | claude: error | [link](...) |\n\n**Manual checklist** (printed as reminders; never scored):\n\n| ID | Platform | Reminder |\n|---|---|---|"
+}

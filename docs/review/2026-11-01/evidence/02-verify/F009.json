@@ -1,0 +1,19 @@
+{
+  "id": "F009",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node dist/cli.js --output \"\" --stdio \"node -e 1\" --format json -> exit=3, stdout_bytes=13166; stderr содержит только 'Local target: deploy-time checks are informational; --no-local for strict checks.' — ни ошибки, ни 'report written to'",
+  "votes": [
+    {
+      "id": "F009",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "cli.ts:327 `if (values.output)` проверяет истинность значения, поэтому пустая строка ведёт себя как отсутствие опции: отчёт уходит в stdout, ошибки нет, строки «report written to» тоже нет. На строке 309 `!values.output` для color работает так же. spec.md:1131 говорит «When given, the full report goes to the file»; формально --output \"\" задан, но файла нет, так что поведение со спецификацией расходится. Тестов на пустой --output нет. Ущерб невелик: отчёт не теряется, а оказывается в stdout. Остаётся low.",
+      "repro": "node dist/cli.js --output \"\" --stdio \"node -e 1\" --format json -> exit=3, stdout_bytes=13166; stderr содержит только 'Local target: deploy-time checks are informational; --no-local for strict checks.' — ни ошибки, ни 'report written to'",
+      "lens": "reader-batch"
+    }
+  ]
+}

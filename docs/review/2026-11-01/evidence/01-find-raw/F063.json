@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/tools.ts",
+  "line": 233,
+  "title": "TOOL-023: method-параметр через $ref не разворачивается — пропуск ошибки «mixing safe and unsafe methods»",
+  "description": "walkSchema посещает и узел `{ $ref }`, и его цель, но код берёт первый совпавший узел (`if (!methodProp && ...)`), т.е. саму ссылку без `enum`. `enumValues(methodProp)` даёт undefined, `isFreeString` возвращает true (type undefined, нет enum/pattern/format), и вместо claude error выдаётся warning «free-form method parameter» (или вообще ничего, если имя не матчит HTTP_TOOL_NAME). Аналогично TOOL-025 (`opProp` через `properties()` без deref) и TOOL-026 (`isFreeString` для $ref-узла) считают $ref-параметр свободной строкой даже если цель — enum.",
+  "evidence": "node против dist: api_request с method:{$ref:'#/$defs/M'}, $defs.M.enum=['GET','POST','DELETE'] -> [{\"severity\":\"warning\",\"message\":\"generic HTTP tool with a free-form method parameter\"}]; с inline enum -> error «method parameter allows both safe and unsafe HTTP methods (GET, POST, DELETE)». TOOL-025: call_api с endpoint:{$ref:'#/$defs/E'} (enum в цели) -> «generic executor with free-form \"endpoint\" parameter».",
+  "suggested_fix": "Разворачивать узел через `deref(t.inputSchema, v.node)` перед enumValues/isFreeString/isFreeObject в TOOL-023/025/026/015, либо в walkSchema предпочитать посещение цели $ref с viaProperty и пропускать голый узел-ссылку (как уже делается через `path.endsWith('/$ref')` в TOOL-009/021).",
+  "confidence": 0.9,
+  "dimension": "rules-tools-schema",
+  "id": "F063"
+}

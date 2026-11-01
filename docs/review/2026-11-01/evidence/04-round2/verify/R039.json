@@ -1,0 +1,25 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 416,
+  "title": "APPS-019 молчит, когда сервер отказывает text-only клиенту целиком (initialize или tools/list падает без UI-расширения)",
+  "description": "`if (!without) return []` трактует любой сбой text-only листинга как «проверка не выполнялась». Но сервер, который отвергает клиента без `io.modelcontextprotocol/ui` (ошибка initialize или tools/list), — это худший случай нарушения text-only fallback, а правило его пропускает. snapshot не различает «не запускали» и «упало».",
+  "evidence": "apps.ts:415-416; connect.ts:358/500: `snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES })` — freshTools возвращает undefined и при `!conn.ok`, и при `r.error`, без сохранения причины.",
+  "suggested_fix": "Сохранять результат text-only листинга с ошибкой (например, snap.toolsWithoutUiError). Если обычный fresh() тем же путём прошёл успешно, а text-only упал, выдавать APPS-019 «server rejects clients without the UI extension».",
+  "confidence": 0.55,
+  "failure_scenario": "Сервер требует UI-расширение в initialize и отвечает ошибкой text-only клиенту: APPS-019 ничего не сообщает.",
+  "dimension": "limits-apps",
+  "id": "R039",
+  "verdict": "refuted",
+  "votes": [
+    {
+      "id": "R039",
+      "refuted": true,
+      "confidence": 0.7,
+      "reasoning": "Молчание при сбое сделано намеренно и закреплено тестами. В src/rules/apps.ts:416 стоит комментарий «the text-only re-list did not run or failed». Тест test/rules/apps.test.ts:119 называется 'APPS-019 does not run without the text-only re-list (it failed or no tool links a UI)'. freshTools (src/connect.ts:383-398) возвращает undefined при любом сбое: !conn.ok, r.error, таймаут, rate limit на новом соединении. Отличить «сервер требует UI-расширение» от временного сбая второго соединения на этом уровне нельзя. Если превратить любой сбой в warning, получим ложные срабатывания, и именно этого дизайн избегает. Аналогичное решение принято для toolsRelist (connect.ts:355: «a failed re-list (rate limit) is not a different set»). Сценарий, где сервер отвергает клиента без UI, теоретически возможен, но предложенная эвристика (обычный fresh() прошёл, text-only упал) — уже новая функциональность, а не ошибка в текущем коде.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low"
+}

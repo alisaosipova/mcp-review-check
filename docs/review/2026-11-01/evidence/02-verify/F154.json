@@ -1,0 +1,20 @@
+{
+  "id": "F154",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F154",
+      "refuted": true,
+      "confidence": 0.75,
+      "reasoning": "В главном утверждение неверно: список «Known differences» не претендует на полноту. Шапка spec.md (строки 3-13) прямо говорит «Design document; it may differ from the implementation», перечисляет опции через «such as» и заканчивается фразой «See CHANGELOG.md for the full list». Разбор по пунктам. (1) 240000 и 241000: расхождение реальное, spec.md:1132 против src/probe/active.ts:13 (MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000). Но оно описано в CHANGELOG.md:69 («--active tool calls are cut off at 241 s»), а шапка отсылает за полным списком именно туда. (2) Неверно: src/rules/runtime.ts:216-217 redactToken возвращает v.slice(0, 4) + '…', то есть spec.md:1356 («first 4 characters followed by …») совпадает с кодом RT-010. Общая редакция в README (src/redact.ts) — другой механизм. (3) --max-duration прямо названа в шапке среди изменений CLI. (5) «cap of 3 per rule» (spec.md:1518, §8 Q4) покрыт пунктом шапки «the score counts root causes (scoreVersion 2)». В src/report/score.ts:8 сказано, что baseline «up to 3 findings per rule» — это версия 1. (4) §8 Q3 — открытый вопрос с пометкой «planned for v1.1». Это план, а не утверждение, что флаги реализованы. Неописанным в шапке остаётся только пункт (1), и он закрыт отсылкой к CHANGELOG. Строка 1131 в находке устарела: строка таблицы с --timeout сейчас 1132.",
+      "corrected_severity": "low",
+      "corrected_description": "Находка опровергнута. Реальное, но мелкое неописанное в шапке расхождение одно: spec.md:1132 пишет `min(timeout, 240000)`, а в коде 241000. Оно задокументировано в CHANGELOG.md:69, на который шапка ссылается как на полный список. Пункты (2)-(5) либо совпадают с кодом, либо уже покрыты шапкой.",
+      "repro": "grep: src/rules/runtime.ts:217 `return v.slice(0, 4) + '…';`; src/probe/active.ts:13 `const MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000;`; CHANGELOG.md:69 «--active tool calls are cut off at 241 s»; шапка spec.md:13 «See CHANGELOG.md for the full list.»",
+      "lens": "reader-batch"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 363,
+  "title": "APPS-016: нет Google Analytics/GTM в списке трекеров; `data-alt=` засчитывается как alt",
+  "description": "TRACKERS не включает googletagmanager.com, google-analytics.com — самые распространённые трекеры. А `\\balt\\s*=` совпадает с `data-alt=` (граница слова между '-' и 'a'), поэтому `<img data-alt=...>` без alt не помечается.",
+  "evidence": "r2apps.out, `APPS-016 GA/GTM`: HTML с `<script src=\"https://www.googletagmanager.com/gtag/js?id=G-1\">` и `<img src=\"x.png\" data-alt=\"y\">` → `(no findings)`.",
+  "suggested_fix": "Добавить googletagmanager.com, google-analytics.com, connect.facebook.net (уже покрыт facebook.net), hotjar.com, segment.com и т.п.; alt искать как `(?:^|\\s)alt\\s*=`.",
+  "confidence": 0.8,
+  "failure_scenario": "Виджет с gtag.js проходит APPS-016 без предупреждения о трекере.",
+  "dimension": "limits-apps",
+  "id": "R040"
+}

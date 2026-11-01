@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 240,
+  "title": "--ignore со списком через запятую отвергается сообщением, которое скрывает значение: «--ignore value is not a rule or MAN ID»",
+  "description": "Многие линтеры принимают `--ignore A,B`. Здесь `--ignore TOOL-006,TOOL-011` даёт exit 2, а значение не соответствует /^[a-z]+-\\d+$/i и поэтому подменяется словом «value». Пользователь не видит, что именно не так, хотя ID правил не секреты.",
+  "evidence": "lr.out: `--ignore TOOL-006,TOOL-011 http://127.0.0.1:1/mcp` → exit 2, `error: --ignore value is not a rule or MAN ID; --list-rules prints the catalog`.",
+  "suggested_fix": "Разбивать значение --ignore по запятым (`values.ignore.flatMap(v => v.split(','))`) либо при наличии запятой выдавать подсказку «give --ignore once per ID».",
+  "confidence": 0.75,
+  "failure_scenario": "CI-конфиг с `--ignore TOOL-006,TOOL-011` падает с exit 2 и непонятной ошибкой.",
+  "dimension": "score-gate-github-explain",
+  "id": "R018"
+}

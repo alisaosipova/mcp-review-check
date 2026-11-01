@@ -1,0 +1,18 @@
+{
+  "id": "F048",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F048",
+      "refuted": true,
+      "confidence": 0.65,
+      "reasoning": "Репро воспроизводится: строки 437-440 (а не 439) для `https://пример.рф/mcp` дают info «differs from canonical https://xn--e1afmkfd.xn--p1ai/mcp», для `/my mcp` дают `/my%20mcp`. Однако сообщение по существу верно, а не ложно. Canonical server URI в MCP spec и RFC 8707/9728 — это URI по RFC 3986, где не бывает Unicode-хоста и пробела. Поэтому канонический `aud`/resource на самом деле будет в punycode и percent-encoding, а введённая строка от него отличается. Совет «Tokens should accept the canonical aud; PRM resource and ui.domain hash use the URL exactly as entered» здесь как раз уместен: claudeUiDomain (apps.ts:239) хеширует строку как введена, и для IDN расхождение между хешем и aud реально. Спека (spec.md:245) требует info ровно при «entered URL differs from its canonical form», а это так и есть. Это info, а не ошибка, и ложным срабатыванием не является.",
+      "repro": "F048 https://пример.рф/mcp [{\"platforms\":[\"claude\"],\"message\":\"Entered URL differs from canonical https://xn--e1afmkfd.xn--p1ai/mcp. ...\"}]\nF048 https://mcp.acme.test/my mcp [{\"platforms\":[\"claude\"],\"message\":\"Entered URL differs from canonical https://mcp.acme.test/my%20mcp. ...\"}]",
+      "lens": "reader-batch"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "F163",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F163",
+      "refuted": true,
+      "confidence": 0.55,
+      "reasoning": "Строка 201 актуальна, расхождение воспроизводится: `--list-rules --format yaml` даёт «must be text, json or markdown», а `--format sarif` принимается с exit 0. Но так сделано намеренно. Комментарий на строке 202 и тест test/cli-rules.test.ts:82-86 объясняют, что у SARIF нет формы каталога, и sarif принимается только ради совместимости с baseline 0.1.0: печатается text и выводится предупреждение. Значит, сообщение об ошибке перечисляет форматы, которые для --list-rules реально работают, и sarif туда не входит сознательно. Пользователь не получает неверного результата: если он выберет любой из названных форматов, всё сработает. Это косметика, а не дефект; при сомнении refuted.",
+      "repro": "[\"--list-rules\",\"--format\",\"yaml\"] => code 2 \"error: --list-rules --format must be text, json or markdown\\nRun with --help for usage.\\n\"\n[\"--list-rules\",\"--format\",\"sarif\"] => code 0 \"warning: --format sarif does not apply to --list-rules; printing text\\n\"",
+      "lens": "reader-batch"
+    }
+  ]
+}

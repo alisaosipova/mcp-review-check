@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 509,
+  "title": "Сервер, ждущий закрытия stdin, превращает полностью завершённую проверку в INCOMPLETE/exit 3 с ложной фазой «active tool calls» (даже без --active)",
+  "description": "В buildStdio последний checkpoint стоит перед `if (opts.active)` (стр. 501), и он выполняется всегда. После него идут sleep 50 мс и `conn.client.close()`, а GroupStdioTransport.close ждёт выхода сервера после EOF на stdin до 2 с (стр. 641). Каждый fresh()-коннект тоже ждёт эти 2 с. Если --max-duration истекает в этом хвосте, все проверки уже выполнены, но stoppedSnapshot всё равно ставит coverage 'stopped' и фазу 'active tool calls'. В отчёте написано «later checks did not run», 16 правил пропущены как stopped, exit 3, Result INCOMPLETE. В HTTP-ветке то же самое: финальные close()/tracer.flush() (стр. 368-369) приписываются последней фазе, например 'tools re-list'.",
+  "evidence": "Сервер с KEEP=1 (живёт после EOF на stdin), без --active: полный прогон занимает 4.2 с, exit 1. Прогон с `--max-duration 3800` даёт exit=3 и выводит «stopped by --max-duration 3800 ms during active tool calls; later checks did not run.», «Checked 2 tools … 16 stopped by --max-duration», «Result: INCOMPLETE (stopped at --max-duration during active tool calls)». Находки при этом те же, что в полном прогоне (SPEC-009 есть, значит wire probes отработали). Лог: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/keepstop.3800.txt",
+  "suggested_fix": "После последней проверки ставить фазу 'closing' (checkpoint(progress,'closing')). Если таймер сработал в фазе 'closing', возвращать завершённый snapshot без пометки stopped. Как минимум ставить checkpoint 'active tool calls' только внутри `if (opts.active)`. В HTTP-ветке делать то же перед close/flush.",
+  "confidence": 0.9,
+  "failure_scenario": "CI запускает `--max-duration 60000 --stdio -- npx some-server`. Сервер держит таймер или HTTP-listener и не выходит по EOF. Проверка укладывается в 59 с, но close ждёт 2 с, и CI получает exit 3, INCOMPLETE и «during active tool calls», хотя флага --active не было.",
+  "dimension": "deadline-signals",
+  "id": "R001"
+}

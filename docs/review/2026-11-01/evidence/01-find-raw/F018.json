@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "high",
+  "file": "src/probe/wire.ts",
+  "line": 60,
+  "title": "GET-проба переиспользует живую сессию SDK → 409 от эталонного SDK-сервера → ложное SPEC-005",
+  "description": "Проба `get` отправляет GET с `mcp-session-id` основной SDK-сессии. Но StreamableHTTPClientTransport SDK уже открыл standalone GET SSE-stream для этой же сессии сразу после `notifications/initialized` (sdk client/streamableHttp.js:386-390). Эталонный TS SDK-сервер отвечает на второй GET в той же сессии `409 Conflict: Only one SSE stream is allowed per session` (sdk server/webStandardStreamableHttp.js:250-251). Правило SPEC-005 не знает про 409 и выдаёт warning «GET returned 409 (application/json); expected 200 text/event-stream or 405» для любого корректного сервера с сессиями на базе SDK — самого массового случая.",
+  "evidence": "Живой репро (loopback SDK-сервер с sessionIdGenerator, dist/connect.js buildSnapshot + runRules): `preflight 200 … get 409 application/json` → `SPEC-005 warning GET returned 409 (application/json); expected 200 text/event-stream or 405`. Код: wire.ts:56-62 `if (http.sessionId) session['mcp-session-id'] = http.sessionId; … p.get = tracer.request('get', url, { method: 'GET', headers: { ...authHeaders, ...session, accept: 'text/event-stream' } …`.",
+  "suggested_fix": "Либо делать GET-пробу без `mcp-session-id` (тогда ожидаем 400/405/200), либо открывать для неё отдельную сессию (POST initialize → GET → DELETE), либо трактовать 409 при наличии sessionId как «stream уже открыт = SSE поддерживается» в wire.ts (пометить в ProbeObservation) и/или в SPEC-005. Добавить e2e-тест против SDK-сервера с сессиями.",
+  "confidence": 0.95,
+  "dimension": "protocol-probe",
+  "id": "F018"
+}

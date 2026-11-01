@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/explain.ts",
+  "line": 10,
+  "title": "explain и --list-rules не показывают needs правила и feature MAN-пункта; explain MAN не печатает подсказку --ignore, обещанную README",
+  "description": "explainRule для правила выводит severity, rationale, fix и sources, но не rule.needs. Пользователь не узнает, что RT-* требуют --active, AUTH-019..021 требуют --active-auth, а часть правил работает только для http/stdio, и поэтому не поймёт, почему правило «никогда не срабатывает». listRulesText тоже не выводит needs (в JSON они есть). Для MAN-пунктов explain и текстовый --list-rules теряют поле feature ([oauth]/[ui]), от которого зависит показ пункта; markdown-вариант его печатает. В README:90 сказано, что explain показывает, «how to --ignore it; also takes MAN IDs», но для MAN строки «To suppress it: --ignore MAN-xxx» нет, хотя --ignore MAN-xxx поддерживается (cli.ts:302).",
+  "evidence": "`explainRule('RT-001')` → `Severity  claude=error ... To suppress it: --ignore RT-001`, упоминания --active нет. `explain MAN-007` → «manual checklist item (never scored) for claude ... Sources», нет ни [oauth], ни --ignore (lr.out). JSON --list-rules: rules keys `[id,title,severity,needs,rationale,fix,sources]`, то есть needs существуют, но в тексте их нет.",
+  "suggested_fix": "Добавить в explain строку `Runs when  needs: active (--active), http` и для MAN строки `Shown when  [oauth]` и `To hide it: --ignore MAN-007`. В текстовом --list-rules --verbose печатать needs.",
+  "confidence": 0.75,
+  "failure_scenario": "Пользователь запускает `explain RT-002`, затем проверку без --active, и не понимает, почему RT-002 всегда стоит в skipped.",
+  "dimension": "score-gate-github-explain",
+  "id": "R015"
+}

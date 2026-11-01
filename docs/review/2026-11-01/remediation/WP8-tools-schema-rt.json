@@ -1,0 +1,211 @@
+{
+ "package": "WP8-tools-schema-rt",
+ "owned_files": [
+  "src/rules/tools.ts",
+  "src/rules/schema.ts",
+  "src/rules/annotations.ts",
+  "src/rules/util/schemaWalk.ts",
+  "src/rules/util/text.ts",
+  "src/rules/runtime.ts",
+  "src/rules/util/obs.ts"
+ ],
+ "items": [
+  {
+   "id": "F104",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/runtime.ts",
+   "title": "RT-010 LEAK_KEY флагует ключи, явно объявленные в outputSchema (logs, session_id, request_id)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F104.json"
+  },
+  {
+   "id": "F067",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-006: пустая строка `title: ''` затеняет `annotations.title` (`??` не считает '' отсутствующим)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F067.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F067.json"
+  },
+  {
+   "id": "F074",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/schema.ts",
+   "title": "TOOL-018: схема только с `patternProperties`/`propertyNames`/`unevaluatedProperties` помечается как «takes no parameters»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F074.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F074.json"
+  },
+  {
+   "id": "F085",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/runtime.ts",
+   "title": "RT-010: токены ищутся только в JSON-распарсенных корнях — секрет в обычном тексте результата не детектируется",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F085.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F085.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F085.json"
+  },
+  {
+   "id": "F066",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/schema.ts",
+   "title": "TOOL-021: для узла без `type` (например `{ $ref, 'x-mcp-header' }`) сообщение «x-mcp-header on a undefined property»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F066.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F066.json"
+  },
+  {
+   "id": "F078",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/util/text.ts",
+   "title": "escapeHidden экранирует ZWJ внутри составных эмодзи — заголовки с 👨‍💻 показываются как «👨\\u{200D}💻»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F078.json"
+  },
+  {
+   "id": "F071",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/util/schemaWalk.ts",
+   "title": "walkSchema/schemaMetrics не обходят `dependentSchemas`, `dependencies` (schema-форма) и `additionalItems` — пропуски в TOOL-009/021/022/015/020",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F071.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F071.json"
+  },
+  {
+   "id": "F062",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/schema.ts",
+   "title": "TOOL-017: $schema с «другой» схемой URL (https draft-07 / http 2020-12) принимается регуляркой, но Ajv его не знает — ложный error «does not compile»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F062.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F062.json"
+  },
+  {
+   "id": "F063",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-023: method-параметр через $ref не разворачивается — пропуск ошибки «mixing safe and unsafe methods»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F063.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F063.json"
+  },
+  {
+   "id": "F081",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/util/schemaWalk.ts",
+   "title": "Дедупликация `seen` по объекту в walkSchema скрывает повторно используемые $ref-цели у второго и последующих параметров",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F081.json"
+  },
+  {
+   "id": "F076",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/tools.ts",
+   "title": "Нет платформенного правила на точку `.` и символы имени для Claude/OpenAI (API обоих вендоров принимают только `[a-zA-Z0-9_-]`)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F076.json"
+  },
+  {
+   "id": "F073",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-031: корневой `$ref` в outputSchema не разворачивается — ложный error «lacks a required string id»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F073.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F073.json"
+  },
+  {
+   "id": "F069",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/annotations.ts",
+   "title": "TOOL-014: двойное срабатывание (a)+(b) на одной причине и срабатывание (b) без объекта annotations вопреки комментарию у (e)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F069.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F069.json"
+  },
+  {
+   "id": "F065",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-026: параметр `body`/`payload` трактуется как raw-request — ложное срабатывание на create_issue/post_message/send_email",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F065.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F065.json"
+  },
+  {
+   "id": "F064",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-004: слова «top», «preferred», «official», «leading» как токены имени дают ложные «promotional» warning на обычных доменных именах",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F064.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F064.json"
+  },
+  {
+   "id": "F079",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/schema.ts",
+   "title": "TOOL-017 с `strict:false` не ловит типовые ошибки схем, которые ломают хосты: неизвестные ключевые слова/опечатки (`require`, `propeties`), `format` неизвестного типа, `required` с несуществующими свойствами",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F079.json"
+  },
+  {
+   "id": "F070",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/schema.ts",
+   "title": "TOOL-019: $ref на embedded resource с собственным `$id` внутри `$defs` считается «сетевой» ссылкой",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F070.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F070.json"
+  },
+  {
+   "id": "F105",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/runtime.ts",
+   "title": "RT-010 TOKEN_RE дублирует и сужает KNOWN_TOKEN из util/net.ts",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F105.json"
+  },
+  {
+   "id": "F103",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/runtime.ts",
+   "title": "RT-011 сканирует только text-items; инъекция в structuredContent не детектируется",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F103.json"
+  },
+  {
+   "id": "F080",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/tools.ts",
+   "title": "Нет правил о количестве инструментов и общем объёме описаний (контекстный бюджет), которые директории реально проверяют",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F080.json"
+  },
+  {
+   "id": "F068",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-008: подсчёт слов по пробелам ломается для CJK/тайского — полноценное описание помечается «only 1 words»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F068.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F068.json"
+  },
+  {
+   "id": "F077",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/tools.ts",
+   "title": "TOOL-004/005/014/015: эвристики по токенам не учитывают контекст (url в shorten_url, like в описании, hex в именах)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F077.json"
+  },
+  {
+   "id": "C-imp-3",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/runtime.ts",
+   "title": "--active: результат вызова invalid-missing ({} при required-параметрах) не оценивается — успешный ответ на пустые аргументы не репортится",
+   "src": "docs/review/2026-11-01/evidence/03-critic/critic.json (findings[kind=improvement][2])"
+  }
+ ]
+}

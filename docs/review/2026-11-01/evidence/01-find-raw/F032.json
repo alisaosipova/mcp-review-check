@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/legacy.ts",
+  "line": 42,
+  "title": "listAll (legacy) и ModernClient.listAll по-разному обрабатывают не-объекты в списках",
+  "description": "Legacy-версия оборачивает примитивы `{ name: x }` (строка `\"foo\"` в tools станет инструментом с именем foo), modern-версия их отбрасывает (`filter(isObj)`). Один и тот же некорректный сервер даст разные findings в зависимости от era. Также обе функции дублируют логику пагинации.",
+  "evidence": "legacy.ts:42 `items.push(...list.map((x) => (isObj(x) ? x : { name: x })))` vs modern.ts:105 `items.push(...list.filter(isObj))`.",
+  "suggested_fix": "Вынести общий `paginate(fetchPage)` и единообразно либо отбрасывать примитивы с записью в listMeta.error/ObservedError («non-object entry in tools/list»), чтобы SPEC-правило могло это отрепортить.",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F032"
+}

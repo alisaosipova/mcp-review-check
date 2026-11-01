@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 140,
+  "title": "APPS-006: wildcard в середине или в конце хоста (`https://api.*.example.com`, `https://*.example.*`) и `data:`/`blob:` обрабатываются неверно",
+  "description": "`v.replace('*.', 'wildcard.')` заменяет только первое вхождение, а WHATWG URL принимает `*` в hostname. Поэтому `https://api.*.example.com` считается валидным origin (в CSP такой wildcard недопустим: хост просто не совпадёт), выдаётся лишь spec info. `data:` и `blob:` получают вводящее в заблуждение «has a path, query, fragment or trailing slash» (pathname ''), а не «scheme-source, not an origin / overly broad».",
+  "evidence": "r2apps.out: `https://api.*.example.com` и `https://*.example.*` → только `{spec:info} wildcard ... outside resourceDomains`; `new URL https://api.*.example.com host= api.*.example.com`; `connectDomains: \"data:\" has a path, query, fragment or trailing slash`, то же для `blob:`.",
+  "suggested_fix": "Разрешать `*` только как ведущую метку (`^\\*\\.`), иначе → «invalid wildcard». Схемы без `//` (`data:`, `blob:`, `mediastream:`) отдельно помечать как scheme-source (overly broad / not an origin).",
+  "confidence": 0.75,
+  "failure_scenario": "resourceDomains: [\"https://cdn.*.example.com\"]: хост такую запись отбросит или не сопоставит, ресурсы не загрузятся, а линтер считает её корректной.",
+  "dimension": "limits-apps",
+  "id": "R034",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R034",
+      "refuted": false,
+      "confidence": 0.65,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено чтением кода и node-репро. Regex wildcard `^([a-z]+://)?\\*\\.(.+)$` распознаёт только ведущий `*.`. `https://api.*.example.com` после `replace('*.','wildcard.')` превращается в валидный `api.wildcard.example.com`; в resourceDomains это вообще не даёт находки, в других полях — только spec info. `https://*.example.*`: wild[2]='example.*' содержит точку и не входит в SHARED_HOST_SUFFIXES, поэтому запись не считается overly broad, а URL парсится (host `wildcard.example.*`). В CSP host-source wildcard допустим только как ведущая метка, так что такая запись не сработает. `data:` и `blob:` получают pathname '' и сообщение «has a path, query, fragment or trailing slash», что вводит в заблуждение (хотя находка всё же есть). Тестов на такие случаи нет, spec их не оговаривает. Сценарий редкий, по сути косметика и пропуск края.",
+      "repro": "node: 'https://api.*.example.com' -> wild=null, host=api.wildcard.example.com, path=\"/\" (без находок в resourceDomains); 'https://*.example.*' -> wild[2]='example.*', host=wildcard.example.*; 'data:'/'blob:' -> proto=data:/blob:, path=\"\" -> ветка «has a path...».",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "node: 'https://api.*.example.com' -> wild=null, host=api.wildcard.example.com, path=\"/\" (без находок в resourceDomains); 'https://*.example.*' -> wild[2]='example.*', host=wildcard.example.*; 'data:'/'blob:' -> proto=data:/blob:, path=\"\" -> ветка «has a path...»."
+}

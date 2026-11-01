@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/probe/network.ts",
+  "line": 60,
+  "title": "TLS-проверка с фиксированным 10 с таймаутом и до 3 попыток не подчиняется --timeout/--max-duration",
+  "description": "`defaultTlsCheck(host, port, timeoutMs = 10000)` вызывается без таймаута из `defaultDeps.tlsCheck`, `tlsCheckWithRetry` делает до 3 попыток с backoff — до ~31 с на хост, причём для AS-хостов из auth probe тоже (до нескольких хостов). Deadline `--max-duration` (AbortSignal) сюда не пробрасывается, checkpoint между TLS-проверками AS-хостов нет (connect.ts:322 цикл).",
+  "evidence": "network.ts:60 `defaultTlsCheck(host, port, timeoutMs = 10000)`; network.ts:74 `tlsCheck: (h, p) => defaultTlsCheck(h, p)`; network.ts:146-158 цикл MAX_ATTEMPTS с `sleep(250 * 3 ** i)`.",
+  "suggested_fix": "Передавать в Deps.tlsCheck `timeoutMs = Math.min(opts.timeoutMs, 10000)` и `AbortSignal` (progress.abort), прерывать ретраи при abort.",
+  "confidence": 0.75,
+  "dimension": "protocol-probe",
+  "id": "F031"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": ".github/workflows/ci.yml",
+  "line": 27,
+  "title": "Матрица CI и engines держатся за Node 20, который достиг EOL 2026-04-30",
+  "description": "Сегодня 2026-11-01; Node 20 вышел из поддержки 30.04.2026. `engines: >=20.19`, матрица `['20.19','22','24']` на трёх ОС (3 лишних джоба на каждый push), `@types/node` зафиксирован на 20 через dependabot ignore, а в spec.md ещё остались заметки про Node 18. Поддержка EOL-версии стоит CI-минут и не даёт использовать типы fetch из @types/node 22+ (см. lib DOM). Для 0.2.0 (minor, по stability policy можно менять defaults) разумно поднять до `>=22.12`.",
+  "evidence": "package.json:24-26 `\"engines\": { \"node\": \">=20.19\" }`; .github/workflows/ci.yml:27 `node: ['20.19', '22', '24']`; .github/dependabot.yml:15-17 ignore `@types/node` major «tracks the oldest supported Node (engines >=20.19)».",
+  "suggested_fix": "В 0.2.0: `engines.node: \">=22.12\"`, матрица `['22', '24']`, `@types/node ^22`, снять dependabot ignore; упомянуть в CHANGELOG под Changed. До этого — хотя бы сократить матрицу: 20.19 только на ubuntu.",
+  "confidence": 0.7,
+  "dimension": "docs-tests-ci",
+  "id": "F151"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/github.ts",
+  "line": 32,
+  "title": "Нет защиты от лимита GITHUB_STEP_SUMMARY (1 MiB) и большого числа аннотаций (10 per step)",
+  "description": "appendStepSummary дописывает полный markdown (с колонкой Evidence до 16 KB на строку × сотни находок). GitHub отбрасывает summary >1 MiB («step summary upload aborted»), а также показывает максимум 10 аннотаций одного типа на шаг — остальные теряются молча. Сейчас одна ::error/::warning на каждую находку без группировки.",
+  "evidence": "github.ts: `for (const f of r.findings) { ... out.push(`::${sev} ...`) }` — без лимита; appendStepSummary пишет `${markdown}\\n` без проверки размера.",
+  "suggested_fix": "Группировать аннотации по правилу (как groupFindings в text) и ограничивать ~10 с финальной «+N more, see summary»; перед записью summary проверять Buffer.byteLength ≤ 1 MiB и при превышении писать сокращённую версию (без Evidence).",
+  "confidence": 0.7,
+  "dimension": "report-redact-engine",
+  "id": "F131"
+}

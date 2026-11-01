@@ -1,0 +1,20 @@
+{
+  "id": "F071",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "Строки 51-52 (COMBINATORS/SINGLE) актуальны. Ни walkSchema, ни schemaMetrics не заходят в `dependentSchemas`, в `dependencies` со схемами-значениями и в `additionalItems`. Поэтому подсхемы под этими ключами не видны правилам, которые пользуются walker'ом (src/rules/schema.ts, tools.ts, data.ts, annotations.ts, util/text.ts), и не попадают в метрики depth/count TOOL-020. По spec §1.5 расхождения нет: там перечислен закрытый список ключей, и этих трёх в нём нет. При этом код уже обходит больше, чем требует spec (patternProperties, contains, propertyNames, unevaluated*). Значит, это пробел в покрытии, а не нарушение замысла. В test/ нет теста, который делал бы это поведение намеренным. Влияние небольшое: в inputSchema MCP-инструментов такие ключи встречаются редко, и правила дают только ложноотрицательные результаты.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f071.mjs\n// dependentSchemas с x-mcp-header на secret_token:\n[\"/\"] {\"depth\":0,\"count\":1}\n// dependencies (форма со схемой):\n[\"/\"] {\"depth\":0,\"count\":1}\n// items:[..] + additionalItems:{properties:{x}}:\n[\"/\",\"/items/0\"] {\"depth\":1,\"count\":2}",
+  "votes": [
+    {
+      "id": "F071",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "corrected_description": "Строки 51-52 (COMBINATORS/SINGLE) актуальны. Ни walkSchema, ни schemaMetrics не заходят в `dependentSchemas`, в `dependencies` со схемами-значениями и в `additionalItems`. Поэтому подсхемы под этими ключами не видны правилам, которые пользуются walker'ом (src/rules/schema.ts, tools.ts, data.ts, annotations.ts, util/text.ts), и не попадают в метрики depth/count TOOL-020. По spec §1.5 расхождения нет: там перечислен закрытый список ключей, и этих трёх в нём нет. При этом код уже обходит больше, чем требует spec (patternProperties, contains, propertyNames, unevaluated*). Значит, это пробел в покрытии, а не нарушение замысла. В test/ нет теста, который делал бы это поведение намеренным. Влияние небольшое: в inputSchema MCP-инструментов такие ключи встречаются редко, и правила дают только ложноотрицательные результаты.",
+      "reasoning": "Проверил код (src/rules/util/schemaWalk.ts:51-52, 61-83, 95-113): ни в одной ветке нет dependentSchemas, dependencies и additionalItems. По grep в src/test/docs/design эти ключи нигде не упоминаются, кроме npm dependencies, так что ни выше, ни ниже по стеку их никто не обрабатывает. Spec §1.5 (docs/design/spec.md:77) называет walker обходом конкретного списка ключей, и этих трёх в нём нет. Утверждение spec не противоречит, но фиксирует реальный пробел относительно JSON Schema 2020-12 и draft-07. Мини-репро на dist подтвердило пропуск.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f071.mjs\n// dependentSchemas с x-mcp-header на secret_token:\n[\"/\"] {\"depth\":0,\"count\":1}\n// dependencies (форма со схемой):\n[\"/\"] {\"depth\":0,\"count\":1}\n// items:[..] + additionalItems:{properties:{x}}:\n[\"/\",\"/items/0\"] {\"depth\":1,\"count\":2}",
+      "lens": "reader-batch"
+    }
+  ]
+}

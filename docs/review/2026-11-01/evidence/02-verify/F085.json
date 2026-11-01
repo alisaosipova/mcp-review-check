@@ -1,0 +1,28 @@
+{
+  "id": "F085",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "disputed",
+  "final_severity": "medium",
+  "corrected_description": "RT-010 ищет токены (TOKEN_RE) только в строковых значениях JSON-корней: в `structuredContent` и в тех строках или всём тексте `content[].text`, которые успешно разобрал `JSON.parse`. Обычный текст, например `Your session token: eyJ...` или `Authorization: Bearer sk-...`, regex не проверяет совсем, поэтому секреты в нём не детектируются.",
+  "repro": "Скрипт: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f085.mjs (import { RT_010 } from dist/rules/runtime.js; snapshot = {tools:[], active:{calls:[{tool:'t',kind:'valid',result:{content:[{type:'text',text}]}}]}})\n$ node f085.mjs\nplain: []        <- text = \"Your session token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjf...\\nAuthorization: Bearer sk-ant-api03-AbCdEfGhIjKlMnOpQrSt\"\njson : [{\"tool\":\"t\",\"severity\":\"error\",\"message\":\"result contains token-like values: eyJh…\"}]   <- text = JSON.stringify({token: jwt})",
+  "votes": [
+    {
+      "refuted": true,
+      "confidence": 0.7,
+      "reasoning": "Само поведение воспроизводится: RT_010 ищет токены только в structuredContent и в JSON, распарсенном из текста (src/rules/runtime.ts:236-244, номер строки 237 актуален). Обычный текстовый результат с JWT находок не даёт. Но это не расхождение с замыслом, а именно то, что задано в спецификации. В docs/design/spec.md:1030-1034 для RT-010 написано: «Detect: walk `structuredContent` and any JSON parsed from text», а значения проверяются по JWT/sk-/ghp_/AKIA. Код выполняет это требование точно. Тест test/rules/runtime.test.ts:50-53 и :159-160 проверяет только случаи с JSON и structuredContent, то есть область действия правила выбрана сознательно. Сканирование всего текста по KNOWN_TOKEN, которое предлагает автор, расширило бы правило сверх спецификации. Это доработка спецификации, а не ошибка корректности. Кроме того, у RT-010 severity в каталоге — только chatgpt: warning: правило эвристическое и не обещает находить секреты везде. Если доработку всё же решат принять, ей подойдёт severity low/medium как пробелу в покрытии, а не high: сам инструмент секретов не раскрывает, он лишь пропускает их в отчёте.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f085.mjs\n(вызывается dist/rules/runtime.js RT_010.check)\nтекст 'Your session token: eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl' -> []\nтекст '{\"token\":\"eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl\"}' -> [{\"tool\":\"x\",\"severity\":\"error\",\"message\":\"result contains token-like values: eyJh…\"}]\nТакое поведение соответствует docs/design/spec.md:1031 (\"walk structuredContent and any JSON parsed from text\").",
+      "corrected_severity": "low",
+      "corrected_description": "RT-010 не находит токены в текстовом (не-JSON) содержимом результата. Так и предусмотрено спецификацией (spec.md:1031), поэтому это не баг, а возможное расширение покрытия: добавить проверку токенов по textOf(r) и спецификации, и коду.",
+      "lens": "reader"
+    },
+    {
+      "refuted": false,
+      "confidence": 0.93,
+      "corrected_severity": "medium",
+      "reasoning": "Находка подтверждена. В src/rules/runtime.ts:236-243 правило RT_010 строит `roots` только из `structuredContent` и из результатов `JSON.parse` (по каждой строке и по всему тексту). Затем TOKEN_RE применяется в `walkJson` к строковым значениям внутри этих корней. Если текст не парсится как JSON, он в `roots` не попадает, поэтому TOKEN_RE его вообще не проверяет. Исключение одно: строка целиком является JSON-строкой в кавычках. Воспроизвёл против dist/rules/runtime.js. Текстовый результат с JWT и `Bearer sk-ant-...` дал [], а тот же JWT внутри JSON {\"token\":...} дал находку уровня error. Severity medium: это ложноотрицательный результат проверки секретов в реалистичном случае, когда сервер возвращает токен обычным текстом. Самим линтером секрет не утекает, основной сценарий не ломается, поэтому не high. Часть suggested_fix про KNOWN_TOKEN — отдельное улучшение покрытия, я его не проверял.",
+      "corrected_description": "RT-010 ищет токены (TOKEN_RE) только в строковых значениях JSON-корней: в `structuredContent` и в тех строках или всём тексте `content[].text`, которые успешно разобрал `JSON.parse`. Обычный текст, например `Your session token: eyJ...` или `Authorization: Bearer sk-...`, regex не проверяет совсем, поэтому секреты в нём не детектируются.",
+      "repro": "Скрипт: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f085.mjs (import { RT_010 } from dist/rules/runtime.js; snapshot = {tools:[], active:{calls:[{tool:'t',kind:'valid',result:{content:[{type:'text',text}]}}]}})\n$ node f085.mjs\nplain: []        <- text = \"Your session token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjf...\\nAuthorization: Bearer sk-ant-api03-AbCdEfGhIjKlMnOpQrSt\"\njson : [{\"tool\":\"t\",\"severity\":\"error\",\"message\":\"result contains token-like values: eyJh…\"}]   <- text = JSON.stringify({token: jwt})",
+      "lens": "repro"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "label": "verify:reproducer:cli.ts",
+  "agentId": "a14826f1d62e653b4",
+  "note": "first run, Fable 5.1 verifier; the finding text it verified is in the agent transcript (prompt), not in this file",
+  "result": {
+    "refuted": false,
+    "confidence": 0.95,
+    "corrected_severity": "low",
+    "reasoning": "Подтверждено репродукцией против dist/cli.js. `splitStdioArgv` (src/protocol/stdioArgs.ts:52-59) распознаёт разделитель `--` только когда `--stdio` «голый» (последний в head или следующий токен начинается с `-`). При `--stdio foo -- node x` функция возвращает `{ args: argv }` без `command`; `parseArgs` (strict, allowPositionals) съедает `--` и делает `node`, `x` позиционными. В src/cli.ts:214 проверка `split.command && values.stdio !== undefined` не срабатывает (command undefined), и на строке 215 `positionals.length > 1` выдаёт нерелевантное «expected a single <url>» вместо осмысленного сообщения о конфликте форм `--stdio`. Это косметический дефект UX (ошибка всё равно возвращается, exit=2, ничего не запускается), поэтому severity low. Исправление: в cli.ts перед строкой 215 добавить `if (argv.includes('--') && values.stdio !== undefined) throw new UsageError('give --stdio either \"<command>\" or -- <command> [args...], not both')`, либо возвращать из splitStdioArgv флаг `separator: true` и проверять его.",
+    "repro": "$ node dist/cli.js --stdio foo -- node x\nerror: expected a single <url>\nRun with --help for usage.\nexit=2\n\nДля сравнения корректные формы:\n$ node dist/cli.js --stdio -- node x   -> запускается (SRV-003, exit=3, ожидаемо)\n$ node dist/cli.js --stdio foo http://x -> error: give exactly one of <url> or --stdio \"<command>\" (exit=2)\n\nКод: src/protocol/stdioArgs.ts:56 `head.findIndex((a, k) => a === '--stdio' && (k === head.length - 1 || head[k + 1].startsWith('-')))` -> для `--stdio foo` i < 0 -> `return { args: argv }` без command.",
+    "corrected_description": "`--stdio <value> -- <command>` (обе формы одновременно) не детектируется как конфликт: splitStdioArgv не выделяет `--`, когда у `--stdio` есть значение, parseArgs превращает хвост после `--` в positionals, и cli.ts:215 сообщает «expected a single <url>» вместо сообщения про две формы `--stdio`. Поведение безопасно (ошибка, exit 2), страдает только понятность диагностики."
+  }
+}

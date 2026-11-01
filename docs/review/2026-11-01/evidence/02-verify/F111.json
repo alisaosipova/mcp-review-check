@@ -1,0 +1,20 @@
+{
+  "id": "F111",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "Второй паттерн INJ-006 (src/rules/injection.ts:221, дословно из spec.md:621) `(instead of|rather than)[^.]{0,40}(other|built-?in|default|any)[^.]{0,20}(tools?|search|web|plugins?)` срабатывает на описания формата вывода вроде «rather than the default full web page» или «instead of the default HTML web view». Такие фразы не уводят модель от других инструментов, а правило выдаёт warning. В конце паттерна нет \\b, поэтому «web» совпадает и с website/webpage. Исправлять нужно и код, и spec.md: например, требовать после web слова search/browsing/browser и ставить \\b. Предложенное в находке требование глагола use/call/prefer перед конструкцией стоит проверить отдельно: оно может отсечь настоящие случаи вроде «Returns results; use instead of the built-in web search».",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f111.mjs (импорт INJ_006_PATTERNS, matchPattern из dist/rules/injection.js):\n\"Returns a compact summary rather than the default full web page.\" -> [ 'p1:rather than the default full web' ]\n\"Returns plain text instead of the default HTML web view.\" -> [ 'p1:instead of the default HTML web' ]\n\"Use this instead of the built-in web search.\" -> [ 'p1:instead of the built-in web search' ]  (контроль: настоящий случай)",
+  "votes": [
+    {
+      "id": "F111",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Строка 221 актуальна: это второй паттерн INJ_006_PATTERNS. Выше по стеку ничего не фильтрует это совпадение: scanCorpus вызывается без filter, у паттерна нет unless/unlessInMatch. В test/rules/injection.test.ts нет негативного кейса про описание формата результата («rather than/instead of the default ... web page/view»), поэтому намеренным такое поведение считать не из чего. Оговорка: regex дословно взят из docs/design/spec.md:621, то есть код соответствует спеке, и ложное срабатывание — слабость самой эвристики в спеке, а не отклонение от неё. Но спека описывает INJ-006 как «Steering the model away from other tools», а фраза «Returns a compact summary rather than the default full web page» ни от каких инструментов не уводит. Значит, срабатывание противоречит замыслу правила. Последствие — лишний warning, то есть низкая серьёзность. Дополнительно: после последней группы (tools?|search|web|plugins?) нет \\b, поэтому совпадут и «website», и «webpage».",
+      "corrected_description": "Второй паттерн INJ-006 (src/rules/injection.ts:221, дословно из spec.md:621) `(instead of|rather than)[^.]{0,40}(other|built-?in|default|any)[^.]{0,20}(tools?|search|web|plugins?)` срабатывает на описания формата вывода вроде «rather than the default full web page» или «instead of the default HTML web view». Такие фразы не уводят модель от других инструментов, а правило выдаёт warning. В конце паттерна нет \\b, поэтому «web» совпадает и с website/webpage. Исправлять нужно и код, и spec.md: например, требовать после web слова search/browsing/browser и ставить \\b. Предложенное в находке требование глагола use/call/prefer перед конструкцией стоит проверить отдельно: оно может отсечь настоящие случаи вроде «Returns results; use instead of the built-in web search».",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f111.mjs (импорт INJ_006_PATTERNS, matchPattern из dist/rules/injection.js):\n\"Returns a compact summary rather than the default full web page.\" -> [ 'p1:rather than the default full web' ]\n\"Returns plain text instead of the default HTML web view.\" -> [ 'p1:instead of the default HTML web' ]\n\"Use this instead of the built-in web search.\" -> [ 'p1:instead of the built-in web search' ]  (контроль: настоящий случай)",
+      "lens": "reader-batch"
+    }
+  ]
+}

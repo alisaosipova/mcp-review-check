@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 215,
+  "title": "`--stdio foo -- node x` даёт нерелевантное «expected a single <url>»",
+  "description": "splitStdioArgv (stdioArgs.ts:233) распознаёт `--` только при «голом» `--stdio`. Если у `--stdio` есть значение и в argv есть `--`, parseArgs превращает хвост в positionals, и проверка на строке 214 (`split.command && values.stdio !== undefined`) не срабатывает; пользователь получает сообщение про URL.",
+  "evidence": "`node dist/cli.js --stdio foo -- node x` -> `error: expected a single <url>`; `splitStdioArgv(['--stdio','foo','--','node','x'])` -> `{args:[...всё как есть]}`.",
+  "suggested_fix": "В cli.ts: если `argv.includes('--') && values.stdio !== undefined` -> UsageError 'give --stdio either \"<command>\" or -- <command> [args...], not both'. Либо в splitStdioArgv возвращать флаг `separator: true`.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F010"
+}

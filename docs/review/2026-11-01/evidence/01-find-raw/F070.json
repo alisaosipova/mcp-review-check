@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/schema.ts",
+  "line": 177,
+  "title": "TOOL-019: $ref на embedded resource с собственным `$id` внутри `$defs` считается «сетевой» ссылкой",
+  "description": "Правило разрешает ref только относительно корневого `$id`; любой абсолютный URI (в т.ч. `urn:…`), совпадающий с `$id` вложенной подсхемы в `$defs`, помечается «$ref points outside the document», хотя это валидная локальная ссылка по JSON Schema 2020-12 (embedded resources). Также относительные ref без корневого `$id` молча пропускаются (`new URL` бросает, нет схемы → continue), хотя они тоже ведут за пределы документа.",
+  "evidence": "node против dist: properties.a.$ref='urn:acme:addr', $defs.Addr.$id='urn:acme:addr' -> [{\"path\":\"inputSchema/properties/a\",\"message\":\"$ref points outside the document: urn:acme:addr\"}].",
+  "suggested_fix": "Собрать через walkSchema множество всех `$id`/`$anchor` (резолвленных относительно базы) в документе и не репортить ref, попадающий в это множество; для относительных ref без базы выдавать отдельное info «relative $ref without $id».",
+  "confidence": 0.75,
+  "dimension": "rules-tools-schema",
+  "id": "F070"
+}

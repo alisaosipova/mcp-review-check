@@ -1,0 +1,19 @@
+{
+  "id": "F143",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F143",
+      "refuted": true,
+      "confidence": 0.55,
+      "reasoning": "Строки 166-167 актуальны, и в сообщении действительно печатается `target.href` без displayUrl. Репро с Location `https://other.host/cb?access_token=...` выводит токен как есть. Но спека §4.5 (spec.md:1354-1355) ограничивает редакцию значениями Authorization, Cookie, --header и query, совпавшими с AUTH-001 во введённом URL, а displayUrl (spec.md:96) относится к целевому URL. Location — это данные, которые выдал сервер. Редактор (redact.ts buildRedactor, trace.ts:57) намеренно работает по значениям секретов пользователя, и серверные URL в других правилах тоже печатаются без displayUrl (например, PRM `res` в auth.ts:189-193). Preflight по спеке неаутентифицированный (spec.md:1161), так что секрета пользователя в Location быть не может. Токен мог бы появиться только если сервер сам выдаёт его анонимному пробнику, и тогда он попадает в отчёт владельца того же сервера. Set-cookie — это сессия, выданная самому линтеру, а ex.headers печатаются только в трассе --verbose. Можно сделать hardening: displayUrl(target.href) стоит одну строку. Но как дефект безопасности относительно замысла это не подтверждается; если принимать, то как info/hardening.",
+      "repro": "F143 [{\"message\":\"POST redirects (302) to another host: https://other.host/cb?access_token=abc123def456\"}]",
+      "corrected_severity": "low",
+      "lens": "reader-batch"
+    }
+  ]
+}

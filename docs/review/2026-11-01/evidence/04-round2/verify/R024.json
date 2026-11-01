@@ -1,0 +1,38 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/limits.ts",
+  "line": 29,
+  "title": "TEXT_CAP → TOOL-017: обрезка длинного `pattern` делает валидную схему «does not compile» (spec error)",
+  "description": "capStrings режет любую строку tool-объекта длиннее 16 KB, включая `pattern` в inputSchema/outputSchema. Обрезанный посередине regex (незакрытая группа или escape) перестаёт компилироваться, и TOOL-017 через invalidPattern выдаёт spec=error на схему, которая на сервере корректна. Длинные альтернации (списки часовых поясов, кодов, SKU) встречаются на практике.",
+  "evidence": "/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2apps.out: `pattern length 50895 valid before cap: true`; до capSnapshot TOOL-017 — нет находок; capSnapshot -> [{\"where\":\"tool pick\",\"length\":50895,\"cap\":16384}]; после: `TOOL-017 {\"spec\":\"error\"} inputSchema does not compile: Invalid regular expression: /^(?:(?:value_0_...`",
+  "suggested_fix": "Не резать структурные ключевые слова схемы: пропускать в capStrings значения под ключами pattern, $ref, $id, $schema, format, const, enum[*], name (или резать только description/title/examples/default). Как вариант — запускать TOOL-017 на необрезанной копии, а если поле было обрезано, понижать результат до info с пометкой «truncated».",
+  "confidence": 0.85,
+  "failure_scenario": "Инструмент с `pattern` из 2000 альтернатив (~50 KB): реальная схема валидна, отчёт показывает spec error TOOL-017 «does not compile».",
+  "dimension": "limits-apps",
+  "id": "R024",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "refuted": false,
+      "confidence": 0.9,
+      "reasoning": "Подтверждено. В src/limits.ts:17-34 capStrings без разбора режет любую строку длиннее TEXT_CAP (16384) в tool-объекте, в том числе `pattern` внутри inputSchema/outputSchema. Исключений по ключам нет. Вызывается в src/connect.ts:542 (capSnapshot(masked)) до запуска правил. Ниже по стеку TOOL-017 (src/rules/schema.ts:104-136) проверяет уже обрезанную схему: invalidPattern компилирует regex с флагом u и выдаёт spec=error «does not compile». Обрезан ли был pattern, правило не проверяет и до info не понижает. Тесты test/limits.test.ts проверяют обрезку только у description и не показывают, что ломать pattern задумано. spec.md (TOOL-017, §492) называет невалидный pattern ошибкой, а обрезку описывает как защиту heuristic-регулярок, а не как изменение семантики схемы. Среди находок раунда 1 дубликата нет: F146 и F013 по limits.ts касаются покрытия и момента применения caps. Есть смягчающий фактор: limitsNotice в отчёте сообщает о «truncated before pattern checks», но сама находка TOOL-017 остаётся error и может дать exit 1 в CI. Severity понижаю до low: pattern длиннее 16 KB на практике встречается редко (обычно используют enum), это редкий край, хотя результат при этом неверный, уровня error.",
+      "corrected_severity": "low",
+      "corrected_description": "capSnapshot/capStrings (src/limits.ts:29) режет любую строку длиннее 16 KB, включая `pattern`/`patternProperties` в inputSchema/outputSchema, и делает это до запуска правил (src/connect.ts:542). Если regex обрезан посередине, он перестаёт компилироваться, и TOOL-017 (src/rules/schema.ts:128) выдаёт spec=error «does not compile» на схему, которая на сервере валидна. Правило не знает, что поле было обрезано. Случай редкий (pattern больше 16 KB), но даёт ложную находку уровня error.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r024.mjs (dist/limits.js + dist/rules/schema.js TOOL_017.check): pattern из 2000 альтернатив, длина 26899.\nlen 26899\nbefore []\n[{\"where\":\"tool pick\",\"length\":26899,\"cap\":16384}]\nafter [{\"tool\":\"pick\",\"path\":\"inputSchema\",\"message\":\"inputSchema does not compile: Invalid regular expression: /^(?:(?:value_0_xx|value_1_xx|...\"}]",
+      "lens": "reader"
+    },
+    {
+      "refuted": false,
+      "confidence": 0.9,
+      "reasoning": "Не дубликат: в known-round1.json для src/limits.ts есть только F146 и F013, обе про недостаточное покрытие лимитами, а не про ложную ошибку из-за обрезки. Код подтверждает механизм. capStrings (src/limits.ts:27-29) режет любую строку длиннее TEXT_CAP=16384 через v.slice(0, cap), и `pattern` внутри inputSchema/outputSchema не исключён. connect.ts:542 вызывает capSnapshot до запуска правил. TOOL-017 (src/rules/schema.ts:128) затем вызывает invalidPattern, а тот делает new RegExp(p,'u') на обрезанной строке. Обрыв посередине незакрытой группы `(?:` даёт SyntaxError, и правило выдаёт spec=error «does not compile». Воспроизведено против dist: до capSnapshot находок нет, после него появляется ложная находка. Смягчающие факторы: limitsNotice сообщает об обрезке («truncated before pattern checks»), а regex длиннее 16 KB в реальных схемах встречается редко. Чаще большие списки задают через enum, а элементы enum по 16 KB не бывают. Поэтому снижаю severity до low (редкий край). Но если случай возникает, итог неверный и жёсткий: ложный spec error влияет на score и exit-код в --fail-on.",
+      "corrected_severity": "low",
+      "corrected_description": "capStrings (src/limits.ts:29) обрезает до 16 KB все строки tool-объекта, в том числе значения `pattern` и ключи patternProperties в inputSchema/outputSchema. Если regex длиннее 16 KB, обрыв посередине группы или escape делает его некомпилируемым. Тогда TOOL-017 через invalidPattern выдаёт spec=error «does not compile» на схему, которая на сервере валидна. limitsNotice при этом сообщает об обрезке, но сама находка остаётся error и влияет на score и exit-код. Случай редкий, потому что regex такой длины в схемах встречается нечасто.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r024.mjs (import dist/limits.js и dist/rules/schema.js; pattern '^(?:value_0|...|value_1999)$'):\npattern length 20895 valid: true\nbefore: []\ncap: [{\"where\":\"tool pick\",\"length\":20895,\"cap\":16384}]\nafter: [{\"tool\":\"pick\",\"path\":\"inputSchema\",\"message\":\"inputSchema does not compile: Invalid regular expression: /^(?:value_0|value_1|...|value_\"}]",
+      "lens": "repro"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "capSnapshot/capStrings (src/limits.ts:29) режет любую строку длиннее 16 KB, включая `pattern`/`patternProperties` в inputSchema/outputSchema, и делает это до запуска правил (src/connect.ts:542). Если regex обрезан посередине, он перестаёт компилироваться, и TOOL-017 (src/rules/schema.ts:128) выдаёт spec=error «does not compile» на схему, которая на сервере валидна. Правило не знает, что поле было обрезано. Случай редкий (pattern больше 16 KB), но даёт ложную находку уровня error.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r024.mjs (dist/limits.js + dist/rules/schema.js TOOL_017.check): pattern из 2000 альтернатив, длина 26899.\nlen 26899\nbefore []\n[{\"where\":\"tool pick\",\"length\":26899,\"cap\":16384}]\nafter [{\"tool\":\"pick\",\"path\":\"inputSchema\",\"message\":\"inputSchema does not compile: Invalid regular expression: /^(?:(?:value_0_xx|value_1_xx|...\"}]"
+}

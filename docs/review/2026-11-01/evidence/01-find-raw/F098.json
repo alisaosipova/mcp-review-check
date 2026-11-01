@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 80,
+  "title": "DATA-001 текстовая эвристика: «Send all messages matching the filter» в мессенджер-инструментах",
+  "description": "`(include|pass|send|provide) … (all) (chat |conversation )?messages` ловит forwarding/архивирование сообщений канала (Slack/Discord/email), не историю чата с моделью.",
+  "evidence": "DATA_001.check для forward 'Send all messages matching the filter to the archive channel.' → warning 'asks for conversation data'.",
+  "suggested_fix": "Требовать `(chat|conversation|previous|prior) messages` обязательно (убрать `all messages` без квалификатора) или исключать объект `(in|from) (the )?(channel|thread|inbox|folder|mailbox)` после messages.",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F098"
+}

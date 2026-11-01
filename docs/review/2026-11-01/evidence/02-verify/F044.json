@@ -1,0 +1,24 @@
+{
+  "id": "F044",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "medium",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Утверждение опровергнуто. Описанное поведение есть в коде, но оно намеренное и прямо прописано в спецификации, поэтому дефектом не является.\n\n1. Строка актуальна. В src/rules/server.ts на строке 234 стоит условие `(e.status === 403 || e.status === 429) && /cloudflare|akamai/i.test(e.headers?.server ?? '') && !/json/i.test(e.contentType ?? '')`. Приведённый автором repro по логике кода действительно даёт warning.\n\n2. Поведение совпадает со спекой слово в слово. В docs/design/spec.md:185-190 в списке Detect для SRV-009 указано: «403 or 429 with `server: cloudflare|akamai*` and a non-JSON body». Ложные срабатывания на 429/403 от origin за Cloudflare — заранее принятая цена этого эвристического признака.\n\n3. По §1.2 спеки любое эвристическое срабатывание даёт warning, а не error: «warning: ... any heuristic ... detection ... This rule exists to avoid false positives». Значит, severity выставлена верно. Автор находки сам признаёт, что warning допустим.\n\n4. Довод автора «текст утверждает факт WAF» не подтверждается. Сообщение находки нейтральное и описывает только наблюдаемое: `${label}: ${status} from ${server} with a non-JSON body`. Заголовок правила звучит как «Bot challenge or WAF signature in responses», то есть речь о сигнатуре, а не о доказанном факте. Кроме того, AUTH-003 (spec:853, :1094) нарочно ссылается на SRV-009 как на альтернативную причину 403, так что эвристика встроена в общую схему.\n\n5. Тест test/rules/server.test.ts:36 проверяет только ветку `cf-mitigated`, и никакого противоречия со спекой в нём нет.\n\nПредложение сузить эвристику (`cf-mitigated`, исключить 429 с `retry-after`) — это изменение требований спеки, а не исправление ошибки. Его можно вынести отдельным улучшением с низким приоритетом.",
+      "repro": "Отдельный repro не запускался. Вывод сделан по чтению src/rules/server.ts:226-241, docs/design/spec.md:33-38 и 185-193, а также test/rules/server.test.ts:36-39.",
+      "lens": "reader"
+    },
+    {
+      "refuted": true,
+      "confidence": 0.6,
+      "reasoning": "Механически поведение воспроизводится: SRV-009 срабатывает на обычный 429 (text/plain, Retry-After) и на 403 text/html от origin, если в ответе есть `server: cloudflare`. Но это не расхождение кода с замыслом, а точная реализация спецификации. В docs/design/spec.md:185-190 для SRV-009 прямо записан критерий «403 or 429 with `server: cloudflare|akamai*` and a non-JSON body». В src/rules/server.ts:234 он реализован буква в букву. По §1.2 любая эвристика должна давать warning именно затем, чтобы допускать ложные срабатывания, и правило так и работает (claude=warning, chatgpt=warning). Утверждение, что «текст утверждает факт WAF», тоже не подтверждается. Сообщение находки фактическое: «429 from cloudflare with a non-JSON body». Про WAF говорит только заголовок правила («Bot challenge or WAF signature»), и в нём сказано «signature», а не установленный факт. Кроме того, если краулер получает 403 или 429 с не-JSON телом на MCP-endpoint, для каталога это реальная проблема, кто бы его ни вернул. Итог: это предложение сузить эвристику (добавить маркеры cf-mitigated, «error code: 10xx», `__cf_bm`, исключить 429 с retry-after), а не дефект. Если команда захочет её сузить, сначала нужно поменять спецификацию. Сеть не понадобилась: репро собран на dist/rules/server.js.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f044.mjs (импортирует SRV_009 из dist/rules/server.js и вызывает .check на минимальном Snapshot):\norigin429 [{\"message\":\"sdk tools/list: 429 from cloudflare with a non-JSON body\"}]\napp403html [{\"message\":\"sdk initialize: 403 from cloudflare with a non-JSON body\"}]\nПоведение совпадает со спецификацией docs/design/spec.md:189 («403 or 429 with `server: cloudflare|akamai*` and a non-JSON body») и с правилом warning для эвристик из §1.2.",
+      "lens": "repro"
+    }
+  ]
+}

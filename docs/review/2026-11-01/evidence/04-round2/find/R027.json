@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 54,
+  "title": "HTML_CAP → APPS-014: ложное «uses the ext-apps App but never calls connect()» для виджета больше 2 MB",
+  "description": "HTML обрезается до 2 MB, а APPS-014 ищет `new App(` и `.connect(` в обрезанном тексте. Если `new App(` попадает в первые 2 MB, а `app.connect()` оказывается после среза (так бывает в single-file бандлах, где вызов стоит в конце), получаем claude warning на рабочем виджете. В том же срезе APPS-007/013 пропускают origin-ы из хвоста, но это пропуск, а не ложное срабатывание.",
+  "evidence": "r2apps.out: `HTML > cap before: APPS-014 (no findings)`; после capSnapshot — `APPS-014 {\"claude\":\"warning\"} uses the ext-apps App but never calls connect()`.",
+  "suggested_fix": "Если ресурс был обрезан (есть запись в snap.limits.truncated для этого URI), APPS-014 не выдаёт «never calls connect()» или понижает его до info с пояснением «content truncated».",
+  "confidence": 0.75,
+  "failure_scenario": "Single-file Vite-бандл на 2.5 MB, где `new App(` в начале, а `app.connect()` в конце: ложный claude warning.",
+  "dimension": "limits-apps",
+  "id": "R027"
+}

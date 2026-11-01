@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 227,
+  "title": "--timeout/--max-duration принимают 0x10, 1e2, 1.5 через Number()",
+  "description": "Валидация через `Number()` пропускает hex, экспоненту, дробные и пробелы; `--timeout 0x10` = 16 мс молча. Это не падение, но неожиданное поведение и расхождение с текстом «number of milliseconds».",
+  "evidence": "`node dist/cli.js --timeout 0x10 --stdio \"node -e 1\"` -> exit 3 (принято как 16 мс); `--timeout 1e2` тоже принято.",
+  "suggested_fix": "Проверять `/^\\d+$/.test(values.timeout)` перед Number().",
+  "confidence": 0.8,
+  "dimension": "cli-connect",
+  "id": "F015"
+}

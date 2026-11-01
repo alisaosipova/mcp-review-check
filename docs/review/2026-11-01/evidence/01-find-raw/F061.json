@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/rules/auth.ts",
+  "line": 80,
+  "title": "AUTH-002: design §2.8 обещает «chatgpt and spec error» при legacy discovery, код даёт spec=warning",
+  "description": "В `missing()` финдинг `{ platforms: ['chatgpt','spec'], message }` без явной severity наследует rule.severity (spec: 'warning'). docs/design/spec.md (AUTH-002, строка «no PRM, but legacy origin AS metadata exists → chatgpt and spec error») расходится с фактом. Аналогичная формулировка у AUTH-004 («chatgpt and spec stay errors») — там rule.severity spec=error, совпадает.",
+  "evidence": "Репро legacyDiscovery: `['Bearer challenge has no resource_metadata parameter', { chatgpt: 'error', spec: 'warning' }]`.",
+  "suggested_fix": "Либо задать `severity: 'error'` для этого финдинга (если считать RFC 9728 §5.1 MUST), либо поправить формулировку в docs/design/spec.md.",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F061"
+}

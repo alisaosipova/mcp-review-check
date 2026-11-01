@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": ".github/workflows/release.yml",
+  "line": 140,
+  "title": "Release/CI: постоянный fallback на NPM_TOKEN и npm ci без --ignore-scripts",
+  "description": "Pinning actions по SHA, минимальные permissions, OIDC trusted publishing и provenance сделаны правильно. Два остаточных момента: (1) `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` остаётся в workflow навсегда — если секрет не удалить после первого релиза, публикация пойдёт по долгоживущему токену, а не по OIDC, и компрометация секрета = компрометация пакета; (2) `npm ci` в ci.yml и release.yml выполняет install-скрипты зависимостей (в lockfile hasInstallScript у esbuild и fsevents) — для пакета без нативных рантайм-зависимостей это лишняя поверхность supply-chain-атаки в момент сборки релизного tarball.",
+  "evidence": "release.yml:136-140; ci.yml:35,54; release.yml:101. `node -e` по package-lock.json: deps with install scripts: ['node_modules/esbuild','node_modules/fsevents'].",
+  "suggested_fix": "После первого релиза удалить строки NODE_AUTH_TOKEN (или условие `if: secrets.NPM_TOKEN == ''` невозможно — проще убрать), добавить шаг-проверку, что публикация прошла с provenance (`npm view … --json | jq .dist.attestations`). В `npm ci` добавить `--ignore-scripts` (esbuild работает без postinstall, т.к. бинарь приходит из @esbuild/linux-x64; проверить прогон vitest) хотя бы в release.yml.",
+  "confidence": 0.6,
+  "dimension": "security-lens",
+  "id": "F145"
+}

@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 342,
+  "title": "APPS-015: navigator.clipboard помечается даже при объявленном `ui.permissions.clipboardWrite`; alert() в комментарии тоже срабатывает",
+  "description": "Правило не смотрит r.ui.permissions, хотя его собственный fix советует «request clipboardWrite permission if needed», а APPS-017 признаёт clipboardWrite легальным ключом. Виджет, который корректно запросил разрешение, всё равно получает warning. Кроме того, regex работает по сырому HTML без stripComments: `// never use alert() here` → «uses blocked browser API: alert(». Это отличается от F108 (пользовательские функции).",
+  "evidence": "r2apps.out: `APPS-015 clipboard with permissions.clipboardWrite` → `APPS-015 {chatgpt:warning} uses blocked browser API: navigator.clipboard`; `APPS-015 alert in comment` → `uses blocked browser API: alert(`.",
+  "suggested_fix": "Пропускать navigator.clipboard(.writeText|.write), если `isObj(r.ui.permissions?.clipboardWrite)`; диалоги искать в stripComments(r.html).",
+  "confidence": 0.75,
+  "failure_scenario": "Виджет с кнопкой «Copy» и объявленным clipboardWrite получает предупреждение, которое противоречит fix-тексту самого правила.",
+  "dimension": "limits-apps",
+  "id": "R037",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R037",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "Строка 342 актуальна: regex применяется к сырому r.html, r.ui.permissions не проверяется. Fix самого правила советует «request clipboardWrite permission if needed», а APPS-017 и spec (§APPS-017) признают clipboardWrite легальным ключом. Поэтому виджет, который объявил разрешение, всё равно получает warning, и это расходится с собственным fix-текстом. Spec §APPS-015 описывает detect без учёта permissions, поэтому поведение соответствует spec буквально, но spec и fix противоречат друг другу. Учитывает ли ChatGPT clipboardWrite, не проверено, отсюда умеренная уверенность. Часть про комментарии подтверждена: в соседнем APPS-014 используется stripComments, а в APPS-015 нет, и `// never use alert() here` срабатывает. Это отличается от F108, где речь о пользовательских функциях. Тестов, закрепляющих такое поведение, нет: в test/rules/apps.test.ts есть только pos `alert(\"hi\")` и neg `dialog.prompt`. Последствие — ложный warning только для платформы chatgpt.",
+      "repro": "node: regex /(^|[^.\\w])(window\\.)?(alert|confirm|prompt)\\s*\\(/m на '<script>// never use alert() here\\n navigator.clipboard.writeText(x)</script>' -> match ' alert(' (в комментарии).",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "node: regex /(^|[^.\\w])(window\\.)?(alert|confirm|prompt)\\s*\\(/m на '<script>// never use alert() here\\n navigator.clipboard.writeText(x)</script>' -> match ' alert(' (в комментарии)."
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "package.json",
+  "line": 17,
+  "title": "main указывает на CLI, нет exports/types — программный API заявлен в CHANGELOG, но не поддерживается пакетом",
+  "description": "`\"main\": \"dist/cli.js\"` при `declaration: false` в tsconfig.json и отсутствии `exports`/`types`. CHANGELOG (строка 102) описывает сценарий «`--max-duration` with `runCli` called in process (a library or a test)», а scripts/capture-real.mjs импортирует `dist/connect.js`. Потребитель `import 'mcp-review-check'` получает нетипизированный CLI-модуль (с side-effect чтения package.json и регистрацией signal-хендлеров только при isMain). Для рынка (интеграция в другие линтеры/CI-боты) библиотечный API с типами — важный плюс; сейчас его нет, но документация намекает на него.",
+  "evidence": "package.json:17 `\"main\": \"dist/cli.js\"`; tsconfig.json:9 `\"declaration\": false`; CHANGELOG.md:102 «`--max-duration` with `runCli` called in process (a library or a test)»; scripts/capture-real.mjs:8 `import { buildSnapshot } from '../dist/connect.js';`",
+  "suggested_fix": "Либо добавить `src/index.ts` (экспорт runCli, buildSnapshot, runRules, RULES, buildReport, render*), `declaration: true`, `\"exports\": {\".\": \"./dist/index.js\", \"./package.json\": \"./package.json\"}`, `\"types\": \"dist/index.d.ts\"`; либо убрать `main` и явно написать в README «CLI only, no programmatic API yet».",
+  "confidence": 0.8,
+  "dimension": "docs-tests-ci",
+  "id": "F150"
+}

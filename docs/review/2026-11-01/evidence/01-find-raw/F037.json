@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/probe/auth.ts",
+  "line": 22,
+  "title": "PRM-кандидат из заголовка дублирует well-known путь → лишние запросы и тайминг-сэмплы; retry-бюджет auth probe не ограничен сверху",
+  "description": "Если `resource_metadata` в заголовке совпадает с `/.well-known/oauth-protected-resource{path}` (норма), кандидат запрашивается дважды при неуспехе первого (header → well-known-path). Каждый кандидат идёт через requestWithRetry (до 3 попыток × timeoutMs=30 с), затем sample() делает ещё 2 GET; AS-discovery до 3 issuers × 3 URL × 3 попытки. В худшем случае (сервер отвечает 5xx/таймаутами) auth probe один занимает десятки минут, не считая --max-duration.",
+  "evidence": "auth.ts:22-29 prmCandidates не дедуплицирует `headerUrl` против well-known URL; auth.ts:50-52 getRetried с `timeoutMs: input.timeoutMs`; auth.ts:106-116 вложенные циклы без общего бюджета.",
+  "suggested_fix": "Дедуплицировать кандидатов по href; для metadata-GET использовать меньший таймаут (например min(timeoutMs, 10 с)) и общий бюджет попыток на auth probe; проверять progress.abort между кандидатами.",
+  "confidence": 0.75,
+  "dimension": "protocol-probe",
+  "id": "F037"
+}

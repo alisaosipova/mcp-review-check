@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/util/text.ts",
+  "line": 157,
+  "title": "escapeHidden экранирует ZWJ внутри составных эмодзи — заголовки с 👨‍💻 показываются как «👨\\u{200D}💻»",
+  "description": "ZWJ (U+200D) относится к категории Cf и всегда экранируется, хотя внутри emoji-последовательности (между Extended_Pictographic) он легитимен. Сниппеты заголовков/описаний с составными эмодзи выглядят как «подозрительные скрытые символы» и могут вводить ревьюера в заблуждение.",
+  "evidence": "node против dist: snippet('Search 👨‍💻 docs') -> 'Search 👨\\u{200D}💻 docs'.",
+  "suggested_fix": "Не экранировать U+200D, если и предыдущий, и следующий code point — `\\p{Extended_Pictographic}` (или использовать Intl.Segmenter grapheme и экранировать только Cf вне графем с эмодзи).",
+  "confidence": 0.7,
+  "dimension": "rules-tools-schema",
+  "id": "F078"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/engine.ts",
+  "line": 109,
+  "title": "Исключение в правиле, не относящемся к --target, глотается без следа и без учёта в score",
+  "description": "Правило вне --target всё равно выполняется ради score (комментарий в строке 96). Если оно бросает исключение, INTERNAL-находка создаётся только при applies=true; иначе ошибка теряется молча, а score считается без этого правила. Пользователь с --target claude никогда не узнает о баге в chatgpt-правиле, которое при --target all сломается.",
+  "evidence": "node repro (--target claude, chatgpt-правило бросает Error): {\"findings\":[],\"skipped\":[{\"ruleId\":\"XX-002\",\"reason\":\"not applicable to --target claude\"}]}",
+  "suggested_fix": "Всегда создавать INTERNAL-находку (она на платформе spec, которая активна при любом --target) или хотя бы писать причину в skipped: `${rule.id} threw: ...`.",
+  "confidence": 0.8,
+  "dimension": "report-redact-engine",
+  "id": "F124"
+}

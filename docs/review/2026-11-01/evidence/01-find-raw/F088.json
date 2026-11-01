@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 93,
+  "title": "DATA-002: голое `memory` после read/access/retrieve → «Read the memory usage of the VM» = доступ к памяти Claude",
+  "description": "Альтернатива `(claude'?s )?(memory|...)` делает префикс опциональным, так что любое «read … memory» (RAM, кэш, memory usage, knowledge-graph memory server) флагуется как доступ к памяти хоста.",
+  "evidence": "DATA_002.check для get_stats 'Read the memory usage of the VM.' → 'tool.description accesses host memory or chat history: \"Read the memory usage of the VM.\"'.",
+  "suggested_fix": "Требовать квалификатор для `memory`: `(claude'?s|assistant'?s|host'?s|model'?s) memory|memory of (the|this) (conversation|chat)`, остальные объекты (chat history, past conversations, project knowledge) оставить без префикса. Добавить negative lookahead `memory(?! (usage|limit|size|footprint))`.",
+  "confidence": 0.85,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F088"
+}

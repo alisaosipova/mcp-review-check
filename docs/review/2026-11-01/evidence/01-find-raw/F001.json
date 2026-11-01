@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/cli.ts",
+  "line": 243,
+  "title": "--bearer / MCP_REVIEW_CHECK_TOKEN / --header при --stdio молча выставляют options.authenticated=true и отключают RT-009",
+  "description": "Для stdio-цели bearer и заголовки никуда не отправляются, но cli.ts читает `env.MCP_REVIEW_CHECK_TOKEN` и `--header` независимо от вида цели, а connect.ts:521 ставит `authenticated: !!opts.bearer || headers>0`. RT-009 (src/rules/runtime.ts:199) при `authenticated` возвращает [] без отметки skipped. В CI, где MCP_REVIEW_CHECK_TOKEN экспортирован для HTTP-прогона, stdio-прогон с --active молча теряет правило (ложный пропуск). Для `--env`/`--cwd` при HTTP уже есть usage error, для обратной ситуации — нет.",
+  "evidence": "Мини-репро через dist/connect.js: buildSnapshot({target:{kind:'stdio',...good-server.mjs}, bearer:'tok…', active:true}) -> `stdio snap.options: {\"target\":\"all\",\"active\":true,\"activeAuth\":false,\"authenticated\":true} calls: 4`. Код: cli.ts:243 `const bearer = values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;` (до ветвления isStdio), connect.ts:521.",
+  "suggested_fix": "В cli.ts для isStdio: `--bearer`/`--header` -> UsageError ('apply only to <url>'), а env-токен игнорировать (`bearer = isStdio ? undefined : …`). В buildSnapshot считать `authenticated` только для `t.kind === 'http'`. Добавить тест в test/e2e-stdio.test.ts.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F001"
+}

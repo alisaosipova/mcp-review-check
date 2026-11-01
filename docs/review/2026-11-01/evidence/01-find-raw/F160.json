@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": ".github/workflows/release.yml",
+  "line": 73,
+  "title": "NODE_AUTH_TOKEN всегда задан (возможно пустой) при trusted publishing — поведение «OIDC is used when it is empty» не подтверждено",
+  "description": "setup-node с `registry-url` пишет в .npmrc `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`; при отсутствии секрета переменная пуста. Комментарий утверждает, что npm тогда использует OIDC. У npm были issue, где пустой/невалидный `_authToken` приводил к E401 вместо OIDC-попытки. Не проверено офлайн; риск — первый релиз после удаления секрета падает, а понять причину сложно.",
+  "evidence": ".github/workflows/release.yml:70-74 «Only for the very first publish … Delete the secret afterwards; OIDC is used when it is empty. NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}». Проверка невозможна без запуска workflow.",
+  "suggested_fix": "Разнести на два шага: `if: env.HAS_TOKEN == 'true'` (вычислить в предыдущем шаге `echo HAS_TOKEN=${{ secrets.NPM_TOKEN != '' }}`) публикует с токеном, иначе шаг без `NODE_AUTH_TOKEN`; либо после настройки trusted publisher удалить упоминание секрета из workflow целиком.",
+  "confidence": 0.35,
+  "dimension": "docs-tests-ci",
+  "id": "F160"
+}

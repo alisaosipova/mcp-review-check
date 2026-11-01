@@ -1,0 +1,212 @@
+{
+ "results": [
+  {
+   "wp": "W3A-connect",
+   "branch": "worktree-wf_a7e88476-bcc-1",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_a7e88476-bcc-1",
+   "done": [
+    {
+     "id": "F003",
+     "commit": "8442189",
+     "summary": "Перед fetch из URL удаляется user:pass@ (fetch не принимает URL с учётными данными). Учётные данные уходят в заголовке Authorization: Basic: percent-decode, приоритет у --bearer и у Authorization из --header. Значение Basic добавлено в редактор через redactorFor, urlAsEntered сохраняется. При 401 результат token-rejected, options.authenticated=true. Добавлена экспортируемая функция urlBasicAuth()."
+    },
+    {
+     "id": "F019",
+     "commit": "ed1ac1b",
+     "summary": "В buildHttp сразу после preflight вызывается sameHostRedirect(url, pf). На цель редиректа теперь идут server/discover (ModernClient и modern fresh-relist) и runAuthProbe. На цель отправляется ещё один неаутентифицированный initialize: он запускает auth-пробу и даёт challenge-exchange. snap.transport.preflight по-прежнему хранит 3xx (для SRV-006). Dual-сервер за /mcp->/mcp/ больше не помечается как legacy."
+    },
+    {
+     "id": "F031",
+     "commit": "5073b72",
+     "summary": "В оба вызова tlsCheckWithRetry (MCP-хост и цикл по AS-хостам) передаются { timeoutMs: connectTimeout, signal: progress.abort.signal }. Перед каждым AS-хостом стоит checkpoint (фаза 'auth probe')."
+    },
+    {
+     "id": "F137-rawPages-cap",
+     "commit": "b699acf",
+     "summary": "Код не менялся: capSnapshot уже обрезает строки в listMeta[*].rawPages (коммит e5a36bd из волны 1, он влит после отчёта WP4). Добавлен регрессионный тест на ключ pad, который не читает ни одно правило."
+    },
+    {
+     "id": "R008-legacy-sse",
+     "commit": "89f14f0",
+     "summary": "RecordingTransport замеряет время от send(id) до result и пишет его в latencies[method]; ошибки не учитываются, часы берутся из tracer.now. Для legacy SSE функция httpTimings() в connect.ts добавляет эти замеры в transport.timings — и в finishHttp, и в stopped-снапшоте через progress.collect."
+    },
+    {
+     "id": "catalog-date",
+     "commit": "cae2189",
+     "summary": "CATALOG_DATE изменён на 2026-11-01. README.md, docs/RULES.md и docs/design/spec.md перегенерированы через npm run readme:rules. В test/report.test.ts дата теперь берётся из CATALOG_DATE."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F024/R010-SPEC-016",
+     "reason": "needs src/rules/spec.ts: SPEC-016 проверяет code у каждого ObservedError. Запись для успешного ответа с чужим id выдала бы ложное 'error code undefined is not an integer'. Сначала правило должно пропускать проверку кода для таких записей (например, по флагу ObservedError.result), и только после этого collectErrors может писать idMismatch."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "test/remediation-w3a-connect.test.ts",
+    "test/remediation-wp2-connect.test.ts",
+    "test/remediation-wp3-probe.test.ts",
+    "test/remediation-wp4-protocol.test.ts",
+    "test/auth-probe.test.ts",
+    "test/e2e-http.test.ts",
+    "test/e2e-stdio.test.ts (1 падение было и до этого пакета: markdown экранирует _ в 'run\\_sql', см. отчёт)",
+    "test/e2e-redaction.test.ts",
+    "test/sarif.test.ts",
+    "test/redact.test.ts",
+    "test/redaction-tiers.test.ts",
+    "test/cli-rules.test.ts",
+    "test/diagnostics.test.ts",
+    "test/max-duration.test.ts",
+    "test/lifecycle.test.ts",
+    "test/limits.test.ts",
+    "test/docs.test.ts",
+    "test/catalog.test.ts",
+    "test/catalog-stale.test.ts",
+    "test/report.test.ts"
+   ],
+   "changelog_lines": [
+    "Fixed: An HTTP URL with `user:pass@` now works. The credentials are sent as an `Authorization: Basic` header and redacted, and `--bearer` or an `Authorization` `--header` takes precedence. Before, every request failed with \"Request cannot be constructed from a URL that includes credentials\" (F003).",
+    "Fixed: `server/discover`, the auth-probe trigger and the auth probe now follow a same-host redirect of the preflight (`/mcp` -> `/mcp/`). A dual-era or modern server behind such a redirect is no longer marked legacy, and a 401 behind the redirect starts the auth probe (F019).",
+    "Fixed: TLS certificate checks on the MCP host and on the authorization-server hosts now obey `--timeout` (capped at 10 s) and stop at the `--max-duration` deadline without retrying (F031).",
+    "Fixed: on legacy HTTP+SSE servers, `transport.timings` now holds the time from each request to its result, which arrives on the GET stream (R008).",
+    "Changed: the rule catalog date is now 2026-11-01, because this release changes rule severities."
+   ],
+   "notes": "Отчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_a7e88476-bcc-1/docs/review/2026-11-01/remediation/W3A-connect-report.md (коммит 6bdbfe7). Ничего не запушено.\n\nИзменены существующие тесты:\n- test/e2e-redaction.test.ts: тест 'a token as the URL username…' теперь проверяет редакцию на echo-сервере, который возвращает расшифрованный Basic. После F003 URL с userinfo больше не попадает в ошибку fetch.\n- test/report.test.ts: ожидаемая дата берётся из CATALOG_DATE.\n\nВажно для интегратора:\n1. Исправление R008 пока не доходит до SRV-010. latencySamples в src/rules/server.ts (изменение F059 из WP7) берёт exchange.durationMs, то есть время до заголовков, а transport.timings использует только когда нет ни одного exchange. Поэтому SSE-ответы и 202 от legacy SSE по-прежнему дают около 1 мс. Нужна правка в server.ts: брать сначала timings или bodyMs.\n2. AUTH-003 за редиректом читает preflight с 3xx.\n3. В docs/design/spec.md строки 17 и 1402 написаны вручную, вне маркеров генератора, и в них осталась дата 2026-10-22.\n4. В test/e2e-stdio.test.ts падает тест '80 000-character' из-за экранирования '_' в markdown (src/report). Мой пакет к этому не относится.\n\nКоммиты оформлены от имени автора репозитория (Aleksandr Sabirov, через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_*; git config не менялся), с трейлером Co-Authored-By: Claude Opus 4.8, как требовало задание."
+  },
+  {
+   "wp": "W3B-probe-rules",
+   "branch": "worktree-wf_a7e88476-bcc-2",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_a7e88476-bcc-2",
+   "done": [
+    {
+     "id": "F025-wiring",
+     "commit": "42bae7e",
+     "summary": "Шесть modern.request-проб в src/probe/wire.ts (badVersion, unknownMethod, resourceMissing, headerMismatch none/wrong, unknownTool) теперь передают fullBody: false и читают тело в пределах лимита проб 256 KB / 10 s."
+    },
+    {
+     "id": "R027",
+     "commit": "d3da3d3",
+     "summary": "APPS-014 больше не пишет 'never calls connect()' для UI-ресурса, который указан в snap.limits.truncated (UI resource <uri> или (blob)). Проверка 'sendSizeChanged reports height 0' остаётся."
+    },
+    {
+     "id": "C003-followup",
+     "commit": "73b983c",
+     "summary": "SRV-018 берёт счётчик из transport.stdio.nonJsonTotal (если его нет — из сохранённых строк) и пишет 'N non-JSON-RPC line(s) on stdout'."
+    },
+    {
+     "id": "C-imp-2-rest",
+     "commit": "fd23488",
+     "summary": "SRV-009 сообщает о каждом признаке один раз, на первом exchange, где он виден; признаки одного exchange сводятся в одну находку. Одна страница Cloudflare challenge теперь даёт одно предупреждение вместо трёх."
+    },
+    {
+     "id": "F109",
+     "commit": "fb8e365",
+     "summary": "locationOf() в src/rules/util/text.ts включает имя промпта: 'prompt \"summarize\" description' и 'prompt \"login\" argument creds description'. Имя доходит до всех corpus-правил (INJ/DATA/POL/TOOL) и до отчётов через message и не дублируется."
+    },
+    {
+     "id": "R012-rest",
+     "commit": "5391b0f",
+     "summary": "Уже сделано в волне 1 (F030): closeProbeSession() в src/probe/network.ts шлёт DELETE с полученным Mcp-Session-Id после preflight, после origin-проб в режиме initialize и после auth-пробы invalid-token. Новый коммит не нужен."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "R003-rest",
+     "reason": "needs src/connect.ts. Чтобы частичные результаты runActive/runWireProbes сохранялись, в Progress нужен накопитель, а stoppedSnapshot() должен его читать; то и другое находится в connect.ts. Пометка правил остановленной фазы как skipped тоже требует, чтобы оттуда передавалась привязка фаз к правилам. По сути это фича: частичные результаты active- и wire-фаз при --max-duration."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "changelog_lines": [
+    "Fixed: the modern (2026-07-28) wire probes read response bodies under the probes' 256 KB / 10 s cap, so a server that keeps an SSE stream open costs at most 10 s per probe (F025).",
+    "Fixed: APPS-014 no longer reports \"never calls connect()\" for a UI resource whose HTML was cut at the 2 MB cap (R027).",
+    "Changed: SRV-018 counts every non-JSON-RPC stdout line (not only the first 50 kept) and says \"non-JSON-RPC line(s)\" (C003).",
+    "Changed: SRV-009 reports one finding per exchange and each bot-challenge signal once, so one Cloudflare challenge page gives one warning instead of three (C-imp-2).",
+    "Fixed: INJ, DATA, POL and TOOL findings on a prompt name the prompt (prompt \"<name>\" description / argument <arg> description) (F109)."
+   ],
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-w3b-probe-rules.test.ts",
+    "npx vitest run test/rules (all files)",
+    "npx vitest run test/remediation-wp2-connect.test.ts",
+    "npx vitest run test/remediation-wp3-probe.test.ts",
+    "npx vitest run test/remediation-wp4-protocol.test.ts",
+    "npx vitest run test/remediation-wp5-apps.test.ts",
+    "npx vitest run test/remediation-wp6-inj-data-pol.test.ts",
+    "npx vitest run test/remediation-wp7-auth-spec-srv.test.ts",
+    "npx vitest run test/e2e-http.test.ts",
+    "npx vitest run test/e2e-stdio.test.ts",
+    "npx vitest run test/auth-probe.test.ts",
+    "npx vitest run test/limits.test.ts",
+    "npx vitest run test/report.test.ts",
+    "npx vitest run test/util.test.ts"
+   ],
+   "notes": "Все 10 новых тестов проходят. Затронутые наборы тестов зелёные, кроме одного теста в test/e2e-stdio.test.ts, который падал ещё до этого пакета ('an 80 000-character description is truncated...'): тест ждёт в markdown 'tool run_sql', а после 4ad7d4e (F127, экранирование emphasis) выводится 'tool run\\_sql'. Ожидание в этом тесте нужно обновить; файл не входит в мой пакет, поэтому я его не трогал. Существующий тест изменён один: test/remediation-wp2-connect.test.ts, строка 98, теперь ожидает '6 non-JSON-RPC line(s)'. При первом совместном прогоне 4 тяжёлых файлов один раз упал тест wp2 'a message over the stdio buffer...' (таймаут под нагрузкой); при отдельном прогоне файла все 29 тестов прошли. Автор коммитов передан через git -c (Aleksandr Sabirov, как у существующих коммитов), потому что в worktree не настроен user.email. Трейлер — Claude Opus 5.5, как у остальных коммитов репозитория. Ничего не запушено. Отчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_a7e88476-bcc-2/docs/review/2026-11-01/remediation/W3B-probe-rules-report.md (коммит fbcf615). Вне моих файлов: в docs/design/spec.md (раздел corpus) стоит упомянуть, что для промптов в location теперь указывается имя."
+  },
+  {
+   "wp": "W3C-cli-tests",
+   "branch": "worktree-wf_a7e88476-bcc-3",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_a7e88476-bcc-3",
+   "done": [
+    {
+     "id": "F135-verbose-stderr",
+     "commit": "5f42edf",
+     "summary": "В src/cli.ts строки трассы [http] и каждая строка хвоста [stdio stderr] в режиме --verbose теперь проходят через visibleText(): ESC, CR и bidi-символы выводятся как \\u{..}. Хвост разбивается по CRLF/LF, scrub по-прежнему применяется к выводу последним. Тест: test/remediation-w3c-cli-tests.test.ts, фикстура test/fixtures/w3c-noisy-stderr.mjs."
+    },
+    {
+     "id": "R006-R019-help",
+     "commit": "17da702",
+     "summary": "В --help появился блок 'Exit codes:' по одной строке на код: 0, 1, 2, 3 (включая внутреннюю ошибку с 'fatal:' и stack trace) и 128+N (130/143/131/129). Строки не длиннее 120 символов, содержание сверено с таблицей в README. Тест: test/remediation-w3c-cli-tests.test.ts."
+    },
+    {
+     "id": "SECRET-FIXTURE",
+     "commit": "1d6a829",
+     "summary": "Фикстуры ghp_/sk_live_/xoxb- в test/remediation-wp8-tools-schema-rt.test.ts и ghp_ в test/remediation-wp4-protocol.test.ts (нашёлся тем же grep) помечены SYNTH. Длина ghp_-фикстур сохранена, KNOWN_TOKEN их по-прежнему ловит. Повторный grep по всем test/remediation-*.test.ts токенов без SYNTH не находит."
+    },
+    {
+     "id": "F156-rest",
+     "commit": "4246c64",
+     "summary": "Добавлены unit-тесты без сети и без дочерних процессов: test/unit-legacy.test.ts (listAll, rpc), test/unit-manual.test.ts, test/unit-wire.test.ts (выбор проб для эр legacy/modern/dual на фейковых клиентах, sdkSessionGet), test/unit-catalog-lexicon.test.ts, test/unit-rules-util.test.ts (util/access, util/ui). Всего 30 тестов."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F156-thresholds",
+     "reason": "Пороги покрытия и CI-артефакт coverage нельзя откалибровать без прогона полного набора тестов (это запрещено правилом D1), и для них нужны файлы vitest.config.ts и .github/**, которые не входят в этот пакет. HTTP-ветка wire.ts (пробы origin/challenge, повторное использование GET) остаётся на e2e HTTP-тестах."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "changelog_lines": [
+    "Fixed: `--verbose` prints control and format characters in the `[http]` trace and the `[stdio stderr]` tail as `\\u{..}`, so a server cannot move the cursor, recolour or overwrite lines in a terminal or CI log (F135).",
+    "Changed: `--help` lists the exit codes one per line, including exit 3 for an internal error and 128+N when ended by a signal (R006, R019)."
+   ],
+   "tests_run": [
+    "test/remediation-w3c-cli-tests.test.ts",
+    "test/unit-legacy.test.ts",
+    "test/unit-manual.test.ts",
+    "test/unit-catalog-lexicon.test.ts",
+    "test/unit-rules-util.test.ts",
+    "test/unit-wire.test.ts",
+    "test/remediation-wp8-tools-schema-rt.test.ts",
+    "test/remediation-wp4-protocol.test.ts",
+    "test/remediation-wp1-cli.test.ts",
+    "test/e2e-redaction.test.ts",
+    "test/redact.test.ts",
+    "test/docs.test.ts",
+    "test/catalog-stale.test.ts",
+    "test/ci-output.test.ts",
+    "test/cli-rules.test.ts",
+    "test/compat.test.ts"
+   ],
+   "notes": "Все 4 пункта сделаны, по одному коммиту на пункт, плюс отчёт docs/review/2026-11-01/remediation/W3C-cli-tests-report.md (коммит e9de690). Ничего не запушено. Полный набор тестов не запускался (правило D1).\n\nЧто нужно знать интегратору:\n- Существующие тесты изменены только в двух файлах: test/remediation-wp8-tools-schema-rt.test.ts и test/remediation-wp4-protocol.test.ts. Поменялись лишь строки фикстур, ожидания те же. wp4 нет в списке разрешённых файлов, но в нём тем же grep нашлась немаркированная ghp_-фикстура, поэтому я поправил и её.\n- src/explain.ts не менялся.\n- Трейлер коммитов — 'Co-Authored-By: Claude Opus 5.5', как в существующих коммитах репозитория и в системной инструкции об атрибуции. В тексте задачи было 'Opus 4.8'.\n- Автор коммитов задан через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_* (как в предыдущих коммитах). Конфиг git не менялся: в worktree не была задана identity.\n- gitleaks по-прежнему срабатывает на SYNTH-фикстуры: он проверяет только шаблон. Это та же конвенция, что в остальных тестах, например в test/redact.test.ts."
+  }
+ ],
+ "missing": []
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 438,
+  "title": "Каждая строка stdout сервера парсится JSON.parse дважды, nonJson не ограничен",
+  "description": "tap() в connectStdio разбивает stdout по строкам и вызывает `isJsonLine` (JSON.parse) для каждой — SDK уже парсит те же сообщения; для больших tools/list это удвоение CPU. Массив `nonJson` растёт без предела: болтливый сервер, пишущий логи в stdout, раздувает память за долгий --active-прогон.",
+  "evidence": "connect.ts:408-410 `isJsonLine` = try JSON.parse; connect.ts:444 `if (line.trim() && !isJsonLine(line)) nonJson.push(line);` — без cap.",
+  "suggested_fix": "Дешёвый предфильтр `/^\\s*[\\[{]/` перед JSON.parse (или помечать строку как JSON только если SDK onmessage её принял); ограничить nonJson, например 200 строк / 64 KB, с отметкой в limits.truncated.",
+  "confidence": 0.7,
+  "dimension": "cli-connect",
+  "id": "F012"
+}

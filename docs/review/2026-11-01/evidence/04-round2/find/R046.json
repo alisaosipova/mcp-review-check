@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/protocol/recording.ts",
+  "line": 25,
+  "title": "[Переоценка F141 + F033] 100 МБ не-JSON строк в stdout роняют линтер с heap OOM (exit 134, отчёта нет); основной источник роста памяти — transportErrors, а не nonJson",
+  "description": "Независимая оценка спорной F141: находка подтверждается, и последствия тяжелее, чем описано. Это не просто рост памяти, а аварийное завершение процесса (V8 heap limit около 2 ГБ, JSON/SARIF-отчёта нет). Измерения показали, что основную долю памяти дают не строки nonJson (connect.ts:444), а RecordingTransport.transportErrors (recording.ts:25). SDK processReadBuffer на каждую не-JSON строку вызывает onerror(SyntaxError), RecordingTransport сохраняет объект Error со стеком (около 580 байт на строку), и этот массив никто не читает (F033). Строки nonJson стоят около 30 байт на строку. Копия dist без push в transportErrors проходит те же 100 МБ с пиковым RSS 691 МБ и не падает. Вариант с одной длинной строкой без \\n сам по себе ограничен: SDK ReadBuffer бросает исключение на 10 МБ, но наш tap-буфер (connect.ts:439) продолжает расти до убийства процесса (пик около 450 МБ RSS при потоке 4 ГБ, 2.7–6.9 с). Квалификация как reliability/DoS линтера верна, security-граница слабая: stdio-сервер запускает сам пользователь.",
+  "evidence": "Сервер: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/server.mjs (MODE=linespre пишет MB мегабайт строк по 100 байт до ответа на initialize). Раннер: run.mjs.\nlinespre 50 МБ: exit 0, peakRssMB 1301, nonJsonLines 500000 (linespre50.txt)\nlinespre 100 МБ: exit 134 «FATAL ERROR: Ineffective mark-compacts near heap limit … JavaScript heap out of memory» (linespre100.txt; heap_size_limit 2144 МБ)\nlinespre 200 МБ: exit 134 OOM (linespre200.txt)\nКопия dist без transportErrors.push (run-noerr.mjs): 100 МБ дают exit 0, peakRssMB 691, 13.8 с (linespre100-noerr.txt)\nМикробенчмарк amp.mjs, 500k строк: nonJson strings 14.0 MB, transportErrors 275.7 MB (amp.txt)\nnolinepre 4000 МБ: peakRssMB 465, 2.7 с; с IGNTERM: 443 МБ, 6.9 с (noline4000*.txt)",
+  "suggested_fix": "(1) RecordingTransport: хранить не более N transportErrors (например 20, только message) плюс счётчик. (2) nonJson: хранить первые 3–50 строк, обрезанных до 1 КБ, плюс счётчик (SRV-018 использует только length и первые 3). (3) tap: при buf.length больше лимита (например 1 МБ) без \\n сбрасывать буфер, засчитывать одну «длинную строку» и не делать Buffer.concat на хвосте.",
+  "confidence": 0.9,
+  "failure_scenario": "stdio-сервер в debug-режиме или с console.log в stdout выводит около 1 млн строк (около 100 МБ) за время проверки: mcp-review-check падает с OOM и не выдаёт ни отчёта, ни exit code по --fail-on.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R046"
+}

@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 380,
+  "title": "APPS-017: `_meta.ui` не-объект (строка, массив) молча превращается в `{}` — нет находки о типе",
+  "description": "uiResources делает `r.ui = isObj(r.meta.ui) ? r.meta.ui : {}`, и APPS-017 видит пустой объект: выдаётся только info «prefersBorder is not set», а APPS-005 говорит «no CSP declared», не объясняя, что вся `_meta.ui` некорректного типа. Правило «UI resource meta field types» пропускает самый грубый случай.",
+  "evidence": "r2apps.out, `APPS-017 _meta.ui is a string`: `_meta:{ui:'csp-here'}` → только APPS-005 chatgpt error/claude info и `APPS-017 {spec:info} prefersBorder is not set`.",
+  "suggested_fix": "В APPS-017 проверять `r.meta.ui !== undefined && !isObj(r.meta.ui)` → error «_meta.ui is not an object».",
+  "confidence": 0.8,
+  "failure_scenario": "Сервер сериализует _meta.ui строкой JSON: отчёт не указывает на корень проблемы.",
+  "dimension": "limits-apps",
+  "id": "R042",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R042",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "uiResources (src/rules/util/ui.ts:50) делает `r.ui = isObj(r.meta.ui) ? r.meta.ui : {}`. APPS-017, судя по названию «UI resource meta field types», проверяет типы полей, но саму `_meta.ui` не-объектного типа не проверяет. Grep по src/rules не находит ни одного правила, которое сообщало бы «_meta.ui is not an object». spec.md перечисляет только проверки отдельных полей, так что это пробел покрытия: отчёт не называет корневую причину, хотя другие находки (APPS-005 no CSP, prefersBorder info) всё равно появятся. Severity low.",
+      "repro": "17 ui string [{\"resource\":\"ui://w\",\"severity\":\"info\",\"message\":\"prefersBorder is not set (explicit value recommended)\"}]\n17 ui array [{\"resource\":\"ui://w\",\"severity\":\"info\",\"message\":\"prefersBorder is not set (explicit value recommended)\"}]",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "17 ui string [{\"resource\":\"ui://w\",\"severity\":\"info\",\"message\":\"prefersBorder is not set (explicit value recommended)\"}]\n17 ui array [{\"resource\":\"ui://w\",\"severity\":\"info\",\"message\":\"prefersBorder is not set (explicit value recommended)\"}]"
+}

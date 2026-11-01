@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "test/local-mode.test.ts",
+  "line": 40,
+  "title": "Top-level await dns.lookup(os.hostname()) при импорте тест-файла зависит от системного резолвера (потенциально медленно/флаки в CI)",
+  "description": "На уровне модуля выполняется `await lookup(shortName, { family: 4 })` для `os.hostname()`. На раннерах, где hostname не в /etc/hosts (типично для Windows/macOS GitHub runners или контейнеров с кастомным hostname), запрос уходит в DNS и может ждать таймаута резолвера (секунды) до начала любого теста файла; результат зависит от окружения, а не от кода. Аналогично тесты с таймингами (`e2e-http.test.ts:281/302` `< 12000/15000`, `process-tree.test.ts`) чувствительны к нагрузке раннера.",
+  "evidence": "test/local-mode.test.ts:40 `const shortNameAddress = shortName.includes('.') ? undefined : await lookup(shortName, { family: 4 }).then((r) => r.address, () => undefined);` и :60 `it.skipIf(!shortNameAddress)`. CONTRIBUTING/spec §6 заявляют «the tests never touch the network».",
+  "suggested_fix": "Обернуть lookup в `Promise.race` с таймаутом ~500 ms, либо проверять только `/etc/hosts`-резолв через `dns.lookup` с `{ all: true }` и `hints`, либо вынести в отдельный opt-in тест (`MCP_REVIEW_CHECK_LIVE`).",
+  "confidence": 0.6,
+  "dimension": "docs-tests-ci",
+  "id": "F157"
+}

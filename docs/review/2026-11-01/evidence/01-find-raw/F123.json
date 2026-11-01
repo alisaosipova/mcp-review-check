@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/report/sarif.ts",
+  "line": 39,
+  "title": "Результат с ruleId 'INTERNAL' ссылается на правило, отсутствующее в tool.driver.rules",
+  "description": "INTERNAL-находки (исключение в правиле) попадают в results, но RULES не содержит такого правила; ruleIndex не задаётся. По схеме это допустимо, но потребители (GitHub code scanning, SARIF viewers) показывают его без описания/help; GitHub создаёт «пустое» правило.",
+  "evidence": "node repro: results => [..., ['INTERNAL','note']], rules has INTERNAL: false",
+  "suggested_fix": "Добавить синтетическую запись правила INTERNAL в driver.rules (shortDescription 'Internal rule error', help 'Please report this bug') либо выносить INTERNAL в run.invocations[].toolExecutionNotifications (семантически правильнее для ошибок самого инструмента).",
+  "confidence": 0.7,
+  "dimension": "report-redact-engine",
+  "id": "F123"
+}

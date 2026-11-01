@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 36,
+  "title": "redactUrl для exchanges маскирует только по имени параметра, в отличие от displayUrl (известные форматы токенов, path-сегменты)",
+  "description": "`exchange.url` редактируется через `redactUrl`: имена секретных query-параметров + известные значения redactor. `displayUrl` (net.ts:108) дополнительно маскирует значения в формате известных токенов (sk-…, ghp_…, JWT) в query/path/fragment и убирает userinfo. URL проб к PRM/AS/authorize (не целевой URL, значения которого redactor знает) с токеном в пути или в query под нейтральным именем останутся в snapshot открытыми.",
+  "evidence": "`redactUrl('https://h.example/mcp?q=sk-live-ABCDEFGHIJKLMNOPQRSTUV', r)` → без изменений; `redactUrl('https://h.example/ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456/mcp', r)` → без изменений; пароль из userinfo маскируется только потому, что попал в redactor.values из целевого URL.",
+  "suggested_fix": "В redactUrl переиспользовать логику displayUrl (isKnownToken для значений/сегментов, очистка userinfo), затем scrub.",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F035"
+}

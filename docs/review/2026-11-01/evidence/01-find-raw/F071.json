@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/util/schemaWalk.ts",
+  "line": 52,
+  "title": "walkSchema/schemaMetrics не обходят `dependentSchemas`, `dependencies` (schema-форма) и `additionalItems` — пропуски в TOOL-009/021/022/015/020",
+  "description": "SINGLE и COMBINATORS не содержат `dependentSchemas`/`dependencies`/`additionalItems`, поэтому properties внутри них невидимы для всех правил на базе walkSchema: `x-mcp-header` на чувствительном параметре там не найдётся, параметры без описания не посчитаются, глубина схемы недооценена.",
+  "evidence": "node против dist: walkSchema({type:'object', dependentSchemas:{a:{properties:{secret_token:{type:'string','x-mcp-header':'X'}}}}}) посещает только ['/'].",
+  "suggested_fix": "Добавить обход `dependentSchemas` (объект имя→схема, как $defs), `dependencies` (значения-объекты), `additionalItems` (SINGLE); синхронно обновить schemaMetrics.",
+  "confidence": 0.85,
+  "dimension": "rules-tools-schema",
+  "id": "F071"
+}

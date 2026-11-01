@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/text.ts",
+  "line": 71,
+  "title": "fixSnippets завязан на точный текст сообщения TOOL-006 ('no title')",
+  "description": "Фильтр `f.ruleId === 'TOOL-006' && f.message === 'no title'` ломается при любой правке формулировки в tools.ts:123, причём молча (сниппеты просто исчезнут). Правильнее опираться на структурированное поле (path: 'title') или на данные snapshot напрямую (isNonEmptyStr(t.title) уже проверяется строкой ниже).",
+  "evidence": "text.ts:71 `(f.ruleId === 'TOOL-006' && f.message === 'no title')`; tools.ts:123 `return { platforms: ['claude'], message: 'no title' };`",
+  "suggested_fix": "Отбирать tools по данным snapshot (нет title и/или нет hints) с проверкой, что соответствующее правило вообще выдало находку по этому tool, без сравнения message.",
+  "confidence": 0.7,
+  "dimension": "report-redact-engine",
+  "id": "F134"
+}

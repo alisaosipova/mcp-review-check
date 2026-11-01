@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 480,
+  "title": "TOOL-031: корневой `$ref` в outputSchema не разворачивается — ложный error «lacks a required string id»",
+  "description": "Правило читает `properties`/`required`/`additionalProperties` напрямую из `t.outputSchema`; если корень — `{ $ref: '#/$defs/P', $defs: {...} }` (так генерируют некоторые SDK/zod-обёртки), всё считается отсутствующим и выдаётся chatgpt error плюс warning. TOOL-030 для tuple-`items` (массив) молча пропускает проверку.",
+  "evidence": "node против dist: outputSchema {$ref:'#/$defs/P', $defs:{P:{properties:{id:{type:'string'}}, required:['id'], additionalProperties:false}}} -> [«profile outputSchema lacks a required string id», warning «profile output should contain only id, name, email, nickname…»].",
+  "suggested_fix": "Применять `deref(t.outputSchema, t.outputSchema)` перед чтением полей (и deref для каждого property в TOOL-030/031); для tuple-items в TOOL-030 выдавать явное сообщение.",
+  "confidence": 0.75,
+  "dimension": "rules-tools-schema",
+  "id": "F073"
+}

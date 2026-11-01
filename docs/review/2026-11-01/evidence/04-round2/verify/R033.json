@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 141,
+  "title": "APPS-006: незашифрованный `ws://` в connectDomains не помечается (проверяется только `http:`)",
+  "description": "Проверка схемы — `u.protocol === 'http:'`. Запись `ws://api.example.com` (нешифрованный WebSocket на публичный хост) проходит без находки, хотя это та же проблема, что и http://.",
+  "evidence": "r2apps.out, секция `APPS-006 entries`: для `ws://api.example.com` нет ни одной строки (сравните с другими значениями того же списка).",
+  "suggested_fix": "`if ((u.protocol === 'http:' || u.protocol === 'ws:') && !isLoopbackHost(u.hostname))` → `uses ${u.protocol}//`.",
+  "confidence": 0.85,
+  "failure_scenario": "connectDomains: [\"ws://realtime.example.com\"]: виджет передаёт данные по нешифрованному каналу, а отчёт чистый.",
+  "dimension": "limits-apps",
+  "id": "R033",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R033",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "reasoning": "Строка актуальна: в src/rules/apps.ts:141 проверка схемы — только `u.protocol === 'http:'`. `ws://realtime.example.com` не попадает в BROAD и под wildcard-regex, парсится как URL с protocol 'ws:' и pathname '/', поэтому ни одна ветка не срабатывает. В spec.md §APPS-006 явно указан только `http://`, но fix правила («List exact https origins») и BROAD, где есть `wss://*`, показывают, что смысл правила — требовать шифрованные origin; теста, который разрешал бы ws://, нет. Однако failure_scenario преувеличен: виджеты ChatGPT/Claude работают в https-sandbox, и браузер блокирует ws:// из https-контекста как mixed content. Поэтому данные по открытому каналу не уйдут: соединение просто не установится. Это пропущенная битая запись, а не утечка.",
+      "corrected_description": "APPS-006 помечает только `http://`, а `ws://` на публичный хост проходит без находки. На практике в https-sandbox хоста такое соединение блокируется как mixed content, поэтому виджет молча не подключится к realtime-эндпоинту, а линтер не предупредит. Нужно помечать `ws:` так же, как `http:` (кроме loopback).",
+      "repro": "node: new URL('ws://realtime.example.com') -> proto=ws: host=realtime.example.com path=\"/\"; BROAD и wildcard-regex не совпадают, условие line 141 (`=== 'http:'`) ложно -> ни одной находки.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "APPS-006 помечает только `http://`, а `ws://` на публичный хост проходит без находки. На практике в https-sandbox хоста такое соединение блокируется как mixed content, поэтому виджет молча не подключится к realtime-эндпоинту, а линтер не предупредит. Нужно помечать `ws:` так же, как `http:` (кроме loopback).",
+  "repro": "node: new URL('ws://realtime.example.com') -> proto=ws: host=realtime.example.com path=\"/\"; BROAD и wildcard-regex не совпадают, условие line 141 (`=== 'http:'`) ложно -> ни одной находки."
+}

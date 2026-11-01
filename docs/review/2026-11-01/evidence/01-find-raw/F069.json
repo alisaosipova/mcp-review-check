@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/annotations.ts",
+  "line": 109,
+  "title": "TOOL-014: двойное срабатывание (a)+(b) на одной причине и срабатывание (b) без объекта annotations вопреки комментарию у (e)",
+  "description": "Для `delete_note` с `readOnlyHint: true` выдаются два warning: «marked readOnlyHint but name starts with write verb» и «\"delete\" tool without destructiveHint: true» — один корневой дефект. Для инструмента без annotations вообще (b) всё равно стреляет на всех трёх платформах, хотя комментарий у (e) и тест «TOOL-014 at spec level is not reported without an annotations object» декларируют, что отсутствие хинтов уже покрыто TOOL-011/012. Также `firstVerb` берёт первый глагол, поэтому `search_and_replace` с destructiveHint:true получает «read verb search but destructiveHint: true».",
+  "evidence": "node против dist: delete_note + readOnlyHint:true -> 2 findings; delete_note без annotations -> [{\"message\":\"\\\"delete\\\" tool without destructiveHint: true\"}]; search_and_replace + destructiveHint:true -> «read verb \"search\" but destructiveHint: true».",
+  "suggested_fix": "В (b) пропускать случай `a.readOnlyHint === true` (уже сообщён в (a)) и, по аналогии с (e), требовать `isObj(t.annotations)`; в firstVerb/toolKind учитывать, что имя содержит и read-, и write-глагол (`search_and_replace`, `get_or_create`) — считать такой инструмент write/unknown.",
+  "confidence": 0.7,
+  "dimension": "rules-tools-schema",
+  "id": "F069"
+}

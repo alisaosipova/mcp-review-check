@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "test/compat.test.ts",
+  "line": 25,
+  "title": "Замороженный список ID правил дублируется в compat.test.ts и catalog.test.ts, CONTRIBUTING упоминает только один",
+  "description": "catalog.test.ts держит FROZEN (APPS 19), compat.test.ts — BASE_RULE_IDS (APPS 18, «143 rule IDs»). Оба генерируются range()-ами и должны обновляться при каждом новом правиле; CONTRIBUTING шаг 4 говорит только о `test/catalog.test.ts`. Новый контрибьютор обновит один и получит падение другого без подсказки.",
+  "evidence": "test/catalog.test.ts:98-101 FROZEN `range('APPS', 19)`; test/compat.test.ts:25-29 «The 143 rule IDs and 31 manual items of the baseline» `range('APPS', 18)`; CONTRIBUTING.md:26 «A retired rule keeps its ID in the frozen list in test/catalog.test.ts».",
+  "suggested_fix": "Вынести baseline-список в test/fixtures/baseline/rule-ids.json и импортировать в оба теста; в CONTRIBUTING перечислить все файлы, которые трогает новое правило (catalog.test, compat baseline, real-servers ACCEPTED_NEW, docs).",
+  "confidence": 0.75,
+  "dimension": "docs-tests-ci",
+  "id": "F165"
+}

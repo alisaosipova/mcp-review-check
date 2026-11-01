@@ -1,0 +1,19 @@
+{
+  "id": "F153",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "$ grep -n '^\\[' CHANGELOG.md  -> (пусто)\n$ sed -n 7,11p CHANGELOG.md -> '## [Unreleased]' / '## [0.1.0] - 2026-10-25' / 'First public release.'\n$ sed -n 80p CHANGELOG.md -> '### Changed'\n$ head -1 test/compat.test.ts -> '// Compatibility sensors against the baseline (main d6100a9, mcp-review-check 0.1.0)...'",
+  "votes": [
+    {
+      "id": "F153",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Проверено по CHANGELOG.md (114 строк). Строка 9 актуальна: `## [0.1.0] - 2026-10-25`, строка 7: `## [Unreleased]`. `grep -n '^\\[' CHANGELOG.md` ничего не находит, то есть link-определений нет. Keep a Changelog 1.1.0, на который ссылается строка 3, ставит такие определения в конец файла, поэтому заголовки на GitHub выводятся с литеральными скобками. Ни README, ни CONTRIBUTING.md (строки 60 и 74 описывают только перенос записей из Unreleased), ни docs/design/spec.md не объявляют это намеренным, тестов на формат CHANGELOG нет. Вторая часть тоже подтверждается. Под заголовком «First public release» идут `### Changed` (строка 80, около 35 пунктов) и подразделы Severity raised/lowered. Они сравнивают с прежним поведением («Previously a spec-only error … failed `--target claude`», «it was left running»), а это внутренний baseline: в test/compat.test.ts:1 написано «baseline (main d6100a9, mcp-review-check 0.1.0)». Получается, что baseline и релиз имеют один номер 0.1.0, и читателю релиза сравнивать не с чем. Эта часть относится к стилю и функциональных последствий не имеет. Severity low оправдана: проблема только в документации, на поведение инструмента не влияет. Ссылки в suggested_fix согласуются с package.json repository.url (github.com/alisaosipova/mcp-review-check).",
+      "repro": "$ grep -n '^\\[' CHANGELOG.md  -> (пусто)\n$ sed -n 7,11p CHANGELOG.md -> '## [Unreleased]' / '## [0.1.0] - 2026-10-25' / 'First public release.'\n$ sed -n 80p CHANGELOG.md -> '### Changed'\n$ head -1 test/compat.test.ts -> '// Compatibility sensors against the baseline (main d6100a9, mcp-review-check 0.1.0)...'",
+      "lens": "reader-batch"
+    }
+  ]
+}

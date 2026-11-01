@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/util/html.ts",
+  "line": 105,
+  "title": "POL-004: extractLinks собирает любой `href=`, включая `<link rel=stylesheet>` — pricing.css = upsell",
+  "description": "`extractLinks` используется для «widget links to …», но матчит href у `<link>`, `<base>`, `<area>`; `pathWord` режет по `.`, так что `/css/pricing.css` даёт сегмент `pricing` → chatgpt=warning «widget links to …».",
+  "evidence": "extractLinks('<link rel=\"stylesheet\" href=\"https://cdn.example.com/css/pricing.css\">') → ['https://cdn.example.com/css/pricing.css']; linkKind → 'upsell'; POL_004.check → 'widget links to https://cdn.example.com/css/pricing.css'.",
+  "suggested_fix": "Извлекать href только из `<a …>` (и `<area>`) тегов: `/<a\\b[^<>]*\\bhref\\s*=\\s*[\"']([^\"']+)/gi`; в pathWord не разбивать последний сегмент по расширению файла (`.css|.js|.png`).",
+  "confidence": 0.8,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F099"
+}

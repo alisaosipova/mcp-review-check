@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/protocol/trace.ts",
+  "line": 23,
+  "title": "Секреты длиной 4–5 символов заменяются внутри слов (sk-test → sk-«redacted», attestation → at«redacted»ation)",
+  "description": "createRedactor допускает значения ≥4 символов и scrub делает substring-замену без границ слова. Короткий --header/--bearer/--env вроде `test`, `pass`, `demo` уродует отчёт: TRIVIAL его не покрывает. Также секрет, являющийся подстрокой маркера «redacted» (например `redact`, `edact`), ломает сам маркер.",
+  "evidence": "node repro: scrub('sk-test-abc, test account, attestation', buildRedactor({headers:{'X-Api-Key':'test'}})) => 'sk-«redacted»-abc, «redacted» account, at«redacted»ation'\nscrub('token=ABCDEFGHIJKLMNOP1 redact', createRedactor([], ['ABCDEFGHIJKLMNOP1','redact'])) => 'token=««redacted»ed» «redacted»'",
+  "suggested_fix": "Для коротких значений (<8) применять замену с границами (не внутри [A-Za-z0-9]) или поднять минимум до 6–8 для плейн-слов, оставив 4 только для значений с цифрами и буквами. Исключить из values строки, являющиеся подстрокой REDACTED.",
+  "confidence": 0.8,
+  "dimension": "report-redact-engine",
+  "id": "F119"
+}

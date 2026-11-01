@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "CHANGELOG.md",
+  "line": 9,
+  "title": "CHANGELOG в формате Keep a Changelog без link-определений; раздел Changed в первом релизе описывает изменения относительно неопубликованного baseline",
+  "description": "Заголовки `## [Unreleased]` и `## [0.1.0] - 2026-10-25` — reference-style ссылки, но в файле нет ни одной строки `[0.1.0]: https://…` → на GitHub рендерятся как литеральные скобки. Кроме того, для «First public release» есть 30+ пунктов в `### Changed`/«Severity raised/lowered», которые сравнивают с внутренним baseline («main d6100a9», ср. test/compat.test.ts:1), не существовавшим для пользователей — для читателя это шум: нечего было «менять».",
+  "evidence": "`grep -n '^\\[' CHANGELOG.md` → пусто. CHANGELOG.md:9 `## [0.1.0] - 2026-10-25`, :80 `### Changed` (≈35 строк). test/compat.test.ts:1 «Compatibility sensors against the baseline (main d6100a9, mcp-review-check 0.1.0)».",
+  "suggested_fix": "Добавить в конец `[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.1.0...HEAD` и `[0.1.0]: https://github.com/alisaosipova/mcp-review-check/releases/tag/v0.1.0`. Для 0.1.0 свести Changed/Severity-* в краткое Added (что умеет релиз); детальную историю относительно pre-release baseline перенести в docs/design или удалить.",
+  "confidence": 0.8,
+  "dimension": "docs-tests-ci",
+  "id": "F153"
+}

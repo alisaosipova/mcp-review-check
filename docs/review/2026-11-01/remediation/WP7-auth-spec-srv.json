@@ -1,0 +1,208 @@
+{
+ "package": "WP7-auth-spec-srv",
+ "owned_files": [
+  "src/rules/auth.ts",
+  "src/rules/spec.ts",
+  "src/rules/server.ts",
+  "src/rules/util/wwwAuth.ts",
+  "src/rules/util/net.ts",
+  "src/rules/manual.ts"
+ ],
+ "items": [
+  {
+   "id": "F041",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-011: при era='modern' через discSignal (400/-3202x) `discoverRaw` не задан — сообщение «result is not an object» вводит в заблуждение",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F041.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F041.json"
+  },
+  {
+   "id": "F060",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-010 не замечает сервер, отдающий реальный контент для несуществующего URI",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F060.json"
+  },
+  {
+   "id": "F059",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/server.ts",
+   "title": "SRV-010: в медиану попадают неуспешные/служебные вызовы (discover-проба на legacy, preflight 401, badVersion 400)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F059.json"
+  },
+  {
+   "id": "F052",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-017: claude=error по одному медленному сэмплу из трёх — недетерминированная метрика как блокер",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F052.json"
+  },
+  {
+   "id": "F056",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-017: `sizes` строкой (не массивом) молча принимается; `image/jpg` в allow-list не является валидным MIME",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F056.json"
+  },
+  {
+   "id": "F050",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/server.ts",
+   "title": "SRV-013 и SPEC-001 оба выдают spec error за отсутствующий initialize.serverInfo",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F050.json"
+  },
+  {
+   "id": "F045",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-015 игнорирует DPoP-challenge, хотя AUTH-002/AUTH-013 принимают схему dpop",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F045.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F045.json"
+  },
+  {
+   "id": "F042",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-012: при CIMD без \"none\" и без DCR выдаются два противоречивых claude-warning",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F042.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F042.json"
+  },
+  {
+   "id": "F027",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/util/net.ts",
+   "title": "isNonPublicIPv6 не распознаёт несжатые/hex-формы loopback и mapped-адресов, multicast и documentation-префикс",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F027.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F027.json"
+  },
+  {
+   "id": "F054",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/server.ts",
+   "title": "SRV-006: редирект только на GET (при рабочем POST) — claude error, хотя handshake Claude идёт через POST",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F054.json"
+  },
+  {
+   "id": "F020",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/util/wwwAuth.ts",
+   "title": "Незакавыченный URL в WWW-Authenticate порождает фантомный challenge и обрезанный resource_metadata",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F020.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F020.json"
+  },
+  {
+   "id": "F049",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-005 + SPEC-006 + SPEC-015 дублируют друг друга на modern-only сервере (5 финдингов на 2 факта)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F049.json"
+  },
+  {
+   "id": "F040",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-016: флаг `modern` берётся из заголовка НАШЕГО запроса, а не из эры сервера — legacy-сервер получает ошибку про «2026-07-28 response»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F040.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F040.json"
+  },
+  {
+   "id": "F121",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/manual.ts",
+   "title": "OAuth-пункты чеклиста (MAN-007/008/013/014/026/028) пропадают при legacy discovery без PRM",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F121.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F121.json"
+  },
+  {
+   "id": "F038",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-020: страница логина, содержащая строку redirect_uri, считается отказом в redirect_uri (claude error)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F038.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F038.json"
+  },
+  {
+   "id": "F057",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-006 валидирует только authorization_servers[0], хотя ChatGPT-правила опрашивают до 3 серверов",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F057.json"
+  },
+  {
+   "id": "F055",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/server.ts",
+   "title": "SRV-015: слово «sampling» в описании инструмента трактуется как MCP sampling",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F055.json"
+  },
+  {
+   "id": "F053",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-008: при отсутствии поля issuer сообщение «metadata issuer undefined !== …»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F053.json"
+  },
+  {
+   "id": "F051",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-002/AUTH-004/AUTH-013 дают три error за одну причину (сервер без OAuth-discovery)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F051.json"
+  },
+  {
+   "id": "F061",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-002: design §2.8 обещает «chatgpt and spec error» при legacy discovery, код даёт spec=warning",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F061.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F061.json"
+  },
+  {
+   "id": "F039",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/spec.ts",
+   "title": "SPEC-018: зарезервированные префиксы `modelcontextprotocol.io/`, `mcp.dev/`, `mcp/` не обнаруживаются",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F039.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F039.json"
+  },
+  {
+   "id": "F043",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-010: self-signed локальный AS в local mode остаётся error на всех платформах, тогда как SRV-001 для того же сертификата даёт Deploy-time info",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F043.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F043.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F043.json"
+  },
+  {
+   "id": "F058",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/auth.ts",
+   "title": "AUTH-007 «tried nothing» при непарсящемся issuer дублирует AUTH-006",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F058.json"
+  }
+ ]
+}

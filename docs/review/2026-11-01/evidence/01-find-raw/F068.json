@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 161,
+  "title": "TOOL-008: подсчёт слов по пробелам ломается для CJK/тайского — полноценное описание помечается «only 1 words»",
+  "description": "`words()` делит по `\\s+`; в китайском/японском описании пробелов нет, поэтому длинное предложение даёт 1 «слово», а `d.length < 40` для 20–30 иероглифов выполняется → chatgpt warning «description is too thin». Для рынка (много китайских MCP-серверов) это систематическое ложное срабатывание.",
+  "evidence": "node против dist: description '按关键字搜索用户文档并返回匹配的文档标识和标题列表。' (25 символов, полное предложение) -> [{\"platforms\":[\"chatgpt\"],\"message\":\"description is too thin: only 1 words\"}].",
+  "suggested_fix": "Использовать `Intl.Segmenter(undefined,{granularity:'word'})` для подсчёта слов, либо отключать словесный критерий, если текст содержит `\\p{Script=Han}|\\p{Script=Hiragana}|\\p{Script=Katakana}|\\p{Script=Thai}`, оставляя только символьный порог с учётом «плотности» CJK (например, 1 CJK-символ ≈ 2 латинских).",
+  "confidence": 0.8,
+  "dimension": "rules-tools-schema",
+  "id": "F068"
+}

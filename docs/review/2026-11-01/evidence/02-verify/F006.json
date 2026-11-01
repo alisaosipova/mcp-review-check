@@ -1,0 +1,19 @@
+{
+  "id": "F006",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "При 401 на connect.ts:314-315 coverage и trigger выбираются только по opts.bearer. Если креды переданы через --header (X-Api-Key или Authorization: Bearer) и сервер их отверг, отчёт показывает 'auth-required' с советом 'pass --bearer <token>' (engine.ts:21) и trigger 'preflight-401' вместо token-rejected/bearer-rejected. Это расходится с options.authenticated (connect.ts:521), где --header уже учитывается.",
+  "repro": null,
+  "votes": [
+    {
+      "id": "F006",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Строка актуальна: src/connect.ts:314-315 выбирает token-rejected/auth-required и trigger только по `opts.bearer`. При этом `--header` действительно попадают в authHeaders (connect.ts:273-275) и уходят в discover и legacy connect, то есть отвергнутые креды из `--header` дают 'auth-required' / 'server requires OAuth', а engine.ts:21 authReason выводит 'server requires auth; pass --bearer <token>'. Это внутренне противоречиво: в том же файле, connect.ts:521, `options.authenticated = !!opts.bearer || Object.keys(opts.headers ?? {}).length > 0`, то есть заголовки уже считаются аутентификацией. Spec (docs/design/spec.md:1263, 1273) задаёт только перечисления trigger/coverage и про --header ничего не говорит. Тест test/e2e-http.test.ts:142 проверяет только путь с --bearer, сценарий с --header не тестируется. Последствие: вводящий в заблуждение текст отчёта и неверная пометка trigger; сами правила работают корректно.",
+      "corrected_description": "При 401 на connect.ts:314-315 coverage и trigger выбираются только по opts.bearer. Если креды переданы через --header (X-Api-Key или Authorization: Bearer) и сервер их отверг, отчёт показывает 'auth-required' с советом 'pass --bearer <token>' (engine.ts:21) и trigger 'preflight-401' вместо token-rejected/bearer-rejected. Это расходится с options.authenticated (connect.ts:521), где --header уже учитывается.",
+      "lens": "reader-batch"
+    }
+  ]
+}

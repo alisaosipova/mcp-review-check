@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/tools.ts",
+  "line": 309,
+  "title": "TOOL-026: параметр `body`/`payload` трактуется как raw-request — ложное срабатывание на create_issue/post_message/send_email",
+  "description": "RAW_QUERY включает `body`, `request_body`, `payload`. У подавляющего большинства write-инструментов (GitHub `create_issue`, Slack `post_message`, почтовые `send_email`) `body` — это текст сообщения/issue, а не тело HTTP-запроса. Если serverInfo.name общий (`mcp-server`) и в описании не упомянут бренд, правило выдаёт claude warning «free-form body parameter but the description does not name or link the target API». Для TOOL-023/025 «method/url рядом» уже используется как контекст, а здесь `body` считается без него.",
+  "evidence": "node против dist: create_issue с properties {repo,title,body}, description 'Create a new issue in the given repository with a title and body.', serverInfo.name='mcp-server' -> [{\"path\":\"/properties/body\",\"message\":\"free-form \\\"body\\\" parameter but the description does not name or link the target API\"}].",
+  "suggested_fix": "Считать `body`/`payload`/`request_body` raw-параметрами только рядом с method/url/endpoint/headers (как RAW_TARGET), либо только если тип object/free string и описание параметра содержит `request|json|raw|http`; оставить безусловными только языки запросов (sql, graphql, jql...).",
+  "confidence": 0.8,
+  "dimension": "rules-tools-schema",
+  "id": "F065"
+}

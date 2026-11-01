@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 254,
+  "title": "INJ-007: паттерн `(use|call|invoke|ask) (the )?X (connector|plugin|app|integration)` ловит самоссылку «Use this app to …»",
+  "description": "Третий паттерн INJ-007 не помечен `ownToolExempt`, поэтому `[\\w\\- ]{1,30}` сопоставляется с `this` и фраза «Use this app to track your workouts» (самое частое вступление описаний ChatGPT-апп) трактуется как принуждение к стороннему софту. С `ownToolExempt: true` SELF_REFS уже исключил бы `this`.",
+  "evidence": "INJ_007.check для log_workout 'Use this app to track your workouts and meals.' → evidence 'Use this app'. RT_011 на выводе 'Tip: use this app to see more.' тоже срабатывает.",
+  "suggested_fix": "Поставить `ownToolExempt: true` на этот паттерн или добавить negative lookahead `(?!\\s+(this|our|the) (app|plugin|connector|integration)\\b)` после глагола.",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F093"
+}

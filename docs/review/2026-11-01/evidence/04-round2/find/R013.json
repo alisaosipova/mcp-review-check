@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/cli.ts",
+  "line": 324,
+  "title": "Неполная проверка (auth-required / token-rejected) завершается exit 0 «PASS» и без GitHub-аннотации: просроченный или отсутствующий токен в CI даёт зелёный job",
+  "description": "Код выхода считается только из report.summary.failed (gate по находкам). Если tool-level проверки не запускались (coverage.toolLevel = auth-required или token-rejected), а у auth-правил нет ошибок, получается Result «PASS», exit 0, вердикты INCOMPLETE и score n/a. annotations() в этом случае ничего не печатает: аннотации делаются только для exit 3 и для находок. В рецепте CI из README (preview deployment с MCP_REVIEW_CHECK_TOKEN из secrets) истёкший токен (token-rejected) или недоступный секрет (pull_request из форка: пустая env, а пустой bearer считается отсутствующим) молча пропускают все TOOL/INJ/DATA/POL/APPS-проверки, и job остаётся зелёным. Для 401 без --bearer это соответствует замыслу (spec.md §3.2: «exit code follows --fail-on»). Но при token-rejected токен передан явно и отвергнут, то есть это ошибка конфигурации. README:102 описывает exit 0 как «Completed», а README:158 обещает «INCOMPLETE, never a pass», хотя это касается только вердикта.",
+  "evidence": "Мини-репро на dist (/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/gate.mjs → gate.out): buildReport со снапшотом coverage={toolLevel:'token-rejected'}, без находок, --fail-on warning → `PASS (--fail-on warning) · partial check: token-rejected (token rejected (401))`, score `n/a`, summary.failed=false, verdicts claude/chatgpt=INCOMPLETE. В cli.ts:324 `const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0;`, coverage не учитывается. В github.ts:228-241 outcome задаётся только для fatal/stopped. connect.ts:275 `if (opts.bearer)`: пустой MCP_REVIEW_CHECK_TOKEN эквивалентен отсутствию токена.",
+  "suggested_fix": "Для token-rejected (токен передан, но отвергнут) возвращать отдельный ненулевой код (2 как ошибка конфигурации или 3) либо ввести флаг `--require-complete` / `--fail-on-incomplete`, при котором неполная проверка даёт exit 1. В режиме GITHUB_ACTIONS для любой неполной проверки печатать `::warning title=mcp-review-check::partial check: <toolLevel> (<reason>)`. В README (Exit codes, CI recipes) явно написать, что при auth-required и token-rejected exit = 0, и показать, как сделать job красным.",
+  "confidence": 0.8,
+  "failure_scenario": "В workflow из README у secrets.MCP_REVIEW_CHECK_TOKEN истёк срок, или PR пришёл из форка. Сервер отвечает 401, auth-правила проходят, tool-проверки не запускаются, exit 0, аннотаций нет, PR проходит с «PASS».",
+  "dimension": "score-gate-github-explain",
+  "id": "R013"
+}

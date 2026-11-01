@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 275,
+  "title": "--tool-args принимается без --active, а неизвестные/не read-only имена инструментов в нём молча игнорируются",
+  "description": "`values['tool-args']` читается и валидируется как JSON-объект, но если `--active` не передан, файл не используется и ничего не сообщается (проверено: запуск с `--tool-args` без `--active` даёт обычный JSON-отчёт без предупреждения). В runActive аргументы берутся только `ctx.toolArgs?.[name]` для инструментов из `filter(isSafeToCall)`: опечатка в имени или инструмент без `readOnlyHint: true` → используется синтез, пользователь не узнаёт, что его аргументы не применились. Это главный источник «почему RT-001/RT-002 жалуются на мои валидные аргументы».",
+  "evidence": "src/cli.ts:275-281 читает `--tool-args` без проверки `values.active`; src/probe/active.ts:80-84 `const tools = ctx.snap.tools.filter(isSafeToCall).slice(0, MAX_TOOLS); … const provided = ctx.toolArgs?.[name];`. Мини-репро: `node dist/cli.js --tool-args ta.json --stdio \"node test/fixtures/good-server.mjs\" --format json` → валидный отчёт, stderr без предупреждения.",
+  "suggested_fix": "UsageError «--tool-args needs --active» (или notice на stderr); после runActive вывести в `limits`/notes список ключей --tool-args, не сопоставленных ни с одним вызванным инструментом, с причиной (unknown tool / not read-only / beyond the 50-tool cap).",
+  "confidence": 0.85,
+  "dimension": "docs-tests-ci",
+  "id": "F161"
+}

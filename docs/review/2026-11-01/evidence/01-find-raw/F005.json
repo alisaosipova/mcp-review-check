@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 241,
+  "title": "--header \"Authorization: …\" вместе с --bearer: оба заголовка уходят на сервер и склеиваются в «Bearer A, Bearer B»",
+  "description": "headers хранятся с именем как введено (`Authorization`), bearer добавляется как `authorization` (connect.ts:275). Headers в fetch регистронезависимы и объединяют дубликаты через запятую — сервер получает невалидный Authorization и отвечает 401, что CLI трактует как token-rejected. То же для дубликатов `--header X-A --header x-a`.",
+  "evidence": "`node -e \"console.log(new Headers({Authorization:'Bearer A', authorization:'Bearer B'}).get('authorization'))\"` -> `Bearer A, Bearer B`. cli.ts:242 `headers[k] = v` без нормализации регистра; connect.ts:275 `authHeaders.authorization = \\`Bearer ${opts.bearer}\\``.",
+  "suggested_fix": "Нормализовать имена к lower-case в parseHeader; UsageError, если задан заголовок authorization и `--bearer` одновременно; при повторе имени — последний выигрывает или ошибка.",
+  "confidence": 0.85,
+  "dimension": "cli-connect",
+  "id": "F005"
+}

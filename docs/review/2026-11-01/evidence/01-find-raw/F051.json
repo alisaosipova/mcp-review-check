@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/rules/auth.ts",
+  "line": 371,
+  "title": "AUTH-002/AUTH-004/AUTH-013 дают три error за одну причину (сервер без OAuth-discovery)",
+  "description": "Для сервера с 401 без WWW-Authenticate и без PRM: AUTH-002 (все платформы error), AUTH-004 (все error), AUTH-013 (chatgpt error + claude info) — три финдинга об одном: «нет OAuth discovery». Это ухудшает читаемость отчёта и SARIF; в §2.8 корневая причина не агрегируется.",
+  "evidence": "test/rules/auth.test.ts:190-194 демонстрирует срабатывание AUTH-013 именно в этом сценарии; AUTH-002 `missing()` строка 84 и AUTH-004 строка 140 срабатывают одновременно (одинаковые условия `!a.prm && !a.legacyDiscovery`).",
+  "suggested_fix": "В AUTH-013 второй блок выполнять только когда `a.challenge?.raw` есть, но не Bearer (т.е. явно другая схема); при полном отсутствии discovery оставить AUTH-004 как единственный error, AUTH-002 — info «no challenge either».",
+  "confidence": 0.75,
+  "dimension": "rules-server-spec-auth",
+  "id": "F051"
+}

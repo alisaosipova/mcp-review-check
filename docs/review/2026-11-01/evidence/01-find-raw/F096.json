@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 303,
+  "title": "INJ-008: «Use this tool for any question about billing» — тематически ограниченный триггер считается overly broad",
+  "description": "Первая альтернатива `(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\\b` срабатывает на «for any question about X», где X сужает область. Это обычная формулировка scope-подсказки, chatgpt=warning ложный.",
+  "evidence": "INJ_008.check для 'Use this tool for any question about billing.' → evidence 'Use this tool for any'.",
+  "suggested_fix": "После `(any|every|all) (request|question|query|message)s?` добавить negative lookahead на уточнение: `(?!\\s+(about|regarding|related to|concerning|on|involving)\\b)`.",
+  "confidence": 0.75,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F096"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "vitest.config.ts",
+  "line": 4,
+  "title": "Нет измерения покрытия; ряд модулей src не имеет прямых unit-тестов и проверяется только через spawn CLI",
+  "description": "В vitest.config.ts нет `coverage`, в devDependencies нет `@vitest/coverage-v8`. По именам импортов в test/ напрямую не тестируются: src/probe/wire.ts (все wire-пробы SPEC-003..009), src/protocol/recording.ts, src/protocol/legacy.ts (listAll, cap 100 страниц, повтор курсора), src/rules/manual.ts (фильтрация MAN по feature ui/oauth), src/rules/lexicon.ts, src/rules/util/ui.ts, src/rules/util/access.ts, src/catalog.ts (только чёрным ящиком через --help). Они покрываются e2e-тестами, которые медленны (спавн dist/cli.js, 60 s timeout) и не локализуют поломку. Без coverage-отчёта нельзя проверить заявление CONTRIBUTING о полноте тестов.",
+  "evidence": "for f in src/**: grep -rl \"/$f.js'\" test | wc -l → `0 catalog`, `0 probe/wire`, `0 protocol/legacy`, `0 protocol/recording`, `0 rules/lexicon`, `0 rules/manual`, `0 rules/util/access`, `0 rules/util/ui`. vitest.config.ts: только include/globalSetup/testTimeout/hookTimeout/pool. package.json devDependencies: `@types/node`, `typescript`, `vitest`.",
+  "suggested_fix": "Добавить `@vitest/coverage-v8`, скрипт `test:coverage` с `coverage.include: ['src/**']` и порогами (например lines 85%), публиковать в CI как артефакт. Написать unit-тесты для legacy.listAll (maxPages, repeated cursor, error), manualChecklist (feature filter), wire-проб с мок-fetch.",
+  "confidence": 0.8,
+  "dimension": "docs-tests-ci",
+  "id": "F156"
+}

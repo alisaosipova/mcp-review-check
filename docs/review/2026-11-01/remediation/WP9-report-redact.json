@@ -1,0 +1,178 @@
+{
+ "package": "WP9-report-redact",
+ "owned_files": [
+  "src/report/text.ts",
+  "src/report/json.ts",
+  "src/report/sarif.ts",
+  "src/report/markdown.ts",
+  "src/report/github.ts",
+  "src/report/score.ts",
+  "src/report/index.ts",
+  "src/report/constants.ts",
+  "src/redact.ts",
+  "src/rules/engine.ts",
+  "src/rules/types.ts"
+ ],
+ "items": [
+  {
+   "id": "F129",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/json.ts",
+   "title": "JSON не содержит rootCauses, из которых считается score — summary.score невоспроизводим из JSON",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F129.json"
+  },
+  {
+   "id": "F122",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/report/sarif.ts",
+   "title": "SARIF level берётся из максимальной severity по всем платформам, а не по gated — code scanning покажет error там, где exit code = PASS",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F122.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F122.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F122.json"
+  },
+  {
+   "id": "F115",
+   "kind": "security",
+   "sev": "medium",
+   "file": "src/report/text.ts",
+   "title": "Терминальная инъекция: ANSI/OSC/CR из данных сервера печатаются в text-отчёт без экранирования",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F115.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F115.json"
+  },
+  {
+   "id": "F132",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/redact.ts",
+   "title": "В URL редактируются только токены известных форматов и секретные имена — hex/base64 ключи в пути или под нейтральным именем остаются",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F132.json"
+  },
+  {
+   "id": "F134",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/text.ts",
+   "title": "fixSnippets завязан на точный текст сообщения TOOL-006 ('no title')",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F134.json"
+  },
+  {
+   "id": "F116",
+   "kind": "security",
+   "sev": "medium",
+   "file": "src/redact.ts",
+   "title": "Cookie-заголовок редактируется только целиком: отдельное значение cookie (session id), эхо-возвращённое сервером, утекает",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F116.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F116.json"
+  },
+  {
+   "id": "F135",
+   "kind": "security",
+   "sev": "medium",
+   "file": "src/report/text.ts",
+   "title": "Инъекция ANSI-escape и GitHub workflow-команд через серверные строки в текстовом отчёте",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F135.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F135.json"
+  },
+  {
+   "id": "F127",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/markdown.ts",
+   "title": "text() не экранирует emphasis/strike/math — серверный текст может менять вид H1 и ячеек",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F127.json"
+  },
+  {
+   "id": "F133",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/engine.ts",
+   "title": "Need 'legacy' считается выполненным для stdio с era 'modern'",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F133.json"
+  },
+  {
+   "id": "F125",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/engine.ts",
+   "title": "Сортировка через localeCompare зависит от ICU/локали процесса — порядок находок в JSON/SARIF может различаться между машинами",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F125.json"
+  },
+  {
+   "id": "F117",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/redact.ts",
+   "title": "Basic-авторизация: декодированный пароль не редактируется",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F117.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F117.json"
+  },
+  {
+   "id": "F124",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/engine.ts",
+   "title": "Исключение в правиле, не относящемся к --target, глотается без следа и без учёта в score",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F124.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F124.json"
+  },
+  {
+   "id": "F118",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/redact.ts",
+   "title": "Полный уровень редакции (--env) заменяет обычные слова по всему отчёту: production, debug, версии, пути, hostname",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F118.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F118.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F118.json"
+  },
+  {
+   "id": "F128",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/json.ts",
+   "title": "JSON server.command склеивает argv пробелами — необратимо для аргументов с пробелами",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F128.json"
+  },
+  {
+   "id": "F147",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/markdown.ts",
+   "title": "Markdown-рендерер не экранирует управляющие/невидимые символы (ESC, bidi U+202E, zero-width)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F147.json"
+  },
+  {
+   "id": "F131",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/github.ts",
+   "title": "Нет защиты от лимита GITHUB_STEP_SUMMARY (1 MiB) и большого числа аннотаций (10 per step)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F131.json"
+  },
+  {
+   "id": "F123",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/report/sarif.ts",
+   "title": "Результат с ruleId 'INTERNAL' ссылается на правило, отсутствующее в tool.driver.rules",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F123.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F123.json"
+  },
+  {
+   "id": "R023",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/report/github.ts",
+   "title": "Пустое имя инструмента ('') даёт аннотацию с title «RULE-ID » без субъекта",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R023.json"
+  },
+  {
+   "id": "R022",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/report/score.ts",
+   "title": "Экспортируемая failed() по умолчанию учитывает spec, в отличие от CLI; в продакшен-коде не используется",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R022.json"
+  }
+ ]
+}

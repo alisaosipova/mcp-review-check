@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 227,
+  "title": "--timeout/--max-duration принимают hex/экспоненту/пробелы через Number()",
+  "description": "`Number(values.timeout)` принимает `0x10` (=16 ms), `1e3`, `' 500 '`, `Infinity`-подобные через `Number.isFinite` отсекаются, но `0b11`, `0o7` проходят. README описывает значение как «ms». `--timeout 0x10` = 16 ms даст массовые таймауты и exit 3, которые пользователь будет искать не там.",
+  "evidence": "src/cli.ts:227-228 `const timeoutMs = Number(values.timeout); if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw …`. Репро: `node dist/cli.js --timeout 0x10 --stdio \"node -e process.exit(1)\" --format json` → принимается, печатает отчёт.",
+  "suggested_fix": "Проверять `/^\\d+$/.test(values.timeout)` перед Number() и в сообщении писать «must be a whole number of milliseconds».",
+  "confidence": 0.7,
+  "dimension": "docs-tests-ci",
+  "id": "F162"
+}

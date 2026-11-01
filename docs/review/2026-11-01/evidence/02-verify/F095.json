@@ -1,0 +1,20 @@
+{
+  "id": "F095",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "INJ-005, warning-ветки. Паттерн injection.ts:199 считает 'user' в составе именной группы ('user avatars', 'user-generated content') адресатом сокрытия, и RAW_DATA_OBJECT этот случай не исключает. Паттерн :201 срабатывает на бытовое 'You are now connected/signed in'. Оба дают ложный warning.",
+  "repro": "node scratchpad/inj.mjs (dist/rules/injection.js): INJ-005 'Do not show user avatars larger than 64px.' -> [['warning','Do not show user']]; 'You are now connected to the workspace.' -> [['warning','You are now']]",
+  "votes": [
+    {
+      "id": "F095",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "reasoning": "Строки актуальны: паттерн 5 на injection.ts:199, паттерн 7 на :201. RAW_DATA_OBJECT (:190) не содержит avatar/profile/generated, SECRET_OBJECT тоже, поэтому 'Do not show user avatars…' проходит. Паттерн 7 срабатывает на любое 'you are now' без проверки контекста. В spec.md:615 эти регулярки указаны как warning-эвристики, но в проекте ложные срабатывания считаются дефектами: в test/rules/content.test.ts:148,220 есть отдельные тесты-guards для 'Never show raw note IDs to the user'. Тестов, которые закрепляли бы 'user avatars' или 'You are now connected' как ожидаемое срабатывание, нет. Ложное срабатывание — только warning, отсюда severity low.",
+      "corrected_description": "INJ-005, warning-ветки. Паттерн injection.ts:199 считает 'user' в составе именной группы ('user avatars', 'user-generated content') адресатом сокрытия, и RAW_DATA_OBJECT этот случай не исключает. Паттерн :201 срабатывает на бытовое 'You are now connected/signed in'. Оба дают ложный warning.",
+      "repro": "node scratchpad/inj.mjs (dist/rules/injection.js): INJ-005 'Do not show user avatars larger than 64px.' -> [['warning','Do not show user']]; 'You are now connected to the workspace.' -> [['warning','You are now']]",
+      "lens": "reader-batch"
+    }
+  ]
+}

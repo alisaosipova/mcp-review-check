@@ -1,0 +1,13 @@
+{
+  "label": "verify:code-reader:cli.ts",
+  "agentId": "aba9099e19fc26e2c",
+  "note": "first run, Fable 5.1 verifier; the finding text it verified is in the agent transcript (prompt), not in this file",
+  "result": {
+    "refuted": false,
+    "confidence": 0.9,
+    "corrected_severity": "low",
+    "reasoning": "Подтверждено чтением кода и репро. `splitStdioArgv` (src/protocol/stdioArgs.ts:52-59) отделяет хвост после `--` только если перед `--` есть «голый» `--stdio` (следующий токен начинается с `-` или это последний токен). При `--stdio foo -- node x` условие на строке 56 не выполняется, возвращается `{args: argv}` без `command`; `parseArgs` (strict, allowPositionals) превращает `node`, `x` в positionals; проверка src/cli.ts:214 (`split.command && values.stdio !== undefined`) не срабатывает, и пользователь получает `expected a single <url>` (cli.ts:215), хотя никакого URL не передавал. Ни один тест не фиксирует это поведение как намеренное: test/e2e-stdio.test.ts:177 покрывает только `--stdio 'node x.js' --stdio -- node y.js` (там второй `--stdio` голый, поэтому срабатывает правильное сообщение); test/util.test.ts:139-141 проверяют только голые формы. spec.md:1142 и README.md:86 описывают две формы и не оговаривают их смешение. Код завершения правильный (2), запуска сервера не происходит, утечек нет — так что это косметика диагностики (DX): severity low. Дополнительный вариант `--stdio \"node x\" -- --verbose` даёт столь же нерелевантное `give exactly one of <url> or --stdio`.",
+    "corrected_description": "splitStdioArgv (src/protocol/stdioArgs.ts:56) распознаёт разделитель `--` только когда `--stdio` «голый». Если `--stdio` имеет строковое значение и в argv есть `--`, хвост после `--` уходит в positionals parseArgs, проверка cli.ts:214 не срабатывает, и выдаётся ошибка про URL (cli.ts:215) или `give exactly one of <url> or --stdio` (cli.ts:217). Exit code 2 корректен, сервер не запускается — проблема только в тексте диагностики. Исправление: в splitStdioArgv возвращать `separator: true` при наличии `--` в argv (или в cli.ts проверять `argv.includes('--') && values.stdio !== undefined`) и бросать UsageError 'give --stdio either \"<command>\" or -- <command> [args...], not both'; добавить тест в test/e2e-stdio.test.ts рядом со строкой 177.",
+    "repro": "$ node dist/cli.js --stdio foo -- node x\nerror: expected a single <url>\nRun with --help for usage.\nexit=2\n\n$ node dist/cli.js --stdio \"node x\" -- --verbose\nerror: give exactly one of <url> or --stdio \"<command>\"\nRun with --help for usage.\nexit=2\n\nДля сравнения, корректное сообщение при голом --stdio:\n$ node dist/cli.js --stdio 'node x.js' --stdio -- node y.js  -> exit 2 с 'not both' (покрыто test/e2e-stdio.test.ts:177)"
+  }
+}

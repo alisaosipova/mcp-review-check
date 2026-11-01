@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 199,
+  "title": "INJ-005 (warning-ветки): `user` как прилагательное и «You are now connected»",
+  "description": "Паттерн 5 `(do not|don't|never) (tell|…|show|disclose)[^.]{0,30}\\b(the )?user\\b` матчит «Do not show user avatars larger than 64px» (user avatars/user-generated content). Паттерн 7 `(you are now|from now on,? you)` матчит «You are now connected to the workspace».",
+  "evidence": "INJ_005.check → две warning-находки: evidence 'Do not show user' и 'You are now'.",
+  "suggested_fix": "Для `user` требовать окончание именной группы: `\\b(the )?user(?![- ](avatar|name|id|generated|input|profile|data)s?\\b)\\b` или требовать `the user` без артикля-опущения; для «you are now» требовать роль/персону: `you are now (a|an|the|in|acting|operating|free)\\b` и `from now on,? you (are|will|must|should)`.",
+  "confidence": 0.75,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F095"
+}

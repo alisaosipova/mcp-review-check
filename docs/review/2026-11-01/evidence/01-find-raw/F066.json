@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/schema.ts",
+  "line": 224,
+  "title": "TOOL-021: для узла без `type` (например `{ $ref, 'x-mcp-header' }`) сообщение «x-mcp-header on a undefined property»",
+  "description": "`JSON.stringify(v.node.type)` при отсутствующем type возвращает undefined, и в шаблон попадает строка «on a undefined property». Это также частый случай для `$ref`-параметров (тип определён в цели), которые по правилу (d) и так помечаются как non-pure — пользователь получает два невнятных сообщения на один параметр.",
+  "evidence": "node против dist: properties.h = {$ref:'#/$defs/S','x-mcp-header':'X-Tenant'} -> «x-mcp-header on a undefined property. Streamable HTTP clients will drop this tool.»",
+  "suggested_fix": "Печатать `type` через `v.node.type === undefined ? 'property without type' : JSON.stringify(...)`, а для `$ref`-узлов брать тип из `deref()` и не дублировать (c) при уже сработавшей (d).",
+  "confidence": 0.95,
+  "dimension": "rules-tools-schema",
+  "id": "F066"
+}

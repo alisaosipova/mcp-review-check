@@ -1,0 +1,20 @@
+{
+  "id": "F123",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "Если правило бросает исключение, src/rules/engine.ts:110 создаёт находку ruleId 'INTERNAL'. В SARIF она попадает в results с level 'note' и без ruleIndex. Однако src/report/sarif.ts:39 собирает tool.driver.rules только из каталога RULES, и записи INTERNAL там нет. Вывод остаётся валидным по схеме, но потребители SARIF показывают такой результат без shortDescription и help. Это касается только случая, когда в правиле есть баг.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f123.mjs  (toSarif из dist/report/sarif.js; на вход подан Report с одной findings {ruleId:'INTERNAL',severity:'info',...} и snap.target {kind:'http',urlAsEntered:'https://x/'})\nOutput: [[\"INTERNAL\",\"note\",null]] rules has INTERNAL: false nRules 144",
+  "votes": [
+    {
+      "id": "F123",
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Подтверждено. src/rules/engine.ts:108-112 при исключении в rule.check() добавляет находку ruleId 'INTERNAL' (severity info, platforms ['spec']). src/report/sarif.ts:39 строит tool.driver.rules только из RULES.map(...), а синтетической записи INTERNAL нет; results (стр. 49-61) переносят f.ruleId как есть и не задают ruleIndex. Выше по стеку ничего не отфильтровывает: toSarif получает r.findings без изменений. В test/sarif.test.ts нет случая с INTERNAL и нет проверки, что каждый result.ruleId есть в driver.rules; test/engine.test.ts:29 проверяет только создание INTERNAL-находки, а не её вид в SARIF. docs/design/spec.md §5.3 (около стр. 1422) говорит только, что rules[] берутся из каталога, поэтому отсутствие INTERNAL получается побочным эффектом, а не задокументированным решением. Номер строки 39 актуален. По схеме SARIF 2.1.0 ruleId без соответствующего reportingDescriptor допустим, поэтому вывод остаётся валидным. Последствие косметическое: в GitHub code scanning и других SARIF-просмотрщиках у результата не будет описания и help, а возникает он только при баге в одном из правил. Severity low оставлено.",
+      "corrected_severity": "low",
+      "corrected_description": "Если правило бросает исключение, src/rules/engine.ts:110 создаёт находку ruleId 'INTERNAL'. В SARIF она попадает в results с level 'note' и без ruleIndex. Однако src/report/sarif.ts:39 собирает tool.driver.rules только из каталога RULES, и записи INTERNAL там нет. Вывод остаётся валидным по схеме, но потребители SARIF показывают такой результат без shortDescription и help. Это касается только случая, когда в правиле есть баг.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f123.mjs  (toSarif из dist/report/sarif.js; на вход подан Report с одной findings {ruleId:'INTERNAL',severity:'info',...} и snap.target {kind:'http',urlAsEntered:'https://x/'})\nOutput: [[\"INTERNAL\",\"note\",null]] rules has INTERNAL: false nRules 144",
+      "lens": "reader-batch"
+    }
+  ]
+}

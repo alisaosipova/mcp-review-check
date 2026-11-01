@@ -1,0 +1,188 @@
+{
+ "package": "WP6-inj-data-pol",
+ "owned_files": [
+  "src/rules/injection.ts",
+  "src/rules/data.ts",
+  "src/rules/policy.ts",
+  "src/rules/lexicon.ts"
+ ],
+ "items": [
+  {
+   "id": "F110",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-004: percent-encoded не-ASCII в URL-примере (кириллица/CJK) = «encoded payload»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F110.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F110.json"
+  },
+  {
+   "id": "F090",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-001: исключение emoji-ZWJ не покрывает последовательности с VS16/модификатором тона кожи (❤️‍🔥, 👩🏽‍💻, 🏳️‍🌈)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F090.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F090.json"
+  },
+  {
+   "id": "F089",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/data.ts",
+   "title": "DATA-005: имя `address` трактуется как геолокация — email/IP/wallet/contract address",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F089.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F089.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F089.json"
+  },
+  {
+   "id": "F113",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/data.ts",
+   "title": "DATA-004: список restricted-data имён неполный (card_cvc, exp_month/exp_year, routing_number, account_number, passport_no, license_number, aadhaar, nino)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F113.json"
+  },
+  {
+   "id": "F087",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/data.ts",
+   "title": "DATA-001: `transcript` в STRONG_CONVO → error на инструментах транскрипции встреч/звонков",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F087.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F087.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F087.json"
+  },
+  {
+   "id": "F082",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/policy.ts",
+   "title": "POL-002: regex MEDIA без завершающего \\b — create_article, clipboard, voicemail считаются генерацией медиа",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F082.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F082.json"
+  },
+  {
+   "id": "F088",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/data.ts",
+   "title": "DATA-002: голое `memory` после read/access/retrieve → «Read the memory usage of the VM» = доступ к памяти Claude",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F088.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F088.json"
+  },
+  {
+   "id": "F095",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-005 (warning-ветки): `user` как прилагательное и «You are now connected»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F095.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F095.json"
+  },
+  {
+   "id": "F111",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-006 паттерн 2: «rather than the default full web page» — не стиринг",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F111.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F111.json"
+  },
+  {
+   "id": "F114",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-003: `<Secret>`/`<hidden>` как описание XML/HTML-элементов в легитимной документации",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F114.json"
+  },
+  {
+   "id": "F091",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-002: единицы измерения с греческой буквой (μs, kΩ, ΔT, μg) — ложный homoglyph",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F091.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F091.json"
+  },
+  {
+   "id": "F092",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-006: `better than|superior to` без контекста — «rating better than the threshold» = принижение конкурентов",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F092.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F092.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F092.json"
+  },
+  {
+   "id": "F096",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-008: «Use this tool for any question about billing» — тематически ограниченный триггер считается overly broad",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F096.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F096.json"
+  },
+  {
+   "id": "F086",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/data.ts",
+   "title": "DATA-003: SECRET_NAMES заякорен на всё имя — new_password, db_password, github_token, credentials не ловятся",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F086.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F086.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F086.json"
+  },
+  {
+   "id": "F093",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-007: паттерн `(use|call|invoke|ask) (the )?X (connector|plugin|app|integration)` ловит самоссылку «Use this app to …»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F093.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F093.json"
+  },
+  {
+   "id": "F083",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/rules/policy.ts",
+   "title": "POL-001: MONEY_NAME матчится как подстрока сырого имени — bestsellers/stakeholders/send_email",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F083.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F083.json"
+  },
+  {
+   "id": "F098",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/data.ts",
+   "title": "DATA-001 текстовая эвристика: «Send all messages matching the filter» в мессенджер-инструментах",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F098.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F098.json"
+  },
+  {
+   "id": "F097",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-007: паттерн брендов `(slack|github|…) (tool|connector)` флагует first-party сервер того же бренда",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F097.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F097.json"
+  },
+  {
+   "id": "F109",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "Находки INJ-* для prompts не содержат имени промпта (subject теряется)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F109.json"
+  },
+  {
+   "id": "F094",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/rules/injection.ts",
+   "title": "INJ-009: «Follow the setup instructions in the README» / «apply the rules defined in the config» = подтягивание инструкций извне",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F094.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F094.json"
+  }
+ ]
+}

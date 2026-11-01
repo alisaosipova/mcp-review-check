@@ -1,0 +1,20 @@
+{
+  "id": "F074",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "TOOL-018 (src/rules/schema.ts:140,153): инструмент считается беспараметровым, если нет непустого `properties`, нет ключей из COMPOSITION и не выставлено `additionalProperties:false`. Поэтому схемы, которые принимают произвольные ключи (`patternProperties`, `additionalProperties` как схема, например map `{type:'string'}`, `propertyNames`, `unevaluatedProperties`, `dependentSchemas`), получают ложное info «tool takes no parameters». Формально это совпадает с буквой spec.md («no properties, no composition keywords»), но противоречит смыслу правила «Parameterless tool».",
+  "repro": "TOOL-018 {type:'object',patternProperties:{'^x-':{type:'string'}}} -> [[null,\"tool takes no parameters but does not set additionalProperties: false\"]]\nTOOL-018 {type:'object',additionalProperties:{type:'string'}} -> то же\nTOOL-018 {type:'object',propertyNames:{pattern:'^a'}} -> то же",
+  "votes": [
+    {
+      "id": "F074",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "corrected_description": "TOOL-018 (src/rules/schema.ts:140,153): инструмент считается беспараметровым, если нет непустого `properties`, нет ключей из COMPOSITION и не выставлено `additionalProperties:false`. Поэтому схемы, которые принимают произвольные ключи (`patternProperties`, `additionalProperties` как схема, например map `{type:'string'}`, `propertyNames`, `unevaluatedProperties`, `dependentSchemas`), получают ложное info «tool takes no parameters». Формально это совпадает с буквой spec.md («no properties, no composition keywords»), но противоречит смыслу правила «Parameterless tool».",
+      "reasoning": "Строка 153 актуальна. В тестах для TOOL-018 есть только {type:'object'} и additionalProperties:false, случаи с patternProperties и additionalProperties-схемой не покрыты. Сообщение прямо утверждает, что параметров нет, а это неверно для map-подобных аргументов, особенно для распространённого additionalProperties:{type:...}. Severity правила info, ложное срабатывание шумит, но не блокирует, поэтому low.",
+      "repro": "TOOL-018 {type:'object',patternProperties:{'^x-':{type:'string'}}} -> [[null,\"tool takes no parameters but does not set additionalProperties: false\"]]\nTOOL-018 {type:'object',additionalProperties:{type:'string'}} -> то же\nTOOL-018 {type:'object',propertyNames:{pattern:'^a'}} -> то же",
+      "lens": "reader-batch"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/manual.ts",
+  "line": 67,
+  "title": "OAuth-пункты чеклиста (MAN-007/008/013/014/026/028) пропадают при legacy discovery без PRM",
+  "description": "manualChecklist считает OAuth обнаруженным только при `snap.authProbe?.prm`. Сервер с 2025-03-26 discovery (legacyDiscovery=true, as[0] заполнен) — это тоже OAuth, но все пункты feature='oauth' отфильтровываются. При этом authSummary для такого сервера печатает «OAuth (legacy discovery, no PRM, DCR)».",
+  "evidence": "node repro: s.authProbe = {trigger:'preflight-401', prmAttempts:[], as:[{issuer, attempts:[], json:{registration_endpoint}}], legacyDiscovery:true, timings:{}}; manualChecklist(s) => has MAN-007: false, MAN-013: false\nКод: `const oauth = !!snap.authProbe?.prm;`",
+  "suggested_fix": "`const oauth = !!snap.authProbe && (!!snap.authProbe.prm || !!snap.authProbe.legacyDiscovery || snap.authProbe.as.length > 0);`",
+  "confidence": 0.85,
+  "dimension": "report-redact-engine",
+  "id": "F121"
+}

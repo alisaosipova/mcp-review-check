@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 160,
+  "title": "Ручной linkAbort ради Node 18, хотя engines теперь >=20.19 (AbortSignal.any доступен)",
+  "description": "Комментарий и реализация `linkAbort` обходят отсутствие `AbortSignal.any` в Node 18.19; package.json требует Node >=20.19, где `AbortSignal.any` и `AbortSignal.timeout` есть. Можно упростить: `signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), stop])` и убрать ручной setTimeout/unlink. Заодно spec.md §4.4 всё ещё описывает «Node 18 compatibility (mandatory)» как действующее требование (строка 9 помечает его историческим, но §4.4/engines `>=18.19` не обновлены).",
+  "evidence": "trace.ts:160 `// … by hand: AbortSignal.any is not in Node 18.19`; package.json:25 `\"node\": \">=20.19\"`; docs/design/spec.md:1320,1350.",
+  "suggested_fix": "Заменить на AbortSignal.any/timeout; обновить §4.4 spec.md под Node 20.19+.",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F034"
+}

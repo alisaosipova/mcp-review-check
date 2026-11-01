@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/util/html.ts",
+  "line": 64,
+  "title": "extractOrigins не видит ES-module импорты и importmap — APPS-007 пропускает самый частый способ подключения ext-apps",
+  "description": "Виджеты MCP Apps обычно делают `import { App } from \"https://esm.sh/@modelcontextprotocol/ext-apps\"` внутри `<script type=\"module\">` или задают `<script type=\"importmap\">`. jsPatterns покрывают fetch/WebSocket/EventSource/XHR/axios/ky, но не `import … from 'https://…'`, `import('https://…')`, importmap `\"imports\": {\"x\": \"https://…\"}`. Такие origin-ы должны быть в resourceDomains, иначе виджет не загрузится — ложноотрицательный результат.",
+  "evidence": "extractOrigins('<script type=\"module\">import {App} from \"https://esm.sh/@modelcontextprotocol/ext-apps\"; …</script>') не содержит origin https://esm.sh (вернулся только FP от new URL).",
+  "suggested_fix": "Добавить в jsPatterns: `['resource', /\\bimport\\s*(?:[^;'\"`]{0,120}?\\bfrom\\s*)?${lit}/g]`, `['resource', /\\bimport\\(\\s*${lit}/g]`, а для `<script type=\"importmap\">` парсить JSON и добавлять все https-значения из imports/scopes как resource (confidence tag).",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F101"
+}

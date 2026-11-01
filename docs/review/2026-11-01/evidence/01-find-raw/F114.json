@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 122,
+  "title": "INJ-003: `<Secret>`/`<hidden>` как описание XML/HTML-элементов в легитимной документации",
+  "description": "PSEUDO_TAG флагует любые угловые скобки вокруг слов system/secret/hidden/instructions, включая «Returns the <Secret> element of the KeyVault XML response». Для warning приемлемо, но стоит смягчить при наличии слов element|tag|xml|node рядом.",
+  "evidence": "INJ_003.check для 'Returns the <Secret> element of the KeyVault XML response.' → evidence '<Secret>'.",
+  "suggested_fix": "Добавить в Pattern `unless: /\\b(element|tag|node|xml|markup|attribute)\\b/i` (40 символов после матча) или понижать до info при таком контексте.",
+  "confidence": 0.6,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F114"
+}

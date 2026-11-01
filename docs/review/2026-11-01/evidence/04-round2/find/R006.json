@@ -1,0 +1,14 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 105,
+  "title": "Exit-коды 129/130/131/143 (выход по сигналу) не описаны ни в README, ни в --help",
+  "description": "В cli.ts:356-371 процесс намеренно умирает по тому же сигналу (130 для SIGINT, 143 для SIGTERM, 131 для SIGQUIT, 129 для SIGHUP), а на Windows выходит с 128+n. В таблице «Exit codes» README и в блоке «Exit codes:» в HELP перечислены только 0-3. Об этом знает только CHANGELOG (упоминается 130 для Windows).",
+  "evidence": "Измерено: SIGINT → exit 130, SIGTERM → 143, SIGQUIT → 131 (Quit), SIGHUP → 129. `grep -n 130 README.md` ничего не находит; HELP, cli.ts:74-75: «Exit codes: 0 … 1 … 2 … 3 …».",
+  "suggested_fix": "Добавить в таблицу README и в HELP строку: «128+N: прерван сигналом (130 Ctrl+C, 143 SIGTERM); stdio-серверы перед выходом завершены».",
+  "confidence": 0.8,
+  "failure_scenario": "CI-скрипт с `case $?` обрабатывает только 0-3, и отмена задачи (143) попадает в ветку «неизвестная ошибка» или трактуется как падение линтера.",
+  "dimension": "deadline-signals",
+  "id": "R006"
+}

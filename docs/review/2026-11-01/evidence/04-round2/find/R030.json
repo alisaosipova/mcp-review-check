@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/util/ui.ts",
+  "line": 129,
+  "title": "Content item с uri, отличным от запрошенного: _meta item-а игнорируется, HTML-правила молча пропускаются, APPS-005/012 дают ложные error",
+  "description": "uiResources ищет item строго по `c.uri === r.uri`. Если resources/read вернул один item с немного другим uri (`?v=2`, нормализация), r.item = undefined. Дальше: r.html undefined, поэтому APPS-003/004/007/013/014/015/016 ничего не проверяют, даже явные нарушения (внешний script, alert). r.meta падает на list-entry или пустой объект, поэтому APPS-005 даёт chatgpt error «no CSP declared», а APPS-012 — «no widget domain», хотя CSP объявлена в _meta этого item-а. APPS-001 при этом корректно говорит о несовпадении uri, но из-за каскада реальные проблемы теряются.",
+  "evidence": "r2apps.out, `single content item, uri differs: cascade`: при item `{uri:'ui://w/a.html?v=2', _meta:{ui:{csp:{}}}, text:'<script src=\"https://evil.example/x.js\"> ... alert(1)'}` выдаются только APPS-001, APPS-005 chatgpt error «no CSP declared», APPS-012 error, APPS-018, APPS-017 info; нет APPS-007 и APPS-015.",
+  "suggested_fix": "Если contents содержит ровно один item (или ровно один с mimeType text/html*), использовать его как fallback для html/meta. APPS-001 оставить как сигнал о несовпадении uri.",
+  "confidence": 0.7,
+  "failure_scenario": "Сервер добавляет cache-buster к uri в ответе read: отчёт показывает ложные «no CSP»/«no widget domain» и пропускает недекларированные origin-ы.",
+  "dimension": "limits-apps",
+  "id": "R030"
+}

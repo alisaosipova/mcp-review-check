@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/cli.ts",
+  "line": 282,
+  "title": "--active-auth, --tool-args, --sarif-location молча принимаются там, где не действуют (например --active-auth при --stdio печатает пугающий DCR-notice)",
+  "description": "`--active-auth` используется только в buildHttp; при --stdio CLI всё равно печатает «Notice: --active-auth creates a DCR client…» и ставит options.activeAuth=true (правила AUTH-019..021 помечаются skipped 'auth probe did not run'). `--tool-args` без `--active` читается и валидируется, но никуда не идёт (probe/active.ts:83 — единственный потребитель). `--sarif-location` без `--format sarif` игнорируется. Пользователь думает, что проверки прошли.",
+  "evidence": "`node dist/cli.js --stdio \"node test/fixtures/good-server.mjs\" --tool-args $S/ta.json --active-auth --format json` -> exit=0, stderr: `Notice: --active-auth creates a DCR client on your authorization server…`, активных вызовов нет. В cli.ts нет ни одной проверки сочетаний active-auth/stdio, tool-args/active, sarif-location/format.",
+  "suggested_fix": "UsageError: `--active-auth applies only to <url>`; warning на stderr (или UsageError) `--tool-args has no effect without --active`; warning `--sarif-location applies only to --format sarif`.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F004"
+}

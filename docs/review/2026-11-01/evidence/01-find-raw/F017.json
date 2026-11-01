@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 612,
+  "title": "GroupStdioTransport копирует приватные внутренности SDK (_process, _readBuffer, processReadBuffer) — тихая поломка при bump SDK",
+  "description": "Класс дублирует start() из @modelcontextprotocol/sdk client/stdio.js и опирается на приватные поля. Зависимость закреплена `~1.32.1`, но патч-релиз SDK может переименовать поле: start() тогда упадёт на `self._serverParams` или тихо не зарегистрирует процесс в progress.children (детей перестанут убивать).",
+  "evidence": "connect.ts:613 `type SdkStdio = { _process?; _serverParams; _readBuffer; _stderrStream; processReadBuffer() }`; сравнение с node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js показывает ручную копию (без `windowsHide`, что ок, т.к. win32 идёт в super.start()).",
+  "suggested_fix": "Проверка при старте (`if (typeof self.processReadBuffer !== 'function' || !('_serverParams' in self)) throw new Error('unsupported SDK')`) + тест, пинующий форму приватного API; либо предложить upstream опцию `detached`/`spawnOptions`.",
+  "confidence": 0.6,
+  "dimension": "cli-connect",
+  "id": "F017"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "F075",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F075",
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Строка 422 актуальна: там TOOL-007 claude=warning. Но шапка spec.md:11 прямо говорит: «several severities changed (for example TOOL-007 ...)» и называет каталог в src/rules/ авторитетным для severity. Остальные пункты тоже описаны в CHANGELOG.md, на который ссылается шапка: TOOL-007 claude=error — CHANGELOG.md:47, TOOL-012 одно finding на инструмент — :76, TOOL-027 без query/all и с расширенным списком параметров — :55. Документ объявлен историческим планом, расхождения задокументированы, это не дефект.",
+      "lens": "reader-batch"
+    }
+  ]
+}

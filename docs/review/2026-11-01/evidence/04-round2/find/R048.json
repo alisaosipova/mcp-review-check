@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 468,
+  "title": "Неудачный stdio-initialize выбрасывает собранный не-JSON stdout: SRV-018 молчит, а диагноз сводится к «Request timed out»",
+  "description": "При ошибке connectStdio массив nonJson теряется: в исключение попадает только stderrTail, а buildStdio в catch не заполняет snap.transport.stdio. Типичная ошибка пользователя — запуск HTTP-сервера или CLI, который печатает баннер в stdout, через --stdio. Такой процесс выводит, например, «MCP server listening on http://localhost:3000/mcp» и не отвечает. Через полный --timeout отчёт показывает только «MCP error -32001: Request timed out». SRV-018 не срабатывает, хотя stdout содержит именно ту строку, которая объясняет проблему.",
+  "evidence": "Репро run-httpish.mjs (сервер httpish.mjs: console.log баннера и бесконечное ожидание), вывод httpish.txt:\nfatal: could not start or initialize the stdio server: MCP error -32001: Request timed out\ntransport.stdio: undefined stderrTail: \"\"\nSRV-018 finding: []\nerror SRV-003 - stdio server did not start: ... Request timed out\nФайлы: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/",
+  "suggested_fix": "Прикреплять nonJson к ошибке connectStdio, как stderrTail, и в catch buildStdio записывать snap.transport.stdio = { nonJsonStdout, stderrTail }. В fatal добавлять первую не-JSON строку stdout (после scrub, до 200 символов). Если строка похожа на «listening on http…», подсказывать запуск по URL.",
+  "confidence": 0.85,
+  "failure_scenario": "`mcp-review-check --stdio \"node http-server.js\"` у сервера, который пишет в stdout «listening on http://localhost:3000»: через 30 с пользователь получает «Request timed out» без подсказки, а SRV-018 не сообщает о мусоре в stdout.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R048"
+}

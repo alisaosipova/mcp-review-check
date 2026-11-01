@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 170,
+  "title": "Запись CSP без схемы (`api.example.com`) даёт сразу APPS-006 «not an origin» и APPS-007 «not declared»",
+  "description": "originMatches делает `new URL(entry)` и на scheme-less host-source молча возвращает false. Если хост подставляет domains в CSP как есть (`connect-src api.example.com`), браузер разрешит https://api.example.com, а APPS-007 назовёт origin незадекларированным (для tag-confidence — chatgpt error). Одна причина — две находки, причём вторая вводит в заблуждение.",
+  "evidence": "r2apps.out, `scheme-less connectDomains entry`: `APPS-006 ... \"api.example.com\" is not an origin` и `APPS-007 ... connect origin https://api.example.com is not declared in the CSP`.",
+  "suggested_fix": "В originMatches считать запись без схемы host-source (совпадение по хосту, схема https/wss), а в APPS-006 оставить одну находку «add scheme». Либо в APPS-007 не дублировать, если запись уже помечена APPS-006.",
+  "confidence": 0.5,
+  "failure_scenario": "connectDomains: [\"api.example.com\"] + fetch(\"https://api.example.com/x\"): две находки вместо одной, вторая неверно утверждает, что origin не объявлен.",
+  "dimension": "limits-apps",
+  "id": "R035"
+}

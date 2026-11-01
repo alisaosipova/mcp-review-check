@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "scripts/rules-table.mjs",
+  "line": 20,
+  "title": "rules-table.mjs --write синхронизирует дату в примере отчёта, но не версию; сообщение об успехе упоминает только docs/RULES.md",
+  "description": "Регулярка `^(mcp-review-check \\S+ · rules )\\d{4}-\\d{2}-\\d{2}` обновляет дату каталога в примере вывода README (строка 126 `mcp-review-check 0.1.0 · rules 2026-10-22 · target: all`), но версия `0.1.0` останется после `npm version minor`, и docs.test.ts проверяет только дату. Также `console.error` пишет «docs/RULES.md updated…», хотя переписывается и README.md — CI-шаг «docs/RULES.md and the catalog date in README.md are regenerated» вводит в заблуждение при чтении логов.",
+  "evidence": "scripts/rules-table.mjs:20 `.replace(/^(mcp-review-check \\S+ · rules )\\d{4}-\\d{2}-\\d{2}/gm, `$1${CATALOG_DATE}`)`; :22 `console.error(`docs/RULES.md updated with …`)`; README.md:126; test/docs.test.ts:37-41 сверяет только дату.",
+  "suggested_fix": "Читать version из package.json и заменять `^mcp-review-check \\S+ · rules` на `mcp-review-check ${version} · rules ${CATALOG_DATE}`; в docs.test.ts сверять версию с VERSION; поправить текст сообщения.",
+  "confidence": 0.8,
+  "dimension": "docs-tests-ci",
+  "id": "F164"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/auth.ts",
+  "line": 259,
+  "title": "AUTH-008: при отсутствии поля issuer сообщение «metadata issuer undefined !== …»",
+  "description": "`issuer` в RFC 8414 REQUIRED. Если метаданные его не содержат, `JSON.stringify(undefined)` даёт слово undefined в тексте финдинга, и пользователь не понимает, что поле отсутствует.",
+  "evidence": "Репро: удалён `issuer` из AS-метаданных -> `error [claude,spec,chatgpt] metadata issuer undefined !== https://auth.acme.test`.",
+  "suggested_fix": "`if (!isStr(m.issuer)) return [{ message: 'metadata has no string issuer (RFC 8414 REQUIRED)' }];` перед сравнением.",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F053"
+}

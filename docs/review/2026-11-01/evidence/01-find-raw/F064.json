@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/tools.ts",
+  "line": 72,
+  "title": "TOOL-004: слова «top», «preferred», «official», «leading» как токены имени дают ложные «promotional» warning на обычных доменных именах",
+  "description": "PROMO проверяется по каждому токену имени и title. Токены `top` (get_top_stories, Spotify «Top tracks», top_headlines), `preferred` (set_preferred_language), `official` (get_official_rate), `leading` — обычная предметная лексика, а не самопродвижение. Это chatgpt warning, который попадает в вердикт.",
+  "evidence": "node против dist: name 'get_top_stories' -> [{\"message\":\"promotional word \\\"top\\\" in name or title\"}]; 'set_preferred_language' -> «promotional word \"preferred\"»; title 'Top tracks' -> «promotional word \"top\"».",
+  "suggested_fix": "Для многозначных слов (top, preferred, official, leading) требовать контекст: позицию перед другим «рекламным» словом, сравнительную форму (`top_rated`, `best_*`), или учитывать только title/description в сочетании с name; либо сделать их отдельным info-уровнем. Добавить негативные кейсы get_top_stories / set_preferred_language в test/rules/tools.test.ts.",
+  "confidence": 0.8,
+  "dimension": "rules-tools-schema",
+  "id": "F064"
+}

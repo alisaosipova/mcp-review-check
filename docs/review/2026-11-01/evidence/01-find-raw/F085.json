@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/runtime.ts",
+  "line": 237,
+  "title": "RT-010: токены ищутся только в JSON-распарсенных корнях — секрет в обычном тексте результата не детектируется",
+  "description": "`roots` заполняется из `structuredContent` и `JSON.parse` каждой строки/всего текста; TOKEN_RE применяется в `walkJson` только к строкам внутри этих корней. Текстовый результат вида `Your session token: eyJ...` или `Bearer sk-ant-...` не является JSON → никаких находок, хотя rationale правила — «results must not expose credentials».",
+  "evidence": "RT_010.check с content text 'Your session token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIi....dBjf... Authorization: Bearer sk-ant-api03-...' → []; тот же JWT внутри JSON {\"token\":...} → severity error 'result contains token-like values: eyJh…'.",
+  "suggested_fix": "Дополнительно прогонять TOKEN_RE (глобально) по `textOf(r)` целиком и добавлять совпадения в `tokens`; заодно переиспользовать KNOWN_TOKEN из util/net.ts (sk_live, glpat-, xox*, AIza, npm_, hf_, github_pat_) вместо узкого локального TOKEN_RE.",
+  "confidence": 0.95,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F085"
+}

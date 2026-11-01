@@ -1,0 +1,28 @@
+{
+  "kind": "security",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 25,
+  "title": "capStrings не ограничивает ключи объектов: имена свойств и ключи patternProperties любой длины проходят мимо капа",
+  "description": "Обрезаются только значения (`rec[k] = v.slice`), ключи остаются как есть. Имя свойства inputSchema.properties или ключ patternProperties длиной в мегабайты доходит до regex-правил (TOOL-023 METHOD_PROP, DATA-* по именам параметров) и до `new RegExp(k,'u')` в invalidPattern, а в limits.truncated это не отражается. Заявленная цель limits.ts — защитить regex-эвристики от огромного ввода — обходится одним ключом. F013 и F146 говорят о непокрытых полях снапшота, а не о ключах.",
+  "evidence": "/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2b.out: `truncated: [] key len after cap: 4194304` — ключ properties длиной 4 MB и ключ patternProperties длиной 1 MB не обрезаны и не попали в отчёт об усечении.",
+  "suggested_fix": "В capStrings пересоздавать объект, если какой-то ключ длиннее cap (обрезать ключ, сохранить коллизии с суффиксом), и учитывать это в `longest`; либо отбрасывать такие свойства с записью в truncated.",
+  "confidence": 0.7,
+  "failure_scenario": "Сервер отдаёт inputSchema с именем свойства на 4 MB: все правила по именам параметров гоняют regex по 4 MB строке, а отчёт не упоминает усечение.",
+  "dimension": "limits-apps",
+  "id": "R028",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R028",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. capStrings (src/limits.ts:25-29) обрезает только значения, а Object.keys остаются как есть. Ключ properties на 4 MB и ключ patternProperties на 1 MB проходят через cap без изменений, и limits.truncated остаётся пустым. Мой замер показал, что ReDoS нет. Время правил растёт примерно линейно: 0.26 MB — 235 ms, 0.5 MB — 422 ms, 1 MB — 1301 ms, 2 MB — 2320 ms для ключа 'a-'*n. Так что ущерб — это обход заявленного лимита: секунды на правила, находки с сообщениями по 1–4 MB (maxmsglen 4194352) и никакого уведомления об усечении. Это отдельная проблема от F013/F146: они про непокрытые поля, а здесь про ключи внутри покрытых объектов. Severity low.",
+      "repro": "r2b.out: 'truncated: [] key len after cap: 4194304'. Мой замер /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r28t.mjs: 'p*4MB truncated 0 ms 191 findings 7 maxmsglen 4194352'; 'a-b- 1MB truncated 0 ms 1254 findings 7 maxmsglen 1048624'. Скрипт r28s.mjs: время растёт линейно, 2 MB ключ — 2320 ms",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "r2b.out: 'truncated: [] key len after cap: 4194304'. Мой замер /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r28t.mjs: 'p*4MB truncated 0 ms 191 findings 7 maxmsglen 4194352'; 'a-b- 1MB truncated 0 ms 1254 findings 7 maxmsglen 1048624'. Скрипт r28s.mjs: время растёт линейно, 2 MB ключ — 2320 ms"
+}

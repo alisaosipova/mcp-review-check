@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/report/score.ts",
+  "line": 78,
+  "title": "Экспортируемая failed() по умолчанию учитывает spec, в отличие от CLI; в продакшен-коде не используется",
+  "description": "failed(findings, failOn, platforms = ['claude','chatgpt','spec']) по умолчанию считает spec gated, а CLI без --fail-on-spec spec не учитывает (gatedPlatforms). Функцию вызывают только тесты (test/report.test.ts:58-60). Это мёртвый код с умолчанием, противоречащим документированному поведению: ловушка для программного использования (CHANGELOG заявляет API, см. F150).",
+  "evidence": "grep: `failed(` вызывается только в test/report.test.ts:58-60. score.ts:78 `platforms: Platform[] = ['claude', 'chatgpt', 'spec']`, а score.ts:35-37 gatedPlatforms без failOnSpec spec не включает.",
+  "suggested_fix": "Удалить failed() и перевести тесты на gate(...).failed, либо сделать умолчание gatedPlatforms('all').",
+  "confidence": 0.6,
+  "failure_scenario": "Интегратор вызывает failed(findings, 'error') и падает на spec-ошибке, на которой CLI вернул бы 0.",
+  "dimension": "score-gate-github-explain",
+  "id": "R022"
+}

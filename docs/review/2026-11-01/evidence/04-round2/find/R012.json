@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 368,
+  "title": "Сессии Streamable HTTP не завершаются (DELETE не отправляется): за один прогон на сервере остаётся 7–10 открытых сессий",
+  "description": "client.close() в SDK StreamableHTTPClientTransport только прерывает запросы, а terminateSession() нигде не вызывается. Каждый прогон создаёт сессии: основную, fresh, text-only, по одной на каждый clientName (3 при --active), плюс сырые initialize (preflight и 4 origin-пробы). Ни одна не закрывается. Спецификация (2025-11-25 transports, Session Management) говорит, что клиент, которому сессия больше не нужна, SHOULD отправить DELETE. Повторные прогоны в CI копят сессии на stateful серверах.",
+  "evidence": "e_sessions.mjs (stateful SDK сервер, sessionIdGenerator=randomUUID):\nactive false era legacy | sessions created 7 | still open after run 7 | DELETE received 0\nactive true era legacy | sessions created 10 | still open after run 10 | DELETE received 0\ngrep terminateSession src → пусто.",
+  "suggested_fix": "Перед `client.close()` для kind 'streamable-http' вызывать `(conn.rec.inner as StreamableHTTPClientTransport).terminateSession().catch(()=>{})` в buildHttp и freshTools. Для сырых initialize-проб отправлять DELETE с полученным Mcp-Session-Id. 405 на DELETE допустим.",
+  "confidence": 0.65,
+  "failure_scenario": "Stateful сервер с лимитом сессий или дорогими сессиями: регулярный запуск линтера в CI исчерпывает лимит или память до истечения TTL.",
+  "dimension": "sse-legacy-modern",
+  "id": "R012"
+}

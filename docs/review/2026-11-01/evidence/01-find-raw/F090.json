@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 73,
+  "title": "INJ-001: исключение emoji-ZWJ не покрывает последовательности с VS16/модификатором тона кожи (❤️‍🔥, 👩🏽‍💻, 🏳️‍🌈)",
+  "description": "Проверка требует `\\p{Extended_Pictographic}` непосредственно слева и справа от U+200D. В ❤️‍🔥 слева от ZWJ стоит U+FE0F (VS16), в 👩🏽‍💻 — U+1F3FD (Emoji_Modifier), в 🏳️‍🌈 — VS16; все три помечаются warning «invisible format characters \\u{200D}».",
+  "evidence": "hiddenChars('👩🏽‍💻') → {soft:['\\\\u{200D}']}; hiddenChars('❤️‍🔥') → {soft:['\\\\u{200D}']}; hiddenChars('🏳️‍🌈') → {soft:['\\\\u{200D}']}. INJ_001.check на описании 'React with ❤️‍🔥 or 👩🏽‍💻' → warning.",
+  "suggested_fix": "При поиске соседей пропускать U+FE0F/U+FE0E и \\p{Emoji_Modifier} (U+1F3FB–1F3FF): искать ближайший не-VS/не-modifier кодпоинт слева и справа, затем применять PICTO.",
+  "confidence": 0.95,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F090"
+}

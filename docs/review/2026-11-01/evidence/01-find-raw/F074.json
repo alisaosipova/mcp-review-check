@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/schema.ts",
+  "line": 153,
+  "title": "TOOL-018: схема только с `patternProperties`/`propertyNames`/`unevaluatedProperties` помечается как «takes no parameters»",
+  "description": "COMPOSITION не содержит `patternProperties`, `propertyNames`, `unevaluatedProperties`, `dependentSchemas`, а также объектный `additionalProperties` (схема, не false). Инструмент, принимающий произвольные ключи по шаблону, получает ложный info «tool takes no parameters but does not set additionalProperties: false».",
+  "evidence": "node против dist: inputSchema {type:'object', patternProperties:{'^x-':{type:'string'}}} -> [{\"message\":\"tool takes no parameters but does not set additionalProperties: false\"}].",
+  "suggested_fix": "Расширить список исключений: patternProperties (непустой), propertyNames, unevaluatedProperties, dependentSchemas, additionalProperties как объект.",
+  "confidence": 0.85,
+  "dimension": "rules-tools-schema",
+  "id": "F074"
+}

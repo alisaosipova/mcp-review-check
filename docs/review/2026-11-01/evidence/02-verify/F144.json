@@ -1,0 +1,20 @@
+{
+  "id": "F144",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "Если передан --tool-args, то для read-only инструмента с именем из Object.prototype (`constructor`, `toString`, `hasOwnProperty`, `__proto__` и т.п.) выражение `ctx.toolArgs?.[name]` в active.ts:83 возвращает унаследованное свойство. Вызов помечается как kind 'valid' без настоящих аргументов: поле arguments пропадает при сериализации, а для `__proto__` уходит пустой объект. Синтез по inputSchema при этом пропускается, и это искажает RT-правила, которые опираются на 'valid'. Исправление: брать аргументы через `Object.hasOwn(ctx.toolArgs, name)`.",
+  "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f144.mjs вызывает runActive из dist/probe/active.js с заглушкой modern, toolArgs={\"get_x\":{\"q\":\"a\"}} и пятью readOnly-инструментами (required:['q']). Вывод:\nconstructor valid function\ntoString valid function\n__proto__ valid object\nhasOwnProperty valid function\nget_x valid object\nОтправленные params: {\"name\":\"constructor\"} (поля arguments нет, синтез {q:'mcp-review-check'} пропущен).",
+  "votes": [
+    {
+      "id": "F144",
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "reasoning": "Строка актуальна: в src/probe/active.ts:83 стоит `const provided = ctx.toolArgs?.[name];`, проверки на собственное свойство нет. Объект toolArgs получается из JSON.parse в readToolArgs (src/cli.ts:174-177), а cli.ts:280 проверяет только, что это объект и не массив, так что прототип у него обычный Object.prototype. Выше и ниже по стеку случай нигде не обрабатывается: connect.ts:363/504 передаёт toolArgs как есть. Тестов в test/, которые закрепляли бы такое поведение как намеренное, нет. По spec.md:979/1136 аргументы берутся только из `{toolName: args}`, а иначе синтезируются, поэтому найденное поведение спецификации противоречит. Ограничение: проблема проявляется только с --tool-args (без флага `?.` даёт undefined) и только для инструмента с readOnlyHint=true, у которого имя совпадает с членом Object.prototype. Имя инструмента задаёт сервер. В таком случае вызов получает kind 'valid', в params.arguments уходит функция, которую JSON.stringify опускает (поле arguments пропадает), или для `__proto__` сам Object.prototype. Синтез аргументов пропускается, и ошибку сервера на по сути пустом вызове RT-правила засчитывают как ошибку на «валидном» вызове. Влияние небольшое: нужен узкий набор имён, флаг --tool-args и readOnly-аннотация.",
+      "corrected_description": "Если передан --tool-args, то для read-only инструмента с именем из Object.prototype (`constructor`, `toString`, `hasOwnProperty`, `__proto__` и т.п.) выражение `ctx.toolArgs?.[name]` в active.ts:83 возвращает унаследованное свойство. Вызов помечается как kind 'valid' без настоящих аргументов: поле arguments пропадает при сериализации, а для `__proto__` уходит пустой объект. Синтез по inputSchema при этом пропускается, и это искажает RT-правила, которые опираются на 'valid'. Исправление: брать аргументы через `Object.hasOwn(ctx.toolArgs, name)`.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f144.mjs вызывает runActive из dist/probe/active.js с заглушкой modern, toolArgs={\"get_x\":{\"q\":\"a\"}} и пятью readOnly-инструментами (required:['q']). Вывод:\nconstructor valid function\ntoString valid function\n__proto__ valid object\nhasOwnProperty valid function\nget_x valid object\nОтправленные params: {\"name\":\"constructor\"} (поля arguments нет, синтез {q:'mcp-review-check'} пропущен).",
+      "lens": "reader-batch"
+    }
+  ]
+}

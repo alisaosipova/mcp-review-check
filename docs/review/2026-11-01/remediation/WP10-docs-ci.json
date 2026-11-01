@@ -1,0 +1,173 @@
+{
+ "package": "WP10-docs-ci",
+ "owned_files": [
+  "README.md",
+  "SECURITY.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  ".github/workflows/release.yml",
+  ".github/workflows/ci.yml",
+  ".github/dependabot.yml",
+  "scripts/rules-table.mjs",
+  "scripts/postbuild.mjs",
+  "package.json",
+  "tsconfig.json",
+  "tsconfig.test.json",
+  "vitest.config.ts",
+  ".gitignore",
+  "test/pack.test.ts",
+  "docs/design/spec.md",
+  "docs/RULES.md"
+ ],
+ "items": [
+  {
+   "id": "F145",
+   "kind": "improvement",
+   "sev": "low",
+   "file": ".github/workflows/release.yml",
+   "title": "Release/CI: постоянный fallback на NPM_TOKEN и npm ci без --ignore-scripts",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F145.json"
+  },
+  {
+   "id": "F160",
+   "kind": "improvement",
+   "sev": "low",
+   "file": ".github/workflows/release.yml",
+   "title": "NODE_AUTH_TOKEN всегда задан (возможно пустой) при trusted publishing — поведение «OIDC is used when it is empty» не подтверждено",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F160.json"
+  },
+  {
+   "id": "F164",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "scripts/rules-table.mjs",
+   "title": "rules-table.mjs --write синхронизирует дату в примере отчёта, но не версию; сообщение об успехе упоминает только docs/RULES.md",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F164.json"
+  },
+  {
+   "id": "F168",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "README.md",
+   "title": "Рыночные возможности: GitHub Action, baseline-режим, конфиг-файл, линт листингов, JUnit, OAuth-helper",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F168.json"
+  },
+  {
+   "id": "F148",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "README.md",
+   "title": "README одновременно утверждает «не опубликовано в npm» и даёт рецепты через npx mcp-review-check@0.1",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F148.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F148.json"
+  },
+  {
+   "id": "F156",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "vitest.config.ts",
+   "title": "Нет измерения покрытия; ряд модулей src не имеет прямых unit-тестов и проверяется только через spawn CLI",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F156.json"
+  },
+  {
+   "id": "F152",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "README.md",
+   "title": "Число правил «144» захардкожено в README и spec.md и не синхронизируется генератором",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F152.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F152.json"
+  },
+  {
+   "id": "F149",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "SECURITY.md",
+   "title": "«What the tool sends» для --active не упоминает три дополнительных соединения с поддельным clientInfo.name и лимит 50 инструментов",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F149.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F149.json"
+  },
+  {
+   "id": "F153",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "CHANGELOG.md",
+   "title": "CHANGELOG в формате Keep a Changelog без link-определений; раздел Changed в первом релизе описывает изменения относительно неопубликованного baseline",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F153.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F153.json"
+  },
+  {
+   "id": "F159",
+   "kind": "improvement",
+   "sev": "low",
+   "file": ".github/workflows/ci.yml",
+   "title": "cancel-in-progress: true для всех ref — отменяет и запуски на main; npm audit в PR-CI делает сборку красной от чужих advisories",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F159.json"
+  },
+  {
+   "id": "F158",
+   "kind": "bug",
+   "sev": "low",
+   "file": "test/pack.test.ts",
+   "title": "pack.test.ts требует git и каталог .git без skipIf — npm test падает из архива исходников",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F158.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F158.json"
+  },
+  {
+   "id": "F150",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "package.json",
+   "title": "main указывает на CLI, нет exports/types — программный API заявлен в CHANGELOG, но не поддерживается пакетом",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F150.json"
+  },
+  {
+   "id": "F155",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "tsconfig.json",
+   "title": "lib: DOM ради типов fetch втягивает все браузерные глобалы в Node-код",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F155.json"
+  },
+  {
+   "id": "F166",
+   "kind": "improvement",
+   "sev": "low",
+   "file": ".gitignore",
+   "title": ".gitignore не исключает *.tgz, которые создаёт npm pack (release.yml, локальная проверка)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F166.json"
+  },
+  {
+   "id": "F151",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": ".github/workflows/ci.yml",
+   "title": "Матрица CI и engines держатся за Node 20, который достиг EOL 2026-04-30",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F151.json"
+  },
+  {
+   "id": "R006",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "README.md",
+   "title": "Exit-коды 129/130/131/143 (выход по сигналу) не описаны ни в README, ни в --help",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R006.json"
+  },
+  {
+   "id": "R020",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "README.md",
+   "title": "--ignore повышает score, а README говорит только об исключении из exit code",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R020.json"
+  },
+  {
+   "id": "R019",
+   "kind": "docs-mismatch",
+   "sev": "low",
+   "file": "README.md",
+   "title": "Таблица exit codes не упоминает, что непредвиденное исключение линтера тоже даёт exit 3",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R019.json"
+  }
+ ]
+}

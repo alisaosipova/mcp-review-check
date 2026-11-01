@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 418,
+  "title": "APPS-019 приписывает UI-капабилити отсутствие инструмента, которого нет и в обычном новом соединении (toolsFreshConnection)",
+  "description": "Правило сравнивает toolsWithoutUi с snap.tools первой сессии. Если сервер отдаёт разный набор инструментов на разных соединениях (per-session/динамические tools, feature flags), инструмент может отсутствовать и в toolsFreshConnection (новое соединение с полными капабилити). Тогда причина не в отсутствии UI-расширения, но APPS-019 всё равно выдаёт spec/chatgpt warning с неверным объяснением.",
+  "evidence": "r2apps.out: `APPS-019: tool absent also from fresh full-capability connection` (toolsFreshConnection=['search'], toolsWithoutUi=[search], tools=[show,search]) → `APPS-019 {spec:warning, chatgpt:warning} listed only for clients that declare io.modelcontextprotocol/ui`.",
+  "suggested_fix": "Базой сравнения брать пересечение snap.tools и snap.toolsFreshConnection (если оно есть); если инструмента нет и во fresh-соединении, пропускать (это зона SRV/TOOL-нестабильности).",
+  "confidence": 0.65,
+  "failure_scenario": "Сервер с инструментами, привязанными к сессии: ложное предупреждение «нет text-only fallback».",
+  "dimension": "limits-apps",
+  "id": "R038"
+}

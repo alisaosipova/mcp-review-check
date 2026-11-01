@@ -1,0 +1,19 @@
+{
+  "id": "F008",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node dist/cli.js --cwd /nonexistent-dir --stdio \"node -e 1\" --format json -> exit=3; в JSON: \"coverage\": {\"toolLevel\": \"connect-failed\", \"reason\": \"spawn node ENOENT\"}; message: \"stdio server did not start: could not start or initialize the stdio server: spawn node ENOENT\"; fix: \"Check that the command starts and speaks MCP on stdin/stdout ...\" (про --cwd ни слова)",
+  "votes": [
+    {
+      "id": "F008",
+      "refuted": false,
+      "confidence": 0.85,
+      "corrected_severity": "low",
+      "reasoning": "cli.ts:261 передаёт values.cwd в spec без проверки. connect.ts:423/625 вызывают spawn(..., {cwd}); при несуществующем cwd Node выдаёт `spawn <cmd> ENOENT`, то есть ту же ошибку, что и при отсутствующей команде. По спецификации (spec.md:1137) --cwd никак не проверяется. Тестов, которые фиксировали бы такое поведение как намеренное, нет: в test/compat.test.ts:96 используется только '--cwd .'. Подсказка в отчёте («Check that the command starts and speaks MCP…») про cwd ничего не говорит. Уточнение к формулировке: в отчёте поле reason лежит в coverage, а не в fatal, и та же строка повторяется в сообщении находки про Streamable HTTP transport. Это ухудшение DX/диагностики, а не ошибка результата, поэтому low.",
+      "repro": "node dist/cli.js --cwd /nonexistent-dir --stdio \"node -e 1\" --format json -> exit=3; в JSON: \"coverage\": {\"toolLevel\": \"connect-failed\", \"reason\": \"spawn node ENOENT\"}; message: \"stdio server did not start: could not start or initialize the stdio server: spawn node ENOENT\"; fix: \"Check that the command starts and speaks MCP on stdin/stdout ...\" (про --cwd ни слова)",
+      "lens": "reader-batch"
+    }
+  ]
+}

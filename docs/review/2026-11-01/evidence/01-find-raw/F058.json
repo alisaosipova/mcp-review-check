@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/auth.ts",
+  "line": 228,
+  "title": "AUTH-007 «tried nothing» при непарсящемся issuer дублирует AUTH-006",
+  "description": "Если `authorization_servers[0]` не URL, probe/auth.ts:105 ловит исключение `asDiscoveryUrls` и оставляет `attempts: []`; AUTH-006 уже даёт error, а AUTH-007 добавляет второй error «no authorization server metadata for <bad> (tried nothing)».",
+  "evidence": "Код AUTH-007: `describeAttempts(as.attempts) || 'nothing'`; probe/auth.ts: `try { urls = asDiscoveryUrls(issuer); } catch { continue; }`.",
+  "suggested_fix": "В AUTH-007 пропускать записи с `attempts.length === 0 && !as.json` когда issuer не парсится (`try new URL(as.issuer)`), оставив вердикт AUTH-006.",
+  "confidence": 0.8,
+  "dimension": "rules-server-spec-auth",
+  "id": "F058"
+}

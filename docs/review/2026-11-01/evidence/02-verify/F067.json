@@ -1,0 +1,20 @@
+{
+  "id": "F067",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "TOOL-006 (src/rules/tools.ts:122) берёт `t.title ?? at`, поэтому пустая строка `title: ''` затеняет непустой `annotations.title`. В итоге claude error «no title», хотя SDK getDisplayName в этом случае откатывается на annotations.title. Литерал в spec.md (`??`) повторяет ту же неточность. Нестроковый title тоже даёт «no title» без указания типа, но это только косметика сообщения.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF067a [ 'error [claude] no title' ]   // {title:'', annotations:{title:'Search notes'}}\nF067b [ 'error [claude] no title' ]   // {title:42}",
+  "votes": [
+    {
+      "id": "F067",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Строка 122 актуальна: `const title = t.title ?? at;`. docs/design/spec.md (TOOL-006) буквально задаёт `tool.title ?? tool.annotations?.title`, так что код совпадает со спекой дословно. Но цель спеки (fix: «title или annotations.title») и эталонное поведение MCP SDK расходятся с кодом: node_modules/@modelcontextprotocol/sdk/dist/esm/shared/metadataUtils.js getDisplayName считает `title === ''` отсутствующим и берёт annotations.title. Значит, для `{title:'', annotations:{title:'Search notes'}}` хост покажет 'Search notes', а линтер выдаёт claude error «no title». Это ложное срабатывание уровня error, хотя и редкий пограничный случай. В test/rules/tools.test.ts такого случая нет, то есть намеренным это поведение не задокументировано. Вторая часть утверждения (`title: 42` даёт «no title» вместо сообщения о неверном типе) про качество сообщения, а не про корректность: finding всё равно выдаётся, и это верно. Спеку тоже стоит поправить: «первое непустое из title, annotations.title».",
+      "corrected_description": "TOOL-006 (src/rules/tools.ts:122) берёт `t.title ?? at`, поэтому пустая строка `title: ''` затеняет непустой `annotations.title`. В итоге claude error «no title», хотя SDK getDisplayName в этом случае откатывается на annotations.title. Литерал в spec.md (`??`) повторяет ту же неточность. Нестроковый title тоже даёт «no title» без указания типа, но это только косметика сообщения.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF067a [ 'error [claude] no title' ]   // {title:'', annotations:{title:'Search notes'}}\nF067b [ 'error [claude] no title' ]   // {title:42}",
+      "lens": "reader-batch"
+    }
+  ]
+}

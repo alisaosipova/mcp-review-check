@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/util/ui.ts",
+  "line": 171,
+  "title": "cspOf сливает openai/widgetCSP с ui.csp для всех платформ: Claude-находки APPS-005/007 пропадают, а APPS-008/005 дают Claude-находки по OpenAI-ключам",
+  "description": "cspOf без учёта платформы объединяет `_meta.ui.csp` (стандарт MCP Apps) и `openai/widgetCSP` (OpenAI-specific). По спеке Claude читает `_meta.ui.csp` (claude.com MCP Apps docs и APPS_SPEC), проектных доказательств, что Claude читает openai/widgetCSP, нет. Последствия: (1) сервер с одной только openai/widgetCSP не получает Claude info «host default blocks all external origins» (APPS-005) и Claude warning APPS-007 о недекларированных origin-ах, хотя в Claude они будут заблокированы; (2) APPS-008 пишет для claude «frameDomains declared (...)», хотя задано только OpenAI-поле frame_domains; (3) некорректная `openai/widgetCSP.connect_domains` даёт claude=error в APPS-005, потому что severity:'error' без platforms распространяется на все платформы правила.",
+  "evidence": "r2apps.out: `only openai/widgetCSP` → APPS-005 и APPS-007 не выдают ни одной claude-находки; `APPS-008 {\"claude\":\"warning\"} frameDomains declared (https://embed.example.com)`; `malformed openai/widgetCSP` → `APPS-005 {\"chatgpt\":\"error\",\"claude\":\"error\"} CSP fields are not string[]: openai/widgetCSP.connect_domains`.",
+  "suggested_fix": "Строить два view: mcpCsp (только ui.csp) для claude/spec и mergedCsp для chatgpt. В APPS-005/007/008 выдавать платформенные находки по соответствующему view; malformed openai/* — с platforms:['chatgpt'].",
+  "confidence": 0.55,
+  "failure_scenario": "ChatGPT-first сервер объявляет только openai/widgetCSP: `--target claude` показывает чистый APPS-007, а в Claude виджет не может загрузить API и скрипты.",
+  "dimension": "limits-apps",
+  "id": "R031"
+}

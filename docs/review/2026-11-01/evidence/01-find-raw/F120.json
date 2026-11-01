@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 25,
+  "title": "Set-Cookie ответа сервера записывается в отчёт в открытом виде",
+  "description": "redactHeaders маскирует только authorization/cookie/proxy-authorization (+имена пользовательских --header). Заголовок ответа `set-cookie` (сессионная cookie, выданная после авторизованного запроса с --bearer) попадает в snap.transport.exchanges[].headers и далее в JSON/SARIF-отчёт. HttpExchange.headers в snapshot.ts:194 не помечен «redacted», в отличие от requestHeaders.",
+  "evidence": "createRedactor().headerNames => [ 'authorization', 'cookie', 'proxy-authorization' ]; grep -ri set-cookie src test — нет совпадений.",
+  "suggested_fix": "Добавить 'set-cookie' (и 'www-authenticate' оставлять — он нужен правилам) в headerNames по умолчанию; либо маскировать только значение cookie, оставляя атрибуты (Secure/HttpOnly нужны для возможных правил).",
+  "confidence": 0.7,
+  "dimension": "report-redact-engine",
+  "id": "F120"
+}

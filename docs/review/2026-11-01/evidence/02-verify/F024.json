@@ -1,0 +1,19 @@
+{
+  "id": "F024",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node против dist/protocol/trace.js, mock SSE, поток не закрывается, timeoutMs=1500, fullBody:\nid 1 took 19 ms json? true err undefined\nid \"1\" took 1500 ms json? true err undefined",
+  "votes": [
+    {
+      "id": "F024",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Строки 74-75 актуальны: isResponseTo использует строгое `m.id === id`, sseResponseWatcher (78-86) поэтому не останавливает чтение, если сервер вернул id строкой \"1\" на числовой запрос. readBody читает до таймаута, потом parseBody (127-137) находит сообщение через `?? msgs[0]`, так что результат верный, но запрос держится весь timeoutMs. Теста, который закреплял бы такое поведение как намеренное, в test/ нет. SPEC-016 проверяет только observedErrors (ответы-ошибки), т.е. на успешных ответах несовпадение id не попадает даже в отчёт. Срабатывает только при двух условиях сразу: сервер нарушает JSON-RPC (id не того типа) и держит SSE-поток открытым. Поэтому severity low.",
+      "repro": "node против dist/protocol/trace.js, mock SSE, поток не закрывается, timeoutMs=1500, fullBody:\nid 1 took 19 ms json? true err undefined\nid \"1\" took 1500 ms json? true err undefined",
+      "lens": "reader-batch"
+    }
+  ]
+}

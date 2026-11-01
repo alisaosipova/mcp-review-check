@@ -1,0 +1,1306 @@
+{
+ "results": [
+  {
+   "wp": "WP1-cli",
+   "branch": "worktree-wf_365c0c99-4d0-1",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-1",
+   "done": [
+    {
+     "id": "F002",
+     "commit": "40cceda",
+     "summary": "Имя --header, не являющееся HTTP-токеном (RFC 9110), теперь даёт usage error (exit 2) вместо сбоя подключения с exit 3; значение не выводится."
+    },
+    {
+     "id": "F015",
+     "commit": "40cceda",
+     "summary": "--timeout и --max-duration принимают только цифры: 0x10, 1e2, 1.5, значения с пробелами и +100 дают usage error."
+    },
+    {
+     "id": "F001",
+     "commit": "d5cde2e",
+     "summary": "--bearer и --header вместе с --stdio дают usage error; для stdio $MCP_REVIEW_CHECK_TOKEN игнорируется, поэтому RT-009 больше не отключается молча."
+    },
+    {
+     "id": "F005",
+     "commit": "d5cde2e",
+     "summary": "Заголовок Authorization в --header вместе с --bearer и повтор имени заголовка (без учёта регистра) дают usage error; Authorization из --header важнее токена из env."
+    },
+    {
+     "id": "F004",
+     "commit": "fb315f5",
+     "summary": "--active-auth с --stdio даёт usage error и больше не печатает DCR notice; на --tool-args без --active и на --sarif-location без --format sarif выводится предупреждение в stderr."
+    },
+    {
+     "id": "F161",
+     "commit": "fb315f5",
+     "summary": "После --active каждый неиспользованный ключ --tool-args называется в stderr с причиной: инструмента с таким именем нет, он не read-only или вышел за лимит вызовов."
+    },
+    {
+     "id": "F008",
+     "commit": "5bad7d5",
+     "summary": "Несуществующий, пустой или не являющийся каталогом --cwd даёт usage error (exit 2) вместо 'spawn node ENOENT' с exit 3."
+    },
+    {
+     "id": "F009",
+     "commit": "5bad7d5",
+     "summary": "--output \"\" даёт usage error, а не печатает отчёт в stdout."
+    },
+    {
+     "id": "F010",
+     "commit": "5bad7d5",
+     "summary": "--stdio \"<cmd>\" вместе с -- <cmd> даёт ошибку 'not both'; на -- без голого --stdio выводится своё сообщение, а не 'expected a single <url>'."
+    },
+    {
+     "id": "F016",
+     "commit": "5da372e",
+     "summary": "--target, --format и --fail-on (в том числе вместе с --list-rules) принимают значения в любом регистре."
+    },
+    {
+     "id": "R018",
+     "commit": "5da372e",
+     "summary": "--ignore A,B принимает список через запятую, и в ошибке называется ID-подобный неверный элемент; строка --help обновлена."
+    },
+    {
+     "id": "R021",
+     "commit": "3cbe683",
+     "summary": "В итоговой строке --output теперь '1 error' / '1 warning' в единственном числе."
+    },
+    {
+     "id": "R005",
+     "commit": "e36ab26",
+     "summary": "isMain пробует argv[1] и argv[1]+'.js', поэтому `node dist/cli` теперь запускает CLI, а не завершается с 0 без проверки."
+    },
+    {
+     "id": "R004",
+     "commit": "946a52f",
+     "summary": "runCli получает AbortSignal, который main прерывает по SIGINT/SIGTERM/SIGHUP/SIGQUIT; если snapshot завершился уже после сигнала, отчёт не пишется ни в --output, ни в stdout."
+    },
+    {
+     "id": "R015",
+     "commit": "0f10848",
+     "summary": "explain показывает строку Needs; для MAN-пунктов — feature ('Shown when ...') и подсказку --ignore; --list-rules --verbose печатает needs; в текстовом списке MAN-пункты помечены [ui]/[oauth]."
+    },
+    {
+     "id": "R016",
+     "commit": "0f10848",
+     "summary": "--list-rules <prefix> --format markdown больше не выводит пустую таблицу правил или чек-листа; RULES.md для полного каталога не изменился."
+    },
+    {
+     "id": "F165",
+     "commit": "7278ace",
+     "summary": "В комментарии test/compat.test.ts пояснено: BASE_RULE_IDS — замороженный baseline 0.1.0, проверяется только как подмножество и не обновляется; при добавлении правила меняется только catalog.test.ts. Общий JSON не вводился: это разные списки."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F003",
+     "reason": "needs src/connect.ts: правильное исправление — вырезать userinfo из URL до fetch и отправлять его как Authorization: Basic (с редакцией), сохранив urlAsEntered. Usage error в CLI превратил бы намеренные тесты редакции user:pass@ в test/e2e-redaction.test.ts и test/sarif.test.ts в пустые или падающие и сделал бы серверы с Basic-auth непроверяемыми."
+    },
+    {
+     "id": "F011",
+     "reason": "feature: отдельный exit-код 4 для остановки по --max-duration меняет документированный контракт кодов выхода (spec §3.2, README, --help); нужно решение мейнтейнера и правка docs/design/spec.md и README.md (WP10)."
+    },
+    {
+     "id": "R013",
+     "reason": "feature: ненулевой exit-код при token-rejected (или флаг --fail-on-incomplete) меняет контракт кодов выхода, который spec §3.2/§3.4 оставляет открытым; нужно решение мейнтейнера, правка spec.md и README (WP10) и src/report/github.ts для ::warning-аннотации (WP9)."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp1-cli.test.ts (25 tests)",
+    "npx vitest run test/cli-rules.test.ts test/compat.test.ts test/e2e-stdio.test.ts test/e2e-http.test.ts test/e2e-redaction.test.ts test/output-modes.test.ts test/sarif.test.ts test/windows.test.ts test/incomplete.test.ts test/ci-output.test.ts test/docs.test.ts test/catalog-stale.test.ts test/stderr-flush.test.ts test/max-duration.test.ts test/process-tree.test.ts (252/253 в общем прогоне; упавший тест из max-duration при отдельном запуске прошёл 10/10)"
+   ],
+   "changelog_lines": [
+    "### Fixed",
+    "- `--bearer` and `--header` with `--stdio` are usage errors, and `$MCP_REVIEW_CHECK_TOKEN` is ignored for stdio targets. An exported CI token no longer marks a stdio run as authenticated and silently turns RT-009 off.",
+    "- `--header \"Authorization: …\"` together with `--bearer`, or a header name given twice in any case, is a usage error. Before, `fetch` sent one merged, invalid value.",
+    "- A `--header` name that is not an HTTP token, a `--cwd` that is not an existing directory and an empty `--output` are usage errors (exit 2). Before, they were connect failures (exit 3) or the report went to stdout.",
+    "- `--timeout` and `--max-duration` accept whole milliseconds only. `0x10`, `1e2` and `1.5` are usage errors.",
+    "- `--active-auth` with `--stdio` is a usage error and no longer prints a DCR notice for a probe that never runs.",
+    "- `--stdio \"<command>\"` with `-- <command> [args...]` says \"not both\" instead of \"expected a single <url>\".",
+    "- `node dist/cli` without the `.js` extension runs the CLI. Before, it exited 0 without checking anything.",
+    "- After SIGINT or SIGTERM, a run that still finishes during the shutdown grace period writes no report. Before, it overwrote `--output` with a report that looked complete.",
+    "- The `--output` summary line reads \"1 error\" and \"1 warning\" in the singular.",
+    "- `--list-rules <prefix> --format markdown` no longer prints an empty rule table or an empty checklist table.",
+    "### Changed",
+    "- `--target`, `--format` and `--fail-on` accept values in any case, as `--ignore` and `explain` already did.",
+    "- `--ignore` accepts a comma-separated list (`--ignore TOOL-006,TOOL-011`).",
+    "- `explain` shows what a rule needs to run (`--active`, `--active-auth`, a `<url>` target, a tools listing). For a manual item it shows the feature the item is shown for and the `--ignore` hint. `--list-rules --verbose` prints the needs, and the text listing tags manual items `[ui]` or `[oauth]`.",
+    "### Added",
+    "- Warnings on stderr when `--tool-args` is given without `--active` or `--sarif-location` without `--format sarif`, and for each `--tool-args` entry that no `--active` call used, with the reason: unknown tool, not read-only, or past the call cap."
+   ],
+   "notes": "Пакет WP1-cli: из 20 пунктов 17 исправлены, 3 отложены (F003, F011, R013). Вместе с отчётом получилось 11 коммитов; они лежат поверх 8b0f41e в ветке worktree-wf_365c0c99-4d0-1, не запушены. Отчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-1/docs/review/2026-11-01/remediation/WP1-cli-report.md. Новые тесты: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-1/test/remediation-wp1-cli.test.ts. Изменённые файлы: src/cli.ts, src/explain.ts, test/compat.test.ts (там только комментарий, ожидания тестов не менялись). Другие существующие тесты не правились.\n\nЧто проверено. typecheck и build проходят, новый тест-файл проходит целиком (25 тестов). Я также прогнал 15 существующих тест-файлов CLI вместе: прошло 252 из 253. Упал один тест в test/max-duration.test.ts — 'stopped during active tool calls…'. При отдельном запуске max-duration.test.ts прошёл (10/10). Похоже на зависимость от тайминга под нагрузкой; этот тест не задевает изменённый код. Полный `npm test` не запускался — так требует D1.\n\nПробел в тестах R004. Я пробовал e2e-тест с SIGINT и stubborn-сервером, но он проходил и без исправления, поэтому я его удалил. Остался тест внутри процесса: он вызывает runCli с прерванным AbortSignal и при отключённой проверке падает, то есть ловит регрессию. Подключение AbortController к обработчику сигналов в main-блоке ни одним тестом не покрыто.\n\nДля мержа:\n1. Сигнатура: у runCli появился необязательный 4-й параметр `interrupted?: AbortSignal`, существующие вызовы не затронуты.\n2. Новые импорты в cli.ts: isSafeToCall из src/probe/active.ts (WP3) и toolName из src/rules/util/access.ts (WP5). Если эти пакеты переименуют функции, возникнет конфликт.\n3. Вторая половина R021 — строка 'Score … 1 errors' в src/report/text.ts:149 — относится к WP9 и здесь не правилась.\n4. Для WP10: строки CHANGELOG выше; в README стоит упомянуть --ignore через запятую и новые usage errors. Текст --help в cli.ts уже обновлён.\n\nGit identity в worktree не настроен, поэтому для коммитов автор задавался через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_* (Aleksandr Sabirov, как в истории репозитория). git config не менялся."
+  },
+  {
+   "wp": "WP2-connect",
+   "branch": "worktree-wf_365c0c99-4d0-2",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-2",
+   "done": [
+    {
+     "id": "R046",
+     "commit": "d65a388",
+     "summary": "RecordingTransport сохраняет первые 20 сообщений transport-ошибок и общий счётчик, а не каждый Error со стеком. Поток stdout в 1 млн строк больше не роняет процесс по heap OOM"
+    },
+    {
+     "id": "F141",
+     "commit": "d65a388",
+     "summary": "stdout-tap хранит первые 50 не-JSON-RPC строк (сначала маскирует, потом режет до 1 КБ) плюс nonJsonTotal. От длинной строки остаётся только начало, чанки склеиваются один раз на строку, квадратичного concat больше нет"
+    },
+    {
+     "id": "F012",
+     "commit": "d65a388",
+     "summary": "Строки, которые не начинаются с { или [, отсеиваются без JSON.parse. Массив nonJson ограничен"
+    },
+    {
+     "id": "F033",
+     "commit": "d65a388",
+     "summary": "pending очищается при получении ответа. transportErrors ограничен и теперь используется (overflow для R047)"
+    },
+    {
+     "id": "C003",
+     "commit": "d65a388",
+     "summary": "SRV-018 засчитывает любую строку, которая не является сообщением JSON-RPC 2.0 или batch, поэтому JSON-логи pino/winston/bunyan теперь видны"
+    },
+    {
+     "id": "R002",
+     "commit": "0243162",
+     "summary": "stderr и stdout основного stdio-коннекта доступны ещё до handshake. При остановке по --max-duration на этапе connect fatal содержит причину из stderr, а --verbose печатает [stdio stderr]"
+    },
+    {
+     "id": "R048",
+     "commit": "0243162",
+     "summary": "Если stdio-handshake не удался, строки stdout сохраняются в transport.stdio (SRV-018 срабатывает), а fatal показывает первую не-JSON-RPC строку"
+    },
+    {
+     "id": "C-imp-1",
+     "commit": "0243162",
+     "summary": "Тот же фикс плюс подсказка: если сервер пишет в stdout 'listening on http://…', fatal предлагает проверить этот URL по HTTP"
+    },
+    {
+     "id": "R007",
+     "commit": "b6cc225",
+     "summary": "Статус и ошибка SSE-fallback больше не теряются. 401 на GET /sse ведёт к auth-required и запуску auth-пробы, ошибка SSE-handshake становится диагнозом вместо «not an MCP endpoint», transport.kind = sse"
+    },
+    {
+     "id": "F006",
+     "commit": "a22ccb4",
+     "summary": "401 в ответ на креды из --header (Authorization/API key/token/cookie) теперь даёт token-rejected 'supplied credentials rejected (401)'"
+    },
+    {
+     "id": "R044",
+     "commit": "a22ccb4",
+     "summary": "challenge берётся из preflight только когда проба запущена им самим (401, или 403 с WWW-Authenticate). Иначе используется последний 401 с challenge"
+    },
+    {
+     "id": "R045",
+     "commit": "a22ccb4",
+     "summary": "401 на tools/list после публичного initialize/discover: ставится auth-required, запускается auth-проба, листинг очищается, wire-пробы не выполняются"
+    },
+    {
+     "id": "C-imp-2",
+     "commit": "ed451a4",
+     "summary": "Диагноз 403 называет challenge/WAF (Cloudflare, Akamai, AWS WAF, Imperva) или title HTML-страницы и даёт подсказку про allowlist"
+    },
+    {
+     "id": "C001",
+     "commit": "5805c2f",
+     "summary": "Транспортная ошибка на tools/list даёт coverage list-failed даже без объявленной capability tools, поэтому вместо PASS 100/100 теперь partial"
+    },
+    {
+     "id": "R047",
+     "commit": "8ed91a3",
+     "summary": "maxBufferSize для stdio поднят до 64 МБ (как у HTTP). Переполнение буфера называется в ошибках листинга, UI-чтений и в coverage, после переполнения stdout повторно не парсится"
+    },
+    {
+     "id": "F017",
+     "commit": "8ed91a3",
+     "summary": "Добавлена проверка sdkStdioShape: если приватное состояние SDK изменилось, используется fallback на super.start(). Тест закрепляет форму этого состояния на случай bump SDK"
+    },
+    {
+     "id": "R001",
+     "commit": "b458379",
+     "summary": "Фаза 'active tool calls' ставится только при --active. После последней проверки включается фаза 'closing', и дедлайн в ней возвращает завершённый snapshot (HTTP и stdio)"
+    },
+    {
+     "id": "R003",
+     "commit": "b458379",
+     "summary": "Исправлено частично: остановленный snapshot сохраняет observedErrors и modernResults, собранные до остановки. Остальное отложено (R003-rest)"
+    },
+    {
+     "id": "R012",
+     "commit": "b458379",
+     "summary": "Каждый SDK Streamable HTTP коннект завершает сессию через DELETE. Эти DELETE остаются в trace, но не попадают в snap.transport.exchanges"
+    },
+    {
+     "id": "R024",
+     "commit": "b64bc62",
+     "summary": "pattern/$ref/$id/$schema/format обрезаются по ID_CAP = 1 МБ, а не по 16 КБ, поэтому ложных TOOL-017 больше нет"
+    },
+    {
+     "id": "R025",
+     "commit": "b64bc62",
+     "summary": "name/uri/uriTemplate обрезаются по ID_CAP: нет ложных дублей TOOL-003, а TOOL-001/002 показывают реальную длину"
+    },
+    {
+     "id": "R026",
+     "commit": "b64bc62",
+     "summary": "UI URI остаются целыми, ключи resourceReads выравниваются по тому же правилу, toolsWithoutUi обрезается так же, поэтому APPS-001/003/007/019 сходятся"
+    },
+    {
+     "id": "R028",
+     "commit": "b64bc62",
+     "summary": "Ключи объектов длиннее ID_CAP обрезаются с защитой от коллизий и попадают в limits.truncated"
+    },
+    {
+     "id": "F013",
+     "commit": "b64bc62",
+     "summary": "Капы применяются и к rawPages, toolsWithoutUi, active.calls[].result и modernResults"
+    },
+    {
+     "id": "F139",
+     "commit": "b64bc62",
+     "summary": "За прогон читается не больше 50 UI-ресурсов. Остальные отмечаются в limits.truncated как количество (unit: 'items')"
+    }
+   ],
+   "deferred": [
+    {
+     "id": "R027",
+     "reason": "needs src/rules/apps.ts: APPS-014 должен учитывать snap.limits.truncated для обрезанного UI-ресурса"
+    },
+    {
+     "id": "F146",
+     "reason": "feature: единый байтовый бюджет на snapshot с ранней остановкой при чтении (readBody/listAll/SDK reader); needs src/protocol/trace.ts, src/protocol/legacy.ts. Частично закрыт F013/F139"
+    },
+    {
+     "id": "R003-rest",
+     "reason": "needs src/probe/active.ts, src/probe/wire.ts (публиковать частичные результаты через накопитель в Progress) и src/rules/engine.ts (правила незавершённой фазы помечать как skipped 'stopped by --max-duration')"
+    },
+    {
+     "id": "C-imp-2-rest",
+     "reason": "needs src/rules/server.ts: SRV-009 должен давать одну находку на exchange, а не три на одну страницу Cloudflare"
+    },
+    {
+     "id": "R012-rest",
+     "reason": "needs src/probe/network.ts, src/probe/wire.ts: сырые initialize-пробы (preflight и origin) должны отправлять DELETE с полученным Mcp-Session-Id"
+    },
+    {
+     "id": "C003-followup",
+     "reason": "needs src/rules/server.ts: SRV-018 должен брать счётчик из transport.stdio.nonJsonTotal (хранится не больше 50 строк) и писать 'non-JSON-RPC line(s)'"
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp2-connect.test.ts (29 passed)",
+    "npx vitest run test/e2e-stdio.test.ts test/e2e-http.test.ts test/max-duration.test.ts test/limits.test.ts test/diagnostics.test.ts test/auth-probe.test.ts test/incomplete.test.ts test/e2e-redaction.test.ts test/stderr-flush.test.ts test/process-tree.test.ts test/windows.test.ts test/lifecycle.test.ts (235 passed)",
+    "npx vitest run test/redaction-tiers.test.ts test/ci-output.test.ts test/report.test.ts test/root-causes.test.ts test/live.test.ts test/client-caps.test.ts test/rules/*.test.ts (passed)"
+   ],
+   "changelog_lines": [
+    "Fixed: A stdio server that writes a flood of lines to stdout no longer crashes the check with a JavaScript heap out-of-memory error: only the first transport errors and the first 50 stray stdout lines are kept, with their counts.",
+    "Fixed: SRV-018 reports JSON log lines (pino, winston, bunyan) on stdout, not only lines that are not JSON at all.",
+    "Fixed: A stdio server whose handshake fails or is stopped by `--max-duration` now has its stderr and stdout shown: the fatal message names the first stray stdout line, SRV-018 reports it, and `--verbose` prints the stderr.",
+    "Fixed: A legacy HTTP+SSE server that requires auth only on `GET /sse` gets the auth probe and \"requires auth\" coverage instead of \"not an MCP endpoint, try /mcp\", and an SSE handshake error (an endpoint on another origin) is reported as such.",
+    "Fixed: A 401 to credentials passed with `--header` is reported as rejected credentials, not as \"server requires OAuth\".",
+    "Fixed: The auth probe reads the challenge from the 401 the credentials got when the unauthenticated request got a 403 without `WWW-Authenticate`, so false AUTH-002/004/013 errors no longer appear and PRM from the header is found.",
+    "Fixed: A server whose initialize is public but whose `tools/list` answers 401 gets the auth probe and \"requires auth\" coverage instead of SPEC-008/014/020 errors.",
+    "Fixed: A server that exits right after initialize no longer passes with a score of 100: the check is marked partial (`list-failed`).",
+    "Fixed: stdio messages up to 64 MB are accepted (the SDK default was 10 MB), and a larger one is named as the cause of the \"Connection closed\" errors that follow.",
+    "Fixed: A `--max-duration` deadline that falls while connections close after the last check no longer turns a finished run into INCOMPLETE \"during active tool calls\".",
+    "Fixed: A run stopped by `--max-duration` keeps the JSON-RPC errors and 2026-07-28 results it had observed.",
+    "Fixed: The input caps no longer cut names, URIs, regex patterns and other schema syntax at 16 KB, which caused false TOOL-003 duplicates and TOOL-017 \"does not compile\" errors, a false APPS-019 and skipped APPS checks for long UI URIs.",
+    "Changed: A 403 handshake failure names a Cloudflare bot challenge or WAF block (Cloudflare, Akamai, AWS WAF, Imperva) or the HTML page title, with a hint to allow the endpoint.",
+    "Changed: A stdio server that announces an HTTP URL on stdout (an HTTP server started with `--stdio`) gets a pointer to check that URL instead.",
+    "Changed: The check ends each Streamable HTTP session it opens with `DELETE`, so repeated runs leave no sessions behind on stateful servers.",
+    "Changed: The input caps also cover raw list pages, the text-only tools/list, tool call results and 2026-07-28 results, and object keys; at most 50 UI resources are read per run, and the report says when more were listed."
+   ],
+   "notes": "Пакет WP2-connect в ветке worktree-wf_365c0c99-4d0-2: 9 коммитов поверх 8b0f41e. Сделано 25 из 27 находок: R003 исправлена частично, R027 и F146 отложены. Ещё четыре находки закрыты не полностью, их остатки записаны в deferred: R003-rest, C-imp-2-rest, R012-rest, C003-followup. Отчёт: docs/review/2026-11-01/remediation/WP2-connect-report.md, коммит fe6bc20.\n\nСуществующие тесты не менялись. Добавлены два файла: test/remediation-wp2-connect.test.ts (29 тестов) и фикстура test/fixtures/wp2-stdio-server.mjs с режимами pino, spam, banner, die, bigui, keep, callhang.\n\nЧто важно при слиянии:\n1. SRV-018 правит WP7. Строк nonJsonStdout теперь хранится не больше 50, а правило считает их через lines.length. Поэтому при большем числе мусорных строк оно напишет «50 non-JSON line(s)». Правило должно читать новый transport.stdio.nonJsonTotal. Кроме того, JSON-логи теперь тоже засчитываются, и в тексте лучше писать «non-JSON-RPC».\n2. Новые необязательные поля в snapshot.ts: transport.stdio.nonJsonTotal и Limits.truncated[].unit ('items'). В JSON-отчёт limits идёт как есть.\n3. В limits.ts идентификаторы и синтаксис схем (name, uri, uriTemplate, resourceUri, outputTemplate, pattern, $ref, $id, $schema, format и ключи объектов) теперь режутся по ID_CAP = 1 МБ, а не по 16 КБ. Тест на скорость правил с такими значениями проходит за 0,35 с.\n4. Сессии Streamable HTTP закрываются DELETE через terminateSession. Эти запросы остаются в trace, но в snap.transport.exchanges не попадают и правила их не видят.\n5. Коммиты сделаны с автором из истории репозитория (Aleksandr Sabirov <20horizon93@gmail.com>) через `git -c`, git config не менялся. В трейлере стоит `Co-Authored-By: Claude Opus 5.5` по системной инструкции об атрибуции, а не `Claude Opus 4.8` из текста задачи. При необходимости поправить при слиянии.\n6. Обнаружено попутно и вне пакета: если stdio-сервер завершается сразу после записи ответа на initialize, SDK client.connect зависает до таймаута initialize. Похоже, отправка notifications/initialized в закрытый stdin не завершается. Не исправлялось.\n\nВесь набор тестов (`npm test`) по правилу D1 не запускался."
+  },
+  {
+   "wp": "WP3-probe",
+   "branch": "worktree-wf_365c0c99-4d0-3",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-3",
+   "done": [
+    {
+     "id": "F019",
+     "commit": "1af41e0",
+     "summary": "Wire probes (GET, badVersion, DELETE, Origin) are sent to the target of a same-host redirect of the preflight. The new sameHostRedirect() in network.ts does not follow a redirect to another host or an https->http downgrade. SRV-006 is still reported from the preflight. The part about discover/era and the auth probe is deferred because it needs connect.ts."
+    },
+    {
+     "id": "F018",
+     "commit": "1f3de10",
+     "summary": "The get probe reuses the answered 'sdk GET' exchange of the same session (sdkSessionGet) instead of sending a second GET, which one-stream-per-session SDK servers answer with 409, giving a false SPEC-005."
+    },
+    {
+     "id": "F023",
+     "commit": "f39463a",
+     "summary": "wrongTypeValue picks a value outside every allowed type and returns undefined for an untyped, anyOf-only or $ref-only property, or one that allows every type. runActive then skips the invalid-type call, so there is no more false RT-002."
+    },
+    {
+     "id": "R009",
+     "commit": "c7a6477",
+     "summary": "On legacy HTTP+SSE the Origin probes are sent as GETs to the SSE stream (abortAfterHeaders), so SRV-008 sees a local SSE server that accepts a foreign Origin. originProbes now takes a mode (initialize, discover or sse)."
+    },
+    {
+     "id": "C002",
+     "commit": "68a29a9",
+     "summary": "callableTools() groups tools by name. A name is called once, and only if every entry with that name passes isSafeToCall."
+    },
+    {
+     "id": "F144",
+     "commit": "68a29a9",
+     "summary": "--tool-args is read by own key, so constructor, __proto__ and toString no longer match prototype members."
+    },
+    {
+     "id": "F029",
+     "commit": "d049e15",
+     "summary": "Argument synthesis now follows format, minLength/maxLength, minimum/exclusiveMinimum/maximum/multipleOf, minItems, nested required properties, anyOf/oneOf/allOf (first non-null branch), local $ref (depth-limited) and type unions with null. The documented order default -> examples -> enum -> const is kept."
+    },
+    {
+     "id": "F030",
+     "commit": "5391b0f",
+     "summary": "closeProbeSession(): one best-effort DELETE with Mcp-Session-Id after a 2xx on the preflight, the initialize Origin probes and the auth invalid-token probe. It sends no retries and does not send a redacted or malformed id."
+    },
+    {
+     "id": "F031",
+     "commit": "7e28e4a",
+     "summary": "Deps.tlsCheck and tlsCheckWithRetry accept {timeoutMs, signal}. The timeout is min(timeoutMs, 10 s), the check aborts on the signal, nothing is retried after the deadline, and a cut-off check is transient (inconclusive). Wiring it into connect.ts is deferred."
+    },
+    {
+     "id": "F037",
+     "commit": "4cf1df2",
+     "summary": "prmCandidates deduplicates the header URL against the well-known URLs. Metadata GETs and timing samples wait at most min(--timeout, 10 s), and all metadata GETs of one auth probe share a budget of 6 retries."
+    },
+    {
+     "id": "report",
+     "commit": "e7e797e",
+     "summary": "Report docs/review/2026-11-01/remediation/WP3-probe-report.md with done, deferred, notes for WP10 and CHANGELOG lines."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F019",
+     "reason": "needs src/connect.ts: the remaining part (server/discover for era detection, the auth trigger on a 401 behind the redirect, and the runAuthProbe URL) should use sameHostRedirect(url, pf) from src/probe/network.ts right after preflight() in buildHttp. The wire-probe part is already fixed (1af41e0)."
+    },
+    {
+     "id": "F031",
+     "reason": "needs src/connect.ts: pass { timeoutMs: connectTimeout, signal: progress?.abort.signal } to both tlsCheckWithRetry calls in buildHttp (the MCP host and the AS-host loop) and add a checkpoint between AS hosts. The API in network.ts is ready (7e28e4a)."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp3-probe.test.ts (20 tests)",
+    "npx vitest run test/rules/runtime.test.ts test/rules/server.test.ts test/rules/spec.test.ts test/rules/auth.test.ts test/auth-probe.test.ts test/util.test.ts test/e2e-http.test.ts test/e2e-stdio.test.ts test/diagnostics.test.ts test/max-duration.test.ts test/limits.test.ts test/local-mode.test.ts test/e2e-redaction.test.ts (414 tests together with the new file, all passed)"
+   ],
+   "changelog_lines": [
+    "Fixed: A same-host redirect of the entered URL (such as `/mcp` → `/mcp/`) no longer produces false SPEC-005 and SPEC-007 findings or hides SRV-008: the GET, version and Origin probes follow it as the SDK client does, and SRV-006 still reports the redirect.",
+    "Fixed: SPEC-005 no longer reports `GET returned 409` on servers that allow one SSE stream per session (such as the TypeScript SDK with sessions): the GET observation comes from the stream the client already opened.",
+    "Fixed: RT-002 no longer reports \"wrong-type argument returned a success result\" for parameters with a type union, no type, or only anyOf/oneOf/`$ref`: the wrong-type value is taken from outside every allowed type, and the call is skipped when no such value exists.",
+    "Fixed: SRV-008 now checks local legacy HTTP+SSE servers: the Origin probes open the event stream, so a server that accepts a foreign Origin (DNS rebinding risk) is reported instead of passing silently.",
+    "Fixed: `--active` calls a tool name only when every `tools/list` entry with that name is read-only and non-destructive, and calls it once, so a duplicate destructive entry is never reached.",
+    "Fixed: `--tool-args` no longer matches tools named `constructor`, `toString`, `__proto__` or other `Object.prototype` members.",
+    "Changed: `--active` synthesizes arguments that pass common validation: sample values for string formats (uri, email, date-time, uuid, …), string lengths, numeric bounds and `multipleOf`, `minItems`, required properties of nested objects, the first anyOf/oneOf branch and local `$ref`.",
+    "Changed: The raw `initialize` probes (preflight, Origin, invalid token) close the session a stateful server mints for them with one best-effort DELETE.",
+    "Changed: The auth probe requests a metadata URL named by `resource_metadata` only once, waits at most 10 s per metadata request, and shares one budget of six retries across all of them.",
+    "Changed: The TLS handshake check accepts a timeout (capped at 10 s) and the `--max-duration` deadline; a check cut off by the deadline is reported as inconclusive."
+   ],
+   "notes": "Все 10 пунктов пакета исправлены в рамках файлов src/probe/*. Две доработки отложены, потому что их нужно подключить в src/connect.ts (это файл пакета WP2): F019 (discover/era/auth по финальному URL) и F031 (передать timeoutMs и signal в tlsCheckWithRetry). Готовые API: sameHostRedirect и tlsCheckWithRetry(..., {timeoutMs, signal}) в src/probe/network.ts.\n\nСуществующие тесты не менялись. Изменилась сигнатура originProbes: вместо булева modernOnly теперь режим 'initialize' | 'discover' | 'sse'. Вызывается она только из wire.ts.\n\nДля WP10: в docs/design/spec.md нужно обновить §2.9 (синтез аргументов, пропуск invalid-type, дубликаты имён) и §4.3 (DELETE закрывает сессии проб, Origin-пробы через GET на SSE, переиспользование SDK GET, редирект). Подробности в отчёте docs/review/2026-11-01/remediation/WP3-probe-report.md.\n\nКоммиты подписаны автором из истории репозитория через переменные окружения GIT_AUTHOR/COMMITTER, git config не менялся. Трейлер Co-Authored-By: Claude Opus 5.5, по актуальной инструкции системы об атрибуции; в computed task была указана 4.8. Ничего не запушено."
+  },
+  {
+   "wp": "WP4-protocol",
+   "branch": "worktree-wf_365c0c99-4d0-4",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-4",
+   "done": [
+    {
+     "id": "F119",
+     "commit": "779e9fc",
+     "summary": "scrub теперь заменяет все секреты за один проход regex, сначала самые длинные; секрет внутри маркера («redact») больше не ломает маркер. Значения короче 8 символов маскируются только как целый токен (без соседних [A-Za-z0-9_-]): run_tests, latest и attestation больше не искажаются"
+    },
+    {
+     "id": "F028",
+     "commit": "65e4154",
+     "summary": "parseSseMessages и SSE-watcher понимают CR-only, CRLF и LF; watcher ищет конец события только в новых данных, без повторного split всего буфера"
+    },
+    {
+     "id": "F024",
+     "commit": "65e4154",
+     "summary": "Если id ответа — числовой id запроса строкой (как принимает SDK через Number(id)), открытое SSE-чтение останавливается сразу, а не ждёт таймаута; экспортирован idMatches"
+    },
+    {
+     "id": "R010",
+     "commit": "65e4154",
+     "summary": "ModernClient не принимает result с чужим id (одиночный JSON, batch, SSE fallback msgs[0]): заполняется idMismatch, listAll падает с 'response id X does not match request id Y', это видит SPEC-020; error с id:null по-прежнему считается ответом"
+    },
+    {
+     "id": "F021",
+     "commit": "140924b",
+     "summary": "Сэмплы timings для SRV-010 берутся только для 2xx-ответов с JSON-RPC result на этот id; пробы с 4xx, JSON-RPC error и 3xx исключены"
+    },
+    {
+     "id": "R008",
+     "commit": "140924b",
+     "summary": "Сэмпл — это время до прихода result, а не до заголовков (SSE и JSON). На SDK-пути копия для трассировки дочитывается после 256 KB (байты не хранятся); реальный SDK-вызов без ответа за 10 с идёт в выборку со временем ожидания"
+    },
+    {
+     "id": "F138",
+     "commit": "ccbde37",
+     "summary": "sdkFetch отдаёт SDK Response, тело которого после 64 MiB завершается ошибкой (на SSE лимит считается на событие); url и redirected сохраняются для eventsource. Экспортирован capBody"
+    },
+    {
+     "id": "F136",
+     "commit": "e593f9c",
+     "summary": "Элементы листинга добавляются по одному, без spread в push: страница на 200k элементов больше не даёт RangeError и fatal exit 3"
+    },
+    {
+     "id": "F032",
+     "commit": "e593f9c",
+     "summary": "Общий paginate() для обеих era (legacy.ts). Не-объекты отбрасываются одинаково в обеих era и попадают в listMeta.error ('N tools entries are not objects')"
+    },
+    {
+     "id": "R011",
+     "commit": "e593f9c",
+     "summary": "nextCursor undefined, null или '' завершает листинг; любое другое нестроковое значение даёт ошибку 'nextCursor is not a string (got number)'"
+    },
+    {
+     "id": "F137",
+     "commit": "e593f9c",
+     "summary": "Бюджет LIST_BYTE_BUDGET = 64 MiB на листинг: при превышении 'listing exceeded N bytes', уже прочитанные страницы сохраняются. tracer.request возвращает bodyBytes, ModernResponse.bytes их несёт"
+    },
+    {
+     "id": "F036",
+     "commit": "735bf37",
+     "summary": "snippetOf скрабит только префикс тела с безопасным запасом и удвоением префикса, а не всё тело до 64 MiB; рандомизированный тест сверяет результат с полным скрабом"
+    },
+    {
+     "id": "F035",
+     "commit": "6b34d49",
+     "summary": "redactUrl = scrub(displayUrl(scrub(raw))): known-format токены маскируются в любом query, path и fragment, userinfo тоже; известные секреты скрабятся до пересериализации URL"
+    },
+    {
+     "id": "F034",
+     "commit": "a00b07c",
+     "summary": "linkAbort заменён на AbortSignal.any([ctrl.signal, stop]); таймаут остаётся ручным, чтобы ошибка по-прежнему была AbortError"
+    },
+    {
+     "id": "F025",
+     "commit": "b35b970",
+     "summary": "ModernRequestOptions.fullBody (по умолчанию true); при false действует пробный лимит 256 KB / 10 s. Передачу из wire.ts см. в deferred"
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F025-wiring",
+     "reason": "needs src/probe/wire.ts: передать fullBody: false в пять modern.request-проб (опция уже есть в ModernClient, b35b970)"
+    },
+    {
+     "id": "R008-legacy-sse",
+     "reason": "needs src/protocol/recording.ts: для legacy HTTP+SSE (POST→202, ответ по GET-потоку) задержку нужно мерить в RecordingTransport от send(id) до record(id); tracer больше не пишет 202 как сэмпл"
+    },
+    {
+     "id": "F024/R010-SPEC-016",
+     "reason": "needs src/connect.ts: collectErrors должен записывать ObservedError для успешного modern-ответа с id другого типа или значения (ModernResponse.idMismatch), чтобы это отрепортил SPEC-016"
+    },
+    {
+     "id": "F137-rawPages-cap",
+     "reason": "needs src/limits.ts: capSnapshot не обрезает строки в listMeta[*].rawPages; память теперь ограничена бюджетом листинга, но regex-лимиты на rawPages не распространяются"
+    },
+    {
+     "id": "F036-json-retention",
+     "reason": "feature: хранить в exchange только сниппет, а parsed JSON возвращать вызывающему — это меняет модель snapshot в connect, probe и rules (collectErrors и правила проб читают exchange.json)"
+    },
+    {
+     "id": "F034-spec",
+     "reason": "needs docs/design/spec.md: §4.4 всё ещё требует совместимости с Node 18 (WP10)"
+    },
+    {
+     "id": "F138-docs",
+     "reason": "needs README.md/SECURITY.md: описать лимит 64 MiB на SDK-пути и бюджет листинга 64 MiB (WP10)"
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp4-protocol.test.ts (27 passed)",
+    "test/redact.test.ts",
+    "test/redaction-tiers.test.ts",
+    "test/e2e-redaction.test.ts",
+    "test/e2e-http.test.ts",
+    "test/e2e-stdio.test.ts",
+    "test/lifecycle.test.ts",
+    "test/max-duration.test.ts",
+    "test/auth-probe.test.ts",
+    "test/diagnostics.test.ts",
+    "test/client-caps.test.ts",
+    "test/util.test.ts",
+    "test/report.test.ts",
+    "test/rules/server.test.ts",
+    "test/rules/spec.test.ts"
+   ],
+   "changelog_lines": [
+    "Fixed: A `--header`, `--bearer` or `--env` secret shorter than 8 characters is masked only as a whole word. A short key such as `test` no longer rewrites tool names and descriptions (`run_tests`, `latest`) or causes false TOOL-001 findings, and a secret that is part of the `«redacted»` marker no longer breaks markers.",
+    "Fixed: SRV-010 measures latency until the JSON-RPC result arrives, not until the response headers. Slow servers that answer over SSE (the SDK default) are now reported.",
+    "Fixed: SRV-010 counts only calls answered with a result. Probes rejected with a fast 4xx, a JSON-RPC error or a redirect no longer hide a slow handshake or listing.",
+    "Fixed: SSE responses whose lines end in a lone CR are parsed.",
+    "Fixed: A 2026-07-28 response that echoes the request id as a string no longer makes every request wait for the full `--timeout`.",
+    "Fixed: A 2026-07-28 result that answers another request id is no longer taken as the answer. The listing fails and SPEC-020 reports the mismatch.",
+    "Fixed: A list page with hundreds of thousands of entries no longer crashes the run with `fatal: RangeError` (exit 3).",
+    "Fixed: A non-string `nextCursor` fails the listing (SPEC-020) instead of silently stopping after the first page.",
+    "Fixed: List entries that are not objects are reported as a listing error in both eras. Legacy servers no longer get them as tools named after the value, and 2026-07-28 servers no longer have them dropped silently.",
+    "Fixed: Recorded HTTP exchange URLs mask known-format tokens in query values, path segments and fragments under any parameter name, as displayed URLs already did.",
+    "Changed: Response bodies read by the MCP SDK (legacy Streamable HTTP and HTTP+SSE) are capped at 64 MiB, per event on SSE streams, as the 2026-07-28 client already was. Each listing is limited to 64 MiB across all its pages, so a hostile server can no longer exhaust the linter's memory."
+   ],
+   "notes": "Пакет WP4: 15 items на ветке worktree-wf_365c0c99-4d0-4 (база 8b0f41e), 9 коммитов с фиксами и 1 с отчётом (66acad5). Отчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-4/docs/review/2026-11-01/remediation/WP4-protocol-report.md. Новые тесты: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-4/test/remediation-wp4-protocol.test.ts.\n\nИзменённый существующий тест: test/redact.test.ts, тест «redactDeep keeps the field names…». Ключи 'x-error-hint' и 'error_code' заменены на 'x.error.hint' и 'error.code'. Причина: после F119 короткий секрет 'error' внутри идентификатора больше не маскируется. Суть теста (ключи в server data маскируются) сохранена.\n\nЧто учесть при мерже:\n1) В trace.ts импорт isSecretName заменён на displayUrl из rules/util/net.ts (WP7). Если WP7 меняет displayUrl, это повлияет на redactUrl.\n2) Новые экспорты: trace.ts — idMatches, capBody, snippetOf, BodyRead.done/bytes, bodyBytes в результате tracer.request; legacy.ts — paginate, ListPage, Listing, LIST_BYTE_BUDGET; modern.ts — ModernResponse.idMismatch/bytes, ModernRequestOptions.fullBody.\n3) Ошибки листинга (не-объекты, нестроковый nextCursor, перерасход бюджета, чужой id) пишутся в listMeta.error. Из-за этого срабатывает SPEC-020 и coverage list-failed, а tool-правила пропускаются. Это сделано намеренно: хост со строгой схемой тоже не сможет получить список. Решение стоит подтвердить мейнтейнеру.\n4) Severity и тексты RULES.md/README не менялись.\n\nКоммиты подписаны автором репозитория через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_*, git config не изменялся. Trailer: Co-Authored-By: Claude Opus 4.8, как требовала задача. Полный npm test не запускался."
+  },
+  {
+   "wp": "WP5-apps",
+   "branch": "worktree-wf_365c0c99-4d0-5",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-5",
+   "done": [
+    {
+     "id": "F084",
+     "commit": "c82b2c4",
+     "summary": "The CSS url() regex in extractOrigins now has a lookbehind, so it no longer matches the JS `new URL(\"https://...\")` constructor. As a result, APPS-007 stops reporting a false resource-origin error when the host is declared in connectDomains."
+    },
+    {
+     "id": "R032",
+     "commit": "506f856",
+     "summary": "APPS-006 now reports `*.<rest>` as overly broad when rest is a public suffix (checked via registrableDomain, so co.uk and com.au are covered), a shared host suffix, or a shared cloud host (cloudfront.net, amazonaws.com, and others)."
+    },
+    {
+     "id": "F101",
+     "commit": "5a4f7fc",
+     "summary": "extractOrigins now reads ES module import/export-from/import() calls and `<script type=importmap>` targets as resource origins with js confidence."
+    },
+    {
+     "id": "F099",
+     "commit": "697bce0",
+     "summary": "extractLinks (POL-004) now takes only <a> and <area> hrefs. <link> and <base> hrefs, such as pricing.css, are no longer counted as upsell links."
+    },
+    {
+     "id": "R041",
+     "commit": "9b6e623",
+     "summary": "APPS-012 now compares against the shared sandbox by origin, so the check is case-insensitive."
+    },
+    {
+     "id": "R030",
+     "commit": "6c0695d",
+     "summary": "uiResources now falls back to the only read item, or the only text/html item, when the uri does not match. The HTML and _meta rules check it, and APPS-001 still reports the mismatch and names the uri the item has."
+    },
+    {
+     "id": "R042",
+     "commit": "0abe855",
+     "summary": "APPS-017 now reports an error when _meta.ui is not an object (string, array, null or number)."
+    },
+    {
+     "id": "R033",
+     "commit": "c29b242",
+     "summary": "APPS-006 now flags ws:// to a non-loopback host, the same way it flags http://."
+    },
+    {
+     "id": "R034",
+     "commit": "c29b242",
+     "summary": "APPS-006 now rejects a wildcard outside the leftmost host label. It reports data:/blob: entries as scheme sources and no longer gives them the misleading path message."
+    },
+    {
+     "id": "R035",
+     "commit": "c29b242",
+     "summary": "A host without a scheme now gives one APPS-006 finding ('has no scheme'). originMatches treats it as a CSP host-source over https/wss, so APPS-007 no longer duplicates the report."
+    },
+    {
+     "id": "R043",
+     "commit": "c29b242",
+     "summary": "APPS-006 severity now includes claude: 'info'. Entry problems are given explicit chatgpt/spec platforms, so Claude still receives only the CDN hint."
+    },
+    {
+     "id": "F106",
+     "commit": "c29b242",
+     "summary": "APPS-006 now reports an entry that appears in both ui.csp and openai/widgetCSP for the same list only once, naming both fields."
+    },
+    {
+     "id": "R037",
+     "commit": "7afe743",
+     "summary": "APPS-015 now searches comment-stripped HTML. Clipboard writes pass when ui.permissions.clipboardWrite is declared, while reads are still flagged."
+    },
+    {
+     "id": "F108",
+     "commit": "7afe743",
+     "summary": "APPS-015 now skips bare dialog calls to prompt/confirm/alert functions or parameters the widget declares itself. window.* calls are always flagged."
+    },
+    {
+     "id": "R040",
+     "commit": "7afe743",
+     "summary": "APPS-016 now also treats GTM, GA, Hotjar and Segment as trackers. data-alt and aria-alt are no longer accepted as alt."
+    },
+    {
+     "id": "F107",
+     "commit": "78080b9",
+     "summary": "normalizeMime now unquotes parameter values, so APPS-003 accepts profile=\"mcp-app\"."
+    },
+    {
+     "id": "R038",
+     "commit": "78080b9",
+     "summary": "APPS-019 now skips tools that are also missing from toolsFreshConnection."
+    },
+    {
+     "id": "R036",
+     "commit": "a072902",
+     "summary": "cspOf now collects unknown CSP keys. APPS-005 warns about each one and suggests the matching known field."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F102",
+     "reason": "Contradicts spec.md §APPS-013, which is scoped to openExternal/ui/open-link. Counting every <a href> as navigate would widen the rule and add a chatgpt warning to most widgets that have links, and it is not verified that ChatGPT gates plain anchors by redirect_domains. This needs a spec decision (docs/design/spec.md, WP10/maintainer)."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp5-apps.test.ts",
+    "npx vitest run test/rules/apps.test.ts",
+    "npx vitest run test/rules/content.test.ts",
+    "npx vitest run test/real-servers.test.ts",
+    "npx vitest run test/catalog.test.ts",
+    "npx vitest run test/docs.test.ts (expected 1 failure: docs/RULES.md must be regenerated for APPS-006 claude: info — WP10)"
+   ],
+   "changelog_lines": [
+    "Fixed: APPS-007 no longer reports a `new URL(\"https://...\")` target as an undeclared resource origin (error) when the host is declared in connectDomains.",
+    "Fixed: POL-004 no longer reports stylesheets, icons or `<base>` hrefs (for example `/css/pricing.css`) as upsell links; only `<a>` and `<area>` links count.",
+    "Fixed: APPS-012 recognises the shared ChatGPT sandbox domain in any letter case.",
+    "Fixed: when resources/read returns the widget under a different uri (for example a cache-busting `?v=2`), the HTML and CSP rules check that item instead of reporting false \"no CSP declared\" / \"no widget domain\" errors; APPS-001 still reports the uri mismatch.",
+    "Fixed: APPS-006 reports wildcards on multi-label public suffixes (`*.co.uk`, `*.com.au`) and shared cloud hosts (`*.cloudfront.net`, `*.amazonaws.com`) as overly broad.",
+    "Fixed: APPS-006 flags unencrypted `ws://` entries, wildcards outside the leftmost host label, and `data:`/`blob:` scheme sources with accurate messages.",
+    "Fixed: APPS-006 reports a CSP entry repeated in `_meta.ui.csp` and `openai/widgetCSP` once, not twice.",
+    "Fixed: a CSP entry without a scheme gives one APPS-006 finding and no longer also makes APPS-007 report the origin as undeclared.",
+    "Fixed: APPS-003 accepts a quoted MIME parameter, `text/html; profile=\"mcp-app\"`.",
+    "Fixed: APPS-015 no longer flags dialogs mentioned in comments, the widget's own `prompt`/`confirm`/`alert` functions, or clipboard writes when `clipboardWrite` permission is declared.",
+    "Fixed: APPS-016 no longer takes `data-alt` for alt text.",
+    "Fixed: APPS-019 no longer blames the UI extension for a tool that is also missing from a fresh full-capability connection.",
+    "Changed: APPS-006 lists `claude: info` among its platforms, matching the public-CDN hint it already emitted for Claude.",
+    "Changed: APPS-016 also reports Google Tag Manager, Google Analytics, Hotjar and Segment as trackers.",
+    "Added: APPS-007 checks origins of ES module imports and `<script type=\"importmap\">` targets (warning, like other script-derived origins).",
+    "Added: APPS-005 warns about CSP keys the hosts ignore (for example camelCase `connectDomains` inside `openai/widgetCSP`) and suggests the known field.",
+    "Added: APPS-017 reports a `_meta.ui` that is not an object."
+   ],
+   "notes": "Готово 18 из 19 находок, F102 отложена. typecheck и build зелёные. Тесты test/remediation-wp5-apps.test.ts, test/rules/apps.test.ts, content.test.ts, real-servers.test.ts и catalog.test.ts проходят (145 тестов).\n\nСуществующие тесты я не менял. Один тест сейчас красный, это ожидаемо: test/docs.test.ts ('docs/RULES.md equals the generator output'). Причина в R043: у APPS-006 в severity появился claude: 'info', поэтому после мержа WP10 должен перегенерировать docs/RULES.md командой `npm run readme:rules`.\n\nЧто ещё нужно обновить в spec.md (файл WP10), подробно расписано в отчёте docs/review/2026-11-01/remediation/WP5-apps-report.md.\n\nПоскольку в git нет user identity, коммиты сделаны через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_* с автором репозитория (Aleksandr Sabirov). git config я не трогал.\n\nСвязанные находки, которые меняют один и тот же участок кода, объединены в коммиты: c29b242 (R033, R034, R035, R043, F106), 7afe743 (R037, F108, R040), 78080b9 (F107, R038).\n\nКаталог scratchpad общий с другими агентами: агент WP3 перезаписал мой scratchpad/commit.sh. До перезаписи коммиты шли в мой worktree, я это проверил по git log. Дальше я пользовался только scratchpad/wp5/."
+  },
+  {
+   "wp": "WP6-inj-data-pol",
+   "branch": "worktree-wf_365c0c99-4d0-6",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-6",
+   "done": [
+    {
+     "id": "F087",
+     "commit": "a1cbfd0",
+     "summary": "DATA-001: голый `transcript` перенесён из strong (error) в weak (warning, пропуск для integer/number/boolean); chat_transcript и conversation_transcript остаются error"
+    },
+    {
+     "id": "F082",
+     "commit": "87d31a5",
+     "summary": "POL-002: медиа-существительное должно заканчивать слово (s?(?![a-z])); create_article/edit_clipboard/edit_voicemail/make_artifact больше не считаются генерацией медиа; tts с тем же концом"
+    },
+    {
+     "id": "F088",
+     "commit": "4eadcf9",
+     "summary": "DATA-002: `memory` срабатывает только с владельцем (Claude's/assistant's/model's/host's, your/chat/conversation memory, memory of the conversation); память VM/GPU/knowledge-graph не флагуется"
+    },
+    {
+     "id": "F093",
+     "commit": "9b6d78c, e9ca123",
+     "summary": "INJ-007/RT-011: паттерн connector получил ownToolExempt и проверяется по захваченной фразе продукта; this/these/our считаются самоссылкой, поэтому «Use this app» и «Use our app» чистые"
+    },
+    {
+     "id": "F097",
+     "commit": "9b6d78c, e9ca123",
+     "summary": "INJ-007/RT-011: брендовый паттерн получил ownToolExempt; фраза продукта, все слова которой есть в serverInfo.name/title, считается своей; чужие бренды и продукты того же вендора по-прежнему флагуются"
+    },
+    {
+     "id": "F083",
+     "commit": "72293a3",
+     "summary": "POL-001: имя проверяется по токенам (moneyName): глаголы перевода целыми токенами, составные place_order/execute_trade по соседним токенам, send/buy/sell только при денежном слове в имени"
+    },
+    {
+     "id": "F098",
+     "commit": "95a3d3a",
+     "summary": "Текстовая эвристика DATA-001: `all messages` требует квалификатора chat/conversation"
+    },
+    {
+     "id": "F086",
+     "commit": "d01a339",
+     "summary": "DATA-003: новая warning-ветка для составных имён, последний сегмент которых секрет (new_password, github_token, aws_secret_access_key, credentials, authorization); pagination/count-токены и не-текстовые типы пропускаются"
+    },
+    {
+     "id": "F113",
+     "commit": "0c3c5db",
+     "summary": "DATA-004: добавлены error-имена (card_cvc, cvv_code, card_exp_*, passport_no, aadhaar, ssn_last4) и warning-имена (exp_month/year, routing_number, account_number, bank_account, license_number, nino, sin)"
+    },
+    {
+     "id": "F089",
+     "commit": "1567206",
+     "summary": "DATA-005: пропуск boolean-параметров, format email/ipv4/ipv6/uri/hostname/mac и `address`, в описании которого кошелёк/контракт/email/IP/MAC/0x"
+    },
+    {
+     "id": "F090",
+     "commit": "31dfda4",
+     "summary": "INJ-001: исключение emoji ZWJ пропускает VS15/VS16 и модификаторы тона кожи при поиске соседних пиктограмм"
+    },
+    {
+     "id": "F091",
+     "commit": "0ae8849",
+     "summary": "INJ-002: греческие буквы учитываются, только если похожи на латинские; μs, kΩ, ΔT, μg чистые; кириллица без изменений"
+    },
+    {
+     "id": "F110",
+     "commit": "cd41bee",
+     "summary": "INJ-004: percent-runs декодируются; UTF-8 без ASCII-букв (кириллица/CJK в URL-примере) чистый, скрытый ASCII-текст и невалидный UTF-8 по-прежнему флагуются; проверяется каждый escape-run"
+    },
+    {
+     "id": "F095",
+     "commit": "b2a3aee",
+     "summary": "INJ-005, warning-ветки: `user` как модификатор (avatars, generated, content…) и статусы «you are now connected/signed/logged…» не флагуются"
+    },
+    {
+     "id": "F111",
+     "commit": "a67462e",
+     "summary": "INJ-006, паттерн 2: объект должен быть целым словом tool(s)/search/web search/browsing/browser/plugin(s); «rather than the default full web page» чистый"
+    },
+    {
+     "id": "F092",
+     "commit": "7e5b722",
+     "summary": "INJ-006/RT-011: better than/superior to перед числом/порогом/статистикой (threshold, average, baseline, 0.8…) не флагуется; «better than Google» остаётся warning"
+    },
+    {
+     "id": "F096",
+     "commit": "4f6be57",
+     "summary": "INJ-008: квантор, за которым в пределах двух слов идёт about/regarding/related to/concerning/involving, считается указанием области"
+    },
+    {
+     "id": "F094",
+     "commit": "0f9ef95",
+     "summary": "INJ-009, паттерн 1: источник должен быть полученным контентом (response, page, website, URL, document, email, message, issue…); README/schema/YAML file чистые"
+    },
+    {
+     "id": "F114",
+     "commit": "cb63426",
+     "summary": "INJ-003: псевдотег, за которым сразу идёт element/tag/node/attribute/field (опционально XML/HTML), выдаётся как info с пояснением; HTML-комментарии без изменений. В этом же коммите регрессионные тесты для low-фиксов"
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F109",
+     "reason": "needs src/rules/util/text.ts (и, возможно, src/rules/types.ts + src/report/*): имя промпта теряется в locationOf(), которым пользуются все corpus-правила (INJ, DATA, POL, TOOL). Если чинить только в injection.ts, DATA/POL останутся без имени, а после фикса locationOf имя продублируется. Предлагаемый фикс: locationOf выводит prompt \"<name>\" для записей prompt.*, либо RawFinding получает поле prompt, которое рендерят репортеры."
+    }
+   ],
+   "tests_passed": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp6-inj-data-pol.test.ts (106 tests)",
+    "npx vitest run test/rules/content.test.ts test/rules/injection.test.ts test/rules/runtime.test.ts",
+    "npx vitest run test/real-servers.test.ts test/root-causes.test.ts test/engine.test.ts test/report.test.ts",
+    "npx vitest run test/e2e-stdio.test.ts test/e2e-http.test.ts test/ci-output.test.ts",
+    "npx vitest run test/docs.test.ts"
+   ],
+   "typecheck_ok": true,
+   "build_ok": true,
+   "changelog_lines": [
+    "Fixed: DATA-001: a bare `transcript` parameter (meeting, call or video transcription tools) is a warning instead of an error, and a boolean `transcript` flag is not reported; `chat_transcript` and `conversation_transcript` stay errors.",
+    "Fixed: DATA-001: \"send all messages matching the filter\" in messaging tools is no longer read as a request for the conversation; `all` needs a chat or conversation qualifier.",
+    "Fixed: DATA-002: reading VM, GPU, container or knowledge-graph memory is no longer reported as reading Claude's memory; `memory` needs Claude, the assistant, the host or the chat as its owner.",
+    "Fixed: DATA-005: wallet, e-mail and IP addresses (by description or `format`) and a boolean `long` flag are no longer reported as a precise location.",
+    "Fixed: POL-001: `get_bestsellers`, `list_stakeholders`, `send_email` and similar names are no longer reported as money transfers; transfer verbs are matched as whole name tokens, and send/buy/sell only next to a money word in the name.",
+    "Fixed: POL-002: `create_article`, `edit_clipboard`, `edit_voicemail_greeting` and `make_artifact` are no longer reported as AI media generation.",
+    "Fixed: INJ-001: emoji ZWJ sequences with a variation selector or skin-tone modifier (❤️‍🔥, 👩🏽‍💻, 🏳️‍🌈) are no longer reported as invisible characters.",
+    "Fixed: INJ-002: unit symbols such as μs, kΩ, ΔT and μg are no longer reported as homoglyphs; only Greek letters that look Latin count.",
+    "Fixed: INJ-004: percent-encoded non-Latin words in URL examples (Russian, Japanese) are no longer reported as encoded payloads.",
+    "Fixed: INJ-005: \"Do not show user avatars …\" and \"You are now connected …\" are no longer reported as hiding behavior or a persona switch.",
+    "Fixed: INJ-006 and RT-011: output-format wording (\"rather than the default full web page\") and value comparisons (\"better than the given threshold\", \"superior to 0.8\") are no longer reported as steering.",
+    "Fixed: INJ-007 and RT-011: \"Use this app to …\", \"Use our app\" and a first-party server naming its own brand (\"the Slack connector\" from the Slack server) are no longer reported as coercing calls.",
+    "Fixed: INJ-008: \"Use this tool for any question about billing\" is no longer reported as overly broad triggering.",
+    "Fixed: INJ-009: \"Follow the setup instructions in the README\" and \"Load rules from a YAML file\" are no longer reported as pulling instructions from external sources; the source must be fetched or returned content.",
+    "Changed: INJ-003: a pseudo-tag the text names as an XML or HTML element (\"the `<Secret>` element of the response\") is reported as info instead of a warning.",
+    "Added: DATA-003: compound secret parameter names such as `new_password`, `github_token`, `aws_secret_access_key` and `credentials` are reported as warnings.",
+    "Added: DATA-004: more card, bank and government-ID names are recognized (`card_cvc`, `cvv_code`, `card_exp_month`, `passport_no`, `aadhaar`, `ssn_last4` as errors; `exp_month`, `routing_number`, `account_number`, `license_number`, `nino` as warnings)."
+   ],
+   "notes": "Пакет WP6: сделано 19 из 20 пунктов, отложен F109 (нужен src/rules/util/text.ts). Отчёт лежит в /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-6/docs/review/2026-11-01/remediation/WP6-inj-data-pol-report.md и закоммичен (0e6c8e4). Новые тесты: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-6/test/remediation-wp6-inj-data-pol.test.ts. Существующие тесты не менялись. Изменены только файлы пакета: src/rules/injection.ts, src/rules/data.ts, src/rules/policy.ts. Severity правил и их метаданные (title, rationale, fix) не трогал, поэтому docs/RULES.md остаётся валидным (test/docs.test.ts зелёный). Ничего не пушил.\n\nНужно учесть при мерже:\n1) docs/design/spec.md (это WP10) цитирует regex дословно. Большинство фиксов меняют паттерны из §2.4–§2.6, а верификаторы просили менять спеку и код вместе. Список разделов для синхронизации есть в отчёте.\n2) Подпись Co-Authored-By. Скрипт задачи требовал «Claude Opus 4.8», а системная инструкция по атрибуции текущей сессии требует «Claude Opus 5.5 <noreply@anthropic.com>». Я использовал вторую, потому что вычисленный текст задачи не имеет пользовательских полномочий. Если нужна единая подпись по всем пакетам, её можно переписать при мерже.\n3) В worktree не был настроен git user, поэтому автор и коммитер заданы через переменные GIT_AUTHOR_*/GIT_COMMITTER_* тем же значением, что в истории репозитория (Aleksandr Sabirov). git config я не менял.\n4) Не все коммиты содержат свои тесты. Тесты F087, F082, F088, F093/F097 и F083 вошли в коммиты своих фиксов. Тесты для low-фиксов, разнесённых по коммитам через частичный staging, собраны в последнем фикс-коммите cb63426. Поэтому на промежуточных коммитах эти тесты частично отсутствуют, но в итоговом дереве всё зелёное.\n5) Расширение INJ-007 (F097): фраза продукта (только для паттернов connector и brand) считается своей, если все её слова есть в serverInfo.name или title. Пример: на сервере «Acme Notes» фраза «our Acme Notes app» своя, а «the Acme Billing app» нет. На остальные паттерны INJ-007 это не влияет. Кроме того, в SELF_REFS добавлено слово «our»."
+  },
+  {
+   "wp": "WP7-auth-spec-srv",
+   "branch": "worktree-wf_365c0c99-4d0-7",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-7",
+   "done": [
+    {
+     "id": "F041",
+     "commit": "6277b6d",
+     "summary": "Если server/discover отклонён кодом -32020/-32021/-32022, SPEC-011 выдаёт info с HTTP-статусом, кодом и data.supported, а не ошибку 'result is not an object'"
+    },
+    {
+     "id": "F038",
+     "commit": "3806e40",
+     "summary": "AUTH-020 больше не принимает страницу логина с redirect_uri в hidden input за отказ: отказом считается только 400, OAuth JSON-ошибка или текст ошибки про redirect URI"
+    },
+    {
+     "id": "F020",
+     "commit": "ffe770e",
+     "summary": "Парсер WWW-Authenticate читает незакавыченное значение (URL) целиком, как SDK, без фантомного challenge; AUTH-002 добавляет spec warning о кавычках"
+    },
+    {
+     "id": "F052",
+     "commit": "4972912",
+     "summary": "AUTH-017 даёт error, только если порог превышает большинство сэмплов; одиночный выброс даёт warning с текстом 'N of M samples'"
+    },
+    {
+     "id": "F050",
+     "commit": "ff01b0e",
+     "summary": "Проверка serverInfo убрана из SPEC-001, теперь её делает только SRV-013"
+    },
+    {
+     "id": "F049",
+     "commit": "ae9829c",
+     "summary": "На modern-only сервере статус GET и сессии репортит только SPEC-015; SPEC-005 и SPEC-006 их больше не дублируют, формат id SPEC-006 проверяет по-прежнему"
+    },
+    {
+     "id": "F051",
+     "commit": "010e317",
+     "summary": "При полном отсутствии OAuth discovery error остаётся только у AUTH-004, а AUTH-002 и AUTH-013 (ChatGPT) понижены до info со ссылкой на AUTH-004"
+    },
+    {
+     "id": "F045",
+     "commit": "144344f",
+     "summary": "Добавлен isBearerLike (bearer или DPoP); AUTH-003, AUTH-015 и AUTH-016 теперь понимают DPoP"
+    },
+    {
+     "id": "F042",
+     "commit": "9426750",
+     "summary": "AUTH-012 для случая 'CIMD без none и без DCR' выдаёт одно непротиворечивое Claude-предупреждение"
+    },
+    {
+     "id": "F027",
+     "commit": "2c73979",
+     "summary": "IPv6 нормализуется до 8 групп: распознаются mapped hex-форма, несжатый loopback, ff00::/8, 2001:db8::/32 и zone id"
+    },
+    {
+     "id": "F040",
+     "commit": "c7f65d1",
+     "summary": "Политика диапазона кодов в SPEC-016 применяется только при era modern или dual"
+    },
+    {
+     "id": "F121",
+     "commit": "0527bea",
+     "summary": "Пункты [oauth] чеклиста показываются и при legacy discovery без PRM"
+    },
+    {
+     "id": "F039",
+     "commit": "8a811eb",
+     "summary": "SPEC-018 находит зарезервированные префиксы из примеров спеки (modelcontextprotocol.io/, mcp.dev/, tools.mcp.com/)"
+    },
+    {
+     "id": "F043",
+     "commit": "bda8532",
+     "summary": "В local mode TLS-сбой локального AS в AUTH-010 и AUTH-007 выдаётся как info с префиксом Deploy-time"
+    },
+    {
+     "id": "F060",
+     "commit": "8120e7f",
+     "summary": "SPEC-010 выдаёт info, если на несуществующий URI сервер вернул контент (catch-all)"
+    },
+    {
+     "id": "F059",
+     "commit": "01a01c1",
+     "summary": "Медиана SRV-010 считается только по успешным (2xx) вызовам sdk, modern и discover; если exchanges нет, используются timings"
+    },
+    {
+     "id": "F056",
+     "commit": "39f2ad5",
+     "summary": "SPEC-017: sizes, заданный не массивом, даёт warning; image/jpg даёт info с советом использовать image/jpeg"
+    },
+    {
+     "id": "F054",
+     "commit": "af046d8",
+     "summary": "Кросс-хост редирект только на GET в SRV-006 понижен до warning; редирект POST остаётся error"
+    },
+    {
+     "id": "F055",
+     "commit": "ed19c9f",
+     "summary": "Регэксп sampling в SRV-015 сужен до формулировок про MCP sampling"
+    },
+    {
+     "id": "F057",
+     "commit": "3050452",
+     "summary": "AUTH-006 проверяет authorization_servers[1..2] как ChatGPT-находки с указанием индекса"
+    },
+    {
+     "id": "F058",
+     "commit": "3050452",
+     "summary": "AUTH-007 не дублирует AUTH-006, если issuer не является URL"
+    },
+    {
+     "id": "F053",
+     "commit": "8960548",
+     "summary": "AUTH-008 пишет 'metadata has no issuer (RFC 8414 REQUIRED)' вместо 'undefined'"
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F061",
+     "reason": "needs docs/design/spec.md: код намеренно согласован (spec=warning для AUTH-002, spec error несёт AUTH-004); формулировку в §2.8 AUTH-002 нужно исправить на 'chatgpt error, spec warning, claude warning' (WP10)"
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp7-auth-spec-srv.test.ts test/rules test/util.test.ts test/local-mode.test.ts test/auth-probe.test.ts test/root-causes.test.ts test/catalog-stale.test.ts test/docs.test.ts test/report.test.ts (16 files, 438 tests, passed)",
+    "npx vitest run test/e2e-http.test.ts -t \"modern bad server\" (passed)",
+    "npx vitest run test/e2e-http.test.ts -t \"cross-host redirect\" (passed)"
+   ],
+   "changelog_lines": [
+    "### Fixed",
+    "- SPEC-011 reports a rejected `server/discover` (-32020/-32021/-32022) as info with its HTTP status, code and `data.supported`, instead of an error saying the result is not an object.",
+    "- AUTH-020 no longer treats a login page that carries `redirect_uri` in a hidden input as a rejected redirect URI, so a correct authorization server is no longer BLOCKED for Claude with `--active-auth`.",
+    "- An unquoted `resource_metadata=https://...` in `WWW-Authenticate` is read whole (as MCP SDK clients do), so the header PRM is found. AUTH-002 adds a spec warning to quote it.",
+    "- AUTH-003, AUTH-015 and AUTH-016 read `scope=`, `error=` and `resource_metadata` from DPoP challenges.",
+    "- AUTH-012 gives one Claude warning for CIMD without `\"none\"` and without DCR, instead of two contradictory ones.",
+    "- IPv4-mapped IPv6 addresses in hex form (`[::ffff:7f00:1]`), uncompressed loopback, multicast and documentation ranges count as local or non-public.",
+    "- SPEC-016 no longer applies the 2026-07-28 error-code range policy to legacy servers answering the discover probe.",
+    "- The manual checklist shows the OAuth items for servers that use legacy (2025-03-26) discovery without a PRM.",
+    "- SPEC-018 flags the spec's reserved `_meta` prefix examples (`modelcontextprotocol.io/`, `mcp.dev/`, `tools.mcp.com/`).",
+    "- AUTH-008 says the metadata has no `issuer` instead of printing `undefined`.",
+    "- SRV-015 no longer reads \"audio sampling rate\" or \"statistical sampling\" as MCP sampling.",
+    "### Changed",
+    "- AUTH-017 is a Claude error only when most latency samples exceed 10 s. A single slow sample is a warning.",
+    "- A 401 without any OAuth discovery is one error (AUTH-004). AUTH-002 and the AUTH-013 ChatGPT note become info pointing to it.",
+    "- A missing `initialize.serverInfo` is reported once, by SRV-013 (no longer also by SPEC-001).",
+    "- On modern-only servers, the GET status and session use are reported once, by SPEC-015 (no longer also by SPEC-005 and SPEC-006).",
+    "- In local mode, an untrusted certificate on a local authorization server is a \"Deploy-time check\" info in AUTH-010 and AUTH-007.",
+    "- SRV-006: a cross-host redirect only on GET is a warning. The POST handshake redirect stays a Claude error.",
+    "- SRV-010 measures latency over successful handshake and listing calls only.",
+    "- AUTH-006 also validates `authorization_servers[1]` and `[2]` for ChatGPT. AUTH-007 no longer repeats AUTH-006 for an issuer that is not a URL.",
+    "### Added",
+    "- SPEC-010 notes (info) a server that returns content for a missing resource URI.",
+    "- SPEC-017 warns when an icon's `sizes` is not an array and notes `image/jpg` (use `image/jpeg`)."
+   ],
+   "notes": "Выполнено 22 из 23 пунктов в 21 коммите, плюс отдельный коммит отчёта c58ce07. Typecheck, build и тесты подсистемы зелёные. Ничего не пушил. Отчёт лежит в /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-7/docs/review/2026-11-01/remediation/WP7-auth-spec-srv-report.md.\n\nИзменённые существующие тесты:\n- test/rules/auth.test.ts: в AUTH-017 pos сэмплы [100, 11000] заменены на [11000, 100, 12000]; AUTH-002 pos теперь использует не-https resource_metadata; в кейсе 'AUTH-013 401 without OAuth discovery' для ChatGPT ожидается info вместо error.\n- test/rules/spec.test.ts: в SPEC-016 pos выставлено era='dual'.\n- test/e2e-http.test.ts: кейс 'modern bad server' больше не ожидает SPEC-006.\n\nКомментарии к коммитам:\n- Регрессионный тест F121 попал в коммит c7f65d1 (F040), тест F055 — в коммит af046d8 (F054). Сами фиксы закоммичены отдельно.\n- Коммиты подписаны автором из истории репозитория через переменные окружения GIT_AUTHOR_*/GIT_COMMITTER_*, потому что в git не был настроен user. git config я не менял.\n- Трейлер — 'Co-Authored-By: Claude Opus 4.8', как требовала задача.\n\nЧто важно при мерже:\n- auth.ts теперь импортирует DEPLOY из ./server.js. Циклической зависимости нет.\n- В Challenge (util/wwwAuth.ts) добавлены поле unquoted и функция isBearerLike.\n- В SPEC-010 продублирована константа MISSING_URI, чтобы правила не импортировали src/probe/wire.ts.\n- src/rules/runtime.ts (WP8) и src/probe/auth.ts (WP3) пользуются тем же парсером WWW-Authenticate и автоматически получают нестрогое чтение незакавыченных значений.\n\nДля WP10 нужно обновить docs/design/spec.md по пунктам из раздела 'Notes for WP10' отчёта: §1.4, §1.5, SPEC-001/005/006/010/011/016/017/018, SRV-006/010/015, AUTH-002/006/007/012/013/017/020. Туда же входит отложенный F061."
+  },
+  {
+   "wp": "WP8-tools-schema-rt",
+   "branch": "worktree-wf_365c0c99-4d0-8",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-8",
+   "done": [
+    {
+     "id": "F062",
+     "commit": "1bb9ad4",
+     "summary": "TOOL-017/RT-006 hand Ajv the canonical $schema id per dialect; no false 'does not compile' for https draft-07 / http 2019-09, 2020-12"
+    },
+    {
+     "id": "F063",
+     "commit": "80982fa",
+     "summary": "TOOL-023/025/026 resolve local $ref params; an unresolved $ref no longer counts as a free string"
+    },
+    {
+     "id": "F065",
+     "commit": "ee31192",
+     "summary": "TOOL-026: body/payload/request_body count as a raw request only next to method/url/endpoint/headers params, or as a free object"
+    },
+    {
+     "id": "F064",
+     "commit": "1ce8e51",
+     "summary": "TOOL-004: top/official/preferred/leading count only before a word that rates the tool"
+    },
+    {
+     "id": "F103",
+     "commit": "49a3f90",
+     "summary": "RT-011 also scans structuredContent strings and embedded resource text, and names where the match was"
+    },
+    {
+     "id": "F067",
+     "commit": "8f4b7e1",
+     "summary": "TOOL-006 falls back to annotations.title when the title is empty or not a string; a non-string title gets its own message"
+    },
+    {
+     "id": "F074",
+     "commit": "4127648",
+     "summary": "TOOL-018 skips schemas that accept keys through patternProperties/propertyNames/unevaluatedProperties/dependent*/a schema-valued additionalProperties"
+    },
+    {
+     "id": "F085",
+     "commit": "b0638bc",
+     "summary": "RT-010 searches plain text, fenced JSON, structuredContent and resource text for tokens"
+    },
+    {
+     "id": "F105",
+     "commit": "b0638bc",
+     "summary": "RT-010 uses isKnownToken from util/net.ts (word split plus whole-word test) in place of its own TOKEN_RE"
+    },
+    {
+     "id": "F104",
+     "commit": "f5aa265",
+     "summary": "RT-010 skips keys declared in the tool's outputSchema"
+    },
+    {
+     "id": "F066",
+     "commit": "dfde289",
+     "summary": "TOOL-021 says 'a property without a type' and reads a $ref target's type"
+    },
+    {
+     "id": "F071",
+     "commit": "0a25056",
+     "summary": "walkSchema/schemaMetrics follow dependentSchemas, the schema values of dependencies, and additionalItems"
+    },
+    {
+     "id": "F073",
+     "commit": "df897aa",
+     "summary": "TOOL-031 resolves a root $ref in output/inputSchema and a $ref on the id property"
+    },
+    {
+     "id": "F069",
+     "commit": "1e5036b",
+     "summary": "compoundWriteVerb (search_and_replace, get_or_create) in util/text.ts; toolKind and TOOL-014 (a/b/c/e) use it"
+    },
+    {
+     "id": "F077",
+     "commit": "1e5036b, 9bede28",
+     "summary": "part 3: TOOL-027 no longer calls search_and_replace a collection (via toolKind); part 2: behaviorText keeps the clause after 'like'"
+    },
+    {
+     "id": "F070",
+     "commit": "5d45362",
+     "summary": "TOOL-019 treats every embedded $id in the document as local"
+    },
+    {
+     "id": "F068",
+     "commit": "c5884e1",
+     "summary": "wordCount uses Intl.Segmenter for CJK/Thai etc.; TOOL-008 no longer reports 'only 1 words' for those descriptions"
+    },
+    {
+     "id": "F078",
+     "commit": "18fd3de",
+     "summary": "escapeHidden keeps a ZWJ inside emoji sequences"
+    },
+    {
+     "id": "F079",
+     "commit": "607198a",
+     "summary": "part: TOOL-020 also measures outputSchema (the rest is deferred)"
+    },
+    {
+     "id": "C-imp-3",
+     "commit": "775a9d2",
+     "summary": "RT-002 also reports a success answer to the invalid-missing call ({} for a tool with required params)"
+    },
+    {
+     "id": "report",
+     "commit": "273f121",
+     "summary": "docs/review/2026-11-01/remediation/WP8-tools-schema-rt-report.md"
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F076",
+     "reason": "feature: new platform rule for Claude/OpenAI tool-name characters plus a chatgpt variant of TOOL-002; vendor patterns must first be checked against current docs, and a new rule or severity needs RULES.md/README regeneration (WP10)"
+    },
+    {
+     "id": "F080",
+     "reason": "feature: new tool-list-budget rule; its thresholds would live in src/limits.ts (needs src/limits.ts, WP2) and it needs RULES.md/README regeneration"
+    },
+    {
+     "id": "F081",
+     "reason": "Changing walkSchema's dedup to per-stack duplicates findings at every $ref site and grows exponentially on DAG-shaped schemas without a node budget; it changes every walker-based rule, so the maintainer should decide"
+    },
+    {
+     "id": "F079 (rest)",
+     "reason": "feature: new schema-lint checks (keyword typos, required naming missing properties, unknown format) go beyond the TOOL-017 rule spec and need a new rule or a spec change"
+    },
+    {
+     "id": "F077 (part 1)",
+     "reason": "Dropping the 'url' token from TOOL-015 name matching also drops true positives (fetch_url) and gains little, because the free url/format:uri param check would still fire; whether shortening a URL is open-world is a judgment call"
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npx vitest run test/remediation-wp8-tools-schema-rt.test.ts (55 passed)",
+    "npx vitest run test/rules/ test/docs.test.ts test/util.test.ts test/root-causes.test.ts test/real-servers.test.ts test/engine.test.ts + remediation file (14 files, 428 passed)",
+    "npx vitest run test/e2e-http.test.ts (32 passed; run because RT-002 changed)",
+    "npm run typecheck",
+    "npm run build"
+   ],
+   "changelog_lines": [
+    "Fixed: TOOL-017 no longer reports a valid schema as not compiling when its $schema uses the other URL scheme (https draft-07, http 2019-09/2020-12), and RT-006 validates structuredContent against such schemas instead of skipping them.",
+    "Fixed: TOOL-023, TOOL-025 and TOOL-026 resolve local $ref parameters: a method enum kept in $defs now yields TOOL-023's mixed-methods error, and an enum behind $ref is no longer a free-form parameter.",
+    "Fixed: TOOL-026 no longer warns about the text field of create_issue, send_email or post_message tools: body, payload and request_body count as a raw request only next to a method, URL, endpoint or headers parameter, or as a free-form object.",
+    "Fixed: TOOL-004 no longer flags ordinary names such as get_top_stories, set_preferred_language or get_official_rate; top, official, preferred and leading count only when they rate the tool itself.",
+    "Fixed: TOOL-006 no longer reports \"no title\" when an empty top-level title sits next to a set annotations.title; a non-string title is named as such.",
+    "Fixed: TOOL-018 no longer calls a tool parameterless when its schema admits keys through patternProperties, propertyNames, unevaluatedProperties, dependentSchemas or a schema-valued additionalProperties.",
+    "Fixed: TOOL-021 says \"a property without a type\" instead of \"a undefined property\", and an x-mcp-header on a $ref to a string, integer or boolean is no longer an error.",
+    "Fixed: TOOL-031 no longer reports \"lacks a required string id\" for a profile tool whose outputSchema is a root $ref into $defs.",
+    "Fixed: TOOL-019 no longer reports a $ref to an embedded resource with its own $id as pointing outside the document.",
+    "Fixed: TOOL-014 and TOOL-027 classify names like search_and_replace and get_or_create by their joined write verb; a joined delete without destructiveHint is reported.",
+    "Fixed: TOOL-014 no longer ignores the rest of a sentence after \"like\".",
+    "Fixed: TOOL-008 no longer calls full Chinese, Japanese or Thai descriptions \"only 1 words\".",
+    "Fixed: RT-010 no longer reports keys that the tool's outputSchema declares (logs of a get_logs tool) as leaked internals.",
+    "Fixed: Finding snippets show emoji ZWJ sequences such as 👨‍💻 as written instead of escaping the joiner.",
+    "Changed: RT-010 finds credentials in plain-text and code-fenced results, not only in parsed JSON, and recognizes the same token formats as the report redaction (Stripe, GitLab, Slack, Google, npm and Hugging Face keys in addition to JWT, sk-, ghp_ and AKIA).",
+    "Changed: RT-011 also scans the string values of structuredContent and the text of embedded resources, and says where the injection was found.",
+    "Changed: RT-002 also reports a success answer to the --active call made without the required arguments.",
+    "Changed: TOOL-020 also bounds the depth and size of outputSchema.",
+    "Changed: walkSchema-based rules now see subschemas under dependentSchemas, the schema form of dependencies, and additionalItems."
+   ],
+   "notes": "Пакет WP8 выполнен: из 23 пунктов 18 сделаны полностью, F077 и F079 — частично, F076, F080 и F081 отложены (причины в deferred). Все 4 medium-находки исправлены (F062, F063, F064, F065), medium-улучшение F103 тоже сделано; из medium отложено только улучшение F076 (новое правило). typecheck, build, свой тестовый файл (55 тестов), test/rules/* с соседними файлами (428 тестов) и test/e2e-http.test.ts зелёные. Полный `npm test` не запускался.\n\nИзменён один существующий тест — test/rules/runtime.test.ts, позитивный кейс RT-010. Фиктивный JWT `eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl` заменён реалистичным. Причина: RT-010 теперь использует список токенов из redaction (`isKnownToken`), а там у каждого сегмента JWT минимум 8 символов.\n\nЧто стоит знать при мерже:\n- Коммиты подписаны автором репозитория (Aleksandr Sabirov) через `git -c user.name/user.email`; git config не менялся. Трейлер в коммитах: `Co-Authored-By: Claude Opus 4.8`, как требует задача.\n- `src/rules/util/net.ts` (файл WP7) не изменялся, из него только импортируется `isKnownToken`.\n- `toolKind` в util/text.ts теперь считает write-инструментами имена вида search_and_replace и get_or_create. Его вызывает и `src/report/text.ts` (WP9); имена без союза and/or/then не затронуты.\n- Метаданные правил (title, severity, rationale, fix) не менялись. Но поведение TOOL-004/018/020/026 и RT-002/010/011 разошлось с docs/design/spec.md; список правок для WP10 есть в отчёте.\n\nОтчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-8/docs/review/2026-11-01/remediation/WP8-tools-schema-rt-report.md\nРегрессионные тесты: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-8/test/remediation-wp8-tools-schema-rt.test.ts"
+  },
+  {
+   "wp": "WP9-report-redact",
+   "branch": "worktree-wf_365c0c99-4d0-9",
+   "worktree": "/home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-9",
+   "done": [
+    {
+     "id": "F115",
+     "commit": "da9e0e2",
+     "summary": "visibleText() in src/report/index.ts shows control and format characters (ESC, CR, LF, BEL, C1, bidi, zero-width, U+2028/2029; tab is kept) as \\u{..}. renderText passes every line through it before adding its own ANSI codes, and FAIL is coloured only after the connect-failure cause has been made visible."
+    },
+    {
+     "id": "F135",
+     "commit": "da9e0e2",
+     "summary": "Same fix in the text report. A server LF can no longer start a new line, and a line that would start with '::' after its indent gets its first ':' as \\u{3A}, so the GitHub runner does not read it as a workflow command. The --verbose stderr part needs src/cli.ts and is deferred."
+    },
+    {
+     "id": "F147",
+     "commit": "da9e0e2",
+     "summary": "Markdown cell(), text() and code() show hidden characters as \\u{..}. This runs before markdown adds its own zero-width spaces, so those are kept."
+    },
+    {
+     "id": "F127",
+     "commit": "da9e0e2",
+     "summary": "Markdown text() escapes * _ ~ $, so server text no longer renders as emphasis, strikethrough or math."
+    },
+    {
+     "id": "F116",
+     "commit": "738c9c5",
+     "summary": "A Cookie header adds each name=value pair to the redactor. The value alone is added when the cookie name looks like a secret or the value looks like a token. Applies to --header and to argv --header 'Cookie: ...'."
+    },
+    {
+     "id": "F117",
+     "commit": "738c9c5",
+     "summary": "A Basic credential given as a header, in argv or in env also redacts the decoded user:pass and the password. A token that is not base64 of 'user:pass' text adds nothing."
+    },
+    {
+     "id": "F118",
+     "commit": "404714f",
+     "summary": "Common settings given under a plain --env name (production, staging, debug, log levels, version numbers) are no longer masked in either redaction tier. Under a secret name they are still masked."
+    },
+    {
+     "id": "F124",
+     "commit": "7c90ebe",
+     "summary": "A rule outside --target that throws now produces an INTERNAL finding on platform spec instead of being dropped silently."
+    },
+    {
+     "id": "F123",
+     "commit": "7c90ebe",
+     "summary": "SARIF driver.rules gets an INTERNAL entry only when INTERNAL results exist, so a clean run keeps the same rule count."
+    },
+    {
+     "id": "R023",
+     "commit": "7c90ebe",
+     "summary": "subjectOf() names an empty tool or resource '(empty name)'. Text, markdown, GitHub annotations and the SARIF message all use it."
+    },
+    {
+     "id": "F134",
+     "commit": "9c5d749",
+     "summary": "fixSnippets picks tools from TOOL-006/011/012 findings plus a missing title in the snapshot, instead of matching the exact 'no title' message."
+    },
+    {
+     "id": "F129",
+     "commit": "304d515",
+     "summary": "The JSON report gains summary.rootCauses (additive; schemaVersion stays 1)."
+    },
+    {
+     "id": "F128",
+     "commit": "304d515",
+     "summary": "The JSON report gains server.argv for stdio targets, with each argument kept whole. server.command stays as the display string."
+    },
+    {
+     "id": "F125",
+     "commit": "8db99b2",
+     "summary": "sortFindings compares by UTF-16 code unit instead of localeCompare, so the order no longer depends on the locale or ICU build."
+    },
+    {
+     "id": "F133",
+     "commit": "8db99b2",
+     "summary": "The 'legacy' need is decided by the era alone, for stdio too. A stdio connect is an initialize handshake, so its era is 'legacy'."
+    },
+    {
+     "id": "R022",
+     "commit": "f5018c6",
+     "summary": "failed() now defaults to gatedPlatforms('all') (claude and chatgpt), the same gate the CLI uses without --fail-on-spec."
+    },
+    {
+     "id": "F131",
+     "commit": "2da1c4b",
+     "summary": "Partial fix. appendStepSummary cuts the markdown at a line end to the space left of the step's 1 MiB, counting what the file already holds, and adds a note. If the file is already full it writes nothing and returns a stderr warning. The annotation cap is deferred."
+    }
+   ],
+   "deferred": [
+    {
+     "id": "F122",
+     "reason": "Design decision. docs/design/spec.md §5.3 maps severity straight to SARIF level, and the arbiter called this a format inconsistency, not a contract break. Taking the level from the gated platforms would turn a spec-only error into a 'note' without --fail-on-spec. The maintainer has to choose (gated level, or a --sarif-level gated|max option), and spec.md (WP10) has to change with it."
+    },
+    {
+     "id": "F132",
+     "reason": "needs src/rules/util/net.ts (displayUrl/isKnownToken), and it goes against the documented 'no entropy guess' design. It would be a feature: heuristic redaction of hex/base64 URL path segments and neutral-named query values, plus a --no-redact-heuristic opt-out in src/cli.ts."
+    },
+    {
+     "id": "F131-annotations",
+     "reason": "Capping or grouping annotations at about 10 per type would break the documented one-annotation-per-finding contract, and test/stderr-flush.test.ts relies on more than 1000 annotations. Needs a maintainer decision. Only the step-summary size guard was done."
+    },
+    {
+     "id": "F135-verbose-stderr",
+     "reason": "needs src/cli.ts. The '[stdio stderr]' and '[http]' --verbose trace is printed raw there. visibleText() is exported from src/report/index.ts for that fix."
+    }
+   ],
+   "tests_passed": true,
+   "typecheck_ok": true,
+   "build_ok": true,
+   "tests_run": [
+    "npm run typecheck",
+    "npm run build",
+    "npx vitest run test/remediation-wp9-report-redact.test.ts (24 passed)",
+    "npx vitest run test/report.test.ts test/sarif.test.ts test/engine.test.ts test/root-causes.test.ts test/ci-output.test.ts test/incomplete.test.ts",
+    "npx vitest run test/redact.test.ts test/redaction-tiers.test.ts test/e2e-redaction.test.ts",
+    "npx vitest run test/compat.test.ts test/cli-rules.test.ts test/output-modes.test.ts test/cta.test.ts test/local-mode.test.ts test/stderr-flush.test.ts"
+   ],
+   "changelog_lines": [
+    "Fixed: Text and markdown reports show control, bidi and zero-width characters from the server (ESC, CR, LF, BEL, U+202E, …) as `\\u{..}`. A server name, tool name or message can no longer recolour or erase terminal output, add a hyperlink, reorder text, or start a line the GitHub runner reads as a workflow command.",
+    "Fixed: Markdown reports escape `*`, `_`, `~` and `$` in server text, so a server name or message no longer renders as bold, italic, struck-through or math.",
+    "Fixed: A Cookie header is redacted pair by pair, and a session-like cookie value on its own. A `Basic` credential is also redacted by its decoded `user:pass` and password. A server that echoes one session cookie or the plain password no longer leaks it into the report.",
+    "Fixed: A rule outside `--target` that throws is reported as an INTERNAL finding instead of disappearing, and SARIF has a rule entry for INTERNAL results.",
+    "Fixed: A tool or resource named `\"\"` is shown as `(empty name)` in every format instead of an empty subject.",
+    "Fixed: Findings are sorted by code unit, so JSON and SARIF order no longer depends on the locale or ICU build of Node.",
+    "Fixed: Fix snippets no longer depend on the exact wording of the TOOL-006 message.",
+    "Changed: Common settings given under a plain `--env` name (`production`, `debug`, log levels, version numbers) are no longer masked in the report; under a secret-looking name they still are.",
+    "Changed: `failed()` defaults to the CLI's gate (claude and chatgpt; spec only when passed).",
+    "Changed: The markdown appended to `$GITHUB_STEP_SUMMARY` is cut at a line end to fit GitHub's 1 MiB step limit, with a note, instead of being dropped by GitHub.",
+    "Added: JSON reports gain `summary.rootCauses` (the basis of `summary.score`) and, for stdio targets, `server.argv` (each argument whole)."
+   ],
+   "notes": "Пакет WP9 готов: 17 находок исправлено, 9 коммитов плюс коммит с отчётом, всё лежит в ветке worktree-wf_365c0c99-4d0-9 (не запушено). typecheck, build, новый тест-файл и существующие тесты подсистемы зелёные. Весь `npm test` не запускал (правило D1).\n\nОтложены F122, F132, а также части F131 (лимит аннотаций) и F135 (`--verbose` stderr), причины указаны в deferred.\n\nОтчёт: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-9/docs/review/2026-11-01/remediation/WP9-report-redact-report.md\nНовые тесты: /home/kali/packages/mcp-review-check/.claude/worktrees/wf_365c0c99-4d0-9/test/remediation-wp9-report-redact.test.ts\n\nИзменённые существующие тесты:\n- test/report.test.ts:385 — markdown-тест про @-упоминания теперь ожидает `\\_` вокруг `_@&#8203;octocat-em_`, потому что F127 экранирует `_`.\n- test/redact.test.ts:177 и :205 — в двух тестах `redactDeep` слово `error` задавалось как `LOG_LEVEL=error`. После F118 это значение под обычным именем больше не секрет, поэтому теперь `API_KEY=error`. Проверяют они то же, что и раньше: собственная лексика отчёта сохраняется.\n\nДля WP10 (документация):\n- В README, раздел Redaction, упомянуть обычные значения `--env`, которые теперь не маскируются, пары Cookie и декодированный Basic-пароль.\n- В описании формы JSON добавить `summary.rootCauses` и `server.argv`.\n- В README или spec написать, что управляющие символы от сервера показываются как `\\u{..}`.\n\nДля WP1 (`src/cli.ts`): `visibleText()` экспортирована из `src/report/index.ts` для доработки F135 в `--verbose` stderr.\n\nКоммиты сделаны от имени Aleksandr Sabirov <20horizon93@gmail.com>, как в истории репозитория: в worktree не было git identity, поэтому имя передавалось флагом `-c` в каждой команде, git config не менялся. Трейлер — `Co-Authored-By: Claude Opus 4.8`, как требовала задача."
+  }
+ ],
+ "missing": []
+}

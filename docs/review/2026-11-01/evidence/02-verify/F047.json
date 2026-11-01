@@ -1,0 +1,19 @@
+{
+  "id": "F047",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F047",
+      "refuted": true,
+      "confidence": 0.6,
+      "reasoning": "Строка 296 актуальна, и репро подтверждается: при serverInfo={name:'weather',title:'',version:'1'} SRV_012 возвращает [], а без title выдаёт находку. Но поведение в точности совпадает с замыслом: docs/design/spec.md:210 задаёт Detect как `serverInfo.title ?? name`, то есть код реализует спеку буквально. Сценарий title:'' маргинальный. Правило имеет уровень chatgpt=info, а название для листинга в каталоге всё равно задаётся при подаче заявки. В test/rules/server.test.ts:49 проверяется только случай без title. Это не баг относительно спеки, а в лучшем случае пожелание поправить спеку и код (isNonEmptyStr). Ложный негатив на info-правиле: влияние около нуля.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r.mjs\nF047 title empty []\nF047 no title [{\"message\":\"server name \\\"weather\\\" is a generic single word\"}]",
+      "corrected_severity": "low",
+      "lens": "reader-batch"
+    }
+  ]
+}

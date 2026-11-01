@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 39,
+  "title": "TEXT_CAP → APPS-001/003/007/019: обрезанный ui:// URI или имя расходятся с необрезанными ключами resourceReads и toolsWithoutUi",
+  "description": "capStrings обрезает `_meta.ui.resourceUri` у инструмента и `uri` у записи resources/list, но не ключи `snap.resourceReads` и не `toolsWithoutUi` (их capSnapshot не обходит). uiResources ищет read по обрезанному URI и получает undefined. В результате APPS-001 молчит (`if (!r.read) continue`), а APPS-003/004/007/014/015 вообще не видят HTML — origin, который не задекларирован, пропадает из отчёта. APPS-019 сравнивает обрезанное имя из snap.tools с полным из toolsWithoutUi и ложно сообщает, что инструмента нет в text-only списке.",
+  "evidence": "r2apps.out: длинный ui:// URI (16 KB+): до cap — `APPS-007 ... resource origin https://evil.cdn.example is not declared`, после cap — `(no findings)`. `APPS-019 after cap with long name present in both lists` → `APPS-019 {spec:warning, chatgpt:warning} listed only for clients that declare io.modelcontextprotocol/ui`.",
+  "suggested_fix": "Исключить идентификаторы (uri, resourceUri, outputTemplate, name) из обрезки или применять ту же обрезку к ключам resourceReads и к toolsWithoutUi (связано с F013, но здесь ложные срабатывания, а не только отсутствие лимита).",
+  "confidence": 0.7,
+  "failure_scenario": "Инструмент с именем >16 KB, который есть в обоих tools/list: ложное предупреждение APPS-019. UI-ресурс с URI >16 KB: пропущены все HTML-проверки.",
+  "dimension": "limits-apps",
+  "id": "R026",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R026",
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. capSnapshot обрезает `_meta.ui.resourceUri` у инструмента и `uri` у ресурса (src/limits.ts:39,41). Ключи snap.resourceReads остаются полными: они проставляются при чтении до cap, а в строке 48 обрезается только содержимое. toolsWithoutUi capSnapshot не обходит вообще. Поэтому uiResources не находит read по обрезанному URI, и все HTML-проверки молчат: в repro APPS-007 до cap есть, после cap находок нет. APPS-019 (apps.ts:415-418) сравнивает обрезанное имя из snap.tools с полным из toolsWithoutUi и выдаёт ложное предупреждение. Ни тесты, ни spec такое поведение не оправдывают. Это отдельная проблема от F013: там речь о том, что toolsWithoutUi не ограничен, а здесь — о рассинхроне идентификаторов между обрезанными и необрезанными частями снапшота. Severity low: нужны URI или имена длиннее 16 KB.",
+      "repro": "r2apps.out: '## long ui:// uri before cap' -> 'APPS-007 ... resource origin https://evil.cdn.example is not declared in the CSP'; '## after cap' -> '(no findings)'; '## APPS-019 after cap with long name present in both lists' -> 'APPS-019 {spec:warning, chatgpt:warning} listed only for clients that declare io.modelcontextprotocol/ui'",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "r2apps.out: '## long ui:// uri before cap' -> 'APPS-007 ... resource origin https://evil.cdn.example is not declared in the CSP'; '## after cap' -> '(no findings)'; '## APPS-019 after cap with long name present in both lists' -> 'APPS-019 {spec:warning, chatgpt:warning} listed only for clients that declare io.modelcontextprotocol/ui'"
+}

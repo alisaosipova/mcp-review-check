@@ -1,0 +1,20 @@
+{
+  "id": "F066",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "TOOL-021 (src/rules/schema.ts:224): если у узла с x-mcp-header нет собственного `type`, `JSON.stringify(undefined)` даёт в сообщении текст «x-mcp-header on a undefined property». Так бывает и у узла без type, и у узла `{ $ref, 'x-mcp-header' }`. Утверждение о двух сообщениях неверно: правило (d) для `/properties/h` с `$ref` НЕ срабатывает, потому что сам узел pure, а обход по `$ref` (путь `/properties/h/$ref`) пропускается в строке 217. Выводится одно сообщение. Есть смежная проблема: для `$ref` на `{type:'string'}` правило (c) выдаёт error, хотя после deref тип допустимый. Это возможный ложный срабатывание с severity error, но сначала надо проверить по спецификации streamable-http, разыменовывают ли клиенты $ref при проверке x-mcp-header.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/schema_repro.mjs\nTOOL-021 {properties:{h:{$ref:'#/$defs/S','x-mcp-header':'X-Tenant'}},$defs:{S:{type:'string'}}} -> [[\"/properties/h\",\"x-mcp-header on a undefined property. Streamable HTTP clients will drop this tool.\"]]  (одно сообщение, без 'plain properties chain')\nTOOL-021 {properties:{h:{'x-mcp-header':'X-Tenant'}}} -> [[\"/properties/h\",\"x-mcp-header on a undefined property. ...\"]]",
+  "votes": [
+    {
+      "id": "F066",
+      "refuted": false,
+      "confidence": 0.85,
+      "corrected_severity": "low",
+      "corrected_description": "TOOL-021 (src/rules/schema.ts:224): если у узла с x-mcp-header нет собственного `type`, `JSON.stringify(undefined)` даёт в сообщении текст «x-mcp-header on a undefined property». Так бывает и у узла без type, и у узла `{ $ref, 'x-mcp-header' }`. Утверждение о двух сообщениях неверно: правило (d) для `/properties/h` с `$ref` НЕ срабатывает, потому что сам узел pure, а обход по `$ref` (путь `/properties/h/$ref`) пропускается в строке 217. Выводится одно сообщение. Есть смежная проблема: для `$ref` на `{type:'string'}` правило (c) выдаёт error, хотя после deref тип допустимый. Это возможный ложный срабатывание с severity error, но сначала надо проверить по спецификации streamable-http, разыменовывают ли клиенты $ref при проверке x-mcp-header.",
+      "reasoning": "Строка 224 актуальна. На сообщение без type нет ни теста, ни оговорки в spec.md §TOOL-021(c). Мини-репро на dist подтверждает текст с 'a undefined'. Часть описания про дублирование с (d) не подтвердилась: walkSchema передаёт pure=true для properties/h, а потомок /$ref отсекается проверкой v.path.endsWith('/$ref'). Дефект косметический, поэтому low.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/schema_repro.mjs\nTOOL-021 {properties:{h:{$ref:'#/$defs/S','x-mcp-header':'X-Tenant'}},$defs:{S:{type:'string'}}} -> [[\"/properties/h\",\"x-mcp-header on a undefined property. Streamable HTTP clients will drop this tool.\"]]  (одно сообщение, без 'plain properties chain')\nTOOL-021 {properties:{h:{'x-mcp-header':'X-Tenant'}}} -> [[\"/properties/h\",\"x-mcp-header on a undefined property. ...\"]]",
+      "lens": "reader-batch"
+    }
+  ]
+}

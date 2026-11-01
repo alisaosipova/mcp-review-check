@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 111,
+  "title": "INJ-002: единицы измерения с греческой буквой (μs, kΩ, ΔT, μg) — ложный homoglyph",
+  "description": "Любое слово `\\p{L}+` с Latin + Greek даёт warning. Для технических серверов «latency in μs», «kΩ», «ΔE2000» — норма. Греческие μ/Ω/Δ не являются конфьюзаблами латиницы, поэтому сигнал спуфинга здесь нулевой.",
+  "evidence": "INJ_002.check для 'Returns the request latency in μs and resistance in kΩ.' → 'mixed-script word \"μs\"'. Прямые тесты regex: μs, kΩ, ΔT, ΔE2000, μg, Ωm → все true.",
+  "suggested_fix": "Флаговать только когда не-латинская часть состоит из визуально конфьюзабельных букв (кириллица а,е,о,р,с,у,х,і,ј,ѕ,һ; греческие ο,α,ν,ι,κ,ρ,τ,υ,χ и заглавные Α,Β,Ε,Ζ,Η,Ι,Κ,Μ,Ν,Ο,Ρ,Τ,Υ,Χ) либо исключать слова ≤3 символов с единственной греческой буквой в начале (μ, Ω, Δ, π, σ).",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F091"
+}

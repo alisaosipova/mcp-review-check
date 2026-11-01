@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/runtime.ts",
+  "line": 213,
+  "title": "RT-010 LEAK_KEY флагует ключи, явно объявленные в outputSchema (logs, session_id, request_id)",
+  "description": "Инструмент `get_logs` с outputSchema `{logs: array}` получает warning «exposes internal keys: logs». Если ключ задекларирован в outputSchema, он является контрактом API, а не утечкой отладочных данных.",
+  "evidence": "RT_010.check для get_logs с outputSchema.properties.logs и результатом {logs:['a']} → 'result exposes internal keys: logs'.",
+  "suggested_fix": "Собрать множество имён properties из outputSchema (walkSchema) и исключать их из LEAK_KEY-находок; понижать `request_id`/`logs` до info, если имя инструмента содержит log|trace|debug|session.",
+  "confidence": 0.8,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F104"
+}

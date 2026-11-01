@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/probe/active.ts",
+  "line": 83,
+  "title": "--tool-args: поиск аргументов по имени инструмента через прототип (`constructor`, `__proto__`, `toString`)",
+  "description": "`ctx.toolArgs?.[name]` для инструмента с именем `constructor`/`toString`/`__proto__` возвращает свойство Object.prototype (функцию или сам прототип), `provided !== undefined` → вызов классифицируется как kind 'valid' с мусорными аргументами (функция сериализуется в отсутствие `arguments`), что искажает RT-правила (ошибка сервера на невалидный вызов засчитывается как ошибка на «валидном»). Имя инструмента контролирует сервер.",
+  "evidence": "active.ts:83-85: `const provided = ctx.toolArgs?.[name]; const args = provided !== undefined ? provided : synthesizeArgs(t.inputSchema); calls.push(await call(ctx, name, provided !== undefined ? 'valid' : 'synthetic', args));` — toolArgs создаётся JSON.parse (readToolArgs, cli.ts:176) как обычный объект с прототипом Object.",
+  "suggested_fix": "Использовать `Object.hasOwn(ctx.toolArgs, name) ? ctx.toolArgs[name] : undefined` либо парсить --tool-args в Map/Object.create(null).",
+  "confidence": 0.75,
+  "dimension": "security-lens",
+  "id": "F144"
+}

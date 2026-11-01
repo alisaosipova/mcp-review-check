@@ -1,0 +1,28 @@
+{
+  "id": "F091",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "INJ-002 (src/rules/injection.ts:111) ставит warning на любое слово `\\p{L}+`, где есть и латиница, и греческие буквы. Поэтому обычные обозначения единиц вроде «μs», «kΩ», «ΔT» и «μg» получают ложный сигнал о homoglyph-спуфинге: μ, Ω и Δ визуально не путаются с латинскими буквами. Код буквально следует docs/design/spec.md:594-595 («a single word (`\\p{L}+`) that contains Latin together with Cyrillic or Greek letters»). Значит, это не расхождение со спекой, а неточность самой эвристики относительно заявленной цели (homoglyphs). Последствие: лишний warning в описаниях инструментов технических и научных серверов. Основной сценарий не ломается.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f091.mjs (вызывает INJ_002.check из dist/rules/injection.js на инструменте с description 'Returns the request latency in μs and resistance in kΩ.') -> [{\"tool\":\"latency\",\"message\":\"tool.description: mixed-script word \\\"μs\\\"\"}]",
+  "votes": [
+    {
+      "refuted": false,
+      "confidence": 0.75,
+      "corrected_severity": "low",
+      "corrected_description": "INJ-002 (src/rules/injection.ts:111) ставит warning на любое слово `\\p{L}+`, где есть и латиница, и греческие буквы. Поэтому обычные обозначения единиц вроде «μs», «kΩ», «ΔT» и «μg» получают ложный сигнал о homoglyph-спуфинге: μ, Ω и Δ визуально не путаются с латинскими буквами. Код буквально следует docs/design/spec.md:594-595 («a single word (`\\p{L}+`) that contains Latin together with Cyrillic or Greek letters»). Значит, это не расхождение со спекой, а неточность самой эвристики относительно заявленной цели (homoglyphs). Последствие: лишний warning в описаниях инструментов технических и научных серверов. Основной сценарий не ломается.",
+      "reasoning": "Строка 111 актуальна, и проверка выполняется прямо там: латиница + (кириллица | греческий) в одном слове, без учёта визуальной путаемости букв. Ни выше, ни ниже по стеку дополнительной фильтрации нет: правило проходит по corpus(snap) и использует e.text напрямую. В test/rules/content.test.ts:25 тесты покрывают только позитивный случай с кириллицей ('рaypal') и негативный с чистой кириллицей. Теста, который фиксировал бы μs или kΩ как намеренный срабатывающий случай, нет. Спека (spec.md:594) задаёт ровно такое широкое правило, так что код ей не противоречит. Но title и rationale правила («homoglyph-spoofing signal») показывают цель — ловить путаемые буквы, а μ, Ω и Δ к ним не относятся. Ложное срабатывание подтверждено запуском против dist. Severity понижаю до low: это лишь warning-эвристика, и единицы с греческими буквами в описаниях MCP-инструментов встречаются нечасто. Секреты не утекают, основной сценарий не ломается.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f091.mjs (вызывает INJ_002.check из dist/rules/injection.js на инструменте с description 'Returns the request latency in μs and resistance in kΩ.') -> [{\"tool\":\"latency\",\"message\":\"tool.description: mixed-script word \\\"μs\\\"\"}]",
+      "lens": "reader"
+    },
+    {
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "corrected_description": "INJ-002 (src/rules/injection.ts:111) выдаёт warning на любое слово \\p{L}+, в котором есть и латиница, и кириллица или греческие буквы. Поэтому технические обозначения единиц и величин с греческой буквой дают ложный сигнал «homoglyph»: μs (U+03BC), kΩ (U+03A9, а также OHM SIGN U+2126), μg, ΔT, ΔE2000 (ловится как \"ΔE\"). Буквы μ, Ω и Δ визуально не путаются с латинскими, так что признака спуфинга тут нет. Единственное исключение — MICRO SIGN U+00B5 (µs): у него Script=Common, и предупреждения нет. Последствие — ложное предупреждение уровня warning, одно на запись корпуса (после первого совпадения стоит break). Затронуты в основном научные и инженерные серверы. Основной сценарий это не ломает, ошибок уровня error не возникает.",
+      "reasoning": "Воспроизведено на dist/rules/injection.js. Rule.check — это функция check, переданная в defineRule. Регэксп в строке 111 срабатывает на греческие буквы, даже если они не похожи на латиницу. Ложное срабатывание подтверждено. Severity снижаю с medium до low: правило выдаёт только warning, случай узкий (технические единицы в описаниях), а распространённый MICRO SIGN U+00B5 не ловится. Исправление из находки разумное: проверять только визуально похожие буквы (confusables) или разрешить μ/Ω/Δ/π/σ в коротких токенах.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f091.mjs (вызывает INJ_002.check(snap) на dist):\n\"Returns the request latency in μs and resistance in kΩ.\" => [{\"tool\":\"t\",\"message\":\"tool.description: mixed-script word \\\"μs\\\"\"}]\n\"Computes ΔE2000 color difference.\" => [{\"tool\":\"t\",\"message\":\"tool.description: mixed-script word \\\"ΔE\\\"\"}]\n\"Dose in μg per kg.\" => [{\"tool\":\"t\",\"message\":\"tool.description: mixed-script word \\\"μg\\\"\"}]\n\"Temperature delta ΔT in kelvin.\" => [{\"tool\":\"t\",\"message\":\"tool.description: mixed-script word \\\"ΔT\\\"\"}]\n\"Search the рaypal notes.\" => [... \"рaypal\"]  (настоящий homoglyph, контроль)\n\"Plain English text only.\" => []\nПроверка regex по code point'ам: µs(U+00B5)=false, kΩ(U+2126)=true, μs(U+03BC)=true, kΩ(U+03A9)=true",
+      "lens": "repro"
+    }
+  ]
+}

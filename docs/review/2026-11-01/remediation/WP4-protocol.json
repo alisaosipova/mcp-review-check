@@ -1,0 +1,139 @@
+{
+ "package": "WP4-protocol",
+ "owned_files": [
+  "src/protocol/trace.ts",
+  "src/protocol/modern.ts",
+  "src/protocol/legacy.ts",
+  "src/protocol/stdioArgs.ts",
+  "src/protocol/clientCaps.ts"
+ ],
+ "items": [
+  {
+   "id": "F119",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/protocol/trace.ts",
+   "title": "Секреты длиной 4–5 символов заменяются внутри слов (sk-test → sk-«redacted», attestation → at«redacted»ation)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F119.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F119.json"
+  },
+  {
+   "id": "F035",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "redactUrl для exchanges маскирует только по имени параметра, в отличие от displayUrl (известные форматы токенов, path-сегменты)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F035.json"
+  },
+  {
+   "id": "F025",
+   "kind": "improvement",
+   "sev": "medium",
+   "file": "src/protocol/modern.ts",
+   "title": "ModernClient всегда читает тело с fullBody (64 MiB / полный timeout), включая пробы badVersion/unknownMethod/headerMismatch",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F025.json"
+  },
+  {
+   "id": "F021",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/protocol/trace.ts",
+   "title": "SRV-010 latency: timings[method] пополняется всеми пробами (origin, badVersion, invalid-token, редирект-хопы)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F021.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F021.json"
+  },
+  {
+   "id": "F032",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/legacy.ts",
+   "title": "listAll (legacy) и ModernClient.listAll по-разному обрабатывают не-объекты в списках",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F032.json"
+  },
+  {
+   "id": "F138",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "Legacy (SDK) путь читает тела ответов без ограничения размера — лимиты линтера не действуют",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F138.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F138.json"
+  },
+  {
+   "id": "F024",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "Строгое сравнение id в SSE-watcher: ответ с id другого типа заставляет ждать полный timeout на каждый запрос",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F024.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F024.json"
+  },
+  {
+   "id": "F036",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "finishBody скрабит всё тело (до 64 MiB) ради 4 KB сниппета, а полный parsed JSON каждого exchange остаётся в памяти",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F036.json"
+  },
+  {
+   "id": "F136",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/protocol/legacy.ts",
+   "title": "RangeError (Maximum call stack) при странице tools/list с ≥~125k элементов → падение линтера с exit 3",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F136.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F136.json"
+  },
+  {
+   "id": "F028",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "parseSseMessages не поддерживает CR-only разделители строк из спецификации SSE",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F028.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F028.json"
+  },
+  {
+   "id": "F137",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/protocol/modern.ts",
+   "title": "OOM: rawPages удерживает до 100 страниц × 64 МБ, capSnapshot их не режет",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F137.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F137.json"
+  },
+  {
+   "id": "F034",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/trace.ts",
+   "title": "Ручной linkAbort ради Node 18, хотя engines теперь >=20.19 (AbortSignal.any доступен)",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F034.json"
+  },
+  {
+   "id": "R008",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/protocol/trace.ts",
+   "title": "SRV-010 измеряет время до заголовков: для SSE-ответов (дефолт SDK Streamable HTTP) и legacy SSE (202) задержка не видна",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R008.json"
+  },
+  {
+   "id": "R010",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/protocol/modern.ts",
+   "title": "ModernClient принимает result с чужим id (одиночный JSON и SSE fallback msgs[0]) и не сообщает о несовпадении",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R010.json"
+  },
+  {
+   "id": "R011",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/legacy.ts",
+   "title": "Нестроковый nextCursor молча завершает пагинацию: листинг обрезается без ошибки",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R011.json"
+  }
+ ]
+}

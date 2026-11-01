@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 210,
+  "title": "Любой TypeError при SDK-коннекте ретраится как сетевой сбой",
+  "description": "`if (e instanceof TypeError && attempt === 0) continue;` — ретраится не только `fetch failed`, но и ошибки валидации (невалидное имя заголовка, URL с credentials) и внутренние TypeError SDK на странных данных сервера. Это удваивает время/запросы и маскирует класс ошибки (см. находки про --header и userinfo).",
+  "evidence": "connect.ts:210; воспроизведено в репро с `--header \"bad name: x\"` (оба попадания — TypeError undici, не сеть).",
+  "suggested_fix": "Ретраить только если `networkCause(e)?.code` задан или `NETWORK_ERROR.test(e.message)`; иначе отдавать ошибку сразу как 'http'/'other' диагноз.",
+  "confidence": 0.8,
+  "dimension": "cli-connect",
+  "id": "F007"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "F130",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F130",
+      "refuted": true,
+      "confidence": 0.75,
+      "reasoning": "Строки 1394 и 1424 актуальны, текст совпадает с цитатами. Но все три пункта задокументированы. Подсчёт root causes и scoreVersion 2 прямо названы в шапке spec.md:11. Схлопывание «from two up (it was from four)» описано в CHANGELOG.md:84 вместе с заменой формулы с cap 3. SARIF artifactLocation = `.mcp-review-check` и перенос URL в runs[0].properties.target — в CHANGELOG.md:97. Шапка явно говорит «See CHANGELOG.md for the full list», то есть список Known differences в шапке намеренно неполный. Документ объявлен design-документом, который может отличаться от реализации, поэтому дефекта нет.",
+      "lens": "reader-batch"
+    }
+  ]
+}

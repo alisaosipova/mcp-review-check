@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/protocol/trace.ts",
+  "line": 486,
+  "title": "Legacy (SDK) путь читает тела ответов без ограничения размера — лимиты линтера не действуют",
+  "description": "Для SDK-транспорта sdkFetch отдаёт оригинальный Response SDK, а сам читает только clone с READ_CAP 256 КБ. SDK же читает тело полностью: `response.json()` в streamableHttp.js:409 и парсер SSE без лимита на размер одного события. Поэтому для era legacy/dual/sse (самый частый случай) любой JSON-ответ tools/list или resources/read произвольного размера (сотни МБ) целиком попадает в память, парсится JSON.parse и zod LooseResult до того, как сработают TEXT_CAP/HTML_CAP. Документированные в limits.ts «input caps» защищают только ModernClient.",
+  "evidence": "trace.ts:494-502: `const res = await fetch(url, …); … const clone = res.clone(); pending.push(readBody(clone, BODY_TIMEOUT_MS, READ_CAP, rpcId)); return res;` — кап применяется к клону, не к ответу для SDK. node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js:409 `const data = await response.json();`. Для stdio SDK имеет лимит 10 МБ (shared/stdio.js STDIO_DEFAULT_MAX_BUFFER_SIZE), для HTTP — нет.",
+  "suggested_fix": "В sdkFetch оборачивать res.body в TransformStream, который считает байты и при превышении бюджета (например 32 МБ) вызывает controller.error(new Error('BodyTooLarge')) — тогда SDK получит ошибку запроса, а линтер — SPEC-находку; дополнительно проверять Content-Length заранее. Отразить реальные лимиты в README/SECURITY.md.",
+  "confidence": 0.85,
+  "dimension": "security-lens",
+  "id": "F138"
+}

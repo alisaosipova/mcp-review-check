@@ -1,0 +1,20 @@
+{
+  "id": "F100",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F100",
+      "refuted": true,
+      "confidence": 0.6,
+      "reasoning": "Сама механика описана верно и воспроизводится. В src/rules/util/ui.ts:49 (строка актуальна) `r.meta` целиком берётся из `_meta` read-item, если там есть хоть один ключ. CSP, объявленный только в list-entry, при этом теряется, и APPS-005 выдаёт chatgpt/claude «no CSP declared». Но это поведение по замыслу, а не дефект. docs/design/spec.md:721 прямо задаёт: «For UI resources, `_meta` is read from the `resources/read` content item first, with the `resources/list` entry as a fallback». Код реализует ровно это: fallback на уровне всего объекта, а не слияние по ключам. Спецификация не требует сливать list и read. Хосты (ChatGPT через openai/widgetCSP, MCP Apps-хост через `_meta.ui` content item) берут метаданные виджета из ответа resources/read. Поэтому CSP, который есть только в resources/list, при непустой `_meta` у content item хост, скорее всего, тоже не увидит, и находка APPS-005 по сути верна, а не ложна. Чем слияние ключей ближе к реальному поведению хоста, не доказано. Тестов, которые фиксировали бы слияние, нет: test/rules/apps.test.ts проверяет только мету из read item. Предложенный merge можно оформить как улучшение: отдельный info о расхождении list и read. Как баг корректности утверждение не подтверждено, поэтому при сомнении refuted=true.",
+      "corrected_severity": "low",
+      "corrected_description": "Не баг, а возможное улучшение. uiResources берёт `_meta` целиком из read-item, а list-entry использует только как fallback, как и предписывает spec.md:721. Если CSP есть только в resources/list, а у read-item есть своя `_meta`, CSP не учитывается. Стоит подумать о правиле уровня info, которое сообщает о расхождении `_meta` между list и read, вместо того чтобы сливать их молча.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f100.mjs (dist/: list._meta.ui.csp={connectDomains:['https://api.acme.test']}, item._meta.ui={prefersBorder:true})\nmeta= {\"ui\":{\"prefersBorder\":true}} csp.declared= false\n[{\"resource\":\"ui://w/main.html\",\"platforms\":[\"chatgpt\"],\"message\":\"no CSP declared (_meta.ui.csp or openai/widgetCSP)\"},{\"resource\":\"ui://w/main.html\",\"platforms\":[\"claude\"],\"message\":\"no CSP declared; host default blocks all external origins\"}]",
+      "lens": "reader-batch"
+    }
+  ]
+}

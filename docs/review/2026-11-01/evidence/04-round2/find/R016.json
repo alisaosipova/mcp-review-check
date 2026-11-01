@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/explain.ts",
+  "line": 36,
+  "title": "--list-rules <prefix> --format markdown печатает пустую таблицу правил или чек-листа (только заголовок)",
+  "description": "rulesMarkdown всегда выводит обе таблицы. При фильтре по префиксу, который совпадает только с MAN-пунктами или только с правилами, вторая таблица состоит из одного заголовка и разделителя, а для правил ещё и с подписью «Manual checklist».",
+  "evidence": "lr.out: `--list-rules MAN-00 --format markdown` → `| ID | Title | Severity by platform | Source |\\n|---|---|---|---|\\n\\n**Manual checklist** ...`. `--list-rules RT-001 --format markdown` → после таблицы правил идут «**Manual checklist** ...» и пустая таблица `| ID | Platform | Reminder |`.",
+  "suggested_fix": "В rulesMarkdown не выводить таблицу, если соответствующий список пуст: `if (rules.length)` / `if (manual.length)`.",
+  "confidence": 0.9,
+  "failure_scenario": "`mcp-review-check --list-rules MAN --format markdown > checklist.md`: в файле оказывается пустая таблица правил.",
+  "dimension": "score-gate-github-explain",
+  "id": "R016"
+}

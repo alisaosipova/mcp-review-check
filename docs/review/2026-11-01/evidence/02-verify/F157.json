@@ -1,0 +1,20 @@
+{
+  "id": "F157",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F157",
+      "refuted": true,
+      "confidence": 0.65,
+      "reasoning": "Строка актуальна: test/local-mode.test.ts:40 действительно на уровне модуля делает `await lookup(hostname(), {family:4})`, а :60 — `it.skipIf(!shortNameAddress)`. Но заявленный дефект (медленно и нестабильно в CI) не подтверждается. 1) Поведение намеренное: тест проверяет автоматический local mode для имени хоста без точки (os.hostname()), и для этого нужен настоящий системный резолвер. Ошибка резолва обрабатывается через `() => undefined`, и тогда тест пропускается (skip), а не падает, так что нестабильных падений не будет. 2) Собственный hostname почти всегда резолвится локально, без обращения к DNS. На Linux его дают /etc/hosts или nss-myhostname. На Windows ОС резолвит своё имя компьютера сама. На macOS-раннерах hostname обычно содержит '.local', тогда срабатывает ветка `includes('.')` и lookup вообще не вызывается. В CI (.github/workflows/ci.yml, матрица ubuntu/macos/windows) задержка в секунды на старте маловероятна. Это предположение, на раннерах не проверено. 3) Ссылка на spec неточна. docs/design/spec.md:1492 «tests never touch the network» говорит о проверках DNS/TLS/clock через injectable `deps` в правилах. Black-box e2e-тесты над собранным CLI и так поднимают настоящие сокеты на loopback и интерфейсных адресах (например, строка 55 с privateIp). Остаётся только косметика: на верхнем уровне модуля есть зависимость от окружения, но любой исход безопасен и в худшем случае приводит к skip. Тайминги e2e-http/process-tree упомянуты попутно и к этому файлу не относятся.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f157.mjs\n{\"h\":\"kali\",\"r\":\"127.0.1.1\",\"ms\":1}\n{\"r2\":\"ERR ENOTFOUND\",\"ms\":395}\n(резолв собственного hostname занял 1 ms; даже несуществующее имя без точки получило ENOTFOUND за 395 ms; nsswitch: files mdns4_minimal [NOTFOUND=return] dns)",
+      "corrected_severity": "low",
+      "corrected_description": "Если рассматривать как nit: модуль test/local-mode.test.ts:40 на верхнем уровне вызывает системный резолвер для os.hostname(), поэтому результат теста на строке 60 зависит от окружения (run или skip). Нестабильных падений нет, задержка ограничена таймаутом резолвера и на практике ничтожна.",
+      "lens": "reader-batch"
+    }
+  ]
+}

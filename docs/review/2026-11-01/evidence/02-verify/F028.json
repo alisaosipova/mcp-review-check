@@ -1,0 +1,19 @@
+{
+  "id": "F028",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": "node: parseSseMessages('data: {\"a\":1}\\r\\rdata: {\"b\":2}\\r\\r') -> CR-only: []",
+  "votes": [
+    {
+      "id": "F028",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "Строки 66-67 актуальны: блоки делятся по /\\r?\\n\\r?\\n/, строки по /\\r?\\n/. По спецификации WHATWG SSE одиночный CR тоже считается концом строки, а парсер его не понимает и не находит ни одного сообщения. SDK (eventsource-parser) CR-only разбирает, так что SDK и пробы/watcher увидят поток по-разному. Отклонение от спецификации реальное, но серверов с CR-only терминаторами на практике почти нет, поэтому severity low. Тестов на CR-only в test/ нет.",
+      "repro": "node: parseSseMessages('data: {\"a\":1}\\r\\rdata: {\"b\":2}\\r\\r') -> CR-only: []",
+      "lens": "reader-batch"
+    }
+  ]
+}

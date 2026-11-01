@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 74,
+  "title": "Строгое сравнение id в SSE-watcher: ответ с id другого типа заставляет ждать полный timeout на каждый запрос",
+  "description": "`isResponseTo` сравнивает `m.id === id`. Если сервер (по ошибке) возвращает id строкой `\"1\"` на числовой запрос, watcher не срабатывает, поток читается до таймаута, затем `parseBody` всё равно находит сообщение через `?? msgs[0]`. Результат корректен, но каждый modern-запрос (listAll, read, пробы) ждёт весь `timeoutMs` (30 с по умолчанию) — run растягивается на минуты.",
+  "evidence": "Репро с mock SSE, поток не закрывается: `numid took 24 ms; result? true` vs `strid took 1500 ms; result? true error undefined bodyMs 1501` (timeoutMs=1500).",
+  "suggested_fix": "В watcher дополнительно сравнивать `String(m.id) === String(id)` и фиксировать несовпадение типа как ObservedError (SPEC-016 как раз про «ids must echo the request»).",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F024"
+}

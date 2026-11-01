@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/legacy.ts",
+  "line": 55,
+  "title": "Нестроковый nextCursor молча завершает пагинацию: листинг обрезается без ошибки",
+  "description": "В обеих реализациях listAll (legacy.ts:55 и modern.ts:168) проверка `typeof next !== 'string' || !next` воспринимает число или объект в nextCursor как конец списка. Ошибка не ставится, ни одно правило nextCursor в rawPages не проверяет. Сервер с `nextCursor: 2` теряет все страницы после первой, а отчёт по инструментам выглядит полным. Хосты со строгой схемой отвергнут такой ответ.",
+  "evidence": "d_cursor.mjs (первая страница {tools:[a], nextCursor: 2}, вторая {tools:[b]}):\nmodern listAll numeric cursor -> {\"names\":[\"a\"],\"pages\":1}   (error отсутствует)\ngrep: в src/rules нет обращений к nextCursor.",
+  "suggested_fix": "Различать два случая: `next === undefined || next === null` означает конец, любое нестроковое значение даёт error `nextCursor is not a string (got number)`. Тогда SPEC-020 или отдельное правило покажет проблему. Пустую строку можно считать концом, но с info.",
+  "confidence": 0.7,
+  "failure_scenario": "Сервер с числовыми курсорами: проверены только инструменты первой страницы, отчёт о покрытии вводит в заблуждение.",
+  "dimension": "sse-legacy-modern",
+  "id": "R011"
+}

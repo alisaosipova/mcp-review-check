@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 158,
+  "title": "SRV-006: редирект только на GET (при рабочем POST) — claude error, хотя handshake Claude идёт через POST",
+  "description": "Цикл перебирает preflight POST и GET-пробу одинаково; cross-host 3xx только на GET (например корень редиректит на docs, а POST /mcp работает) даёт claude=error «GET redirects … to another host», хотя обоснование правила — потеря Authorization на редиректе POST initialize. Для GET нарушение уже покрыто SPEC-005 (warning).",
+  "evidence": "Репро: preflight 200, probes.get 302 Location https://docs.acme.test/ -> `error [claude] GET redirects (302) to another host: https://docs.acme.test/`.",
+  "suggested_fix": "Для `ex.method === 'GET'` понижать до warning (или оставить SPEC-005), error — только для POST preflight.",
+  "confidence": 0.5,
+  "dimension": "rules-server-spec-auth",
+  "id": "F054"
+}

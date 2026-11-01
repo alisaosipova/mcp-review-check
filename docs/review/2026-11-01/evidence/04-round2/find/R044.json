@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 319,
+  "title": "Auth probe разбирает challenge из preflight 403 без WWW-Authenticate и игнорирует настоящий 401 с Bearer-challenge: ложные AUTH-002/004/013",
+  "description": "challengeExchange берётся как `pf.status === 401 || pf.status === 403 ? pf : <последний 401>`. Если неаутентифицированный preflight получил 403 без WWW-Authenticate (AWS API Gateway «Missing Authentication Token», Spring Security без entry point), а запрос с --bearer (или с --header API-ключом) получил 401 с `Bearer resource_metadata=…`, trigger становится 'bearer-rejected' (или 'preflight-401'), но разбирается challenge из 403. Поэтому PRM из заголовка не пробуется, а правила видят «нет challenge». В итоге выходят ложные error: AUTH-002 «403 has no WWW-Authenticate header», AUTH-004 «no Protected Resource Metadata found» (PRM на самом деле есть), AUTH-013 «without OAuth discovery», а AUTH-015 пишет «401 has no scope=», хотя разобран ответ 403. probe.challenge.status = 403.",
+  "evidence": "Репро: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/run403.mjs (сервер http403.mjs: без Authorization отдаёт 403 JSON, с любым bearer отдаёт 401 + Bearer resource_metadata=/meta/prm). Вывод (run403.txt):\npreflight 403 coverage {\"toolLevel\":\"token-rejected\"}\nauthProbe.trigger bearer-rejected challenge {\"status\":403,\"raw\":\"\",\"parsed\":[]}\nreal 401 challenge on sdk initialize: ['discover -> Bearer resource_metadata=\"http://127.0.0.1:44745/meta/prm\"']\nprm NOT FOUND tried [.../.well-known/oauth-protected-resource/mcp 404, .../.well-known/oauth-protected-resource 404]\nerror AUTH-002 - 403 has no WWW-Authenticate header\nerror AUTH-004 - no Protected Resource Metadata found ...\nerror AUTH-013 - server rejects unauthenticated requests without OAuth discovery ...\ninfo AUTH-015 - 401 has no scope=; ...",
+  "suggested_fix": "Брать preflight как challengeExchange только когда trigger начинается с 'preflight-' (401, или 403 с WWW-Authenticate). Для 'bearer-rejected' и для 401 из authFailed брать последний обмен со status 401 (лучше с WWW-Authenticate). AUTH-003 про 403 на неаутентифицированный запрос оставить как есть.",
+  "confidence": 0.85,
+  "failure_scenario": "Сервер отвечает 403 без WWW-Authenticate на запрос без токена и 401 с Bearer resource_metadata на просроченный токен; запуск `mcp-review-check <url> --bearer <expired>` выдаёт три error-находки AUTH о том, что OAuth discovery нет, хотя PRM и AS доступны.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R044"
+}

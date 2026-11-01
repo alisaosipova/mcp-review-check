@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 122,
+  "title": "TOOL-006: пустая строка `title: ''` затеняет `annotations.title` (`??` не считает '' отсутствующим)",
+  "description": "`t.title ?? at` возвращает '' при `title: ''`, и далее `isNonEmptyStr('')` даёт «no title», хотя `annotations.title` задан и спецификация говорит «title, или annotations.title». То же для нестроковых title (число) — сообщение «no title» вместо «title is not a string».",
+  "evidence": "node против dist: {title:'', annotations:{title:'Search notes'}} -> [{\"platforms\":[\"claude\"],\"message\":\"no title\"}]; {title:42} -> «no title».",
+  "suggested_fix": "`const title = isNonEmptyStr(t.title) ? t.title : at;` и отдельное сообщение для title неверного типа (как в TOOL-010 для annotations.title).",
+  "confidence": 0.85,
+  "dimension": "rules-tools-schema",
+  "id": "F067"
+}

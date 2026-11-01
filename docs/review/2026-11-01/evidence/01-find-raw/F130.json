@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "docs/design/spec.md",
+  "line": 1394,
+  "title": "Спека: схлопывание «более 3 находок» и SARIF artifactLocation = URL сервера — код делает иначе",
+  "description": "spec.md §5.1 говорит, что схлопываются >3 одинаковых находок, код groupFindings схлопывает уже 2 (text.ts:33-48). §5.3 говорит artifactLocation.uri = redacted server URL / `stdio:`+encodeURIComponent, код пишет относительный путь `.mcp-review-check` (sarif.ts:11) с URL в run.properties. §5.2 формула со «cap 3 per rule» — заменена на root causes (scoreVersion 2). Преамбула спеки признаёт расхождения в общем, но эти три пункта не перечислены в «Known differences».",
+  "evidence": "spec.md:1394 'more than 3 findings ... are collapsed'; text.ts groupFindings: `if (g.items.length > 1) out.push(g)`. spec.md:1424 'artifactLocation.uri set to the redacted server URL'; sarif.ts:11 `SARIF_LOCATION = '.mcp-review-check'`.",
+  "suggested_fix": "Дописать эти пункты в блок «Known differences» в начале spec.md или пометить §5.1–5.3 как superseded со ссылкой на README/CHANGELOG.",
+  "confidence": 0.9,
+  "dimension": "report-redact-engine",
+  "id": "F130"
+}

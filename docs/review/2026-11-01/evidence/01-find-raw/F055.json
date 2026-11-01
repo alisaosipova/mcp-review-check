@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 381,
+  "title": "SRV-015: слово «sampling» в описании инструмента трактуется как MCP sampling",
+  "description": "`/sampling\\/createMessage|\\bsampling\\b/i` по всему corpus: описание «Returns the audio sampling rate» или «statistical sampling» даёт «uses sampling» (claude info).",
+  "evidence": "Репро: tool.description 'Returns the audio sampling rate of a file' -> `info [claude] uses sampling`.",
+  "suggested_fix": "Сузить: `/sampling\\/createMessage|\\bMCP sampling\\b|\\bsampling (request|capabilit(y|ies))\\b|createMessage/i` и/или проверять только instructions, а не описания параметров.",
+  "confidence": 0.8,
+  "dimension": "rules-server-spec-auth",
+  "id": "F055"
+}

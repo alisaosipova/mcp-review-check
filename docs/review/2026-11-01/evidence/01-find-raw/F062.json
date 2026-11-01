@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/schema.ts",
+  "line": 27,
+  "title": "TOOL-017: $schema с «другой» схемой URL (https draft-07 / http 2020-12) принимается регуляркой, но Ajv его не знает — ложный error «does not compile»",
+  "description": "DIALECTS матчит `https?://` для всех трёх диалектов, после чего `$schema` остаётся в `copy` и передаётся в `ajv.validateSchema`. Но у Ajv мета-схема draft-07 зарегистрирована только как `http://json-schema.org/draft-07/schema`, а 2020-12/2019-09 — только как `https://...`. Для `https://json-schema.org/draft-07/schema#` или `http://json-schema.org/draft/2020-12/schema` Ajv бросает `no schema with key or ref`, исключение попадает в catch и выдаётся как spec error «inputSchema does not compile», хотя схема валидна. По спецификации (spec.md TOOL-017) такие схемы должны проверяться по своей мета-схеме.",
+  "evidence": "node против dist: inputSchema {$schema:'https://json-schema.org/draft-07/schema#', type:'object'} -> [{\"path\":\"inputSchema\",\"message\":\"inputSchema does not compile: no schema with key or ref \\\"https://json-schema.org/draft-07/schema#\\\"\"}]; то же для 'http://json-schema.org/draft/2020-12/schema'. С каноническими http/https-вариантами — [].",
+  "suggested_fix": "В ajvFor/TOOL-017 нормализовать `$schema` к каноническому URI диалекта перед validateSchema (например, хранить в DIALECTS canonical id и подставлять `copy.$schema = canonical`), либо удалять `$schema` из копии и полагаться на выбор инстанса по диалекту. Добавить тест на https-draft-07.",
+  "confidence": 0.95,
+  "dimension": "rules-tools-schema",
+  "id": "F062"
+}

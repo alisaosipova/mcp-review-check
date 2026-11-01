@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 704,
+  "title": "Input caps применяются слишком поздно и не покрывают все серверные данные",
+  "description": "Концепция «caps перед правилами» хороша, но capSnapshot работает уже после того, как весь ответ прочитан, распарсен и скопирован redactDeep; не ограничены: число tools/resources/prompts, listMeta.rawPages, transport.exchanges (по одному на запрос, с bodySnippet 4 КБ — ок), modernResults, nonJsonStdout, active.calls[].result (результаты tools/call до 64 МБ каждый, до 150 вызовов). Это дополняет пункты про OOM: нужен единый бюджет на снапшот.",
+  "evidence": "limits.ts:704-731 — только tools/prompts/resources/resourceTemplates/serverInfo/instructions/resourceReads; probe/active.ts:65-75 сохраняет obs.result/r.result без среза; connect.ts:372 `snap.transport.modernResults = modern.results`.",
+  "suggested_fix": "Ввести `BUDGET` (например 64 МБ суммарно на снапшот) с учётом в readBody/listAll/reader и ранним прекращением, записывая в snap.limits.truncated; capStrings применять и к active.calls, modernResults, rawPages; ограничить число элементов списков.",
+  "confidence": 0.7,
+  "dimension": "security-lens",
+  "id": "F146"
+}

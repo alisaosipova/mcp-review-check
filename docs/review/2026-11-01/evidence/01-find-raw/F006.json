@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 314,
+  "title": "401 при --header (API-key/custom auth) без --bearer даёт coverage 'auth-required' / «server requires OAuth» вместо «credentials rejected»",
+  "description": "Выбор между token-rejected и auth-required сделан только по `opts.bearer`. Пользователь, передавший `--header \"X-Api-Key: …\"` или `--header \"Authorization: Bearer …\"`, получает совет «pass --bearer <token>» и trigger 'preflight-401', хотя его креды были отправлены и отвергнуты. Отчёт вводит в заблуждение (engine.ts:21 authReason).",
+  "evidence": "connect.ts:314 `snap.coverage = opts.bearer ? { toolLevel: 'token-rejected', … } : { toolLevel: 'auth-required', reason: 'server requires OAuth' }; trigger ??= opts.bearer ? 'bearer-rejected' : 'preflight-401';` — `opts.headers` не учитываются.",
+  "suggested_fix": "Использовать `authenticated = !!opts.bearer || Object.keys(headers).length>0`: при 401 и authenticated -> 'token-rejected' с reason 'supplied credentials rejected (401)'; trigger 'bearer-rejected' переименовать/расширить до 'credentials-rejected'.",
+  "confidence": 0.75,
+  "dimension": "cli-connect",
+  "id": "F006"
+}

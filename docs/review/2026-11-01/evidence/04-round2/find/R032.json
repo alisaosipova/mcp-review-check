@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/apps.ts",
+  "line": 134,
+  "title": "APPS-006: wildcard на многоуровневых публичных суффиксах (`https://*.co.uk`, `*.com.au`) и общих облачных доменах не считается overly broad",
+  "description": "Проверка «broad» — `!wild[2].includes('.') || SHARED_HOST_SUFFIXES.includes(...)`. `*.co.uk`, `*.com.au` (есть в MULTI_LABEL у registrableDomain), а также `*.amazonaws.com`, `*.cloudfront.net`, `*.azureedge.net`, `*.googleapis.com` проходят как узкие. В resourceDomains находок нет вовсе, в остальных полях — только spec info. spec.md §2.7 обещает «a wildcard on a public or shared suffix».",
+  "evidence": "/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2b.out: `[\"https://*.co.uk\"] -> []`, `[\"https://*.cloudfront.net\"] -> [только APPS-007]`, тогда как `https://*.com` -> `overly broad`; r2apps.out: для connectDomains `*.co.uk`/`*.com.au`/`*.amazonaws.com` выдаётся только `{spec:info} wildcard ... outside resourceDomains`.",
+  "suggested_fix": "Считать broad, если `registrableDomain('x.'+rest) !== rest` (то есть rest — это публичный суффикс), с использованием MULTI_LABEL; добавить облачные CDN/хранилища в общий список (или в SHARED_HOST_SUFFIXES).",
+  "confidence": 0.8,
+  "failure_scenario": "resourceDomains: [\"https://*.co.uk\"] открывает загрузку скриптов с любого британского домена, а линтер молчит.",
+  "dimension": "limits-apps",
+  "id": "R032"
+}

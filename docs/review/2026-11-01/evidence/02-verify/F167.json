@@ -1,0 +1,18 @@
+{
+  "id": "F167",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F167",
+      "refuted": true,
+      "confidence": 0.75,
+      "reasoning": "Проект последовательно использует «ChatGPT plugin directory»: README.md:3, package.json description, src/cli.ts:26 (--help), docs/design/spec.md:17 и :30 («chatgpt (OpenAI plugin directory)»). Это соответствует официальным источникам, на которые ссылаются правила: все ссылки OpenAI в src ведут на developers.openai.com/plugins/... (plugin-guidelines, deploy/app-review, deploy/submission и т.д.), то есть текущий термин OpenAI — plugins. Утверждение, что OpenAI называет каталог «app directory» и его надо переименовать, противоречит источникам самого каталога. Формулировка «ChatGPT Apps / plugin directory» в двух issue-шаблонах — намеренная подпись в выпадающем списке для пользователей, знакомых со старым названием, а «MCP Apps» в README/RULES.md — это отдельное понятие (расширение MCP Apps/виджеты, префикс APPS-*), а не название каталога. Отсутствие keywords `sarif`/`linter` — вопрос SEO/предпочтений, а не дефект корректности. Реальной ошибки в README нет.",
+      "repro": "grep -rhoE 'https://developers\\.openai\\.com/[a-z/-]+' src | sort -u -> все URL под /plugins/ (plugin-guidelines x9, build/auth x5, ...); package.json keywords: mcp, model-context-protocol, lint, claude, chatgpt, connector.",
+      "lens": "reader-batch"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 54,
+  "title": "HTML_CAP → APPS-014: ложное «uses the ext-apps App but never calls connect()» для виджета больше 2 MB",
+  "description": "HTML обрезается до 2 MB, а APPS-014 ищет `new App(` и `.connect(` в обрезанном тексте. Если `new App(` попадает в первые 2 MB, а `app.connect()` оказывается после среза (так бывает в single-file бандлах, где вызов стоит в конце), получаем claude warning на рабочем виджете. В том же срезе APPS-007/013 пропускают origin-ы из хвоста, но это пропуск, а не ложное срабатывание.",
+  "evidence": "r2apps.out: `HTML > cap before: APPS-014 (no findings)`; после capSnapshot — `APPS-014 {\"claude\":\"warning\"} uses the ext-apps App but never calls connect()`.",
+  "suggested_fix": "Если ресурс был обрезан (есть запись в snap.limits.truncated для этого URI), APPS-014 не выдаёт «never calls connect()» или понижает его до info с пояснением «content truncated».",
+  "confidence": 0.75,
+  "failure_scenario": "Single-file Vite-бандл на 2.5 MB, где `new App(` в начале, а `app.connect()` в конце: ложный claude warning.",
+  "dimension": "limits-apps",
+  "id": "R027",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R027",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "Механизм воспроизводится. APPS-014 (apps.ts:325-327) ищет `.connect(` в обрезанном до HTML_CAP тексте и не смотрит на snap.limits.truncated, поэтому после cap появляется claude warning, которого не было до cap. Реальная область меньше, чем в описании. В обычном single-file бандле код класса App из ext-apps, который сам вызывает `super.connect(...)` (это совпадает с `\\.connect\\s*\\(`), стоит перед пользовательским кодом с `new App(`. Если `new App(` попал в первые 2 MB, туда обычно попадает и `.connect(` из библиотеки. Ложное срабатывание остаётся для виджетов, которые импортируют ext-apps извне (CDN или esm.sh) и раздуты встроенными ассетами (base64 и т.п.) между `new App(` и `app.connect()`. Оговорка: исходники ext-apps на хосте не найдены, наличие `super.connect` в классе App проверено по памяти, а не по коду. Severity low.",
+      "corrected_description": "HTML обрезается до 2 MB, и APPS-014 проверяет наличие `.connect(` только в обрезанном тексте, не учитывая snap.limits.truncated. Если `new App(` или строка '@modelcontextprotocol/ext-apps' стоят в первых 2 MB, а все вызовы `.connect(` находятся после среза, получаем ложный claude warning «never calls connect()». В бандлах, куда класс App из ext-apps вшит целиком, его внутренний `super.connect(` обычно стоит до среза. Поэтому на практике это затрагивает в основном виджеты с внешним импортом ext-apps и большим объёмом встроенных данных.",
+      "repro": "r2apps.out: '## HTML > cap before: APPS-014' -> '(no findings)'; '## HTML > cap after: APPS-014' -> 'APPS-014 {\"claude\":\"warning\"} uses the ext-apps App but never calls connect()'",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "HTML обрезается до 2 MB, и APPS-014 проверяет наличие `.connect(` только в обрезанном тексте, не учитывая snap.limits.truncated. Если `new App(` или строка '@modelcontextprotocol/ext-apps' стоят в первых 2 MB, а все вызовы `.connect(` находятся после среза, получаем ложный claude warning «never calls connect()». В бандлах, куда класс App из ext-apps вшит целиком, его внутренний `super.connect(` обычно стоит до среза. Поэтому на практике это затрагивает в основном виджеты с внешним импортом ext-apps и большим объёмом встроенных данных.",
+  "repro": "r2apps.out: '## HTML > cap before: APPS-014' -> '(no findings)'; '## HTML > cap after: APPS-014' -> 'APPS-014 {\"claude\":\"warning\"} uses the ext-apps App but never calls connect()'"
+}

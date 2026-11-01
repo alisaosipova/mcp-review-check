@@ -1,0 +1,26 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 197,
+  "title": "--list-rules с префиксом не в форме ID (TOOL_, tool 0, TOOL-0*) молча печатает весь каталог с exit 0, а TOOLS даёт exit 2",
+  "description": "Префикс применяется, только если совпадает с /^[A-Z]+(-\\d*)?$/i, иначе выводится весь каталог без предупреждения. Опечатка `TOOL_` или glob `TOOL-0*` выдаёт 175 строк и exit 0. При этом `TOOLS` (соответствует regex, но не совпадает ни с одним ID) даёт usage error. README:89 говорит только «A prefix such as TOOL or MAN keeps the IDs that start with it». Комментарий в коде объясняет это поведение URL-ами и путями, но для пользователя оно неочевидно и непоследовательно.",
+  "evidence": "lr.out: `--list-rules TOOL_` → exit 0, 177 строк, начиная с SRV-001. Код: cli.ts:197 `const prefix = /^[A-Z]+(-\\d*)?$/i.test(positionals[0] ?? '') ? positionals[0].toUpperCase() : '';`",
+  "suggested_fix": "Если позиционный аргумент задан, но не похож на ID, выводить на stderr `warning: '<…>' is not a rule ID prefix; listing the whole catalog` (значение без секретов можно не показывать) или документировать это поведение в README.",
+  "confidence": 0.7,
+  "failure_scenario": "Скрипт генерации документации `--list-rules TOOL_ --format json` получает весь каталог вместо TOOL-правил и не видит ошибки.",
+  "dimension": "score-gate-github-explain",
+  "id": "R017",
+  "verdict": "refuted",
+  "votes": [
+    {
+      "id": "R017",
+      "refuted": true,
+      "confidence": 0.55,
+      "reasoning": "Поведение воспроизводится (`--list-rules TOOL_` даёт весь каталог и exit 0, `TOOLS` даёт exit 2), но оно намеренное и задокументировано в коде. Комментарий в cli.ts:196 говорит, что фильтрует только префикс в форме ID, а всё остальное (URL с токеном, путь) выводит весь каталог «as the baseline did, unrepeated», то есть ради совместимости с 0.1.0 и чтобы не повторять возможный секрет. README:89 описывает фильтрацию для ID-префиксов вроде TOOL и MAN и не противоречит коду, а только не упоминает fallback. Это вопрос UX и полноты документации, а не дефект корректности. При сомнении опровергаю.",
+      "repro": "$ node dist/cli.js --list-rules TOOL_ | head -2  → полный каталог начиная с SRV-001, exit=0\n$ node dist/cli.js --list-rules TOOLS → error: no rule or MAN ID starts with TOOLS, exit=2",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low"
+}

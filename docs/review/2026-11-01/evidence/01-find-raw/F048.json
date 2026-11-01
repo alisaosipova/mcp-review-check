@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 439,
+  "title": "SRV-017: IDN-хост и пробелы/percent-encoding в пути дают ложное «Entered URL differs from canonical»",
+  "description": "`canonicalUrl` строится через WHATWG URL (punycode хоста, percent-encoding пути), а сравнивается со строкой как введена. Для `https://пример.рф/mcp` или `/my mcp` канон отличается только кодированием, но пользователю советуют «Tokens should accept the canonical aud …», что не относится к делу.",
+  "evidence": "Репро: `https://пример.рф/mcp` -> `info [claude] Entered URL differs from canonical https://xn--e1afmkfd.xn--p1ai/mcp ...`; `https://mcp.acme.test/my mcp` -> `... canonical https://mcp.acme.test/my%20mcp`.",
+  "suggested_fix": "Сравнивать `canonicalUrl(raw)` с `canonicalUrl(new URL(raw).href)`-подобной нормализацией только по тем признакам, что реально влияют (регистр, порт, слэш, query/fragment), или сравнивать после `new URL(raw).href` с удалённым корневым '/'. Либо отдельное сообщение про IDN (punycode в aud).",
+  "confidence": 0.7,
+  "dimension": "rules-server-spec-auth",
+  "id": "F048"
+}

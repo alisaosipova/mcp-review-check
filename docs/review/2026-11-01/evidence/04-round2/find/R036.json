@@ -1,0 +1,14 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/util/ui.ts",
+  "line": 162,
+  "title": "cspOf молча игнорирует неизвестные ключи CSP (camelCase внутри openai/widgetCSP, опечатки) — APPS-007 выдаёт error без подсказки о причине",
+  "description": "read() перебирает только известные поля. `openai/widgetCSP: {connectDomains: [...]}` (camelCase вместо snake_case) или `ui.csp.connectDomain` даёт declared=true с пустыми списками. APPS-005 молчит, APPS-007 выдаёт chatgpt error на каждый origin, и нигде не сказано, что ключ не распознан.",
+  "evidence": "r2apps.out, `camelCase keys inside openai/widgetCSP`: только `APPS-007 ... resource origin https://static.example.com is not declared` (chatgpt error) и connect warning, без упоминания нераспознанного поля `connectDomains`.",
+  "suggested_fix": "В cspOf собирать `unknown` ключи; в APPS-005 выдавать warning «unknown CSP field X (did you mean connect_domains?)».",
+  "confidence": 0.7,
+  "failure_scenario": "Разработчик путает схему именования ключей: отчёт сообщает о недекларированных доменах, которые на вид объявлены.",
+  "dimension": "limits-apps",
+  "id": "R036"
+}

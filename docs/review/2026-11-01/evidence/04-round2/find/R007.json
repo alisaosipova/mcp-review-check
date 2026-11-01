@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/connect.ts",
+  "line": 217,
+  "title": "Ошибка SSE-fallback теряется: legacy SSE с OAuth выдаётся за «HTTP 404 not an MCP endpoint», auth-проба не запускается",
+  "description": "Если Streamable POST получает 400/404/405, connectLegacyHttp пробует connectSse. Когда SSE тоже не подключается, его ошибка (`SSE fallback: ...`, connect.ts:249, без status) отбрасывается, и функция возвращает `last`, то есть ответ POST. Из-за этого: (1) legacy SSE сервер с auth на отдельном маршруте (Express: `app.get('/sse', auth, …)`, на POST /sse маршрута нет, поэтому 404) получает fatal «HTTP 404 … /sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve /mcp». authFailed=false, потому что 401 пришёл только на GET /sse. Trigger не ставится, потому что preflight шлёт POST и тоже получает 404. В итоге нет authProbe и нет coverage 'auth-required'. (2) Ошибку SDK «Endpoint origin does not match connection origin» (за прокси endpoint указывает на внутренний хост) пользователь никогда не видит. (3) transport.kind остаётся 'streamable-http', хотя сервер работает через SSE.",
+  "evidence": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/a_sse401.mjs (POST любой → 404, GET /sse → 401 + WWW-Authenticate resource_metadata):\nera unknown kind streamable-http\ncoverage {\"toolLevel\":\"connect-failed\",\"reason\":\"HTTP 404: http://127.0.0.1:33507/sse is not an MCP endpoint; /sse is the deprecated HTTP+SSE path; Streamable HTTP servers usually serve http://127.0.0.1:33507/mcp\"}\nauthProbe? false undefined\nexchanges preflight POST 404 | discover POST 404 | sdk initialize POST 404 | sdk GET GET 401\nСкрипт f_sse_endpoint.mjs (GET /sse отдаёт `event: endpoint` с http://internal-backend:8000/...): fatal «HTTP 405: … not an MCP endpoint …», mentions endpoint origin? false.\nКод: connect.ts:217-221 `const sse = await connectSse(...); if (sse.ok) return sse; } return last;`, connect.ts:249 `return { ok: false, message: \\`SSE fallback: ...\\` }` (без status/cause).",
+  "suggested_fix": "Сохранять результат SSE-попытки: в connectSse брать `(e as SseError).code` как status и класть его вместе с сообщением в LegacyConn (например, `last.sseStatus` и `last.sseMessage`). В buildHttp считать `conn.sseStatus === 401` отказом авторизации: ставить authFailed и trigger 'preflight-401', а challengeExchange брать из exchange 'sdk GET' со статусом 401. В describeHttpFailure, если GET /sse ответил 200 или 401, не советовать /mcp и показывать текст SSE-ошибки. Для этого случая выставлять transport.kind='sse'.",
+  "confidence": 0.85,
+  "failure_scenario": "Express/Starlette legacy SSE сервер с per-route OAuth на GET /sse: линтер пишет «не MCP-эндпоинт, попробуйте /mcp», exit 3, auth-правила (AUTH-*) и чеклист OAuth не запускаются.",
+  "dimension": "sse-legacy-modern",
+  "id": "R007"
+}

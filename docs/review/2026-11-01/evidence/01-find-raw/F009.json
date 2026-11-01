@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 327,
+  "title": "--output \"\" молча игнорируется: отчёт уходит в stdout",
+  "description": "`if (values.output)` трактует пустую строку как «нет опции»; аналогично `color` (строка 309). Пользователь, собравший путь из пустой переменной (`--output \"$OUT\"`), не получает файла и не видит ошибки.",
+  "evidence": "`node dist/cli.js --output \"\" --stdio \"node -e 1\" --format json` -> stdout 13166 байт, в stderr нет ни ошибки, ни строки «report written to».",
+  "suggested_fix": "`if (values.output !== undefined && !values.output) throw new UsageError('--output needs a file path')`. Дополнительно (DX): до запуска проверять `accessSync(dirname(output), W_OK)` — иначе опечатка в пути обнаруживается после 30–60 с прогона.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F009"
+}

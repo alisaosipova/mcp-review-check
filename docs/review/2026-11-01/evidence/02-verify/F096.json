@@ -1,0 +1,20 @@
+{
+  "id": "F096",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "INJ-008 (injection.ts:303): первая альтернатива '(use|call|invoke|run) (this|me)( tool)? (for|…) (any|every|all)\\b' не учитывает уточнение после квантора. Тематически ограниченная подсказка 'Use this tool for any question about billing' получает chatgpt=warning (claude=info) как overly broad triggering.",
+  "repro": "INJ-008 'Use this tool for any question about billing.' -> [[undefined(rule default: chatgpt warning / claude info),'Use this tool for any']]",
+  "votes": [
+    {
+      "id": "F096",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "reasoning": "Строка 303 актуальна. Первая альтернатива регулярки (как и в spec.md, раздел INJ-008) сопоставляет 'Use this tool for any' на границе слова и не смотрит, что идёт дальше. В test/rules/injection.test.ts:28-48 защищены от ложных срабатываний только 'limit'-формулировки ('returns at most 20 matches for any query'). Положительные примеры там безусловные ('for every request … about anything', 'for all requests'). Тематически ограниченная подсказка 'for any question about billing' не попадает ни в positives, ни в negatives, поэтому намеренным поведением это не выглядит. Последствие: warning для chatgpt (у claude — info), отсюда low.",
+      "corrected_description": "INJ-008 (injection.ts:303): первая альтернатива '(use|call|invoke|run) (this|me)( tool)? (for|…) (any|every|all)\\b' не учитывает уточнение после квантора. Тематически ограниченная подсказка 'Use this tool for any question about billing' получает chatgpt=warning (claude=info) как overly broad triggering.",
+      "repro": "INJ-008 'Use this tool for any question about billing.' -> [[undefined(rule default: chatgpt warning / claude info),'Use this tool for any']]",
+      "lens": "reader-batch"
+    }
+  ]
+}

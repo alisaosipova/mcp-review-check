@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 218,
+  "title": "--target/--format/--fail-on чувствительны к регистру, а --ignore и explain — нет",
+  "description": "`--ignore tool-013` и `explain tool-013` принимаются (toUpperCase), но `--target CLAUDE`, `--format JSON`, `--fail-on Warning` — usage error. Непоследовательный DX, особенно при генерации из CI-переменных.",
+  "evidence": "`node dist/cli.js --target CLAUDE https://x` -> `error: --target must be claude, chatgpt or all`; cli.ts:239 для --ignore применяет `.toUpperCase()`.",
+  "suggested_fix": "`values.target.toLowerCase()` и т.п. перед проверкой списка.",
+  "confidence": 0.8,
+  "dimension": "cli-connect",
+  "id": "F016"
+}

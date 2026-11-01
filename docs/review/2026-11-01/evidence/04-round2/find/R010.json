@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/protocol/modern.ts",
+  "line": 143,
+  "title": "ModernClient принимает result с чужим id (одиночный JSON и SSE fallback msgs[0]) и не сообщает о несовпадении",
+  "description": "Для не-массива `msg = exchange.json` id не сверяется. trace.parseBody для SSE тоже возвращает `msgs[0]`, если ответа с нужным id нет. В итоге результат с другим id (или id другого типа) принимается как ответ на запрос: listAll проходит успешно, tools попадают в снапшот. collectErrors записывает responseId только для error-ответов, поэтому SPEC-016 («ids must echo the request») для успешных modern-ответов ничего не проверяет. Реальный 2026-07-28 клиент такой ответ не сопоставит и зависнет до таймаута.",
+  "evidence": "g_wrongid.mjs (сервер всегда отвечает id:999):\nrequest id 1 response id 999 -> listAll {\"names\":[\"a\"]}\nКод: modern.ts:143 `const msg = Array.isArray(exchange.json) ? exchange.json.find((m) => isObj(m) && m.id === id) : exchange.json;`",
+  "suggested_fix": "Если `msg.id !== id` (и это не error с id null), не принимать result. Записывать ObservedError/наблюдение «response id X does not match request id Y», чтобы SPEC-016 увидел его, а запрос считать неуспешным.",
+  "confidence": 0.75,
+  "failure_scenario": "Modern-only сервер с багом эха id получает чистый отчёт по листингу, хотя хосты не смогут с ним работать.",
+  "dimension": "sse-legacy-modern",
+  "id": "R010"
+}

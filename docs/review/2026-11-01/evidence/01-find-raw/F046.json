@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/spec.ts",
+  "line": 301,
+  "title": "SPEC-013: невалидный cacheScope на одной странице дополнительно даёт ложное «cacheScope differs between pages»",
+  "description": "В `scopes[method]` добавляется любое значение, включая невалидное (например 'PUBLIC' или undefined). Одна страница с ошибкой даёт два error-финдинга: «is not public/private» и «differs between pages», хотя различие — следствие той же ошибки.",
+  "evidence": "Репро: tools/list страницы cacheScope 'public' и 'PUBLIC' -> `error tools/list: cacheScope differs between pages` + `error tools/list: cacheScope is not \"public\" or \"private\"`.",
+  "suggested_fix": "Добавлять в Set только валидные значения: `if (valid) (scopes[method] ??= new Set()).add(result.cacheScope);`.",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F046"
+}

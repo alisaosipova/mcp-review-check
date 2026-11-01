@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 326,
+  "title": "Плюрализация в summary-строке: «1 errors · 1 warnings»",
+  "description": "Сводная строка при --output (cli.ts:326) и строка Score в text-отчёте (text.ts:149) всегда пишут множественное число, хотя рядом (score.ts plural, «root cause(s)») множественное число уже обрабатывается.",
+  "evidence": "Прогон runCli против локального 401-сервера (/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/s401.mjs): `Score n/a (partial check: auth-required) · 3 root causes · 2 errors · 1 warnings · 3 info`. cli.ts:326 `${s.errors} errors · ${s.warnings} warnings`.",
+  "suggested_fix": "Использовать общий helper plural() (как в score.ts:51) в cli.ts:326 и text.ts:149.",
+  "confidence": 0.95,
+  "failure_scenario": "Косметика: в каждом отчёте с одной ошибкой или одним предупреждением выводится «1 errors» или «1 warnings».",
+  "dimension": "score-gate-github-explain",
+  "id": "R021"
+}

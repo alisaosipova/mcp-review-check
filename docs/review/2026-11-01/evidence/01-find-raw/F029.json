@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/probe/active.ts",
+  "line": 20,
+  "title": "Синтез аргументов игнорирует format/pattern/min*/enum-в-items/вложенные required — «synthetic» вызовы массово падают на валидации",
+  "description": "`placeholder` даёт `'mcp-review-check'` для любых строк (включая `format: uri|email|date-time|uuid`, `pattern`, `minLength`), `1` для чисел (игнорируя `minimum`/`multipleOf`), `{}` для объектов (не заполняя их `required`), `[]` для массивов (игнорируя `minItems`). Сервер отвечает валидационной ошибкой, и правила RT-006/RT-007 (проверки structuredContent/outputSchema на успешных вызовах) не получают данных; `--active` теряет ценность для большинства реальных схем.",
+  "evidence": "active.ts:20-35 и 37-43: `case 'object': return {};`, `case 'array': return [];`, `default: return 'mcp-review-check';` — нет обработки `format`, `pattern`, `minimum`, `minLength`, рекурсивного заполнения `properties`/`required`.",
+  "suggested_fix": "Рекурсивный синтез: объекты → заполнять required-свойства; массивы → `[placeholder(items)]` при minItems>0; строки по `format` (uri → https://example.com, email → a@example.com, date-time → ISO now, uuid → randomUUID), учитывать `minimum`/`maximum`/`minLength`; `anyOf/oneOf` → первая ветка; `$ref` → резолв по `$defs`. Записывать в ActiveCall причину, если синтез невозможен.",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F029"
+}

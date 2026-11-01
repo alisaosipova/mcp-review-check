@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 194,
+  "title": "finishBody скрабит всё тело (до 64 MiB) ради 4 KB сниппета, а полный parsed JSON каждого exchange остаётся в памяти",
+  "description": "`scrub(text, redactor).slice(0, SNIPPET)` выполняет split/join по каждому секрету на всём тексте (до FULL_READ_CAP) — O(n·k) на большие tools/list. Кроме того `ex.json` хранит полный разобранный ответ каждого exchange (включая повторные tools/list, fresh/relist, UI-ресурсы) до конца run, дублируя данные snapshot.tools/listMeta.rawPages.",
+  "evidence": "trace.ts:194-195: `ex.bodySnippet = scrub(text, redactor).slice(0, SNIPPET); ex.json = parseBody(text, …)`; FULL_READ_CAP = 64 MiB (trace.ts:10).",
+  "suggested_fix": "Скрабить `text.slice(0, SNIPPET + maxSecretLen)`; для `fullBody` возвращать JSON вызывающему, а в exchange хранить только сниппет/размер (или ослабленную ссылку), чтобы не держать N копий больших списков.",
+  "confidence": 0.7,
+  "dimension": "protocol-probe",
+  "id": "F036"
+}

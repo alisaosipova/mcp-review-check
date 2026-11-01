@@ -1,0 +1,17 @@
+{
+  "id": "F120",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F120",
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Сама предпосылка верна: в headerNames (строка 25) нет set-cookie, и в tracer.exchanges[].headers значение хранится открытым. Но заявленное последствие «далее в JSON/SARIF-отчёт» не подтверждается. src/report/json.ts берёт из snap.transport только `kind` (строка 27), exchanges не сериализует. markdown/text/sarif/github тоже выводят только transport.kind. --verbose в cli.ts:320 печатает label/method/url/status/время, заголовки не печатает. Правила читают только конкретные заголовки (location, server, cf-mitigated, www-authenticate, mcp-session-id, x-accel-buffering), set-cookie среди них нет. Значит, Set-Cookie остаётся только в памяти процесса и ни в один вывод не утекает. Если в будущем добавят дамп snapshot, это станет важно, но сейчас дефекта нет.",
+      "lens": "reader-batch"
+    }
+  ]
+}

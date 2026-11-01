@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 286,
+  "title": "APPS-012: общий sandbox-домен в другом регистре (`HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM`) не распознаётся",
+  "description": "Валидность проверяется через URL (регистр нормализуется), а сравнение с общим доменом идёт по сырой строке с учётом регистра. Неуникальный домен в верхнем или смешанном регистре проходит без warning.",
+  "evidence": "r2apps.out: `APPS-012 shared sandbox uppercase` → `(no findings)`.",
+  "suggested_fix": "Сравнивать `new URL(d).origin === 'https://web-sandbox.oaiusercontent.com'`.",
+  "confidence": 0.8,
+  "failure_scenario": "openai/widgetDomain с общим sandbox-доменом в другом регистре не получает предупреждение «not unique».",
+  "dimension": "limits-apps",
+  "id": "R041"
+}

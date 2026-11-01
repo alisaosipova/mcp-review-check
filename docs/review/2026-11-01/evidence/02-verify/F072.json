@@ -1,0 +1,18 @@
+{
+  "id": "F072",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F072",
+      "refuted": true,
+      "confidence": 0.55,
+      "reasoning": "Сама непоследовательность в коде есть: :39 считает name.length (UTF-16), :50 считает `[...name].length`, :414 считает v.length. Но доказанного дефекта нет. (1) TOOL-001: регулярное выражение пропускает только ASCII, а у любого имени из допустимых символов длина в UTF-16 и в code points совпадает. Если в имени есть не-ASCII символ, finding выдаётся в любом случае, разница только в формулировке сообщения (repro: 129×'a'+'!' даёт только «name is 130 characters», без упоминания '!'). Это косметика, ложных срабатываний и пропусков нет. (2) TOOL-029: spec.md говорит «at most 64 characters» и единицу счёта не задаёт. Неизвестно, как считает валидатор портала OpenAI. Если он считает в UTF-16 (как JS/zod `.max`), текущее поведение верное. Поэтому срабатывание на 40 эмодзи как ложное не доказано, это предположение. (3) TOOL-002 по spec.md явно считает code points, это задокументированное решение для другой платформы. Получается стилистическое расхождение без подтверждённого влияния на результат, по умолчанию при сомнении ставлю refuted.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF072 029 [ 'error [chatgpt] openai/toolInvocation/invoking is not a string of at most 64 characters' ]  // '😀'.repeat(40): 80 UTF-16 units, 40 code points; ложность зависит от непроверенного метода счёта на портале\nF072 001 [ 'warning [spec] name is 130 characters (> 128)' ]  // 'a'*129+'!': finding есть, '!' в сообщении не упомянут",
+      "lens": "reader-batch"
+    }
+  ]
+}

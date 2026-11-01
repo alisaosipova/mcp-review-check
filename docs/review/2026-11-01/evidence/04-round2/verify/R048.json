@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/connect.ts",
+  "line": 468,
+  "title": "Неудачный stdio-initialize выбрасывает собранный не-JSON stdout: SRV-018 молчит, а диагноз сводится к «Request timed out»",
+  "description": "При ошибке connectStdio массив nonJson теряется: в исключение попадает только stderrTail, а buildStdio в catch не заполняет snap.transport.stdio. Типичная ошибка пользователя — запуск HTTP-сервера или CLI, который печатает баннер в stdout, через --stdio. Такой процесс выводит, например, «MCP server listening on http://localhost:3000/mcp» и не отвечает. Через полный --timeout отчёт показывает только «MCP error -32001: Request timed out». SRV-018 не срабатывает, хотя stdout содержит именно ту строку, которая объясняет проблему.",
+  "evidence": "Репро run-httpish.mjs (сервер httpish.mjs: console.log баннера и бесконечное ожидание), вывод httpish.txt:\nfatal: could not start or initialize the stdio server: MCP error -32001: Request timed out\ntransport.stdio: undefined stderrTail: \"\"\nSRV-018 finding: []\nerror SRV-003 - stdio server did not start: ... Request timed out\nФайлы: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/",
+  "suggested_fix": "Прикреплять nonJson к ошибке connectStdio, как stderrTail, и в catch buildStdio записывать snap.transport.stdio = { nonJsonStdout, stderrTail }. В fatal добавлять первую не-JSON строку stdout (после scrub, до 200 символов). Если строка похожа на «listening on http…», подсказывать запуск по URL.",
+  "confidence": 0.85,
+  "failure_scenario": "`mcp-review-check --stdio \"node http-server.js\"` у сервера, который пишет в stdout «listening on http://localhost:3000»: через 30 с пользователь получает «Request timed out» без подсказки, а SRV-018 не сообщает о мусоре в stdout.",
+  "dimension": "bearer-preflight-buffers",
+  "id": "R048",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R048",
+      "refuted": false,
+      "confidence": 0.85,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. Если initialize падает, connectStdio (connect.ts:450-455) прикрепляет к ошибке только stderrTail, локальный массив nonJson теряется. В catch функции buildStdio (468-471) заполняются только fatal и coverage, а snap.transport.stdio не записывается. Записывается он только в строке 510, на успешном пути. Запасной путь stoppedSnapshot (656) работает только тогда, когда progress.nonJsonStdout уже присвоен. Это происходит в строке 475, после успешного connect, и лишь при остановке по --max-duration. Значит, при обычном таймауте initialize SRV-018 (rules/server.ts:454) видит пустой список и молчит. SRV-003 (server.ts:74-76) выводит fatal и советует смотреть stderr, но stderr пустой. В раунде 1 найдены F012, F141 и F146 про неограниченный рост nonJson, но не про его потерю при неудачном старте. Тестов на этот случай нет. Утверждение не противоречит spec.md (SRV-018 должен сообщать о не-JSON в stdout). Repro httpish.txt совпадает с кодом. Severity low: проблема только в диагностике, итоговая ошибка SRV-003 и так есть, но без подсказки о причине и только после полного --timeout.",
+      "repro": "/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/httpish.mjs (console.log('MCP server listening on http://localhost:3000/mcp') + setInterval) -> /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/httpish.txt: fatal: could not start or initialize the stdio server: MCP error -32001: Request timed out; transport.stdio: undefined stderrTail: \"\"; SRV-018 finding: []; error SRV-003 - stdio server did not start: ... Request timed out",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "/tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/httpish.mjs (console.log('MCP server listening on http://localhost:3000/mcp') + setInterval) -> /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2/httpish.txt: fatal: could not start or initialize the stdio server: MCP error -32001: Request timed out; transport.stdio: undefined stderrTail: \"\"; SRV-018 finding: []; error SRV-003 - stdio server did not start: ... Request timed out"
+}

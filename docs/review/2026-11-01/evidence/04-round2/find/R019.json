@@ -1,0 +1,14 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 105,
+  "title": "Таблица exit codes не упоминает, что непредвиденное исключение линтера тоже даёт exit 3",
+  "description": "cli.ts:337-347 переводит любое исключение, кроме UsageError и ERR_PARSE_ARGS, в exit 3 и печатает stack. В README (таблица Exit codes) и HELP (cli.ts:74-75) exit 3 описан только как «could not connect / stopped by --max-duration». Упоминание «an unexpected failure» есть только в разделе GitHub Actions. В CI внутренний баг линтера выглядит как недоступный сервер. F011 про это не говорит: там речь о connect против max-duration.",
+  "evidence": "cli.ts:343-347: `const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\\n`; return { code: 3, ... }`. README:105: «3 | Could not reach the server or complete any handshake ..., or `--max-duration` stopped the check».",
+  "suggested_fix": "Дописать в таблицу и HELP: «3 … or an unexpected internal error (stack on stderr; please report)», либо выделить для внутренних ошибок отдельный код (например 4).",
+  "confidence": 0.7,
+  "failure_scenario": "Правило бросает исключение вне try (например, в buildReport/render), CI показывает exit 3, и разработчик сервера ищет сетевую проблему.",
+  "dimension": "score-gate-github-explain",
+  "id": "R019"
+}

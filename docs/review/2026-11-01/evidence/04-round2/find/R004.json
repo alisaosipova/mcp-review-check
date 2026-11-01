@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 362,
+  "title": "После Ctrl+C/SIGTERM проверка stdio продолжается, пишет полный отчёт в --output с coverage 'ok' и только потом умирает с 130",
+  "description": "Обработчик сигнала только завершает процессы-серверы (endAllNow). Сам run не прерывается: progress.abort/stopped не выставляются, ничего не помечается как прерванное. Если сервер отвечает в пределах 1 с grace (например, игнорирует SIGTERM) или ответ уже в пути, run доходит до конца. fresh()-коннект после сигнала tap убивает SIGKILL, его результат превращается в undefined, а правило в server.ts:476 при этом молча проходит. Затем отчёт пишется в файл --output (перезаписывая прежний) со строкой «FAIL …/report written to …», и только после этого процесс умирает по сигналу. Отчёт выглядит как полный и корректный, хотя проверки после сигнала сорваны.",
+  "evidence": "Команда `node dist/cli.js --format json --output rep.json --env DELAY_initialize=1100 --env IGNTERM=1 --env CHILD=1 --env KEEP=1 --stdio -- node srv.mjs &`, затем через 1 с `kill -INT`. Итог: exit=130, в stderr «mcp-review-check: score 84/100 · … · report written to …/rep.j.json». В rep.j.json coverage={'toolLevel':'ok'}, limits=None, то есть никаких признаков прерывания. Повторяется при DELAY_initialize 700/900/1100.",
+  "suggested_fix": "В обработчике сигнала выставлять общий флаг/AbortController, который run проверяет в checkpoint (как --max-duration), и не писать --output/stdout после сигнала. Либо помечать snapshot как interrupted (coverage 'stopped', phase 'signal').",
+  "confidence": 0.75,
+  "failure_scenario": "Пользователь жмёт Ctrl+C. В report.json оказывается «полный» отчёт с coverage ok, в котором проверка tools/list на новом соединении не выполнена, и этот файл потом загружают как артефакт CI.",
+  "dimension": "deadline-signals",
+  "id": "R004"
+}

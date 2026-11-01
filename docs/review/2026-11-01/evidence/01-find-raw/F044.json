@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/server.ts",
+  "line": 234,
+  "title": "SRV-009: любой 403/429 за Cloudflare с не-JSON телом помечается как WAF/bot-challenge",
+  "description": "`server: cloudflare` присутствует на КАЖДОМ проксируемом ответе, поэтому обычный 429 rate-limit от origin (text/plain + Retry-After) или собственный 403 приложения (text/html «Forbidden») попадают под «WAF signature» warning для claude и chatgpt. Правило эвристическое — warning допустим по §1.2, но текст утверждает факт WAF.",
+  "evidence": "Репро: exchanges=[{label:'sdk tools/list', status:429, contentType:'text/plain', headers:{server:'cloudflare','retry-after':'1'}}] -> `warning [claude,chatgpt] sdk tools/list: 429 from cloudflare with a non-JSON body`. Код: `(e.status === 403 || e.status === 429) && /cloudflare|akamai/i.test(e.headers?.server ?? '') && !/json/i.test(e.contentType ?? '')`.",
+  "suggested_fix": "Требовать Cloudflare-специфичные маркеры: `cf-mitigated`, HTML с «Attention Required!», «error code: 10xx», `cf-chl-*` cookie/скрипты, `__cf_bm`; исключать 429 с `retry-after` и пустым/коротким текстовым телом; понизить до info при отсутствии маркеров.",
+  "confidence": 0.6,
+  "dimension": "rules-server-spec-auth",
+  "id": "F044"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/spec.ts",
+  "line": 226,
+  "title": "SPEC-010 не замечает сервер, отдающий реальный контент для несуществующего URI",
+  "description": "Проверяется только `contents.length === 0`. Catch-all шаблон, возвращающий непустой `contents` для `mcp-review-check://does-not-exist`, проходит без замечаний, хотя это та же проблема («клиент не отличит отсутствующий ресурс»).",
+  "evidence": "Код: `if (isObj(v.result) && Array.isArray(v.result.contents) && v.result.contents.length === 0) {...}`; ветка с непустым contents отсутствует, далее `if (!v.error) return;`.",
+  "suggested_fix": "При `v.result` с непустым contents — info/warning «resources/read of a missing URI returned content (catch-all template?)».",
+  "confidence": 0.6,
+  "dimension": "rules-server-spec-auth",
+  "id": "F060"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/redact.ts",
+  "line": 48,
+  "title": "Basic-авторизация: декодированный пароль не редактируется",
+  "description": "withSchemeToken для `Basic <base64>` добавляет только base64-строку. Если сервер в ошибке/логе возвращает имя пользователя или пароль в открытом виде (типично: «invalid password for admin»), значение попадает в отчёт.",
+  "evidence": "node repro: argvSecrets(['--header','Authorization: Basic YWRtaW46U3VwZXJTZWNyZXQ5OQ==']) => ['Basic YWRt...', 'YWRt...']\nscrub('error: bad password SuperSecret99 for admin', buildRedactor({headers:{Authorization:'Basic YWRtaW46U3VwZXJTZWNyZXQ5OQ=='}})) => 'error: bad password SuperSecret99 for admin'",
+  "suggested_fix": "В withSchemeToken при схеме basic: `Buffer.from(token,'base64').toString()` → добавить целиком и часть после первого ':' (если ≥4 символов).",
+  "confidence": 0.85,
+  "dimension": "report-redact-engine",
+  "id": "F117"
+}

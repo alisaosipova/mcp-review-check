@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 342,
+  "title": "APPS-015: navigator.clipboard помечается даже при объявленном `ui.permissions.clipboardWrite`; alert() в комментарии тоже срабатывает",
+  "description": "Правило не смотрит r.ui.permissions, хотя его собственный fix советует «request clipboardWrite permission if needed», а APPS-017 признаёт clipboardWrite легальным ключом. Виджет, который корректно запросил разрешение, всё равно получает warning. Кроме того, regex работает по сырому HTML без stripComments: `// never use alert() here` → «uses blocked browser API: alert(». Это отличается от F108 (пользовательские функции).",
+  "evidence": "r2apps.out: `APPS-015 clipboard with permissions.clipboardWrite` → `APPS-015 {chatgpt:warning} uses blocked browser API: navigator.clipboard`; `APPS-015 alert in comment` → `uses blocked browser API: alert(`.",
+  "suggested_fix": "Пропускать navigator.clipboard(.writeText|.write), если `isObj(r.ui.permissions?.clipboardWrite)`; диалоги искать в stripComments(r.html).",
+  "confidence": 0.75,
+  "failure_scenario": "Виджет с кнопкой «Copy» и объявленным clipboardWrite получает предупреждение, которое противоречит fix-тексту самого правила.",
+  "dimension": "limits-apps",
+  "id": "R037"
+}

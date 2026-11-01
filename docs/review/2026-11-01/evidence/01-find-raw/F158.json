@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "test/pack.test.ts",
+  "line": 192,
+  "title": "pack.test.ts требует git и каталог .git без skipIf — npm test падает из архива исходников",
+  "description": "`cleanCopy()` вызывает `git ls-files -z`; при отсутствии .git (GitHub «Download ZIP», tarball релиза, Docker-сборка без .git) или без установленного git тест падает исключением вместо пропуска. Соседний repo-config.test.ts корректно делает `describe.skipIf(!existsSync(join(ROOT, '.git')))`.",
+  "evidence": "test/pack.test.ts:192 `execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })` без skipIf; test/repo-config.test.ts:23 `describe.skipIf(!existsSync(join(ROOT, '.git')))('repository config', …)`.",
+  "suggested_fix": "Добавить тот же `describe.skipIf(!existsSync(join(ROOT, '.git')))` или fallback: список файлов из `npm pack --dry-run --json` плюс `package.json.files`.",
+  "confidence": 0.8,
+  "dimension": "docs-tests-ci",
+  "id": "F158"
+}

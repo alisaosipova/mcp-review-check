@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "docs/design/spec.md",
+  "line": 1143,
+  "title": "Спека расходится с кодом: токенайзер --stdio, тип coverage.toolLevel, поля options",
+  "description": "§3.1 говорит, что токенайзер поддерживает «backslash escapes», а код/README/HELP: обратный слэш литерален вне кавычек и экранирует только `\"` внутри двойных. §4.2 (строка 1273) объявляет coverage.toolLevel без 'list-failed' | 'stopped' и options без `authenticated`, которые есть в snapshot.ts:175,181. Таблица §3.1 не содержит --max-duration, --quiet, --checklist, --local/--no-local, --fail-on-spec, --sarif-location (шапка спеки это признаёт, но таблица — основной источник для контрибьюторов).",
+  "evidence": "spec.md:1143 `(single quotes, double quotes, backslash escapes)`; stdioArgs.ts:1-3 комментарий «A backslash is literal outside quotes»; spec.md:1273 vs snapshot.ts:175.",
+  "suggested_fix": "Синхронизировать §3.1/§4.2 с кодом или добавить в docs.test.ts проверку, что все ключи OPTIONS из cli.ts упомянуты в spec §3.1.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F014"
+}

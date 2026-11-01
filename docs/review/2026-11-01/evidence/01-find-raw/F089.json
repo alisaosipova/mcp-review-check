@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 132,
+  "title": "DATA-005: имя `address` трактуется как геолокация — email/IP/wallet/contract address",
+  "description": "`^address$` в списке «precise location». У крипто-, сетевых и почтовых инструментов `address` — кошелёк, IP или e-mail; получаем chatgpt=warning «requests a precise location» с советом использовать `openai/userLocation`.",
+  "evidence": "DATA_005.check для get_balance с {address:{description:'Ethereum wallet address (0x...)'}} → 'parameter \"address\" requests a precise location'.",
+  "suggested_fix": "Для `address` требовать подтверждение из description/format: матч `street|postal|home|shipping|billing|physical|location` и отсутствие `email|ip|wallet|contract|0x|mac`; либо `format: email/ipv4/ipv6` → skip. Аналогично `long` (часто boolean «long format»).",
+  "confidence": 0.85,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F089"
+}

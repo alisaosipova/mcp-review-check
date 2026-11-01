@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 226,
+  "title": "INJ-006: `better than|superior to` без контекста — «rating better than the threshold» = принижение конкурентов",
+  "description": "В последнем паттерне INJ-006 альтернативы `better than` и `superior to` не связаны с объектом (tool/competitor/other). Любое сравнение значений в описании параметров даёт warning «steering away from other tools». То же утекает в RT-011 (вывод инструмента «Scores better than average»).",
+  "evidence": "INJ_006.check для 'Return items whose rating is better than the given threshold.' → evidence 'better than'. RT_011 на тексте 'Scores better than average.' → 'output contains ...'.",
+  "suggested_fix": "Связать с объектом: `(better than|superior to) [^.]{0,30}\\b(other|any|built-?in|default|competing|competitor|alternative)s?\\b|\\b(tools?|plugins?|servers?|search)\\b`; оставить `unlike (other|competitor)` как есть.",
+  "confidence": 0.9,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F092"
+}

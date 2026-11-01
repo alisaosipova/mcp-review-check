@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/protocol/recording.ts",
+  "line": 12,
+  "title": "RecordingTransport: pending растёт без очистки, transportErrors никем не читается",
+  "description": "`pending` (id → method) никогда не очищается после получения ответа (утечка на длинных run c --active по 50 инструментам — небольшая, но лишняя). `transportErrors` собираются (включая 409 на SDK GET-stream, ошибки парсинга SSE), но ни одно правило и connect.ts их не используют — потерянный сигнал для SRV-018/диагностики.",
+  "evidence": "grep по src: `transportErrors` встречается только в recording.ts:14 и :25. recording.ts:48 `const method = this.pending.get(m.id)` без `delete`.",
+  "suggested_fix": "`this.pending.delete(m.id)` после записи; пробрасывать `transportErrors` в `snapshot.transport.observedErrors` (source: 'transport') или в connectDiagnosis.",
+  "confidence": 0.85,
+  "dimension": "protocol-probe",
+  "id": "F033"
+}

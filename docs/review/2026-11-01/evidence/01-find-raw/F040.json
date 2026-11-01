@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/spec.ts",
+  "line": 363,
+  "title": "SPEC-016: флаг `modern` берётся из заголовка НАШЕГО запроса, а не из эры сервера — legacy-сервер получает ошибку про «2026-07-28 response»",
+  "description": "`collectErrors` (connect.ts:260) ставит `modern: true` всем ответам на запросы с `mcp-protocol-version: 2026-07-28`, включая обязательную пробу `discover`, которая шлётся КАЖДОМУ серверу (connect.ts:290). Чисто legacy-сервер, отвечающий на неизвестный server/discover implementation-defined кодом из -32020..-32099 (разрешено в 2025-11-25, см. комментарий в самом правиле), получит spec error «2026-07-28 response uses code ... / is in the reserved range», хотя 2026-07-28 он не говорит.",
+  "evidence": "Репро на dist: era='legacy', observedErrors=[{source:'discover', code:-32050, modern:true}] -> `error [spec] discover: error code -32050 is in the reserved range`. Код: `const modernPath = e.modern ?? snap.era === 'modern';`",
+  "suggested_fix": "`const modernPath = !!e.modern && isModern(snap);` (ответ на 2026-07-28-запрос и сервер действительно поддерживает 2026-07-28), либо для `era` legacy/sse-legacy пропускать политику диапазонов целиком.",
+  "confidence": 0.6,
+  "dimension": "rules-server-spec-auth",
+  "id": "F040"
+}

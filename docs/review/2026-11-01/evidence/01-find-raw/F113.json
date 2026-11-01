@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 119,
+  "title": "DATA-004: список restricted-data имён неполный (card_cvc, exp_month/exp_year, routing_number, account_number, passport_no, license_number, aadhaar, nino)",
+  "description": "Строгий список покрывает cvv/cvc и card_number, но не `card_cvc`, `cvv_code`, `exp_month`, `exp_year`, `card_exp`, `routing_number`, `bank_account_number`, `passport_no`, `license_number`, `ssn_last4`, `aadhaar`, `nino`, `sin`. Все эти имена типичны для PCI/госID-форм и проходят мимо chatgpt=error.",
+  "evidence": "data.ts:119 regex `^(card_?number|credit_?card(_number)?|cc_?num(ber)?|cvv2?|cvc|card_?expir(y|ation)|ssn|…)$` — точное совпадение всего имени.",
+  "suggested_fix": "Перейти на суффиксно-токенную проверку (как isSecretName): токены {cvv, cvc, cvv2, ssn, passport, aadhaar, nino, sin, mrn} в любом сегменте; пары card+(number|exp|expiry|cvc), bank+account|routing+number.",
+  "confidence": 0.7,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F113"
+}

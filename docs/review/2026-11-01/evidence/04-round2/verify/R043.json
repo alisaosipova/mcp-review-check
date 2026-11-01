@@ -1,0 +1,30 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 144,
+  "title": "APPS-006 выдаёт claude-находку (CDN info), хотя правило, RULES.md и spec.md заявляют только chatgpt/spec",
+  "description": "severity правила — `{ chatgpt: 'warning', spec: 'warning' }`, а CDN-ветка возвращает `platforms: ['claude']`. В каталоге (`--list-rules`, explain, docs/RULES.md:107) Claude у APPS-006 не указан, но Claude-находки от этого правила появляются. spec.md §2.7 упоминает claude info, а строка severity — нет.",
+  "evidence": "apps.ts:121 severity без claude; apps.ts:144 `platforms: ['claude']`; docs/RULES.md:107 `APPS-006 ... chatgpt: warning, spec: warning`.",
+  "suggested_fix": "Добавить `claude: 'info'` в severity APPS-006 (каталог и RULES.md перегенерируются) либо вынести CDN-подсказку в отдельное правило.",
+  "confidence": 0.7,
+  "failure_scenario": "Пользователь фильтрует или игнорирует правила по каталогу платформ и не ожидает claude-находок от APPS-006.",
+  "dimension": "limits-apps",
+  "id": "R043",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R043",
+      "refuted": false,
+      "confidence": 0.85,
+      "reasoning": "Подтверждено. В src/rules/apps.ts:121 у APPS-006 severity = { chatgpt: 'warning', spec: 'warning' }, а CDN-ветка (apps.ts:144) возвращает platforms: ['claude'], severity: 'info'. Движок (src/rules/engine.ts:116-130) берёт r.platforms как есть и не сверяет их с ключами rule.severity, поэтому claude-находка доходит до отчёта: при --target claude правило применимо через 'spec', а при --target all — напрямую. В docs/RULES.md:5 написано, что платформы правила — это ключи severity, и там же в строке 107 Claude для APPS-006 не указан, так что каталог, --list-rules и explain не совпадают с фактическим выводом. spec.md:759 закладывает claude info для CDN, но в строке severity spec.md:751 claude тоже нет, то есть противоречие есть и внутри самого spec.md. Значит, поведение задумано, а метаданные неполные. В известных находках первого раунда этого нет: F106 про APPS-006 касается дублей, это другое. Тестов, которые объясняли бы такое расхождение, нет. Последствия косметические: находка уровня info, на exit code и gating почти не влияет.",
+      "corrected_severity": "low",
+      "corrected_description": "Метаданные APPS-006 (severity = chatgpt/spec) не включают claude, хотя CDN-ветка по замыслу (spec.md §2.7, строка 759) выдаёт claude-находку уровня info. Движок не сверяет platforms находки с ключами severity правила, поэтому каталог (RULES.md:107, --list-rules, explain) и строка severity в spec.md:751 расходятся с фактическим выводом. Исправление: добавить claude: 'info' в severity APPS-006 и перегенерировать каталог.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r043.mjs (APPS_006 из dist/rules/apps.js на snapshot с ui://w, у которого csp.resourceDomains=['https://unpkg.com']) -> keys(severity)=[\"chatgpt\",\"spec\"], check()=[{\"resource\":\"ui://w\",\"platforms\":[\"claude\"],\"severity\":\"info\",\"message\":\"resourceDomains: public CDN unpkg.com; serve from your own origin in production\"}]",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "Метаданные APPS-006 (severity = chatgpt/spec) не включают claude, хотя CDN-ветка по замыслу (spec.md §2.7, строка 759) выдаёт claude-находку уровня info. Движок не сверяет platforms находки с ключами severity правила, поэтому каталог (RULES.md:107, --list-rules, explain) и строка severity в spec.md:751 расходятся с фактическим выводом. Исправление: добавить claude: 'info' в severity APPS-006 и перегенерировать каталог.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r043.mjs (APPS_006 из dist/rules/apps.js на snapshot с ui://w, у которого csp.resourceDomains=['https://unpkg.com']) -> keys(severity)=[\"chatgpt\",\"spec\"], check()=[{\"resource\":\"ui://w\",\"platforms\":[\"claude\"],\"severity\":\"info\",\"message\":\"resourceDomains: public CDN unpkg.com; serve from your own origin in production\"}]"
+}

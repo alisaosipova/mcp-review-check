@@ -1,0 +1,30 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/report/github.ts",
+  "line": 237,
+  "title": "Пустое имя инструмента ('') даёт аннотацию с title «RULE-ID » без субъекта",
+  "description": "`f.tool ?? f.resource ?? 'server'`: оператор ?? не заменяет пустую строку, поэтому для инструмента с name '' (сервер это контролирует, и правила имён как раз ловят такие случаи) title аннотации выглядит как «X-10 » с хвостовым пробелом, и непонятно, к чему относится находка. Та же логика в subjectOf (engine.ts:72).",
+  "evidence": "gate.out, случай 10: `[\"::error title=X-10 ::[claude] m%0AFix: fix\"]`.",
+  "suggested_fix": "`const subj = f.tool || f.resource || 'server'` либо явная подпись `(empty name)` для пустой строки, одинаково в github.ts и subjectOf.",
+  "confidence": 0.6,
+  "failure_scenario": "Сервер с инструментом без имени получает в GitHub аннотацию «TOOL-001 » без указания, к какому инструменту она относится.",
+  "dimension": "score-gate-github-explain",
+  "id": "R023",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R023",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. Указанная строка устарела: код находится в src/report/github.ts:30, а не на :237. Там `const title = `${f.ruleId} ${f.tool ?? f.resource ?? 'server'}``. Оператор ?? не заменяет '', а perTool/toolName (src/rules/tools.ts:23, src/rules/util/access.ts:12) передают в f.tool пустую строку как есть. Выше по стеку этот случай нигде не обрабатывается. Тестов, которые фиксировали бы такое поведение как намеренное, я не нашёл, и spec.md этому не противоречит. subjectOf (src/rules/engine.ts:212) устроен так же. Последствие смягчается для самого TOOL-001: его сообщение и так говорит «tool name is empty». Но любое другое правило, сработавшее на том же безымянном инструменте, даёт аннотацию без субъекта. Это косметика и редкий край, поэтому severity low.",
+      "corrected_description": "src/report/github.ts:30 (а не :237): `f.tool ?? f.resource ?? 'server'` оставляет пустое имя инструмента как есть. Аннотация получает title вида «TOOL-003 » с хвостовым пробелом и без субъекта. У TOOL-001 субъект виден из message («tool name is empty»), у остальных правил по тому же инструменту — нет. Та же логика в subjectOf (src/rules/engine.ts:212).",
+      "repro": "node-скрипт против dist/report/github.js, finding {ruleId:'TOOL-003', tool:'', platforms:['claude'], severities:{claude:'error'}}, gate.platforms=['claude'] → [\"::error title=TOOL-003 ::[claude] description missing%0AFix: add\"]",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "corrected_description": "src/report/github.ts:30 (а не :237): `f.tool ?? f.resource ?? 'server'` оставляет пустое имя инструмента как есть. Аннотация получает title вида «TOOL-003 » с хвостовым пробелом и без субъекта. У TOOL-001 субъект виден из message («tool name is empty»), у остальных правил по тому же инструменту — нет. Та же логика в subjectOf (src/rules/engine.ts:212).",
+  "repro": "node-скрипт против dist/report/github.js, finding {ruleId:'TOOL-003', tool:'', platforms:['claude'], severities:{claude:'error'}}, gate.platforms=['claude'] → [\"::error title=TOOL-003 ::[claude] description missing%0AFix: add\"]"
+}

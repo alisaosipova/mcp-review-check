@@ -1,0 +1,28 @@
+{
+  "id": "F022",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "medium",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "refuted": true,
+      "confidence": 0.8,
+      "reasoning": "Наблюдения из кода верны: в src/protocol/trace.ts:25 `headerNames` = {authorization, cookie, proxy-authorization, --header}, `set-cookie` туда не входит; `headersToRecord` (строка 53) оставляет последний `set-cookie`. Но заявленного последствия (утечка секрета или неверный результат) нет — заголовки ответа никуда не выводятся.\n1) Выход отчёта: src/report/json.ts берёт из snap только options.target, url/command, serverInfo, era, protocolVersion, transport.kind и authSummary. `transport.exchanges[].headers` не сериализуется. sarif/markdown/text/github тоже не выводят headers.\n2) `--verbose` (src/cli.ts:320) печатает только label, method, url, status/error и время, без заголовков.\n3) Правила читают из `e.headers` только www-authenticate, mcp-session-id, location, cf-mitigated, server, x-accel-buffering, retry-after (grep по src). `set-cookie` не читает ни одно правило, поэтому потеря дубликатов ничего не меняет. SRV-009 выводит только label, status и `headers.server`, не cookie.\n4) docs/design/spec.md:1355 требует маскировать только Authorization, Cookie, значения --header и query-значения AUTH-001. Set-Cookie там нет, так что расхождения со спекой нет.\n5) Set-Cookie — это значение, которое сервер выдал клиенту-линтеру, а не секрет пользователя. В любом выходе оно не появляется.\nСам автор признаёт, что «exchanges не рендерятся в отчёты напрямую». Довод про «будущие dump/verbose-режимы» гипотетический. В лучшем случае это hardening-заметка уровня low, а не дефект корректности или безопасности.",
+      "corrected_severity": "low",
+      "corrected_description": "Hardening, не баг: `set-cookie` в ответах хранится в Snapshot в открытом виде, и при нескольких Set-Cookie остаётся только последний. Поле не попадает ни в один формат отчёта, ни в `--verbose`, и ни одно правило его не читает. Если в будущем появится dump снапшота, стоит добавить `set-cookie` в `headerNames` и использовать `Headers.getSetCookie()`.",
+      "repro": "Без запуска; анализ мест, куда попадают данные: grep 'headers' по src/report/* и src/cli.ts — заголовки ответа нигде не выводятся. grep 'e.headers?.[' по src/rules — set-cookie не читается. json.ts:15-28 — список полей snap, которые попадают в вывод.",
+      "lens": "reader"
+    },
+    {
+      "refuted": true,
+      "confidence": 0.7,
+      "reasoning": "Механика воспроизводится, но реального дефекта нет: значение Set-Cookie никуда не выводится, ни одно правило его не читает, а спецификация не требует его маскировать.\n\n1) Механика подтверждена. `headersToRecord` (trace.ts:53) пишет `out[k.toLowerCase()] = String(v)`. `Headers.entries()` в Node отдаёт каждый Set-Cookie отдельной записью, поэтому в записи остаётся только последний. `redactHeaders` маскирует только `authorization`/`cookie`/`proxy-authorization` и имена из `--header`, так что `set-cookie` проходит открытым текстом.\n\n2) Наблюдаемого эффекта нет:\n- grep по src: `set-cookie` не читает ни одно правило. Из заголовков ответа правила берут только `location`, `www-authenticate`, `mcp-session-id`, `retry-after`, `cf-mitigated`, `server`, `x-accel-buffering`.\n- Отчёты (`src/report/*`) рендерят только поля finding'ов (message/evidence/fix…), а не `exchange.headers`.\n- `--verbose` (cli.ts:320) печатает лишь label, method, url, status и длительность; заголовки не печатает.\n- Snapshot в файл не выгружается: `--output` пишет только отчёт.\n- Автор находки сам признаёт: «exchanges не рендерятся в отчёты напрямую». Довод про «будущие dump-режимы» — гипотеза, а не дефект.\n\n3) Контракт редакции (docs/design/spec.md §4.5) покрывает секреты пользователя: Authorization, Cookie запроса, значения `--header`, query по AUTH-001. Set-Cookie — это cookie, которую сервер выдал самому сканеру. Под контракт она не подпадает, и это не секрет пользователя.\n\n4) Потеря первого Set-Cookie ни на что не влияет, потому что потребителя у этого заголовка нет.\n\nВывод: максимум hardening или косметика на будущее (low), а не medium-уязвимость. По правилу «при сомнении — refuted» отклоняю.",
+      "repro": "Скрипт: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f022.mjs (подменённый globalThis.fetch, вызов createTracer(...).request против dist/protocol/trace.js)\nВывод:\nentries: [[\"content-type\",\"application/json\"],[\"set-cookie\",\"sid=SECRETCOOKIEVALUE123; HttpOnly\"],[\"set-cookie\",\"other=zzz\"]]\nrecord: {\"content-type\":\"application/json\",\"set-cookie\":\"other=zzz\"}\nexchange.headers: {\"content-type\":\"application/json\",\"set-cookie\":\"other=zzz\"}\nМеханика подтверждается: первая cookie потеряна, set-cookie не маскируется. Но grep по src показывает, что `set-cookie` не читает ни одно правило, отчёт и `--verbose` не выводят `exchange.headers`, а Snapshot не выгружается. Утечки и неверного результата нет.",
+      "corrected_severity": "low",
+      "corrected_description": "Hardening, не уязвимость. `headersToRecord` при нескольких Set-Cookie оставляет только последний, а `redactHeaders` не маскирует `set-cookie` ответа. Сейчас эти данные не попадают ни в одно правило и ни в один формат вывода, включая `--verbose`, поэтому наблюдаемого эффекта нет. Если в будущем появится dump Snapshot или вывод заголовков, стоит добавить `set-cookie` в headerNames и склеивать значения через `getSetCookie()`.",
+      "lens": "repro"
+    }
+  ]
+}

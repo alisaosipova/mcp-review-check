@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/probe/network.ts",
+  "line": 113,
+  "title": "Сырые initialize-пробы (preflight, 4 origin, invalid-token, redirect-хопы) создают на сервере сессии, которые никогда не закрываются",
+  "description": "Каждый сырой POST initialize без последующего DELETE оставляет на stateful-сервере висящую сессию (SDK-сервер минтит Mcp-Session-Id на каждый initialize). За один run это минимум 6 сессий (preflight + originNone/Claude/Chatgpt/Evil + invalid-token), плюс ретраи. Для серверов с лимитом сессий/памяти это заметный побочный эффект «side-effect-free» проб.",
+  "evidence": "network.ts:118-127 четыре `send(...)` с `body = initializeBody()`; network.ts:106-110 preflight; auth.ts:120-122 invalid-token — ни один не читает `mcp-session-id` ответа и не отправляет DELETE.",
+  "suggested_fix": "В requestRetried/tracer: если ответ 2xx на initialize содержит `mcp-session-id`, запланировать `DELETE url` с этим id (best-effort, без ретраев) в конце run. Спек §4.3 обещает «side-effect-free».",
+  "confidence": 0.8,
+  "dimension": "protocol-probe",
+  "id": "F030"
+}

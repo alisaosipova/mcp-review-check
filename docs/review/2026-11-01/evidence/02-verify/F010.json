@@ -1,0 +1,20 @@
+{
+  "id": "F010",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "splitStdioArgv (src/protocol/stdioArgs.ts:52-59, а не stdioArgs.ts:233) распознаёт `--` только у «голого» `--stdio`: следующий за ним аргумент должен отсутствовать или начинаться с '-'. При `--stdio foo -- node x` split.command не задаётся, parseArgs превращает хвост после `--` в positionals, проверка на cli.ts:214 не срабатывает, и на cli.ts:215 пользователь получает нерелевантное «expected a single <url>», а не «give --stdio either ... not both».",
+  "repro": "node dist/cli.js --stdio foo -- node x -> 'error: expected a single <url>\\nRun with --help for usage.' exit=2; так же для `node dist/cli.js -- node x --stdio foo` -> 'error: expected a single <url>' exit=2",
+  "votes": [
+    {
+      "id": "F010",
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "corrected_description": "splitStdioArgv (src/protocol/stdioArgs.ts:52-59, а не stdioArgs.ts:233) распознаёт `--` только у «голого» `--stdio`: следующий за ним аргумент должен отсутствовать или начинаться с '-'. При `--stdio foo -- node x` split.command не задаётся, parseArgs превращает хвост после `--` в positionals, проверка на cli.ts:214 не срабатывает, и на cli.ts:215 пользователь получает нерелевантное «expected a single <url>», а не «give --stdio either ... not both».",
+      "reasoning": "Код подтверждает: в stdioArgs.ts:56 findIndex требует, чтобы --stdio был последним в head или чтобы за ним шёл аргумент с '-'. Тест в test/e2e-stdio.test.ts:177 покрывает только вариант `--stdio 'node x.js' --stdio -- node y.js` и проверяет лишь code 2, без текста; случай с одним --stdio со значением и `--` не покрыт. Exit 2 правильный, неверен только текст сообщения, поэтому low. Строка 215 актуальна. Ссылка в описании на stdioArgs.ts:233 неверна: файл src/protocol/stdioArgs.ts, функция на строке 52.",
+      "repro": "node dist/cli.js --stdio foo -- node x -> 'error: expected a single <url>\\nRun with --help for usage.' exit=2; так же для `node dist/cli.js -- node x --stdio foo` -> 'error: expected a single <url>' exit=2",
+      "lens": "reader-batch"
+    }
+  ]
+}

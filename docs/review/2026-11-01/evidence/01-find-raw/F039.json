@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/spec.ts",
+  "line": 441,
+  "title": "SPEC-018: зарезервированные префиксы `modelcontextprotocol.io/`, `mcp.dev/`, `mcp/` не обнаруживаются",
+  "description": "metaKeyProblem проверяет только `labels[1]` («второй лейбл»). Текст spec про `_meta` (2025-06-18+): «Any prefix beginning with zero or more valid labels, followed by `modelcontextprotocol` or `mcp`, followed by any valid label, is reserved» и приводит примеры `modelcontextprotocol.io/`, `mcp.dev/`, `api.modelcontextprotocol.org/`, `tools.mcp.com/`. Первые два примера spec код пропускает, а также однолейбловые `mcp/x`, `modelcontextprotocol/x`. docs/design/spec.md:372 закрепляет ту же суженную формулировку («second label»), т.е. документ и код расходятся с schema.ts.",
+  "evidence": "node против dist: `metaKeyProblem('modelcontextprotocol.io/x') -> undefined`, `metaKeyProblem('mcp.dev/x') -> undefined`, `metaKeyProblem('mcp/x') -> undefined`, при этом `api.modelcontextprotocol.org/x -> 'reserved prefix'`. Код: `if ((labels[1] === 'modelcontextprotocol' || labels[1] === 'mcp') && !META_ALLOW.has(key)) return 'reserved prefix';`",
+  "suggested_fix": "`const reserved = labels.some((l) => l === 'modelcontextprotocol' || l === 'mcp');` (любой лейбл префикса), с сохранением META_ALLOW и info для `io.modelcontextprotocol/*`. Обновить docs/design/spec.md:372 и добавить в test/rules/spec.test.ts примеры из spec. Без сети формулировку schema.ts подтвердить не смог — confidence ниже 0.9.",
+  "confidence": 0.8,
+  "dimension": "rules-server-spec-auth",
+  "id": "F039"
+}

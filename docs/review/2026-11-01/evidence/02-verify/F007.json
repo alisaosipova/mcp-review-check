@@ -1,0 +1,18 @@
+{
+  "id": "F007",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F007",
+      "refuted": true,
+      "confidence": 0.7,
+      "reasoning": "Строка актуальна (connect.ts:210), и любой TypeError на первой попытке действительно повторяется один раз. Но заявленный вред не подтверждается. (1) Для ошибок валидации (невалидное имя заголовка, URL с userinfo) undici бросает TypeError ещё до отправки запроса, поэтому повтор не удваивает ни время, ни запросы к серверу: мини-репро показал 0 запросов, дошедших до сервера. (2) Ошибка не маскируется: вторая попытка падает с тем же TypeError, он попадает в `last` с тем же message и тем же networkCause, а без повтора было бы то же самое. (3) Ошибки разбора ответа сервера в SDK — это ZodError/SyntaxError/McpError, а не TypeError. Основной класс TypeError здесь — 'fetch failed' от undici, ради которого повтор и задуман. Реальная проблема — классификация таких TypeError в диагнозе, и это предмет других находок, а не повтора. Остаётся максимум косметика без наблюдаемого эффекта.",
+      "repro": "node f007.mjs (scratchpad /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f007.mjs):\nbad header TypeError Headers.append: \"bad name\" is an invalid header name. cause: undefined\nuserinfo TypeError Request cannot be constructed from a URL that includes credentials: http://u:p@127.0.0.1:34293/ cause: undefined\nrequests reaching server: 0",
+      "lens": "reader-batch"
+    }
+  ]
+}

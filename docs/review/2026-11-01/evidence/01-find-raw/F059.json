@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/server.ts",
+  "line": 257,
+  "title": "SRV-010: в медиану попадают неуспешные/служебные вызовы (discover-проба на legacy, preflight 401, badVersion 400)",
+  "description": "trace.ts:190 записывает `timings[method]` для любого статуса. На legacy-сервере `server/discover` всегда шлётся и быстро падает 4xx, `initialize` включает preflight (401) и invalid-token пробу, `tools/list` — badVersion (400). Быстрые отказы разбавляют медиану, медленные WAF-ответы — завышают; метрика «handshake/listing latency» становится неточной.",
+  "evidence": "server.ts: `const keys = ['initialize', 'server/discover', 'tools/list', 'resources/read']; const samples = keys.flatMap((k) => (snap.transport.timings[k] ?? []) ...)`; trace.ts:189-190: `if (typeof method === 'string') (timings[method] ??= []).push(ex.durationMs);` без фильтра по статусу/лейблу.",
+  "suggested_fix": "В tracer писать timings только для 2xx (или хранить `{ms,status,label}`), в SRV-010 фильтровать по 2xx и исключать лейблы проб (`badVersion`, `origin *`, `preflight`, `auth invalid-token`).",
+  "confidence": 0.7,
+  "dimension": "rules-server-spec-auth",
+  "id": "F059"
+}

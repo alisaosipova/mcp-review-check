@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/cli.ts",
+  "line": 261,
+  "title": "Несуществующий --cwd даёт «spawn node ENOENT» (выглядит как отсутствие node), exit 3",
+  "description": "Node сообщает ENOENT одинаково для отсутствующей команды и для отсутствующего cwd. CLI не проверяет каталог, поэтому пользователь получает fatal «spawn node ENOENT» и exit 3, а не ошибку конфигурации (exit 2) с указанием на --cwd.",
+  "evidence": "`node dist/cli.js --cwd /nonexistent-dir --stdio \"node -e 1\" --format json` -> exit=3, coverage: `{ toolLevel: 'connect-failed', reason: 'spawn node ENOENT' }`.",
+  "suggested_fix": "В cli.ts: `if (values.cwd && !statSync(values.cwd, {throwIfNoEntry:false})?.isDirectory()) throw new UsageError('--cwd is not a directory')`. В buildStdio при ENOENT и заданном cwd дополнять сообщение подсказкой.",
+  "confidence": 0.9,
+  "dimension": "cli-connect",
+  "id": "F008"
+}

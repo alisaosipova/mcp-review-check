@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/cli.ts",
+  "line": 137,
+  "title": "Имя заголовка в --header не валидируется: невалидное имя даёт exit 3 «could not connect» вместо usage error",
+  "description": "parseHeader проверяет только наличие ':' и CR/LF. Имя с пробелом/запрещёнными символами доходит до undici, где `new Headers()` бросает TypeError. Ошибка классифицируется как сбой сети: коннект ретраится (connect.ts:210), результат — fatal/exit 3 с диагнозом «Headers.append … invalid header name», хотя это ошибка конфигурации (exit 2 по spec §3.2).",
+  "evidence": "`node dist/cli.js http://127.0.0.1:9/mcp --header \"bad name: x\" --format json` -> exit=3, coverage.reason = `Headers.append: \"bad name\" is an invalid header name.`; --verbose: `[http] discover: POST … -> Headers.append: \"bad name\" is an invalid header name. (0 ms)`.",
+  "suggested_fix": "В parseHeader проверять имя RFC 9110 token: `/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/` и бросать UsageError('--header name must be an HTTP token (the value is not shown)'). Тест на exit 2.",
+  "confidence": 0.95,
+  "dimension": "cli-connect",
+  "id": "F002"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/docs/design/spec.md",
+  "line": 614,
+  "title": "spec.md отстаёт от кода: INJ-006 (conditional/info-ветка), INJ-008 (доп. альтернативы), INJ-004 (JSON-курсор), APPS-014 (ui/initialize), APPS-019 отсутствует в §2.7",
+  "description": "В spec.md: INJ-006 последний паттерн записан как `always (use|call|prefer) (this|these|our)` без `(?!CONDITIONAL)` и без info-паттерна «conditional: fine…»; INJ-008 regex короче кодового (нет `(should|must) be (used|called|invoked)…`, нет `[^.;:]{0,40}`); INJ-004 не упоминает исключение для декодированного JSON (cursor/JWT); APPS-014 не упоминает приём `\"ui/initialize\"` и stripComments; §2.7 заканчивается на APPS-018, хотя код и RULES.md содержат APPS-019.",
+  "evidence": "grep 'APPS-019\\|ui/initialize\\|CONDITIONAL\\|conditional' docs/design/spec.md → только строка 8 (примечание о каталоге). Код: injection.ts:224-226, 303; apps.ts:325-326, 407-422.",
+  "suggested_fix": "Синхронизировать §2.4/§2.7 spec.md с кодом или добавить в docs.test.ts проверку, что каждый rule id из каталога присутствует в spec.md.",
+  "confidence": 0.85,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F112"
+}

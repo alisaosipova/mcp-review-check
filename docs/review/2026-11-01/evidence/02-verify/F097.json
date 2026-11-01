@@ -1,0 +1,20 @@
+{
+  "id": "F097",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "INJ-007 (и RT-011, где те же INJ_007_PATTERNS) — брендовый паттерн injection.ts:255 не освобождён от проверки ownToolExempt, а ownToolFilter не учитывает serverInfo.name/title. В итоге first-party сервер (например, Slack), который в описании упоминает собственный 'Slack connector', получает warning 'coercing calls to software the user did not request'.",
+  "repro": "INJ-007, serverInfo={name:'Slack'}, описание 'Post a message via the Slack connector.' -> [[undefined(default warning),'Slack connector']]",
+  "votes": [
+    {
+      "id": "F097",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "reasoning": "Строка 255 актуальна. У паттерна 4 нет ownToolExempt, а ownToolFilter (:272-283) в любом случае собирает только имена и title инструментов, без serverInfo.name/title. Слово 'Slack' перед 'connector' как идентификатор не извлекается. Выше по стеку (engine) нет подавления по бренду сервера. Тот же набор паттернов использует RT-011 (src/rules/runtime.ts:260-261), так что ложное срабатывание повторяется и там. Тестов, закрепляющих это поведение, нет. Последствие — warning, отсюда low.",
+      "corrected_description": "INJ-007 (и RT-011, где те же INJ_007_PATTERNS) — брендовый паттерн injection.ts:255 не освобождён от проверки ownToolExempt, а ownToolFilter не учитывает serverInfo.name/title. В итоге first-party сервер (например, Slack), который в описании упоминает собственный 'Slack connector', получает warning 'coercing calls to software the user did not request'.",
+      "repro": "INJ-007, serverInfo={name:'Slack'}, описание 'Post a message via the Slack connector.' -> [[undefined(default warning),'Slack connector']]",
+      "lens": "reader-batch"
+    }
+  ]
+}

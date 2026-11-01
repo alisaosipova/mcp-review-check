@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/rules/server.ts",
+  "line": 330,
+  "title": "SRV-013 и SPEC-001 оба выдают spec error за отсутствующий initialize.serverInfo",
+  "description": "SRV-013 строка 330 (`initialize result has no serverInfo`) и SPEC-001 строка 31 (`serverInfo is missing`) проверяют одно условие `r.serverInfo === undefined` и дают два error-финдинга в категории spec за один дефект.",
+  "evidence": "Репро initializeRaw без serverInfo: SRV-013 -> `error [spec] initialize result has no serverInfo`; SPEC-001 -> `error [spec] serverInfo is missing`.",
+  "suggested_fix": "Убрать проверку serverInfo из SPEC-001 (оставить shape protocolVersion/capabilities/instructions) и сослаться на SRV-013, либо наоборот.",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F050"
+}

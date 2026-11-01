@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/policy.ts",
+  "line": 29,
+  "title": "POL-002: regex MEDIA без завершающего \\b — create_article, clipboard, voicemail считаются генерацией медиа",
+  "description": "Альтернативы `(image|...|art|...|clip|...|voice|...)` не закрыты границей слова, поэтому `create_art`+`icle`, `clip`+`board`, `voice`+`mail` дают ложное срабатывание claude=warning «AI media generation» на самых обычных CRUD-инструментах.",
+  "evidence": "node против dist: POL_002.check для tools create_article / copy_to_clipboard / edit_voicemail_greeting вернул 3 находки: \"tool: AI media generation: \\\"create article create_article Create a new knowledge-base article.\\\"\" и т.д.",
+  "suggested_fix": "Добавить `\\b` (или `(?![a-z])`) после группы медиа-существительных: `...|podcast)\\b/i`; аналогично для `tts` в MEDIA2.",
+  "confidence": 0.95,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F082"
+}

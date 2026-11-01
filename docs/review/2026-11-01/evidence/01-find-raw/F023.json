@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/probe/active.ts",
+  "line": 45,
+  "title": "wrongTypeValue для union-/нетипизированных схем даёт валидное значение → ложное RT-002",
+  "description": "`wrongTypeValue` берёт `type[0]` (или 'string' если type отсутствует) и возвращает `12345` для string, иначе строку. Для `type: ['string','number']`, схемы без `type` (any), `anyOf/oneOf`, `$ref` значение 12345 — валидно, сервер корректно возвращает успех, а RT-002 (runtime.ts:61) репортит «wrong-type argument returned a success result».",
+  "evidence": "active.ts:46-47: `const type = isObj(schema) ? (Array.isArray(schema.type) ? schema.type[0] : schema.type) : 'string'; return type === 'string' ? 12345 : 'mcp-review-check-wrong-type';` — для `{type:['string','number']}` → 12345 (number допустим); для `{}` → 12345 (any допустим).",
+  "suggested_fix": "Пропускать `invalid-type` для свойств без однозначного `type` (union, any, $ref, anyOf/oneOf) или выбирать тип, не входящий в union (object/array/boolean). Пометить в ActiveCall `skippedReason` и покрыть тестом.",
+  "confidence": 0.85,
+  "dimension": "protocol-probe",
+  "id": "F023"
+}

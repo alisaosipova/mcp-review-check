@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 86,
+  "title": "TOOL-004/005/014/015: эвристики по токенам не учитывают контекст (url в shorten_url, like в описании, hex в именах)",
+  "description": "Несколько мелких FP/FN одной природы: (1) TOOL-015 «name mentions url» для любого инструмента с токеном url, включая shorten_url/validate_url в закрытом SaaS; (2) behaviorText удаляет всё после слова «like» до точки — «Works like a scratchpad and deletes notes» теряет «deletes» и TOOL-014(a) молчит; (3) TOOL-027 помечает search_and_replace как collection tool.",
+  "evidence": "node против dist: shorten_url + openWorldHint:false -> «openWorldHint: false but name mentions \"url\"»; notes_tool, readOnlyHint:true, description 'Works like a scratchpad and deletes notes older than a week.' -> TOOL-014 []; search_and_replace -> TOOL-027 «collection tool without pagination or limit parameters».",
+  "suggested_fix": "Для «like» требовать следующий токен-пример в кавычках/после двоеточия или ограничить `like` формой «like:`/`like \"`; для url-токена в TOOL-015 требовать свободный url-параметр (уже проверяется ниже) вместо только имени; в TOOL-027 исключать имена с write-глаголом после read-глагола.",
+  "confidence": 0.6,
+  "dimension": "rules-tools-schema",
+  "id": "F077"
+}

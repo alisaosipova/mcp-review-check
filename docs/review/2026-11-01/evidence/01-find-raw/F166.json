@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": ".gitignore",
+  "line": 1,
+  "title": ".gitignore не исключает *.tgz, которые создаёт npm pack (release.yml, локальная проверка)",
+  "description": "release.yml выполняет `npm pack` в корне workspace, CONTRIBUTING предлагает `npm pack`-проверки; результат `mcp-review-check-0.1.0.tgz` остаётся неигнорируемым файлом и может попасть в коммит (150 KB бинарник).",
+  "evidence": ".gitignore содержит `node_modules/ dist/ coverage/ *.log .DS_Store /report.*`; .github/workflows/release.yml:33 `- run: npm pack`; `npm pack --dry-run --ignore-scripts --json` → size 150616.",
+  "suggested_fix": "Добавить `*.tgz` в .gitignore.",
+  "confidence": 0.9,
+  "dimension": "docs-tests-ci",
+  "id": "F166"
+}

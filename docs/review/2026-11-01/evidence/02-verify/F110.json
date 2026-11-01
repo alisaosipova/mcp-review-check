@@ -1,0 +1,20 @@
+{
+  "id": "F110",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "INJ-004 (injection.ts:180): ветка escape-runs '%[0-9a-f]{2}){8,}' без декодирования принимает за encoded payload любой URL-encoded UTF-8 фрагмент из не менее чем 8 байт: от 4 кириллических букв или от 3 CJK-символов (а не от 3 кириллических, как сказано в исходном утверждении). Пример запроса на русском или японском в описании даёт warning.",
+  "repro": "INJ-004 'Example: search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82' -> [[undefined(default warning),'%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82']]; 'q=%D0%BF%D1%80%D0%B8' (3 буквы, 6 escapes) -> []; 'q=%D0%BF%D1%80' -> []",
+  "votes": [
+    {
+      "id": "F110",
+      "refuted": false,
+      "confidence": 0.7,
+      "corrected_severity": "low",
+      "reasoning": "Строка 180 актуальна. Регулярка '(…|%[0-9a-f]{2}){8,}' совпадает с той, что дана в spec.md (раздел INJ-004), и не делает декодирования. Для base64-веток проект уже различает данные и payload (encodedPayload, тест content.test.ts:227), а для percent-runs аналогичной логики нет. Пороговое значение в утверждении неточное: кириллическая буква в UTF-8 занимает 2 байта, поэтому 3 буквы — это 6 escape-последовательностей < 8, и они НЕ срабатывают (проверено). Срабатывание начинается с 4 кириллических букв или 3 CJK-символов (по 3 байта, итого 9). Суть дефекта подтверждается, порог исправлен в corrected_description.",
+      "corrected_description": "INJ-004 (injection.ts:180): ветка escape-runs '%[0-9a-f]{2}){8,}' без декодирования принимает за encoded payload любой URL-encoded UTF-8 фрагмент из не менее чем 8 байт: от 4 кириллических букв или от 3 CJK-символов (а не от 3 кириллических, как сказано в исходном утверждении). Пример запроса на русском или японском в описании даёт warning.",
+      "repro": "INJ-004 'Example: search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82' -> [[undefined(default warning),'%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82']]; 'q=%D0%BF%D1%80%D0%B8' (3 буквы, 6 escapes) -> []; 'q=%D0%BF%D1%80' -> []",
+      "lens": "reader-batch"
+    }
+  ]
+}

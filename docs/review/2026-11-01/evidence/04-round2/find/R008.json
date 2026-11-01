@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/protocol/trace.ts",
+  "line": 185,
+  "title": "SRV-010 измеряет время до заголовков: для SSE-ответов (дефолт SDK Streamable HTTP) и legacy SSE (202) задержка не видна",
+  "description": "finishHeaders пишет в timings[method] `ex.durationMs`, а это время до получения заголовков. SDK StreamableHTTPServerTransport по умолчанию (enableJsonResponse=false) отвечает text/event-stream: 200 и заголовки уходят сразу, а результат приходит позже. Поэтому медленный tools/list даёт сэмплы около 1 мс. В legacy HTTP+SSE POST на /messages возвращает 202 Accepted мгновенно, а ответ приходит по GET-потоку, который tracer вообще не измеряет. В обоих случаях SRV-010 не срабатывает, хотя реальная задержка 1.5 с. Поле bodyMs уже есть, но правило его не использует. Это не то же, что F021/F059: там речь о том, какие пробы попадают в выборку, а здесь о самой метрике.",
+  "evidence": "c_shttp_sse_latency.mjs (SDK stateless server, tools/list спит 1500 мс):\nmode SSE responses era legacy kind streamable-http\ntimings tools/list [8,5,1,1]\nsdk tools/list 200 text/event-stream durationMs=8 bodyMs=1511 | … durationMs=1 bodyMs=1503\nmode enableJsonResponse … timings tools/list [1515,1,1503,1504]\nb_sse_latency.mjs (SDK SSEServerTransport, tools/list 1500 мс):\nera sse-legacy kind sse; timings tools/list [1,1,1]; sdk tools/list 202 1ms url=…/messages?sessionId=…\nSRV-010 []\nКод: trace.ts:185-190 `ex.durationMs = now() - started; … (timings[method] ??= []).push(ex.durationMs)`.",
+  "suggested_fix": "Для JSON-RPC exchanges писать в timings время до ответа с нужным id: bodyMs при stoppedAtResponse или при полном теле, а не durationMs. Для SDK-пути писать после readBody в sdkFetch. Для transport.kind==='sse' мерить в RecordingTransport интервал от send(id) до record(id) и класть его в timings. Ответы 202 без JSON-RPC тела в timings не писать.",
+  "confidence": 0.9,
+  "failure_scenario": "Сервер на дефолтном SDK (SSE-ответы) или legacy SSE с tools/list 1.5–10 с: SRV-010 молчит (нет ни info >500 мс, ни warning >5 с), задержка отчёта занижена в 100–1000 раз.",
+  "dimension": "sse-legacy-modern",
+  "id": "R008"
+}

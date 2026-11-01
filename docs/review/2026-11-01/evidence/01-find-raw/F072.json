@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/tools.ts",
+  "line": 37,
+  "title": "Непоследовательный подсчёт длины строк: TOOL-001 и TOOL-029 считают UTF-16-единицы, TOOL-002/006 — code points",
+  "description": "TOOL-001 использует `{1,128}` и `name.length` (UTF-16), TOOL-002 — `[...name].length` (code points), TOOL-029 — `v.length <= 64` (UTF-16). Для имён/строк с астральными символами (эмодзи) одни правила насчитают вдвое больше символов, чем другие; сообщение TOOL-001 при одновременном нарушении алфавита и длины показывает только длину.",
+  "evidence": "src/rules/tools.ts:37-39 (`name.length`), :50 (`[...name].length`), :414 (`v.length <= 64`). node: '😀'.repeat(40) в openai/toolInvocation/invoking -> TOOL-029 error (80 UTF-16 единиц, 40 code points).",
+  "suggested_fix": "Ввести общий helper `cpLen(s)` в util/text.ts и использовать его везде; в TOOL-001 перечислять все причины (символы и длина) в одном сообщении. Зафиксировать в spec.md, в каких единицах считают платформы.",
+  "confidence": 0.7,
+  "dimension": "rules-tools-schema",
+  "id": "F072"
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "src/report/index.ts",
+  "line": 133,
+  "title": "summary.errors/warnings считаются по максимальной severity с учётом spec и не совпадают ни с вердиктами, ни с gate",
+  "description": "summary.errors/warnings/info считаются по f.severity, а это максимум по всем активным платформам, включая spec, причём независимо от --fail-on-spec. Вердикты и gate используют severity конкретной платформы. Находка claude=warning, spec=error при --target claude даёт summary.errors=1 и строку «1 errors», хотя verdicts.claude.errors=0 и Result PASS. JSON-потребитель, который проверяет `summary.errors > 0`, получит иной результат, чем exit code. Нигде не задокументировано, что именно считают эти поля: README говорит, что «listed findings, verdicts and the exit code follow --target».",
+  "evidence": "gate.out, случай 1: `PASS (--fail-on error) · spec: 1 error (X-1) not gated ... { e: 1, w: 0, i: 0, failed: false } {\"claude\":{\"verdict\":\"NEEDS ATTENTION\",\"errors\":0,\"warnings\":1}}`. Случай 7 (spec-only override severity error): e:1, verdict claude NO AUTOMATED BLOCKERS, PASS. Код: index.ts:133-135 `errors: f.filter((x) => x.severity === 'error').length`.",
+  "suggested_fix": "Либо добавить в summary счётчики по gated-платформам (например `summary.gated: {errors, warnings}`), либо задокументировать в README/JSON-схеме, что errors/warnings — это максимум по --target-директориям и spec без учёта gating, и что решение о провале — summary.failed/summary.gate.",
+  "confidence": 0.7,
+  "failure_scenario": "CI-скрипт с `jq '.summary.errors > 0'` валит сборку по spec-ошибке, хотя CLI вернул 0 и README говорит, что spec без --fail-on-spec не валит.",
+  "dimension": "score-gate-github-explain",
+  "id": "R014"
+}

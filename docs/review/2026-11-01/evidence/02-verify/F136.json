@@ -1,0 +1,28 @@
+{
+  "id": "F136",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "src/protocol/legacy.ts:42 (не 53; строка в находке устарела) делает `items.push(...list.map(...))`, то же в src/protocol/modern.ts:105 (`items.push(...list.filter(isObj))`, не 166). Если на одной странице tools/list (или prompts/resources) примерно 200k элементов, spread превышает лимит аргументов/стека V8 и бросает RangeError. Внутри listAll он не перехватывается: try/catch стоит только вокруг client.request. Дальше исключение уходит через listEverything → buildHttp/buildStdio → buildSnapshot (там catch только закрывает клиента и пробрасывает исключение) → runCli. В итоге вместо отчёта/SPEC-находки печатается `fatal:` со stack trace и exit 3. Воспроизводится только на патологическом или злонамеренном сервере (ответ около 3 МБ). Линтер падает с понятным кодом, утечек и вреда хосту нет, поэтому это редкий край, а не medium.",
+  "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f136.mjs вызывает listAll из dist/protocol/legacy.js с фейковым client.request, который возвращает {tools: Array(n).fill({name:'t'})}. Вывод:\n100000 OK 100000\n125000 OK 125000\n200000 THROWS RangeError Maximum call stack size exceeded",
+  "votes": [
+    {
+      "refuted": false,
+      "confidence": 0.85,
+      "corrected_severity": "low",
+      "corrected_description": "src/protocol/legacy.ts:42 (не 53; строка в находке устарела) делает `items.push(...list.map(...))`, то же в src/protocol/modern.ts:105 (`items.push(...list.filter(isObj))`, не 166). Если на одной странице tools/list (или prompts/resources) примерно 200k элементов, spread превышает лимит аргументов/стека V8 и бросает RangeError. Внутри listAll он не перехватывается: try/catch стоит только вокруг client.request. Дальше исключение уходит через listEverything → buildHttp/buildStdio → buildSnapshot (там catch только закрывает клиента и пробрасывает исключение) → runCli. В итоге вместо отчёта/SPEC-находки печатается `fatal:` со stack trace и exit 3. Воспроизводится только на патологическом или злонамеренном сервере (ответ около 3 МБ). Линтер падает с понятным кодом, утечек и вреда хосту нет, поэтому это редкий край, а не medium.",
+      "reasoning": "Сначала прочитал код. src/protocol/legacy.ts:28-50: listAll ловит исключения только у client.request, а spread в push на строке 42 стоит вне try. В modern.ts:105 тот же паттерн. Затем посмотрел, кто вызывает listAll. В connect.ts:336-339 lister вызывается из listEverything без try. В buildSnapshot (около строки 531) catch закрывает клиента и делает `throw e`, а withDeadline тоже пробрасывает не-Stopped ошибки. В cli.ts:337-347 общий catch отдаёт `fatal: <stack>` и code 3. Только вызов в connect.ts:490 обёрнут в try и возвращает undefined. Ни в спеке, ни в тестах я не нашёл ничего, что делало бы такое поведение намеренным. Поэтому суть утверждения подтверждена, но указанные номера строк устарели: на самом деле это 42 и 105. Severity понижаю до low: сценарий требует аномальной страницы из сотен тысяч элементов, а результат — контролируемый выход с кодом 3, а не неверный отчёт и не утечка.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f136.mjs вызывает listAll из dist/protocol/legacy.js с фейковым client.request, который возвращает {tools: Array(n).fill({name:'t'})}. Вывод:\n100000 OK 100000\n125000 OK 125000\n200000 THROWS RangeError Maximum call stack size exceeded",
+      "lens": "reader"
+    },
+    {
+      "refuted": false,
+      "confidence": 0.9,
+      "corrected_severity": "low",
+      "corrected_description": "src/protocol/legacy.ts:42 (не 53) и src/protocol/modern.ts:105 (не 166) добавляют страницу листинга через `items.push(...list.map(...))` / `items.push(...list.filter(isObj))`. Если в одной странице tools/list (resources/prompts) около 200k элементов, V8 бросает RangeError «Maximum call stack size exceeded». listAll ловит только ошибки client.request, listEverything в connect.ts:105-116 тоже ничего не перехватывает, поэтому исключение доходит до catch в cli.ts:344-347. В итоге линтер падает с `fatal:` + stack trace и exit 3 вместо отчёта или находки SPEC-020. Так ведёт себя только враждебный или патологический сервер, у реальных серверов столько инструментов не бывает. Тихого PASS при этом нет: exit 3 роняет CI. Поэтому это редкий край: DoS самого линтера, отчёт теряется.",
+      "reasoning": "Воспроизвёл на dist/protocol/legacy.js с фейковым клиентом. 50k и 125k элементов проходят, на 200k вылетает RangeError. По коду исключение никто не перехватывает на всём пути: listAll → listEverything → runCli. В cli.ts:346 оно превращается в fatal с exit 3. Аналогичный spread есть в modern.ts:105. Номера строк в находке устарели: 53→42, 166→105. Severity понизил до low. Сработать может только сервер, который намеренно отдаёт огромную страницу (около 2 МБ JSON, лимит FULL_READ_CAP 64 МБ это допускает). Утечки нет, ложного PASS нет, основной сценарий на реальных серверах не ломается. Предложенное исправление (цикл или concat плюс общий лимит числа элементов) корректно.",
+      "repro": "Скрипт /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/f136.mjs вызывает listAll из dist/protocol/legacy.js с фейковым client.request, который возвращает {tools: Array(n).fill({name:'t'})}:\n50000 OK items= 50000 error= undefined\n125000 OK items= 125000 error= undefined\n200000 THROWS: RangeError Maximum call stack size exceeded",
+      "lens": "repro"
+    }
+  ]
+}

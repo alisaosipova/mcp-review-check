@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "README.md",
+  "line": 7,
+  "title": "Число правил «144» захардкожено в README и spec.md и не синхронизируется генератором",
+  "description": "README строка 7 («checks everything against 144 automated rules») и docs/design/spec.md строка 8 («the catalog has 144 automated rules … and 31 manual checklist items») содержат числа, которые scripts/rules-table.mjs не обновляет (он заменяет только `<!-- CATALOG_DATE -->` и дату в примере заголовка), а test/docs.test.ts их не проверяет. Фактически в dist 144 правила и 31 MAN — сейчас совпадает, но следующее правило (APPS-020) сделает README неверным без падения CI.",
+  "evidence": "node -e \"import('…/dist/rules/index.js').then(m=>console.log(m.RULES.length, m.MANUAL_ITEMS.length))\" → `144 31`. scripts/rules-table.mjs:20-22 заменяет только RULES-блок, CATALOG_DATE и дату в `mcp-review-check \\S+ · rules `; test/docs.test.ts не ищет «144».",
+  "suggested_fix": "Ввести маркер `<!-- RULE_COUNT -->144<!-- /RULE_COUNT -->` (и `MAN_COUNT`) в README, обновлять его в rules-table.mjs из `RULES.length`, и добавить assert в docs.test.ts: число в README равно RULES.length.",
+  "confidence": 0.9,
+  "dimension": "docs-tests-ci",
+  "id": "F152"
+}

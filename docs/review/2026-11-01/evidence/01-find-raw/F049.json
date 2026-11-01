@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "medium",
+  "file": "src/rules/spec.ts",
+  "line": 338,
+  "title": "SPEC-005 + SPEC-006 + SPEC-015 дублируют друг друга на modern-only сервере (5 финдингов на 2 факта)",
+  "description": "GET != 405 репортят SPEC-005 (строка 121) и SPEC-015 (строка 341); наличие Mcp-Session-Id репортят SPEC-006 (строка 150, «see SPEC-015») и SPEC-015 (строка 338). Отчёт по одному серверу раздувается, score считает корневые причины, но текстовый/SARIF вывод — нет. Также текст SPEC-005 «modern servers must return 405» (MUST, детерминировано) идёт как warning — несогласовано с §1.2.",
+  "evidence": "Репро modern-only, GET 200, DELETE 404, sessionId: SPEC-005 -> 1 warning; SPEC-006 -> 1 warning; SPEC-015 -> 3 warning (DELETE 404, GET 200, session id).",
+  "suggested_fix": "Оставить modern-only семантику целиком в SPEC-015: в SPEC-005 `if (isModernOnly(snap)) return []`, в SPEC-006 убрать ветку строки 150 (формат id проверять всегда). Решить severity SPEC-015 для MUST-кейсов (error) либо явно задокументировать warning.",
+  "confidence": 0.9,
+  "dimension": "rules-server-spec-auth",
+  "id": "F049"
+}

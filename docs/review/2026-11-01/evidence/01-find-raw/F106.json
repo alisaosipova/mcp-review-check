@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/apps.ts",
+  "line": 129,
+  "title": "APPS-006: при одновременном ui.csp и openai/widgetCSP одна и та же запись репортится дважды",
+  "description": "cspOf складывает entries из обоих источников; дублирующиеся значения дают две одинаковые по смыслу находки с разными field-именами (connectDomains и connect_domains).",
+  "evidence": "APPS_006.check с ui.csp.connectDomains=['https://api.example.com/'] и widgetCSP.connect_domains=['https://api.example.com/'] → 2 находки 'has a path, query, fragment or trailing slash'.",
+  "suggested_fix": "Дедуплицировать по `(value, kind)` в cspOf.entries или в APPS-006 по `${kind}|${v}`; в message перечислять оба поля.",
+  "confidence": 0.8,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F106"
+}

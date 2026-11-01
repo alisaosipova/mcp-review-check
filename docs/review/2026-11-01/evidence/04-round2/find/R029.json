@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/rules/apps.ts",
+  "line": 60,
+  "title": "APPS-003: MIME с дополнительными параметрами (`;charset=utf-8`) или с другим порядком параметров — error на всех платформах",
+  "description": "normalizeMime сравнивает всю строку целиком. `text/html;profile=mcp-app;charset=utf-8` или `text/html; charset=utf-8; profile=mcp-app` не равны RESOURCE_MIME_TYPE, и правило выдаёт spec/claude/chatgpt error. Параметр charset в text/html обычен (многие фреймворки добавляют его сами), порядок параметров по RFC 2045 значения не имеет. F107 касается только кавычек.",
+  "evidence": "r2apps.out: `mime text/html;profile=mcp-app;charset=utf-8` → `APPS-003 {spec:error, claude:error, chatgpt:error} mimeType is ... expected text/html;profile=mcp-app`; так же для `text/html; charset=utf-8; profile=mcp-app`.",
+  "suggested_fix": "Парсить MIME в type/subtype + Map параметров и проверять `type==='text/html' && params.get('profile')==='mcp-app'`. Лишние параметры — максимум info.",
+  "confidence": 0.75,
+  "failure_scenario": "Сервер отдаёт mimeType `text/html;profile=mcp-app;charset=utf-8`: три error-находки, хотя хосты различают профиль по параметру profile.",
+  "dimension": "limits-apps",
+  "id": "R029"
+}

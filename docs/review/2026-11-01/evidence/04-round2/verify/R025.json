@@ -1,0 +1,28 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/limits.ts",
+  "line": 29,
+  "title": "TEXT_CAP → TOOL-003/TOOL-001/TOOL-002: обрезка имени даёт ложные дубли и неверную длину в сообщениях",
+  "description": "`name` тоже попадает под обрезку. Два разных инструмента с одинаковыми первыми 16384 символами имени становятся одинаковыми: TOOL-003 сообщает «name appears 2 times» (chatgpt error). TOOL-001 и TOOL-002 пишут «name is 16384 characters» вместо реальной длины, а `tool` в находке — это обрезанная строка длиной 16 KB.",
+  "evidence": "r2apps.out (секция cap): `TOOL-003 name appears 2 times | tool len 16384`, `TOOL-001 name is 16384 characters (> 128)`, `TOOL-002 name is 16384 characters (> 64)` для имён длиной 16484 символа (a×16484+'_one'/'_two').",
+  "suggested_fix": "Не обрезать `name`/`uri`/`uriTemplate` (это идентификаторы, а не текст для regex): сохранять оригинальную длину или ограничивать имя отдельно, после проверок длины. Как минимум — писать в сообщениях «over 16384».",
+  "confidence": 0.75,
+  "failure_scenario": "Сервер с двумя сгенерированными инструментами с именами >16 KB и общим префиксом: ложный TOOL-003 error для chatgpt и неверная длина в TOOL-001/002.",
+  "dimension": "limits-apps",
+  "id": "R025",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R025",
+      "refuted": false,
+      "confidence": 0.8,
+      "corrected_severity": "low",
+      "reasoning": "Подтверждено. capStrings (src/limits.ts:25-29) обходит все строковые значения инструмента, в том числе `name`, и обрезает их до TEXT_CAP=16384. Вызов capSnapshot (connect.ts:542) стоит до правил. TOOL-003 (tools.ts:63) считает дубли по обрезанному toolName, TOOL-001/002 (tools.ts:39,50) выводят длину обрезанной строки. В rules/tools.ts есть обработка «over TEXT_CAP», но только для description (tools.ts:169) и instructions (server.ts:358), а для имени её нет. В test/limits.test.ts нет теста, который закреплял бы такое поведение для имён. Severity low: имена длиннее 16 KB с общим префиксом встречаются крайне редко. TOOL-001/002 всё равно срабатывают правильно, ошибочна только цифра в сообщении. Реальное ложное срабатывание даёт только TOOL-003 (chatgpt error).",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2apps.mjs cap -> 'TOOL-003 name appears 2 times | tool len 16384', 'TOOL-001 name is 16384 characters (> 128)', 'TOOL-002 name is 16384 characters (> 64)' для имён 'a'x16484+'_one'/'_two'",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/r2apps.mjs cap -> 'TOOL-003 name appears 2 times | tool len 16384', 'TOOL-001 name is 16384 characters (> 128)', 'TOOL-002 name is 16384 characters (> 64)' для имён 'a'x16484+'_one'/'_two'"
+}

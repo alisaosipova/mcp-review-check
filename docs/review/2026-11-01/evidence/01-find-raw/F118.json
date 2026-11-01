@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "src/redact.ts",
+  "line": 114,
+  "title": "Полный уровень редакции (--env) заменяет обычные слова по всему отчёту: production, debug, версии, пути, hostname",
+  "description": "В полном Redactor (для отчёта) все значения --env попадают в values без проверки на «секретность», отсекаются только TRIVIAL (true/false/числа ≤6 цифр/JSON-слова). `--env NODE_ENV=production`, `LOG_LEVEL=debug`, `APP_VERSION=1.2.3`, `HOME=/home/user` приводят к тому, что все вхождения этих слов в именах tools, описаниях, serverInfo.version и даже в ключах server data заменяются на «redacted». Это ложные редакции, портящие отчёт и fix-snippets (JSON фрагменты с «redacted»_logs не вставить).",
+  "evidence": "node repro: buildRedactor({env:{NODE_ENV:'production',LOG_LEVEL:'debug',HOME:'/home/user'}}).values => ['%2Fhome%2Fuser','production','/home/user','debug']\nscrub('Tool deploy_production: deploys to production. debug_logs tool. Path /home/user/x') => 'Tool deploy_«redacted»: deploys to «redacted». «redacted»_logs tool. Path «redacted»/x'\nscrub('server 1.2.3 ok', buildRedactor({env:{APP_VERSION:'1.2.3'}})) => 'server «redacted» ok'",
+  "suggested_fix": "Для не-секретных имён (isSecretName false) добавлять значение только если tokenLike(v) (как уже сделано для strongOnly) или длина ≥ 8 и есть цифры и буквы; либо расширить TRIVIAL словарём типичных значений окружения (production/development/debug/info/warn/error/test/true). Минимум — документировать и дать `--env-plain K` для исключения.",
+  "confidence": 0.85,
+  "dimension": "report-redact-engine",
+  "id": "F118"
+}

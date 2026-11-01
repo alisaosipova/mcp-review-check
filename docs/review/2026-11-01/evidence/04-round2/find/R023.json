@@ -1,0 +1,14 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/report/github.ts",
+  "line": 237,
+  "title": "Пустое имя инструмента ('') даёт аннотацию с title «RULE-ID » без субъекта",
+  "description": "`f.tool ?? f.resource ?? 'server'`: оператор ?? не заменяет пустую строку, поэтому для инструмента с name '' (сервер это контролирует, и правила имён как раз ловят такие случаи) title аннотации выглядит как «X-10 » с хвостовым пробелом, и непонятно, к чему относится находка. Та же логика в subjectOf (engine.ts:72).",
+  "evidence": "gate.out, случай 10: `[\"::error title=X-10 ::[claude] m%0AFix: fix\"]`.",
+  "suggested_fix": "`const subj = f.tool || f.resource || 'server'` либо явная подпись `(empty name)` для пустой строки, одинаково в github.ts и subjectOf.",
+  "confidence": 0.6,
+  "failure_scenario": "Сервер с инструментом без имени получает в GitHub аннотацию «TOOL-001 » без указания, к какому инструменту она относится.",
+  "dimension": "score-gate-github-explain",
+  "id": "R023"
+}

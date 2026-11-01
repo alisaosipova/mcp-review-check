@@ -1,0 +1,231 @@
+{
+ "package": "WP2-connect",
+ "owned_files": [
+  "src/connect.ts",
+  "src/limits.ts",
+  "src/snapshot.ts",
+  "src/protocol/recording.ts",
+  "src/diagnose.ts"
+ ],
+ "items": [
+  {
+   "id": "F006",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "401 при --header (API-key/custom auth) без --bearer даёт coverage 'auth-required' / «server requires OAuth» вместо «credentials rejected»",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F006.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F006.json"
+  },
+  {
+   "id": "F141",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Непомерный рост nonJson/buf для stdio: все не-JSON строки stdout накапливаются без лимита, Buffer.concat квадратичен",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F141.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F141.json + docs/review/2026-11-01/evidence/04-round2/arbiter/F141.json"
+  },
+  {
+   "id": "F017",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "GroupStdioTransport копирует приватные внутренности SDK (_process, _readBuffer, processReadBuffer) — тихая поломка при bump SDK",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F017.json"
+  },
+  {
+   "id": "F012",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Каждая строка stdout сервера парсится JSON.parse дважды, nonJson не ограничен",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F012.json"
+  },
+  {
+   "id": "F033",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/protocol/recording.ts",
+   "title": "RecordingTransport: pending растёт без очистки, transportErrors никем не читается",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F033.json"
+  },
+  {
+   "id": "F139",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Число resources/read для ui:// не ограничено; каждое чтение до 64 МБ удерживается до capSnapshot",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F139.json",
+   "verify": "docs/review/2026-11-01/evidence/02-verify/F139.json"
+  },
+  {
+   "id": "F146",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "Input caps применяются слишком поздно и не покрывают все серверные данные",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F146.json"
+  },
+  {
+   "id": "F013",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "Input caps не покрывают listMeta.rawPages, toolsWithoutUi и active.calls[].result, по которым тоже бегают правила",
+   "src": "docs/review/2026-11-01/evidence/01-find-raw/F013.json"
+  },
+  {
+   "id": "C001",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "stdio/HTTP-сервер, умерший сразу после initialize, получает PASS 100/100 и exit 0, если в capabilities нет tools",
+   "src": "docs/review/2026-11-01/evidence/03-critic/C001.json"
+  },
+  {
+   "id": "C003",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/connect.ts",
+   "title": "SRV-018 не видит JSON-логи (pino/winston/bunyan) в stdout: любая валидная JSON-строка считается MCP-сообщением",
+   "src": "docs/review/2026-11-01/evidence/03-critic/C003.json"
+  },
+  {
+   "id": "C-imp-1",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Сбой stdio-handshake теряет non-JSON stdout: «Request timed out» без подсказки, что сервер пишет мусор в stdout",
+   "src": "docs/review/2026-11-01/evidence/03-critic/critic.json (findings[kind=improvement][0])"
+  },
+  {
+   "id": "C-imp-2",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Диагностика 403 игнорирует тело/заголовки: Cloudflare challenge описывается как «HTTP 403 (forbidden)», а SRV-009 трижды репортит одну причину",
+   "src": "docs/review/2026-11-01/evidence/03-critic/critic.json (findings[kind=improvement][1])"
+  },
+  {
+   "id": "R045",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "401 на listing не запускает auth probe: при публичных server/discover или initialize AUTH-правила пропускаются, а 401 превращаются в ложные SPEC-ошибки",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R045.json"
+  },
+  {
+   "id": "R026",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "TEXT_CAP → APPS-001/003/007/019: обрезанный ui:// URI или имя расходятся с необрезанными ключами resourceReads и toolsWithoutUi",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R026.json"
+  },
+  {
+   "id": "R048",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Неудачный stdio-initialize выбрасывает собранный не-JSON stdout: SRV-018 молчит, а диагноз сводится к «Request timed out»",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R048.json"
+  },
+  {
+   "id": "R046",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/protocol/recording.ts",
+   "title": "[Переоценка F141 + F033] 100 МБ не-JSON строк в stdout роняют линтер с heap OOM (exit 134, отчёта нет); основной источник роста памяти — transportErrors, а не nonJson",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R046.json"
+  },
+  {
+   "id": "R003",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Остановленный snapshot теряет уже собранные данные (active-вызовы, wire probes, observedErrors, modernResults), и часть правил молча проходит, а не помечается stopped",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R003.json"
+  },
+  {
+   "id": "R044",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Auth probe разбирает challenge из preflight 403 без WWW-Authenticate и игнорирует настоящий 401 с Bearer-challenge: ложные AUTH-002/004/013",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R044.json"
+  },
+  {
+   "id": "R047",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "stdio: сообщение больше 10 МБ (лимит SDK ReadBuffer по умолчанию) рвёт соединение, а причина теряется: «Connection closed», ложный APPS-001 и каскад «Not connected»",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R047.json"
+  },
+  {
+   "id": "R002",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/connect.ts",
+   "title": "Остановка --max-duration во время connect stdio теряет stderr сервера, хотя в fix SRV-003 написано, что он показан",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R002.json"
+  },
+  {
+   "id": "R027",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "HTML_CAP → APPS-014: ложное «uses the ext-apps App but never calls connect()» для виджета больше 2 MB",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R027.json"
+  },
+  {
+   "id": "R028",
+   "kind": "security",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "capStrings не ограничивает ключи объектов: имена свойств и ключи patternProperties любой длины проходят мимо капа",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R028.json"
+  },
+  {
+   "id": "R007",
+   "kind": "bug",
+   "sev": "medium",
+   "file": "src/connect.ts",
+   "title": "Ошибка SSE-fallback теряется: legacy SSE с OAuth выдаётся за «HTTP 404 not an MCP endpoint», auth-проба не запускается",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R007.json"
+  },
+  {
+   "id": "R025",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "TEXT_CAP → TOOL-003/TOOL-001/TOOL-002: обрезка имени даёт ложные дубли и неверную длину в сообщениях",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R025.json"
+  },
+  {
+   "id": "R024",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/limits.ts",
+   "title": "TEXT_CAP → TOOL-017: обрезка длинного `pattern` делает валидную схему «does not compile» (spec error)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R024.json"
+  },
+  {
+   "id": "R001",
+   "kind": "bug",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Сервер, ждущий закрытия stdin, превращает полностью завершённую проверку в INCOMPLETE/exit 3 с ложной фазой «active tool calls» (даже без --active)",
+   "src": "docs/review/2026-11-01/evidence/04-round2/verify/R001.json"
+  },
+  {
+   "id": "R012",
+   "kind": "improvement",
+   "sev": "low",
+   "file": "src/connect.ts",
+   "title": "Сессии Streamable HTTP не завершаются (DELETE не отправляется): за один прогон на сервере остаётся 7–10 открытых сессий",
+   "src": "docs/review/2026-11-01/evidence/04-round2/find/R012.json"
+  }
+ ]
+}

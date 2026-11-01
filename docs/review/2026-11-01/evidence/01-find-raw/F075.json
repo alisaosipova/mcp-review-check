@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "low",
+  "file": "docs/design/spec.md",
+  "line": 422,
+  "title": "spec.md расходится с кодом по TOOL-007 (claude=warning vs error), TOOL-012 (per-hint vs per-tool), TOOL-027 (списки токенов/LIMIT_PROP)",
+  "description": "spec.md: TOOL-007 «claude=warning» — код и docs/RULES.md: claude error. TOOL-012: spec «each of the three keys … gets its own finding» — код выдаёт одно finding на инструмент (комментарий в коде). TOOL-027: spec перечисляет токены {list, search, query, export, dump, find, all} и короткий LIMIT_PROP — код исключает query/all и имеет значительно более широкий регэксп. Шапка spec признаёт «several severities changed», но конкретика не обновлена.",
+  "evidence": "docs/design/spec.md:422 «Severity: chatgpt=error, claude=warning»; src/rules/tools.ts:136 `severity: { chatgpt: 'error', claude: 'error', spec: 'info' }`; spec.md:457 vs annotations.ts:57-58; spec.md:548-549 vs tools.ts:351-354.",
+  "suggested_fix": "Обновить соответствующие абзацы spec.md (или сгенерировать таблицу правил из кода, как уже делает scripts/rules-table.mjs для RULES.md, и ссылаться на неё из spec).",
+  "confidence": 0.95,
+  "dimension": "rules-tools-schema",
+  "id": "F075"
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/data.ts",
+  "line": 47,
+  "title": "DATA-001: `transcript` в STRONG_CONVO → error на инструментах транскрипции встреч/звонков",
+  "description": "Параметр `transcript` крайне распространён у инструментов Zoom/Otter/Fireflies/YouTube (транскрипт встречи или видео) и не является историей чата. Правило выдаёт claude=error, chatgpt=error без возможности оговорки по типу/описанию.",
+  "evidence": "DATA_001.check для summarize_meeting с {transcript:{type:'string', description:'The meeting transcript text'}} → {path:'/properties/transcript', message:'parameter \"transcript\" requests conversation data'} (severity rule default = error).",
+  "suggested_fix": "Перенести одиночный `transcript` в WEAK_CONVO (warning) либо оставлять error только для `chat_transcript`/`conversation_transcript`; дополнительно понижать до warning, если description параметра содержит meeting|call|video|audio|recording.",
+  "confidence": 0.85,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F087"
+}

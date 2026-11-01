@@ -1,0 +1,20 @@
+{
+  "id": "F073",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "confirmed",
+  "final_severity": "low",
+  "corrected_description": "TOOL-031 (src/rules/tools.ts:477-481) читает properties, required и additionalProperties из корня outputSchema без deref. Если в корне стоит локальный `$ref` на `$defs`, правило ложно выдаёт error «lacks a required string id» и warning про additionalProperties. TOOL-030 при этом $ref разрешает, так что поведение внутри файла непоследовательно. Случай редкий.",
+  "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF073 [\n  'error [chatgpt] profile outputSchema lacks a required string id',\n  'warning [chatgpt] profile output should contain only id, name, email, nickname with additionalProperties: false'\n]  // outputSchema {$ref:'#/$defs/P',$defs:{P:{type:'object',properties:{id:{type:'string'}},required:['id'],additionalProperties:false}}}",
+  "votes": [
+    {
+      "id": "F073",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "Строки 477-481 актуальны: properties(t.outputSchema), required и additionalProperties читаются с корня без deref. В том же файле TOOL-030 вызывает deref для каждого свойства, а spec.md для TOOL-030 прямо требует разрешать локальные $ref. Для TOOL-031 спека об этом молчит, тестов с $ref в outputSchema нет. Вход берётся из сырого tools/list (listAll в connect.ts), без нормализации. Схема `{type:'object', $ref:'#/$defs/P', $defs:{...}}` валидна для JSON Schema 2020-12, и семантически в ней есть обязательный строковый id, а линтер выдаёт chatgpt error и warning, то есть ложное срабатывание. Оговорка: если в корне нет `type:'object'`, такая схема и так нарушает MCP-схему Tool.outputSchema, и тогда ругаться правомерно, хоть и другим сообщением. Корневой $ref в outputSchema встречается редко, поэтому severity low. Подпункт про tuple-items в TOOL-030 тоже верен: строка 442 молча делает `continue`, но это мелочь.",
+      "corrected_description": "TOOL-031 (src/rules/tools.ts:477-481) читает properties, required и additionalProperties из корня outputSchema без deref. Если в корне стоит локальный `$ref` на `$defs`, правило ложно выдаёт error «lacks a required string id» и warning про additionalProperties. TOOL-030 при этом $ref разрешает, так что поведение внутри файла непоследовательно. Случай редкий.",
+      "repro": "node /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/tools-repro.mjs\nF073 [\n  'error [chatgpt] profile outputSchema lacks a required string id',\n  'warning [chatgpt] profile output should contain only id, name, email, nickname with additionalProperties: false'\n]  // outputSchema {$ref:'#/$defs/P',$defs:{P:{type:'object',properties:{id:{type:'string'}},required:['id'],additionalProperties:false}}}",
+      "lens": "reader-batch"
+    }
+  ]
+}

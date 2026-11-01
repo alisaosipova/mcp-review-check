@@ -1,0 +1,17 @@
+{
+  "id": "F014",
+  "run": "wf_d0e6b6e6-a0a (Opus 5.5; resumed after VM crash)",
+  "verdict": "refuted",
+  "final_severity": "low",
+  "corrected_description": null,
+  "repro": null,
+  "votes": [
+    {
+      "id": "F014",
+      "refuted": true,
+      "confidence": 0.75,
+      "reasoning": "Факты верны: spec.md:1143 пишет про backslash escapes, а в spec.md:1273 нет 'list-failed'|'stopped' и `authenticated`, хотя в src/snapshot.ts:175,181 они есть. Но это не дефект. Шапка spec.md (строки 3-13) прямо называет документ «Design document; it may differ from the implementation», говорит, что он хранится ради обоснований правил, а не как пользовательская документация, и отсылает к README/RULES.md/--help и к CHANGELOG.md за полным списком расхождений. Новые опции CLI (--max-duration, --quiet, --checklist, --local/--no-local) в шапке перечислены явно. Новая семантика backslash описана в CHANGELOG.md:89 и :108, `stopped` — в CHANGELOG.md:31. В test/docs.test.ts нет проверки соответствия spec.md коду, то есть синхронизацию spec с кодом проект намеренно не требует. Расхождение задокументировано и намеренное.",
+      "lens": "reader-batch"
+    }
+  ]
+}

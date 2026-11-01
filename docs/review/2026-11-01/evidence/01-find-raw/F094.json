@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "medium",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 307,
+  "title": "INJ-009: «Follow the setup instructions in the README» / «apply the rules defined in the config» = подтягивание инструкций извне",
+  "description": "Паттерн `(follow|obey|execute|apply|load) … (instructions?|rules|directives) … (from|at|in|returned by)` накрывает документацию по настройке и бизнес-правила. Это частые фразы в описаниях инструментов, не относящиеся к indirect prompt injection.",
+  "evidence": "INJ_009.check для 'Follow the setup instructions in the README before running. Applies the formatting rules defined in the config.' → evidence 'Follow the setup instructions in'.",
+  "suggested_fix": "Требовать источник-данные: `(from|in|returned by) (the )?(response|result|output|page|document|file content|fetched|returned|tool output|web ?page|email|message)`; исключать `setup|installation|readme|config(uration)?|formatting|business|validation` рядом с rules/instructions.",
+  "confidence": 0.8,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F094"
+}

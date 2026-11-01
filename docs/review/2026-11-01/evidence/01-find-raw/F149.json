@@ -1,0 +1,13 @@
+{
+  "kind": "docs-mismatch",
+  "severity": "medium",
+  "file": "SECURITY.md",
+  "line": 30,
+  "title": "«What the tool sends» для --active не упоминает три дополнительных соединения с поддельным clientInfo.name и лимит 50 инструментов",
+  "description": "С `--active` runActive() кроме вызовов инструментов открывает до трёх свежих соединений с `clientInfo.name` = 'mcp-review-check', 'claude-ai', 'Anthropic' (для RT-012) и вызывает только первые 50 read-only инструментов (MAX_TOOLS). Ни README («What the tool sends», «--active … (max 3 calls per tool)»), ни SECURITY.md («With --active, the tool calls tools annotated readOnlyHint: true (at most 3 calls per tool)») об этом не говорят. CONTRIBUTING требует, чтобы каждый проб, отправляющий трафик, был перечислен в обоих документах. Сервер с >50 read-only инструментов получит молчаливо неполную проверку RT-*.",
+  "evidence": "src/probe/active.ts:11 `const MAX_TOOLS = 50;`, :80 `ctx.snap.tools.filter(isSafeToCall).slice(0, MAX_TOOLS)`, :97-101 `for (const n of ['mcp-review-check', 'claude-ai', 'Anthropic']) { const names = await ctx.listWithClientName(n); …}`; src/connect.ts:364,505 `listWithClientName: async (name) => (await fresh({ clientName: name }))`. `grep -n \"clientInfo\\|RT-012\\|50 tools\\|first 50\" README.md SECURITY.md` → ничего.",
+  "suggested_fix": "Дописать в README «What the tool sends» и SECURITY.md «With --active»: «…and up to three fresh connections whose clientInfo.name is mcp-review-check, claude-ai and Anthropic (RT-012); at most the first 50 read-only tools are called». В отчёте (limits/notes) сообщать, если инструменты были отсечены лимитом 50.",
+  "confidence": 0.9,
+  "dimension": "docs-tests-ci",
+  "id": "F149"
+}

@@ -1,0 +1,26 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/rules/apps.ts",
+  "line": 418,
+  "title": "APPS-019 приписывает UI-капабилити отсутствие инструмента, которого нет и в обычном новом соединении (toolsFreshConnection)",
+  "description": "Правило сравнивает toolsWithoutUi с snap.tools первой сессии. Если сервер отдаёт разный набор инструментов на разных соединениях (per-session/динамические tools, feature flags), инструмент может отсутствовать и в toolsFreshConnection (новое соединение с полными капабилити). Тогда причина не в отсутствии UI-расширения, но APPS-019 всё равно выдаёт spec/chatgpt warning с неверным объяснением.",
+  "evidence": "r2apps.out: `APPS-019: tool absent also from fresh full-capability connection` (toolsFreshConnection=['search'], toolsWithoutUi=[search], tools=[show,search]) → `APPS-019 {spec:warning, chatgpt:warning} listed only for clients that declare io.modelcontextprotocol/ui`.",
+  "suggested_fix": "Базой сравнения брать пересечение snap.tools и snap.toolsFreshConnection (если оно есть); если инструмента нет и во fresh-соединении, пропускать (это зона SRV/TOOL-нестабильности).",
+  "confidence": 0.65,
+  "failure_scenario": "Сервер с инструментами, привязанными к сессии: ложное предупреждение «нет text-only fallback».",
+  "dimension": "limits-apps",
+  "id": "R038",
+  "verdict": "confirmed",
+  "votes": [
+    {
+      "id": "R038",
+      "refuted": false,
+      "confidence": 0.6,
+      "corrected_severity": "low",
+      "reasoning": "В src/connect.ts:356-358 собираются snap.toolsFreshConnection (новое соединение с полными капабилити) и snap.toolsWithoutUi (новое text-only соединение). APPS-019 (apps.ts:414-421) сравнивает toolsWithoutUi только с snap.tools первой сессии и toolsFreshConnection не смотрит. Если инструмента нет и во fresh-соединении с полными капабилити, его отсутствие в text-only списке нельзя приписать UI-расширению, но APPS-019 всё равно выдаёт spec/chatgpt warning с объяснением «listed only for clients that declare io.modelcontextprotocol/ui». Одновременно SRV (server.ts:476) уже сообщает «different set on a fresh connection», то есть данные для разграничения есть и не используются. Тест APPS-019 не задаёт toolsFreshConnection, поэтому поведение не закреплено. Сценарий требует недетерминированного сервера, поэтому редкий: low.",
+      "lens": "reader-batch"
+    }
+  ],
+  "final_severity": "low"
+}

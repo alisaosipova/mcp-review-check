@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "/home/kali/packages/mcp-review-check/src/rules/injection.ts",
+  "line": 180,
+  "title": "INJ-004: percent-encoded не-ASCII в URL-примере (кириллица/CJK) = «encoded payload»",
+  "description": "`(%[0-9a-f]{2}){8,}` срабатывает на любом URL-encoded UTF-8 слове длиной ≥3 кириллических букв (каждая — 2 байта = 2 `%XX`). Примеры запросов на русском/японском в описании дают warning.",
+  "evidence": "INJ_004.check для описания с '%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82' → evidence '%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82'.",
+  "suggested_fix": "Для percent-runs декодировать (`decodeURIComponent` в try) и флаговать только если результат — ASCII-текст, содержащий буквы (т.е. скрывает латинский текст), а не валидный UTF-8 не-ASCII.",
+  "confidence": 0.75,
+  "dimension": "rules-injection-data-policy-apps",
+  "id": "F110"
+}

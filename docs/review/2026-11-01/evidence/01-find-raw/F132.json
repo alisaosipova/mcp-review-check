@@ -1,0 +1,13 @@
+{
+  "kind": "improvement",
+  "severity": "low",
+  "file": "src/redact.ts",
+  "line": 37,
+  "title": "В URL редактируются только токены известных форматов и секретные имена — hex/base64 ключи в пути или под нейтральным именем остаются",
+  "description": "urlSecrets/displayUrl берут path-сегменты только через isKnownToken (строгий список префиксов). Типовые ключи `/mcp/3f9a1c...` (32 hex) или `?k=AbCdEf0123456789XyZ` под нейтральным именем не маскируются и попадают в Target всех форматов. tokenLike (16+ символов с буквами и цифрами) уже есть в файле, но для URL-путей не применяется (дизайн «no entropy guess»).",
+  "evidence": "redact.ts:37 `out.push(...u.pathname.split('/').filter(isKnownToken));`; net.ts:98 KNOWN_TOKEN — только префиксные форматы.",
+  "suggested_fix": "Для path-сегментов и query-значений добавлять эвристику: ≥24 символов из [A-Fa-f0-9] или base64url с цифрами и буквами и без словарных разделителей — маскировать с пометкой; дать `--no-redact-heuristic` для отключения.",
+  "confidence": 0.6,
+  "dimension": "report-redact-engine",
+  "id": "F132"
+}

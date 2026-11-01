@@ -1,0 +1,13 @@
+{
+  "kind": "bug",
+  "severity": "low",
+  "file": "src/protocol/trace.ts",
+  "line": 366,
+  "title": "Квадратичный sseResponseWatcher: SSE-тело без пустых строк пересканируется целиком на каждом чанке",
+  "description": "Для SSE-ответов на JSON-RPC watcher делает `buf += chunk; buf.split(/\\r?\\n\\r?\\n/)` на каждом чанке. Если сервер шлёт одно бесконечное `data:` без терминатора события, buf растёт до FULL_READ_CAP, а каждый чанк стоит O(|buf|) → O(n²) CPU. Измерено: 30 МБ за 4.2 с; при 64 МБ ≈ 19 с на один запрос, и таких запросов десятки (listAll до 100 страниц, retries).",
+  "evidence": "Репро на dist/protocol/trace.js с фейковым Response (500 чанков × 60 КБ `data: xxx…\\n` без пустой строки, content-type text/event-stream, fullBody): `30MB SSE without event terminator read in 4160 ms`. Код trace.ts:368-373: `buf += chunk; const blocks = buf.split(…); buf = blocks.pop()`.",
+  "suggested_fix": "Сканировать только хвост: искать разделитель начиная с позиции `max(0, prevLen - 3)` (indexOf('\\n\\n')/('\\r\\n\\r\\n')), а при |buf| > 1 МБ без события — прекращать чтение с error BodyTooLarge/NoEvent.",
+  "confidence": 0.8,
+  "dimension": "security-lens",
+  "id": "F142"
+}

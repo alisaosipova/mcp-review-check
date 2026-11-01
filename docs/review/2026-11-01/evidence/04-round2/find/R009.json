@@ -1,0 +1,14 @@
+{
+  "kind": "security",
+  "severity": "medium",
+  "file": "src/probe/wire.ts",
+  "line": 73,
+  "title": "Для legacy HTTP+SSE Origin-пробы пропускаются, и SRV-008 молча «проходит» на локальных SSE-серверах (DNS rebinding)",
+  "description": "Для `snap.transport.kind === 'sse'` originProbes не запускаются. SRV-008 в этом случае возвращает [] без skipped и без inconclusive, поэтому в отчёте выглядит как пройденная проверка. Именно локальные legacy SSE серверы исторически уязвимы к DNS rebinding: класс CVE-2025-49596 (MCP Inspector), а DNS-rebinding protection в SDK для SSEServerTransport по умолчанию выключена. В design/spec.md SRV-008 исключения для SSE не указано.",
+  "evidence": "b_sse_latency.mjs: локальный SSE-сервер 127.0.0.1 (localMode=true, SSEServerTransport без allowedOrigins):\nprobes discover,unknownMethod,unknownTool,challenge\nSRV-008 [] []   (findings=[], skipped=[])\nКод: wire.ts:73 `if (snap.transport.kind !== 'sse') Object.assign(p, await originProbes(...))`; server.ts:201-215: при отсутствии проб правило ничего не возвращает.",
+  "suggested_fix": "Для SSE отправлять GET на url с `Accept: text/event-stream` и Origin none/claude/chatgpt/evil (abortAfterHeaders), складывать результаты в те же originNone/originEvil. Тогда SRV-008 сравнит 200 с 403. Минимальный вариант: возвращать из SRV-008 inconclusive/skipped «Origin not probed on legacy SSE».",
+  "confidence": 0.75,
+  "failure_scenario": "Локальный legacy SSE сервер принимает любой Origin: линтер не выдаёт spec error про DNS rebinding, хотя для того же сервера на Streamable HTTP выдал бы.",
+  "dimension": "sse-legacy-modern",
+  "id": "R009"
+}
