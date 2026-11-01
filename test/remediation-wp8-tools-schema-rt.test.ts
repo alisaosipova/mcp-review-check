@@ -144,10 +144,10 @@ describe('F085, F105 RT-010 finds known-format tokens in plain text, with the re
     expect(JSON.stringify(f)).not.toContain('AbCdEf');
   });
   it('pretty-printed JSON in a code fence is covered', () => {
-    expect(rt010(text('```json\n{\n  "key": "ghp_0123456789abcdefghijABCDEFGHIJ012345"\n}\n```'))).toHaveLength(1);
+    expect(rt010(text('```json\n{\n  "key": "ghp_SYNTH0123456789abcdefghijABCDEFGHIJ0"\n}\n```'))).toHaveLength(1);
   });
   it('token families from the redaction list (Stripe, GitLab, Slack, Google) count', () => {
-    for (const tok of ['sk_live_0123456789abcdefABCD', 'glpat-SYNTH0123456789abcdefAB', 'xoxb-0123456789-abcdef', `AIza${'A'.repeat(35)}`]) {
+    for (const tok of ['sk_live_SYNTH0123456789abcdefABCD', 'glpat-SYNTH0123456789abcdefAB', 'xoxb-SYNTH0123456789-abcdef', `AIza${'A'.repeat(35)}`]) {
       expect(rt010(text(`value ${tok} end`)), tok).toHaveLength(1);
     }
   });

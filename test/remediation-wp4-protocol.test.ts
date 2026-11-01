@@ -241,7 +241,7 @@ describe('the body snippet scrubs a prefix, not the whole body (F036)', () => {
 describe('recorded URLs are masked like displayed ones (F035)', () => {
   const r = createRedactor([], ['user-SECRET-01!x']);
   const QTOK = 'sk-live-ABCDEFGHIJKLMNOPQRSTUV';
-  const PTOK = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456';
+  const PTOK = 'ghp_SYNTHABCDEFGHIJKLMNOPQRSTUVWXYZ01';
 
   it('masks known-format tokens under any query name, in path segments and in the fragment', () => {
     expect(redactUrl(`https://h.example/mcp?q=${QTOK}&page=2`, r)).toBe('https://h.example/mcp?q=«redacted»&page=2');
