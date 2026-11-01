@@ -246,6 +246,20 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/**
+ * Successful handshake and listing calls: the SDK's own requests and the discover probe, 2xx only. Probe variants
+ * (badVersion, origin, preflight, header mismatch) and fast 4xx rejections (discover on a legacy server) would skew
+ * the median. Without recorded exchanges (stdio, hand-built snapshots) the per-method timings are used.
+ */
+function latencySamples(snap: Snapshot, keys: string[]): Array<{ k: string; ms: number }> {
+  const calls = snap.transport.exchanges.flatMap((e) => {
+    const m = isObj(e.requestJson) ? e.requestJson.method : undefined;
+    return typeof m === 'string' && keys.includes(m) && (e.label === `sdk ${m}` || e.label === `modern ${m}` || (e.label === 'discover' && m === 'server/discover')) ? [{ e, k: m }] : [];
+  });
+  if (!calls.length) return keys.flatMap((k) => (snap.transport.timings[k] ?? []).map((ms) => ({ k, ms })));
+  return calls.filter(({ e }) => is2xx(e)).map(({ e, k }) => ({ k, ms: e.durationMs }));
+}
+
 export const SRV_010 = defineRule(
   {
     id: 'SRV-010', title: 'Handshake and listing latency', severity: { chatgpt: 'info' }, needs: ['http'],
@@ -255,7 +269,7 @@ export const SRV_010 = defineRule(
   },
   (snap) => {
     const keys = ['initialize', 'server/discover', 'tools/list', 'resources/read'];
-    const samples = keys.flatMap((k) => (snap.transport.timings[k] ?? []).map((ms) => ({ k, ms })));
+    const samples = latencySamples(snap, keys);
     if (!samples.length) return [];
     const out: RawFinding[] = [];
     const med = median(samples.map((s) => s.ms));

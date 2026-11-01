@@ -326,4 +326,27 @@ describe('F060 SPEC-010 content for a missing resource URI', () => {
     expect(evaluate(byId('SPEC-010'), withRead({ contents: [] }))).toMatchObject([{ severity: 'error' }]);
   });
 });
+
+describe('F059 SRV-010 median over successful handshake and listing calls only', () => {
+  const call = (label: string, method: string, status: number, durationMs: number) => exchange({ label, status, durationMs, requestJson: { jsonrpc: '2.0', id: 1, method } });
+
+  it('ignores the failed discover probe, the preflight and probe variants', () => {
+    const s = snap({
+      url: URL_OK,
+      set: (x) => {
+        x.transport.exchanges = [
+          call('discover', 'server/discover', 404, 5), call('preflight', 'initialize', 401, 5), call('badVersion', 'tools/list', 400, 5),
+          call('sdk initialize', 'initialize', 200, 800), call('sdk tools/list', 'tools/list', 200, 900),
+        ];
+        x.transport.timings = { 'server/discover': [5], initialize: [5, 800], 'tools/list': [5, 900] };
+      },
+    });
+    expect(evaluate(byId('SRV-010'), s)).toMatchObject([{ message: 'median handshake/listing latency 850 ms (> 500 ms)' }]);
+  });
+
+  it('a slow WAF rejection does not count as a slow call', () => {
+    const s = snap({ url: URL_OK, set: (x) => { x.transport.exchanges = [call('sdk initialize', 'initialize', 200, 80), call('sdk tools/list', 'tools/list', 403, 7000)]; } });
+    expect(evaluate(byId('SRV-010'), s)).toEqual([]);
+  });
+});
 // @end
