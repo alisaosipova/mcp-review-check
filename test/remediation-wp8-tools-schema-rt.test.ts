@@ -301,4 +301,3 @@ describe('C-imp-3 RT-002 also judges the call without required arguments', () =>
     expect(messages('RT-002', active([call({ kind: 'invalid-missing', result: { isError: true, ...text('Missing required field "keywords".') } })]))).toEqual([]);
   });
 });
-//@@END
