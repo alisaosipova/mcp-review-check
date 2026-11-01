@@ -5,6 +5,8 @@ import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSnapshot, urlBasicAuth, type BuildOptions } from '../src/connect.js';
 import type { Deps } from '../src/probe/network.js';
+import { capSnapshot, TEXT_CAP } from '../src/limits.js';
+import { snap, tool } from './helpers.js';
 import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
@@ -105,6 +107,16 @@ describe('server/discover, the auth trigger and the auth probe follow a same-hos
     expect(snap.authProbe?.challenge?.status).toBe(401);
     expect(snap.authProbe?.invalidToken?.status).toBe(401);
     expect(snap.authProbe?.invalidToken?.url).toBe(`${s.url}/`);
+  });
+});
+
+describe('capSnapshot cuts every string of the raw list pages (F137)', () => {
+  it('a padding key no rule reads is cut to TEXT_CAP and reported', () => {
+    const s = snap({ tools: [tool({ name: 'a' })] });
+    s.listMeta.tools = { pages: 1, rawPages: [{ tools: [], nextCursor: 'n', pad: 'A'.repeat(TEXT_CAP * 4) }] };
+    const cut = capSnapshot(s);
+    expect((s.listMeta.tools.rawPages[0] as { pad: string }).pad).toHaveLength(TEXT_CAP);
+    expect(cut).toContainEqual({ where: 'tools list pages', length: TEXT_CAP * 4, cap: TEXT_CAP });
   });
 });
 
