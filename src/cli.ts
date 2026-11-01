@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
@@ -225,7 +225,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       return { code: 0, stdout: text, stderr };
     }
 
-    if (split.command && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
+    // A "--" that splitStdioArgv did not take (--stdio has a value, or no bare --stdio before it) left the command in positionals.
+    if ((split.command || split.args.includes('--')) && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
+    if (!split.command && split.args.includes('--')) throw new UsageError('"-- <command> [args...]" needs a bare --stdio before the --');
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
     const isStdio = values.stdio !== undefined || split.command !== undefined;
     if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
@@ -249,6 +251,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0 || maxDurationMs > MAX_TIMEOUT_MS) throw new UsageError(`--max-duration must be a positive whole number of milliseconds (at most ${MAX_TIMEOUT_MS})`);
     }
 
+    if (values.output === '') throw new UsageError('--output needs a file path');
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
     const unknownId = values.ignore?.find((id) => !known.has(id.toUpperCase()));
@@ -284,6 +287,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         // Windows names are case-insensitive: --env Path=… replaces the inherited PATH instead of losing to it.
         envVars[process.platform === 'win32' ? kv.slice(0, i).toUpperCase() : kv.slice(0, i)] = kv.slice(i + 1);
       }
+      // spawn reports a missing cwd as "spawn <command> ENOENT", like a missing command: check it here.
+      if (values.cwd !== undefined && !statSync(values.cwd, { throwIfNoEntry: false })?.isDirectory()) throw new UsageError('--cwd must be an existing directory (the value is not shown)');
       spec = { kind: 'stdio', command: parts[0], args: parts.slice(1), env: envVars, cwd: values.cwd };
     } else {
       const raw = positionals[0];
@@ -293,7 +298,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       let u: URL;
       try { u = new URL(raw); } catch { throw new UsageError(`invalid URL: ${shownUrl(raw)}`); }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new UsageError('URL must use http or https');
-      if (values.env?.length || values.cwd) throw new UsageError('--env and --cwd apply only to --stdio');
+      if (values.env?.length || values.cwd !== undefined) throw new UsageError('--env and --cwd apply only to --stdio');
       spec = { kind: 'http', url: raw };
     }
 

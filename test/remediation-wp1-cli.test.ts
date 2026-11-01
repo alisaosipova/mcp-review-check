@@ -82,6 +82,34 @@ describe('Authorization from --header and --bearer, and repeated --header names 
   });
 });
 
+describe('--cwd, --output and the -- separator are checked before the run (F008, F009, F010)', () => {
+  it('a --cwd that does not exist or is a file is a usage error naming --cwd, not "spawn node ENOENT" with exit 3', async () => {
+    for (const cwd of [join(tmpdir(), 'mrc-wp1-no-such-dir-SECRETVALUE'), GOOD.slice('node '.length), '']) {
+      const r = await usage(['--cwd', cwd, '--stdio', 'node -e 1']);
+      expect(r.code, cwd).toBe(2);
+      expect(r.stderr).toContain('--cwd must be an existing directory');
+      expect(r.stderr).not.toContain('SECRETVALUE');
+    }
+    expect((await usage([URL_, '--cwd', ''])).stderr).toContain('--env and --cwd apply only to --stdio');
+  });
+
+  it('--output "" is a usage error instead of printing the report to stdout', async () => {
+    const r = await usage(['--output', '', '--stdio', 'node -e 1']);
+    expect(r.code).toBe(2);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain('--output needs a file path');
+  });
+
+  it('--stdio "<command>" together with -- <command>, or -- without a bare --stdio, says so instead of "expected a single <url>"', async () => {
+    const both = await usage(['--stdio', 'foo', '--', 'node', 'x']);
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain('give --stdio either "<command>" or -- <command> [args...], not both');
+    const after = await usage(['--', 'node', 'x', '--stdio', 'foo']);
+    expect(after.code).toBe(2);
+    expect(after.stderr).toContain('"-- <command> [args...]" needs a bare --stdio before the --');
+  });
+});
+
 describe('options that do not apply to the run (F004, F161)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-wp1-'));
   const toolArgs = join(dir, 'tool-args.json');
