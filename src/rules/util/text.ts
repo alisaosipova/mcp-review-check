@@ -125,7 +125,17 @@ export function corpus(snap: Snapshot): CorpusEntry[] {
   return out;
 }
 
+/**
+ * Where a corpus entry sits, for the finding message. A prompt entry names its prompt (`prompt "summarize" description`,
+ * `prompt "summarize" argument topic description`): a prompt finding has no tool or resource subject, so without the
+ * name the reader cannot tell which of the server's prompts it is about.
+ */
 export function locationOf(e: CorpusEntry): string {
+  if (e.where.startsWith('prompt.') && e.subject !== undefined) {
+    const prompt = `prompt ${JSON.stringify(e.subject)}`;
+    if (e.where === 'prompt.argument.description') return `${prompt} argument${e.path ? ` ${e.path}` : ''} description`;
+    return `${prompt} description`;
+  }
   return e.path ? `${e.where} ${e.path}` : e.where;
 }
 
