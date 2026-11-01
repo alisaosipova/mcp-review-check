@@ -79,28 +79,50 @@ function redactHeaders(h: Record<string, string>, r: Redactor): Record<string, s
   return out;
 }
 
-/** Parse `data:` lines of an SSE body into JSON messages. */
+/** Parse `data:` lines of an SSE body into JSON messages; lines end in CRLF, LF or a lone CR (the SSE grammar). */
 export function parseSseMessages(text: string): unknown[] {
   const out: unknown[] = [];
-  for (const block of text.split(/\r?\n\r?\n/)) {
-    const data = block.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, '')).join('\n');
+  for (const block of text.replace(/\r\n?/g, '\n').split('\n\n')) {
+    const data = block.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).replace(/^ /, '')).join('\n');
     if (!data) continue;
     try { out.push(JSON.parse(data)); } catch { /* not JSON */ }
   }
   return out;
 }
 
-const isResponseTo = (m: unknown, id: unknown): boolean =>
-  !!m && typeof m === 'object' && (m as { id?: unknown }).id === id && ('result' in (m as object) || 'error' in (m as object));
+/**
+ * Whether a response id answers request id `id`: the same value, or the same number written as a string, which the SDK
+ * client also accepts (it matches responses by Number(id)).
+ */
+export function idMatches(responseId: unknown, id: unknown): boolean {
+  if (responseId === id) return true;
+  return typeof id === 'number' && typeof responseId === 'string' && responseId.trim() !== '' && Number(responseId) === id;
+}
 
-/** Watches an SSE body for the JSON-RPC response with `id`, parsing only complete events. */
+const isResponseTo = (m: unknown, id: unknown): boolean =>
+  !!m && typeof m === 'object' && idMatches((m as { id?: unknown }).id, id) && ('result' in (m as object) || 'error' in (m as object));
+
+/**
+ * Watches an SSE body for the JSON-RPC response with `id`, parsing only complete events. Line ends are normalised as
+ * they arrive (a CR that ends a chunk may be the first half of a CRLF), and only the new text is searched for an event
+ * end, so a large event split over many chunks is not rescanned on every chunk.
+ */
 function sseResponseWatcher(id: unknown): (chunk: string) => boolean {
   let buf = '';
+  let skipLf = false;
   return (chunk) => {
-    buf += chunk;
-    const blocks = buf.split(/\r?\n\r?\n/);
-    buf = blocks.pop() ?? '';
-    return blocks.some((b) => parseSseMessages(`${b}\n\n`).some((m) => isResponseTo(m, id)));
+    let c = skipLf && chunk.startsWith('\n') ? chunk.slice(1) : chunk;
+    skipLf = c.endsWith('\r');
+    c = c.replace(/\r\n?/g, '\n');
+    let from = Math.max(0, buf.length - 1);
+    buf += c;
+    let hit = false;
+    for (let end = buf.indexOf('\n\n', from); end >= 0; end = buf.indexOf('\n\n', from)) {
+      if (!hit && parseSseMessages(buf.slice(0, end)).some((m) => isResponseTo(m, id))) hit = true;
+      buf = buf.slice(end + 2);
+      from = 0;
+    }
+    return hit;
   };
 }
 
@@ -148,7 +170,9 @@ function parseBody(text: string, contentType: string | undefined, requestJson: u
   if (ct.includes('text/event-stream')) {
     const msgs = parseSseMessages(text);
     const id = (requestJson as { id?: unknown } | undefined)?.id;
-    return msgs.find((m) => (m as { id?: unknown })?.id === id && id !== undefined) ?? msgs[0];
+    const idOf = (m: unknown) => (m as { id?: unknown } | null)?.id;
+    if (id === undefined) return msgs[0];
+    return msgs.find((m) => idOf(m) === id) ?? msgs.find((m) => idMatches(idOf(m), id)) ?? msgs[0];
   }
   const t = text.trim();
   if (!t || !(t.startsWith('{') || t.startsWith('['))) return undefined;

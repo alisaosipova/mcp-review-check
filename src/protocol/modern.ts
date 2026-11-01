@@ -1,6 +1,6 @@
 // Minimal manual 2026-07-28 JSON-RPC client (server/discover, lists, read).
 import type { HttpExchange } from '../snapshot.js';
-import type { Tracer } from './trace.js';
+import { idMatches, type Tracer } from './trace.js';
 import { isObj } from '../rules/util/access.js';
 import { VERSION } from '../version.js';
 import { CLIENT_CAPABILITIES } from './clientCaps.js';
@@ -12,6 +12,8 @@ export interface ModernResponse {
   exchange: HttpExchange;
   result?: Record<string, unknown>;
   error?: { code?: unknown; message?: unknown; data?: unknown };
+  /** The response answered another request id: its result is not taken (a real client cannot match it). */
+  idMismatch?: string;
 }
 
 export interface ModernRequestOptions {
@@ -79,10 +81,14 @@ export class ModernClient {
     const { exchange } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
       method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: true,
     });
-    const msg = Array.isArray(exchange.json) ? exchange.json.find((m) => isObj(m) && m.id === id) : exchange.json;
+    const msgs = Array.isArray(exchange.json) ? exchange.json.filter(isObj) : isObj(exchange.json) ? [exchange.json] : [];
+    const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];
     const res: ModernResponse = { exchange };
     if (isObj(msg)) {
-      if (isObj(msg.result)) {
+      // An error with id null (the request could not be read) answers any request; anything else must echo the id.
+      const echoed = idMatches(msg.id, id) || (msg.id === null && isObj(msg.error));
+      if (!echoed) res.idMismatch = `response id ${JSON.stringify(msg.id)} does not match request id ${id}`;
+      if (echoed && isObj(msg.result)) {
         res.result = msg.result;
         if (exchange.status === 200) this.results.push({ method, result: msg.result });
       }
@@ -99,7 +105,7 @@ export class ModernClient {
     let cursor: string | undefined;
     for (let i = 0; i < maxPages; i++) {
       const r = await this.request(method, cursor ? { cursor } : {});
-      if (!r.result) return { items, pages, error: r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}` };
+      if (!r.result) return { items, pages, error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}`) };
       pages.push(r.result);
       const list = r.result[key];
       if (Array.isArray(list)) items.push(...list.filter(isObj));
