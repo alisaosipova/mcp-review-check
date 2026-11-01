@@ -329,6 +329,7 @@ npm run build        # tsc → dist/
 npm run typecheck    # tsc --noEmit over src/ and test/
 npm test             # vitest: rule unit tests, fixture servers, e2e, auth probe
 MCP_REVIEW_CHECK_LIVE=1 npm test   # adds smoke tests against public servers
+npm run test:coverage   # the same tests with a coverage report of src/ in coverage/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule, [SECURITY.md](SECURITY.md) for what the tool sends, the threat model and how to report a vulnerability, and [docs/design/spec.md](docs/design/spec.md) for the original design document (it may differ from the implementation).
