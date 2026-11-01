@@ -441,13 +441,19 @@ describe('sources without a flag sign', () => {
   });
 
   it.each(FORMATS)('%s: a token as the URL username, alone and in user:pass@, is redacted in the connect error', async (format) => {
-    const user = await cli([`http://${USER_TOK}@127.0.0.1:1/mcp`, '--format', format, '--timeout', '3000']);
+    // user:pass@ is sent as Authorization: Basic (F003); this server echoes the decoded credential in its error page.
+    const s = track(await listen((req: IncomingMessage, res: ServerResponse) => {
+      const basic = Buffer.from((req.headers.authorization ?? '').replace(/^Basic /, ''), 'base64').toString('utf8');
+      res.writeHead(500, { 'content-type': 'text/html' });
+      res.end(`<!doctype html><html><head><title>denied ${basic}</title></head><body>${basic}</body></html>`);
+    }));
+    const user = await cli([`http://${USER_TOK}@127.0.0.1:${s.port}/mcp`, '--format', format, '--timeout', '3000']);
     expectNoLeak(user, [USER_TOK], `${format} (TOKEN@host)`);
     expect(user.code).toBe(3);
-    const both = await cli([`http://${USER_PASS_TOK}:${PASS2}@127.0.0.1:1/mcp`, '--format', format, '--timeout', '3000']);
+    const both = await cli([`http://${USER_PASS_TOK}:${PASS2}@127.0.0.1:${s.port}/mcp`, '--format', format, '--timeout', '3000']);
     expectNoLeak(both, [USER_PASS_TOK, PASS2], `${format} (TOKEN:pass@host)`);
     expect(both.code).toBe(3);
-    if (format === 'json') expect(JSON.stringify(user.json.coverage)).toContain('«redacted»@127.0.0.1');
+    if (format === 'json') expect(JSON.stringify(user.json.coverage)).toContain('denied «redacted»');
   });
 
   it.each(FORMATS)('%s: the password inside an --env URL and the token after "Bearer" in an --env value are redacted', async (format) => {

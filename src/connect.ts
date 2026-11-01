@@ -48,10 +48,22 @@ export interface BuildOptions {
 /** The redactor for these options; before the rules only strong values, `all` adds --env values under a plain name. */
 export function redactorFor(opts: BuildOptions, all = false): Redactor {
   const t = opts.target;
+  // The Basic credential made from user:pass@ is a secret value too: a server may echo the header it got.
+  const basic = t.kind === 'http' ? urlBasicAuth(t.url) : undefined;
   return (all ? undefined : opts.redactor) ?? buildRedactor({
-    bearer: opts.bearer, headers: opts.headers,
+    bearer: opts.bearer, headers: basic ? { authorization: basic, ...opts.headers } : opts.headers,
     ...(t.kind === 'http' ? { url: t.url } : { argv: [t.command, ...t.args], env: t.env }),
   }, !all);
+}
+
+const decodeUserinfo = (v: string) => { try { return decodeURIComponent(v); } catch { return v; } };
+
+/** `Basic <base64(user:pass)>` for a URL with user:pass@ (fetch refuses such a URL), decoded as RFC 7617 sends it. */
+export function urlBasicAuth(raw: string): string | undefined {
+  let u: URL;
+  try { u = new URL(raw); } catch { return undefined; }
+  if (!u.username && !u.password) return undefined;
+  return `Basic ${Buffer.from(`${decodeUserinfo(u.username)}:${decodeUserinfo(u.password)}`, 'utf8').toString('base64')}`;
 }
 
 /** Where a run is; --max-duration reports the phase and stops at the next checkpoint. */
@@ -295,6 +307,10 @@ function collectErrors(tracer: Tracer | undefined, rec: RecordingTransport | und
 
 async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
   const url = new URL(urlAsEntered);
+  // fetch rejects a URL with user:pass@; its credentials go in an Authorization: Basic header instead (the rules
+  // still see the URL as entered). --bearer or an Authorization --header wins over them.
+  const basic = urlBasicAuth(urlAsEntered);
+  url.username = ''; url.password = '';
   const timeoutMs = opts.timeoutMs ?? 30000;
   const connectTimeout = Math.min(timeoutMs, 15000);
   const headers = { ...(opts.headers ?? {}) };
@@ -302,6 +318,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   if (progress) progress.tracer = tracer;
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
+  else if (basic && !Object.keys(headers).some((h) => h.toLowerCase() === 'authorization')) authHeaders.authorization = basic;
 
   snap.transport.dns = await lookupHost(url.hostname, deps);
   snap.localMode = opts.local ?? isLocalTarget(snap.transport.dns);
@@ -354,7 +371,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
 
   // 4. auth probe
   // Credentials sent with --header (an API key, an Authorization header) that get a 401 were rejected too.
-  const credentials = !!opts.bearer || Object.keys(headers).some((h) => CREDENTIAL_HEADER.test(h));
+  const credentials = !!opts.bearer || !!basic || Object.keys(headers).some((h) => CREDENTIAL_HEADER.test(h));
   const rejected = () => {
     snap.coverage = credentials ? { toolLevel: 'token-rejected', reason: opts.bearer ? 'token rejected (401)' : 'supplied credentials rejected (401)' } : { toolLevel: 'auth-required', reason: 'server requires OAuth' };
     trigger ??= credentials ? 'bearer-rejected' : 'preflight-401';
@@ -694,11 +711,11 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
 // ---------- entry ----------
 
 export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps): Promise<BuildResult> {
+  const t = opts.target;
   const options: Snapshot['options'] = {
     target: opts.platforms ?? 'all', active: !!opts.active, activeAuth: !!opts.activeAuth,
-    authenticated: !!opts.bearer || Object.keys(opts.headers ?? {}).length > 0,
+    authenticated: !!opts.bearer || Object.keys(opts.headers ?? {}).length > 0 || (t.kind === 'http' && !!urlBasicAuth(t.url)),
   };
-  const t = opts.target;
   const snap = t.kind === 'http'
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
