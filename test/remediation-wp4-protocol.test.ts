@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildRedactor, redactDeep } from '../src/redact.js';
-import { capBody, createRedactor, createTracer, parseSseMessages, scrub } from '../src/protocol/trace.js';
+import { capBody, createRedactor, createTracer, parseSseMessages, scrub, snippetOf } from '../src/protocol/trace.js';
 import { ModernClient } from '../src/protocol/modern.js';
 import { LIST_BYTE_BUDGET, listAll, paginate } from '../src/protocol/legacy.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -217,5 +217,23 @@ describe('listings: one pagination for both eras (F136, F032, R011, F137)', () =
     const url = await serve((_req, body, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(body).id, result: { tools: [] } })); });
     const r = await new ModernClient(url, createTracer(createRedactor()), {}, 4000).request('tools/list');
     expect(r.bytes).toBe(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [] } }).length);
+  });
+});
+
+describe('the body snippet scrubs a prefix, not the whole body (F036)', () => {
+  it('gives the same snippet as scrubbing the whole body, secrets at the cut and long secrets included', () => {
+    const long = 'L'.repeat(300) + 'ONGSECRET';
+    const r = createRedactor([], ['test', 'sk-live-ABCDEFGHIJKLMNOP', long]);
+    let seed = 7;
+    const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed % n; };
+    const parts = ['test', ' ', 'sk-live-ABCDEFGHIJKLMNOP', long, 'x', 'attestation', '\n'];
+    for (let k = 0; k < 300; k++) {
+      let text = '';
+      while (text.length < 4096 + rnd(4000)) text += parts[rnd(parts.length)];
+      expect(snippetOf(text, r), `case ${k}`).toBe(scrub(text, r).slice(0, 4096));
+    }
+    const atCut = 'a'.repeat(4090) + ' sk-live-ABCDEFGHIJKLMNOP tail';
+    expect(snippetOf(atCut, r)).toBe(scrub(atCut, r).slice(0, 4096));
+    expect(snippetOf(atCut, r)).not.toContain('sk-li');
   });
 });

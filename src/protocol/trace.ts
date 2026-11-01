@@ -222,6 +222,22 @@ function parseBody(text: string, contentType: string | undefined, requestJson: u
   try { return JSON.parse(t); } catch { return undefined; }
 }
 
+/**
+ * The first SNIPPET characters of a body with its secrets masked, scrubbing only a prefix of the body (up to 64 MiB).
+ * Masked before the cut, so no secret prefix is left: a secret cut at the end of the scrubbed prefix stays in its last
+ * 3 × longest + 13 characters (a 4-character value grows into the 10-character marker), so that much is kept past the
+ * snippet, and the prefix doubles while secrets longer than the marker shrink it below that.
+ */
+export function snippetOf(text: string, r: Redactor): string {
+  if (!r.values.size) return text.slice(0, SNIPPET);
+  const margin = 3 * Math.max(...[...r.values].map((v) => v.length)) + REDACTED.length + 3;
+  for (let len = SNIPPET + margin; ; len *= 2) {
+    if (len >= text.length) return scrub(text, r).slice(0, SNIPPET);
+    const s = scrub(text.slice(0, len), r);
+    if (s.length >= SNIPPET + margin) return s.slice(0, SNIPPET);
+  }
+}
+
 function errorInfo(err: unknown): HttpExchange['error'] {
   const e = err as Error & { code?: string | number; cause?: { code?: string } };
   return { name: e?.name ?? 'Error', code: e?.code, causeCode: e?.cause?.code, message: String(e?.message ?? err) };
@@ -289,7 +305,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   };
 
   const finishBody = (ex: HttpExchange, text: string) => {
-    ex.bodySnippet = scrub(text, redactor).slice(0, SNIPPET); // masked before the cut: no secret prefix is left
+    ex.bodySnippet = snippetOf(text, redactor);
     ex.json = parseBody(text, ex.contentType, ex.requestJson);
   };
 
