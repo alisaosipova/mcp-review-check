@@ -1,13 +1,15 @@
 // Regression tests for the WP1-cli remediation (review 2026-11-01): CLI argument validation, explain and
 // --list-rules output, the summary line, the entry-point check and signal handling. In process through runCli
 // where the run needs no real process, the built CLI (cli()) where the process itself is under test.
+import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
-import { BAD, cli, GOOD } from './cli-runner.js';
+import { VERSION } from '../src/version.js';
+import { BAD, CLI, cli, GOOD, ROOT } from './cli-runner.js';
 
 const URL_ = 'http://127.0.0.1:1/mcp';
 const usage = async (args: string[], env: NodeJS.ProcessEnv = {}) => runCli(args, env, false);
@@ -147,6 +149,15 @@ describe('the --output summary line (R021)', () => {
     if (name === 'stubborn') expect(s.warnings, r.stderr).toBe(1);
     expect(r.stderr).toContain(` · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info · `);
     expect(r.stderr).not.toMatch(/\b1 (errors|warnings)\b/);
+  });
+});
+
+describe('the entry point without its extension (R005)', () => {
+  it('node dist/cli --version prints the version instead of exiting 0 silently', async () => {
+    const r = await new Promise<{ code: number | null; stdout: string }>((done) => {
+      execFile(process.execPath, [CLI.replace(/\.js$/, ''), '--version'], { cwd: ROOT }, (err, stdout) => done({ code: err ? (err as { code?: number }).code ?? 1 : 0, stdout }));
+    });
+    expect(r).toEqual({ code: 0, stdout: `${VERSION}\n` });
   });
 });
 

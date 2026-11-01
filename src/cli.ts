@@ -387,8 +387,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
   }
 }
 
+// `node dist/cli` runs dist/cli.js (Node adds the extension) with argv[1] still "dist/cli", which has no real path:
+// try the typed path, then with ".js", so the CLI does not exit 0 without running.
 const isMain = (() => {
-  try { return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); } catch { return false; }
+  const arg = process.argv[1];
+  if (!arg) return false;
+  for (const path of [arg, `${arg}.js`]) {
+    try { return realpathSync(path) === fileURLToPath(import.meta.url); } catch { /* no such file: try the next form */ }
+  }
+  return false;
 })();
 
 if (isMain) {
