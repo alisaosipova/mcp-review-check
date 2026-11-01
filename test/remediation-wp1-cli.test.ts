@@ -173,6 +173,35 @@ describe('a signal during the run (R004)', () => {
   });
 });
 
+describe('explain and --list-rules (R015, R016)', () => {
+  it('explain names what a rule needs to run; a MAN item names its feature and the --ignore hint', async () => {
+    expect((await usage(['explain', 'RT-001'])).stdout).toMatch(/^Needs {5}--active$/m);
+    expect((await usage(['explain', 'AUTH-020'])).stdout).toMatch(/^Needs {5}.*--active-auth/m);
+    expect((await usage(['explain', 'TOOL-011'])).stdout).toMatch(/^Needs {5}tools\/list works$/m);
+    const man = (await usage(['explain', 'MAN-007'])).stdout;
+    expect(man).toContain('Shown when the server asks for OAuth');
+    expect(man).toContain('To hide it: --ignore MAN-007');
+    expect((await usage(['explain', 'MAN-001'])).stdout).not.toContain('Shown when');
+  });
+
+  it('--list-rules --verbose prints the needs; the text listing tags MAN items with their feature', async () => {
+    expect((await usage(['--list-rules', 'RT-001', '--verbose'])).stdout).toContain('Needs: --active');
+    expect((await usage(['--list-rules', 'RT-001'])).stdout).not.toContain('Needs:');
+    expect((await usage(['--list-rules', 'MAN-007'])).stdout).toMatch(/^MAN-007 +claude=manual \[oauth\] /m);
+  });
+
+  it('--list-rules --format markdown prints no empty table for a prefix that matches only rules or only MAN items', async () => {
+    const man = (await usage(['--list-rules', 'MAN-00', '--format', 'markdown'])).stdout;
+    expect(man).not.toContain('| ID | Title |');
+    expect(man.startsWith('**Manual checklist**')).toBe(true);
+    expect(man).toContain('| MAN-001 |');
+    const rt = (await usage(['--list-rules', 'RT-001', '--format', 'markdown'])).stdout;
+    expect(rt).not.toContain('Manual checklist');
+    expect(rt).not.toContain('| ID | Platform | Reminder |');
+    expect(rt.trim().split('\n')).toHaveLength(3);
+  });
+});
+
 describe('options that do not apply to the run (F004, F161)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-wp1-'));
   const toolArgs = join(dir, 'tool-args.json');
