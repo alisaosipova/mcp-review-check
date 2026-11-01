@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiMeta, uiTools, uiUriOf } from './util/access.js';
 import { extractOrigins, originMatches, stripComments, type OriginKind } from './util/html.js';
-import { displayUrl, isLoopbackHost, isNonPublicIp, registrableDomain, SHARED_HOST_SUFFIXES } from './util/net.js';
+import { displayUrl, isLoopbackHost, isNonPublicIp, registrableDomain } from './util/net.js';
 import { cspOf, RESOURCE_MIME_TYPE, UI_EXTENSION, uiResources } from './util/ui.js';
 
 const APPS_SPEC = 'https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx';
@@ -115,6 +115,23 @@ export const APPS_005 = defineRule(
 
 const BROAD = new Set(['*', 'https:', 'http:', 'https://*', 'http://*', 'wss://*']);
 const CDNS = ['unpkg.com', 'cdn.jsdelivr.net'];
+/** Cloud storage and CDN hosts where any customer gets a subdomain: a wildcard on them admits everyone's content. */
+const SHARED_CLOUD_SUFFIXES = [
+  'amazonaws.com', 's3.amazonaws.com', 'cloudfront.net', 'azureedge.net', 'blob.core.windows.net', 'googleapis.com',
+  'storage.googleapis.com', 'appspot.com', 'firebaseapp.com', 'web.app', 'r2.dev', 'b-cdn.net', 'fastly.net',
+];
+
+/**
+ * `*.<rest>` covers hosts anyone can register: rest is a public suffix (`com`, `co.uk`, `com.au`), a shared hosting
+ * suffix (`vercel.app`) or a shared cloud host. registrableDomain keeps one label under each of these, so a probe
+ * label that stays its own registrable domain means rest has no owner of its own.
+ */
+function broadWildcard(rest: string): boolean {
+  const r = rest.toLowerCase().replace(/\.$/, '');
+  if (!r.includes('.') || SHARED_CLOUD_SUFFIXES.includes(r)) return true;
+  const probe = `x.${r}`;
+  return registrableDomain(probe) === probe;
+}
 
 export const APPS_006 = defineRule(
   {
@@ -131,7 +148,7 @@ export const APPS_006 = defineRule(
         const v = value.trim();
         if (/'unsafe-/i.test(v)) { out.push({ resource, message: `${field}: "${v}" contains an unsafe-* keyword` }); continue; }
         const wild = /^([a-z]+:\/\/)?\*\.(.+)$/i.exec(v);
-        if (BROAD.has(v) || (wild && (!wild[2].includes('.') || SHARED_HOST_SUFFIXES.includes(wild[2].toLowerCase())))) {
+        if (BROAD.has(v) || (wild && broadWildcard(wild[2]))) {
           out.push({ resource, message: `${field}: "${v}" is overly broad` });
           continue;
         }
