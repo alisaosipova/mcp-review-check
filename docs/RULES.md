@@ -104,7 +104,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | APPS-003 | UI resource MIME type and payload | spec: error, claude: error, chatgpt: error | [link](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) |
 | APPS-004 | UI content looks like an HTML document | spec: warning | [link](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) |
 | APPS-005 | UI resource declares a CSP | chatgpt: error, claude: info | [link](https://developers.openai.com/plugins/deploy/app-review) |
-| APPS-006 | CSP entries narrow and well-formed | chatgpt: warning, spec: warning | [link](https://developers.openai.com/plugins/build/chatgpt-ui) |
+| APPS-006 | CSP entries narrow and well-formed | chatgpt: warning, claude: info, spec: warning | [link](https://developers.openai.com/plugins/build/chatgpt-ui) |
 | APPS-007 | External origins used by the widget are declared in the CSP | chatgpt: error, claude: warning, spec: warning | [link](https://developers.openai.com/plugins/build/chatgpt-ui) |
 | APPS-008 | Nested frames declared | claude: warning, chatgpt: warning | [link](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines) |
 | APPS-009 | csp or permissions placed on the tool instead of the resource | spec: warning | [link](https://github.com/modelcontextprotocol/ext-apps/blob/main/src/spec.types.ts) |
