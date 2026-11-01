@@ -12,6 +12,13 @@ export class RecordingTransport implements Transport {
   onmessage?: (message: JSONRPCMessage) => void;
 
   readonly pending = new Map<unknown, string>(); // id -> method, until the response arrives
+  /** When each pending request was sent. */
+  private readonly sentAt = new Map<unknown, number>();
+  /** Time from send(id) to the result with that id, per method. On legacy HTTP+SSE the POST only gets 202 and the
+   *  result arrives on the GET stream, so this is the latency the tracer cannot see (SRV-010). Errors are not sampled. */
+  readonly latencies: Record<string, number[]> = {};
+  /** The clock for `latencies` (tests inject one). */
+  now: () => number = () => performance.now();
   readonly errors: ObservedError[] = [];
   /** The first TRANSPORT_ERRORS_KEPT transport error messages; the SDK reports one per unparsable stdout line,
    *  so a server that logs to stdout would otherwise pile up an Error (with its stack) per line until the heap runs out. */
@@ -38,7 +45,7 @@ export class RecordingTransport implements Transport {
 
   async send(message: JSONRPCMessage, options?: Parameters<Transport['send']>[1]): Promise<void> {
     const m = message as unknown as Record<string, unknown>;
-    if (typeof m.method === 'string' && m.id !== undefined) this.pending.set(m.id, m.method);
+    if (typeof m.method === 'string' && m.id !== undefined) { this.pending.set(m.id, m.method); this.sentAt.set(m.id, this.now()); }
     return this.inner.send(message, options);
   }
 
@@ -61,7 +68,10 @@ export class RecordingTransport implements Transport {
     const m = message as unknown as Record<string, unknown>;
     if (m.method !== undefined) return; // server request or notification
     const method = this.pending.get(m.id);
+    const sent = this.sentAt.get(m.id);
     this.pending.delete(m.id);
+    this.sentAt.delete(m.id);
+    if (method && sent !== undefined && 'result' in m) (this.latencies[method] ??= []).push(this.now() - sent);
     if (method === 'initialize' && 'result' in m) this.initializeRaw = m.result;
     if (isObj(m.error)) {
       this.errors.push({ source: method ?? 'response', requestId: method ? m.id : undefined, responseId: m.id, code: m.error.code, message: m.error.message });

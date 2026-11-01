@@ -7,6 +7,9 @@ import { buildSnapshot, urlBasicAuth, type BuildOptions } from '../src/connect.j
 import type { Deps } from '../src/probe/network.js';
 import { capSnapshot, TEXT_CAP } from '../src/limits.js';
 import { snap, tool } from './helpers.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { RecordingTransport } from '../src/protocol/recording.js';
 import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
@@ -146,5 +149,47 @@ describe('the TLS checks obey --timeout and --max-duration (F031)', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(seen).toHaveLength(1);
     expect(seen[0].signal?.aborted).toBe(true);
+  });
+});
+
+describe('legacy HTTP+SSE latency is timed from send to result (R008)', () => {
+  it('RecordingTransport samples results per method, not errors or notifications', async () => {
+    let onmessage: ((m: unknown) => void) | undefined;
+    const inner = { start: async () => {}, send: async () => {}, close: async () => {}, set onmessage(f: (m: unknown) => void) { onmessage = f; } } as unknown as Transport;
+    const rec = new RecordingTransport(inner);
+    let t = 0;
+    rec.now = () => t;
+    await rec.start();
+    await rec.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    await rec.send({ jsonrpc: '2.0', id: 2, method: 'resources/read', params: { uri: 'x' } });
+    await rec.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    t = 1500;
+    onmessage?.({ jsonrpc: '2.0', id: 1, result: { tools: [] } });
+    onmessage?.({ jsonrpc: '2.0', id: 2, error: { code: -32002, message: 'nope' } });
+    expect(rec.latencies).toEqual({ 'tools/list': [1500] });
+  });
+
+  it('a slow tools/list on a legacy SSE server reaches transport.timings', async () => {
+    const slow = () => {
+      const server = createGoodServer() as { connect(t: InMemoryTransport): Promise<void> };
+      return {
+        connect(t: InMemoryTransport) {
+          const send = t.send.bind(t);
+          t.send = async (m, o) => {
+            const r = (m as { result?: { tools?: unknown } }).result;
+            if (r && 'tools' in r) await new Promise((done) => setTimeout(done, 400));
+            return send(m, o);
+          };
+          return server.connect(t);
+        },
+      };
+    };
+    const s = await serve(createBridgeHandler(slow, { sseOnly: true }));
+    const snapshot = await build(s.url);
+    expect(snapshot.era).toBe('sse-legacy');
+    const samples = snapshot.transport.timings['tools/list'] ?? [];
+    expect(samples.length).toBeGreaterThan(0);
+    expect(Math.min(...samples)).toBeGreaterThanOrEqual(350);
+    expect(snapshot.transport.timings.initialize?.length).toBeGreaterThan(0);
   });
 });

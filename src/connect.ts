@@ -280,6 +280,7 @@ async function connectSse(url: URL, headers: Record<string, string>, tracer: Tra
   const client = newClient(variant.clientName, variant.capabilities);
   const inner = new SSEClientTransport(url, { requestInit: { headers }, fetch: tracer.fetch });
   const rec = new RecordingTransport(inner);
+  rec.now = () => tracer.now(); // the run's clock, as for the tracer's own samples
   try {
     await withTimeout(client.connect(rec, { timeout: timeoutMs }), timeoutMs + 1000, 'SSE connect');
     return { ok: true, client, rec, kind: 'sse', protocolVersion: (rec.initializeRaw as { protocolVersion?: string })?.protocolVersion };
@@ -364,11 +365,11 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     if (snap.discoverRaw && isObj(snap.discoverRaw)) adoptDiscover(snap, snap.discoverRaw as Record<string, unknown>);
   }
 
-  if (progress) progress.collect = () => ({ modernResults: [...modern.results], observedErrors: collectErrors(tracer, conn.rec) });
+  if (progress) progress.collect = () => ({ modernResults: [...modern.results], observedErrors: collectErrors(tracer, conn.rec), timings: httpTimings(tracer, conn) });
   const finishHttp = async (): Promise<BuildResult> => {
     await tracer.flush();
     snap.transport.exchanges = ruleExchanges(tracer);
-    snap.transport.timings = { ...tracer.timings };
+    snap.transport.timings = httpTimings(tracer, conn);
     snap.transport.modernResults = modern.results;
     snap.transport.observedErrors = collectErrors(tracer, conn.rec);
     closing(progress);
@@ -455,6 +456,15 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     }
   }
   return finishHttp();
+}
+
+/** SRV-010's samples: the tracer's, plus on legacy HTTP+SSE the SDK connection's time from send to result (its POSTs
+ *  get 202 and the result comes on the GET stream, which the tracer does not time). */
+function httpTimings(tracer: Tracer, conn: LegacyConn): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [k, v] of Object.entries(tracer.timings)) out[k] = [...v];
+  if (conn.ok && conn.kind === 'sse' && conn.rec) for (const [k, v] of Object.entries(conn.rec.latencies)) (out[k] ??= []).push(...v);
+  return out;
 }
 
 /** Some listed tool links a UI resource (the text-only re-list for APPS-019 is needed). */
@@ -869,9 +879,10 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
     transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: progress.tracer ? ruleExchanges(progress.tracer) : [...live.transport.exchanges] },
   };
   if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };
+  const seen = progress.collect?.();
+  if (seen?.timings) snap.transport.timings = seen.timings;
   if (progress.stderrTail && snap.target.kind === 'stdio') snap.transport.stdio ??= stdioObservation(progress.nonJsonStdout, progress.stderrTail());
   // Errors and modern results observed so far are evidence for the rules that read them (SPEC-016, SPEC-012/013).
-  const seen = progress.collect?.();
   if (seen) {
     snap.transport.observedErrors ??= seen.observedErrors;
     snap.transport.modernResults ??= seen.modernResults;
