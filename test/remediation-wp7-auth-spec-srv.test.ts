@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { authRules } from '../src/rules/auth.js';
 import { manualChecklist } from '../src/rules/manual.js';
 import { serverRules } from '../src/rules/server.js';
-import { specRules } from '../src/rules/spec.js';
+import { metaKeyProblem, specRules } from '../src/rules/spec.js';
 import type { Rule } from '../src/rules/types.js';
 import { isLoopbackHost, isNonPublicIp, isNonPublicIPv6 } from '../src/rules/util/net.js';
 import { parseWwwAuthenticate } from '../src/rules/util/wwwAuth.js';
@@ -264,6 +264,16 @@ describe('F121 manual OAuth items for legacy discovery without PRM', () => {
 
   it('leaves them out without any OAuth', () => {
     expect(manualChecklist(snap({ url: URL_OK })).map((i) => i.id)).not.toContain('MAN-007');
+  });
+});
+
+describe('F039 SPEC-018 reserved _meta prefixes from the spec examples', () => {
+  it('flags modelcontextprotocol or mcp followed by another label, in any position', () => {
+    for (const k of ['modelcontextprotocol.io/x', 'mcp.dev/x', 'api.modelcontextprotocol.org/x', 'tools.mcp.com/x', 'a.b.mcp.com/x', 'dev.mcp/x']) expect(metaKeyProblem(k), k).toBe('reserved prefix');
+  });
+
+  it('keeps single-label, trailing-label and allowlisted keys valid', () => {
+    for (const k of ['mcp/x', 'com.example.mcp/x', 'com.acme/x', 'mcp/www_authenticate', 'io.modelcontextprotocol/ui']) expect(metaKeyProblem(k), k).toBeUndefined();
   });
 });
 // @end

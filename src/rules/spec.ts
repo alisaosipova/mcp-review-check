@@ -453,7 +453,11 @@ export function metaKeyProblem(key: string): string | undefined {
   if (prefix !== undefined) {
     const labels = prefix.split('.');
     if (labels.some((l) => !META_LABEL.test(l))) return 'invalid prefix label';
-    if ((labels[1] === 'modelcontextprotocol' || labels[1] === 'mcp') && !META_ALLOW.has(key)) return 'reserved prefix';
+    // The spec reserves "zero or more labels, then modelcontextprotocol or mcp, then any label" (modelcontextprotocol.io/,
+    // mcp.dev/, tools.mcp.com/); MCP's own keys use the reverse-DNS second label (io.modelcontextprotocol/), so that
+    // position counts too. A single label (mcp/x) and a trailing one (com.example.mcp/x) are not reserved.
+    const reserved = labels.some((l, i) => (l === 'modelcontextprotocol' || l === 'mcp') && (i < labels.length - 1 || i === 1));
+    if (reserved && !META_ALLOW.has(key)) return 'reserved prefix';
   }
   if (!META_NAME.test(name)) return 'invalid name';
   return undefined;
