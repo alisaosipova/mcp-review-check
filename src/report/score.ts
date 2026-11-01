@@ -74,7 +74,8 @@ export function gate(findings: Finding[], failOn: FailOn, platforms: Platform[])
   };
 }
 
-/** True when any finding reaches the threshold on one of `platforms` (default: every platform). */
-export function failed(findings: Finding[], failOn: FailOn, platforms: Platform[] = ['claude', 'chatgpt', 'spec']): boolean {
+/** True when any finding reaches the threshold on one of `platforms`; the default is the CLI's gate for --target all
+ *  without --fail-on-spec (claude and chatgpt), so a spec-only finding fails only when spec is passed. */
+export function failed(findings: Finding[], failOn: FailOn, platforms: Platform[] = gatedPlatforms('all')): boolean {
   return gate(findings, failOn, platforms).failed;
 }
