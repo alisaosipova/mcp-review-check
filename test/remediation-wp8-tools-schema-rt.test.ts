@@ -153,4 +153,15 @@ describe('F085, F105 RT-010 finds known-format tokens in plain text, with the re
     expect(rt010(text('The task-runner reported a risk-assessment-for-2026 and skipped-steps.'))).toEqual([]);
   });
 });
+
+describe('F104 RT-010 does not call keys declared in outputSchema internal', () => {
+  const logsTool = tool({ name: 'get_logs', outputSchema: { type: 'object', properties: { logs: { type: 'array' } } } });
+  it('a declared logs key is the contract', () => {
+    expect(evaluate(byId('RT-010'), active([call({ tool: 'get_logs', result: { ...text('{"logs":["a"]}'), structuredContent: { logs: ['a'] } } })], [logsTool]))).toEqual([]);
+  });
+  it('undeclared internal keys are still reported', () => {
+    const f = evaluate(byId('RT-010'), active([call({ tool: 'get_logs', result: { ...text('{}'), structuredContent: { logs: ['a'], trace_id: 'x' } } })], [logsTool]));
+    expect(f.map((x) => x.message)).toEqual(['result exposes internal keys: trace_id']);
+  });
+});
 //@@END

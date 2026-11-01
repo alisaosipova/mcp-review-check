@@ -5,6 +5,7 @@ import { validateAgainst } from './schema.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiUriOf, type Obj } from './util/access.js';
 import { isKnownToken } from './util/net.js';
+import { walkSchema } from './util/schemaWalk.js';
 import { isGenericError, nfkc, snippet } from './util/text.js';
 import { parseWwwAuthenticate } from './util/wwwAuth.js';
 
@@ -245,8 +246,11 @@ export const RT_010 = defineRule(
     const roots: unknown[] = [r.structuredContent];
     for (const part of textOf(r).split('\n')) { try { roots.push(JSON.parse(part)); } catch { /* not JSON */ } }
     try { roots.push(JSON.parse(textOf(r))); } catch { /* not JSON */ }
+    // A key the outputSchema declares (logs of a get_logs tool, a documented request_id) is the tool's contract.
+    const declared = new Set<string>();
+    walkSchema(toolByName(snap, c.tool)?.outputSchema, (v) => { if (v.viaProperty) declared.add(v.rawName); });
     const keys = new Set<string>();
-    for (const root of roots) walkJson(root, (k) => { if (k && LEAK_KEY.test(k)) keys.add(k); });
+    for (const root of roots) walkJson(root, (k) => { if (k && LEAK_KEY.test(k) && !declared.has(k)) keys.add(k); });
     const tokens = new Set<string>();
     for (const part of outputParts(r)) for (const tok of tokensIn(part.text)) tokens.add(redactToken(tok));
     const out: RawFinding[] = [];
