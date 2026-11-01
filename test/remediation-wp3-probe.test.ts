@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
-import { runActive, wrongTypeValue } from '../src/probe/active.js';
+import { placeholder, runActive, synthesizeArgs, wrongTypeValue } from '../src/probe/active.js';
 import { sameHostRedirect } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
@@ -170,6 +170,54 @@ describe('F023: the wrong-type call uses a value the schema really rejects', () 
     expect(s.active.calls.map((c) => c.kind)).toEqual(['synthetic', 'invalid-missing']);
     expect(calls).toHaveLength(2);
     expect(evaluate(byId('RT-002'), s)).toEqual([]);
+  });
+});
+
+describe('F029: synthesized arguments follow formats, bounds, nested required properties and $ref', () => {
+  it('keeps the documented order and plain placeholders', () => {
+    expect(synthesizeArgs({ type: 'object', properties: { a: { type: 'string' }, b: { type: 'integer', default: 5 }, c: { enum: ['x'] }, d: { type: 'boolean' }, e: { type: 'array' }, f: { type: 'object' }, g: { type: 'number' } }, required: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }))
+      .toEqual({ a: 'mcp-review-check', b: 5, c: 'x', d: false, e: [], f: {}, g: 1 });
+  });
+
+  it('fills string formats and lengths, numeric bounds, minItems and nested required properties', () => {
+    const args = synthesizeArgs({
+      type: 'object',
+      properties: {
+        url: { type: 'string', format: 'uri' },
+        email: { type: 'string', format: 'email' },
+        when: { type: 'string', format: 'date-time' },
+        id: { type: 'string', format: 'uuid' },
+        code: { type: 'string', minLength: 20 },
+        short: { type: 'string', maxLength: 3 },
+        page: { type: 'integer', minimum: 10 },
+        above: { type: 'integer', exclusiveMinimum: 0, multipleOf: 5 },
+        ratio: { type: 'number', maximum: 0.5 },
+        tags: { type: 'array', minItems: 2, items: { type: 'string', enum: ['a', 'b'] } },
+        filter: { type: 'object', properties: { field: { type: 'string' }, limit: { type: 'integer' } }, required: ['field'] },
+        maybe: { type: ['null', 'integer'] },
+      },
+      required: ['url', 'email', 'when', 'id', 'code', 'short', 'page', 'above', 'ratio', 'tags', 'filter', 'maybe'],
+    });
+    expect(args).toEqual({
+      url: 'https://example.com/', email: 'user@example.com', when: '2026-01-01T00:00:00Z', id: '00000000-0000-4000-8000-000000000000',
+      code: 'mcp-review-checkxxxx', short: 'mcp', page: 10, above: 5, ratio: 0.5, tags: ['a', 'a'], filter: { field: 'mcp-review-check' }, maybe: 1,
+    });
+  });
+
+  it('resolves local $ref and takes the first non-null anyOf/oneOf branch', () => {
+    const schema = {
+      type: 'object',
+      $defs: { Range: { type: 'object', properties: { from: { type: 'string', format: 'date' } }, required: ['from'] } },
+      properties: {
+        range: { $ref: '#/$defs/Range' },
+        q: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 3 }] },
+        loop: { $ref: '#/properties/loop' },
+        missing: { $ref: '#/$defs/Nope' },
+      },
+      required: ['range', 'q', 'loop', 'missing'],
+    };
+    expect(synthesizeArgs(schema)).toEqual({ range: { from: '2026-01-01' }, q: 3, loop: 'mcp-review-check', missing: 'mcp-review-check' });
+    expect(placeholder({ oneOf: [{ type: 'boolean' }, { type: 'string' }] })).toBe(false);
   });
 });
 

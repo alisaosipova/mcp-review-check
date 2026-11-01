@@ -17,29 +17,104 @@ export function isSafeToCall(tool: Obj): boolean {
   return a.readOnlyHint === true && a.destructiveHint !== true && !tokenize(toolName(tool)).some((t) => WRITE_VERBS.has(t));
 }
 
-export function placeholder(schema: unknown): unknown {
-  if (!isObj(schema)) return 'mcp-review-check';
+/** Sample values for string formats, so a format-validating server accepts the synthesized argument. */
+const FORMAT_SAMPLES: Record<string, string> = {
+  uri: 'https://example.com/', 'uri-reference': 'https://example.com/', iri: 'https://example.com/', 'iri-reference': 'https://example.com/', url: 'https://example.com/',
+  email: 'user@example.com', 'idn-email': 'user@example.com',
+  'date-time': '2026-01-01T00:00:00Z', date: '2026-01-01', time: '00:00:00Z', duration: 'P1D',
+  uuid: '00000000-0000-4000-8000-000000000000', hostname: 'example.com', 'idn-hostname': 'example.com',
+  ipv4: '192.0.2.1', ipv6: '2001:db8::1',
+};
+/** Nesting cut-off for $ref chains and nested objects or arrays. */
+const MAX_DEPTH = 8;
+
+/** A local JSON pointer ("#/$defs/x") resolved against the input schema. */
+function resolveRef(ref: string, root: unknown): unknown {
+  if (!ref.startsWith('#')) return undefined;
+  let node: unknown = root;
+  for (const part of ref.slice(1).split('/').filter(Boolean)) {
+    const key = decodeURIComponent(part).replace(/~1/g, '/').replace(/~0/g, '~');
+    if (!isObj(node) || !Object.prototype.hasOwnProperty.call(node, key)) return undefined;
+    node = node[key];
+  }
+  return node;
+}
+
+function numberPlaceholder(schema: Obj, integer: boolean): number {
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const step = integer ? 1 : 0.5;
+  const min = num(schema.minimum) ?? (num(schema.exclusiveMinimum) !== undefined ? num(schema.exclusiveMinimum)! + step : undefined);
+  const max = num(schema.maximum) ?? (num(schema.exclusiveMaximum) !== undefined ? num(schema.exclusiveMaximum)! - step : undefined);
+  let v = min ?? (max !== undefined && max < 1 ? max : 1);
+  if (integer) v = Math.ceil(v);
+  const multipleOf = num(schema.multipleOf);
+  if (multipleOf && multipleOf > 0) v = Math.ceil(v / multipleOf) * multipleOf;
+  return v;
+}
+
+function stringPlaceholder(schema: Obj): string {
+  const format = typeof schema.format === 'string' ? FORMAT_SAMPLES[schema.format] : undefined;
+  let v = format ?? 'mcp-review-check';
+  const minLength = typeof schema.minLength === 'number' ? schema.minLength : 0;
+  const maxLength = typeof schema.maxLength === 'number' ? schema.maxLength : Infinity;
+  if (!format && v.length < minLength) v = v.padEnd(Math.min(minLength, 10000), 'x');
+  if (!format && v.length > maxLength) v = v.slice(0, Math.max(0, maxLength));
+  return v;
+}
+
+/**
+ * A value the property schema accepts: default, examples[0], enum[0], const, then a placeholder that follows the type
+ * and the common constraints (string format and length, number bounds and multipleOf, array minItems, the required
+ * properties of an object), the first anyOf/oneOf/allOf branch and local $ref. A `pattern` is not synthesized.
+ */
+export function placeholder(schema: unknown, root: unknown = schema, depth = 0): unknown {
+  if (!isObj(schema) || depth > MAX_DEPTH) return 'mcp-review-check';
   if (schema.default !== undefined) return schema.default;
   if (Array.isArray(schema.examples) && schema.examples.length) return schema.examples[0];
   if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
   if (schema.const !== undefined) return schema.const;
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const types = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((t): t is string => typeof t === 'string');
+  const type = types.find((t) => t !== 'null') ?? types[0];
+  if (type === undefined) {
+    if (typeof schema.$ref === 'string') {
+      const target = resolveRef(schema.$ref, root);
+      if (target !== undefined) return placeholder(target, root, depth + 1);
+    }
+    for (const k of ['anyOf', 'oneOf', 'allOf']) {
+      const branches = schema[k];
+      if (!Array.isArray(branches)) continue;
+      const branch = branches.find((b) => !(isObj(b) && b.type === 'null')) ?? branches[0];
+      if (branch !== undefined) return placeholder(branch, root, depth + 1);
+    }
+    if (isObj(schema.properties)) return objectPlaceholder(schema, root, depth);
+  }
   switch (type) {
-    case 'integer':
-    case 'number': return 1;
+    case 'integer': return numberPlaceholder(schema, true);
+    case 'number': return numberPlaceholder(schema, false);
     case 'boolean': return false;
-    case 'array': return [];
-    case 'object': return {};
-    default: return 'mcp-review-check';
+    case 'null': return null;
+    case 'array': {
+      const n = typeof schema.minItems === 'number' ? Math.min(schema.minItems, 100) : 0;
+      return Array.from({ length: n }, () => placeholder(schema.items, root, depth + 1));
+    }
+    case 'object': return objectPlaceholder(schema, root, depth);
+    default: return stringPlaceholder(schema);
   }
 }
 
+function requiredOf(schema: unknown): string[] {
+  return isObj(schema) && Array.isArray(schema.required) ? schema.required.filter((r): r is string => typeof r === 'string') : [];
+}
+
+function objectPlaceholder(schema: Obj, root: unknown, depth: number): Record<string, unknown> {
+  const props = properties(schema);
+  const out: Record<string, unknown> = {};
+  for (const k of requiredOf(schema)) out[k] = placeholder(Object.prototype.hasOwnProperty.call(props, k) ? props[k] : undefined, root, depth + 1);
+  return out;
+}
+
 export function synthesizeArgs(inputSchema: unknown): Record<string, unknown> {
-  const props = properties(inputSchema);
-  const required = isObj(inputSchema) && Array.isArray(inputSchema.required) ? inputSchema.required.filter((r): r is string => typeof r === 'string') : [];
-  const args: Record<string, unknown> = {};
-  for (const k of required) args[k] = placeholder(props[k]);
-  return args;
+  return isObj(inputSchema) ? objectPlaceholder(inputSchema, inputSchema, 0) : {};
 }
 
 /** Candidate wrong-type values, each with the JSON Schema types that would accept it. */
@@ -114,7 +189,7 @@ export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapsho
     const provided = ctx.toolArgs && Object.prototype.hasOwnProperty.call(ctx.toolArgs, name) ? ctx.toolArgs[name] : undefined;
     const args = provided !== undefined ? provided : synthesizeArgs(t.inputSchema);
     calls.push(await call(ctx, name, provided !== undefined ? 'valid' : 'synthetic', args));
-    const required = isObj(t.inputSchema) && Array.isArray(t.inputSchema.required) ? t.inputSchema.required.filter((r): r is string => typeof r === 'string') : [];
+    const required = requiredOf(t.inputSchema);
     if (required.length) {
       calls.push(await call(ctx, name, 'invalid-missing', {}));
       const first = required[0];
