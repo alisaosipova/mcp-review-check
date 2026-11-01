@@ -44,16 +44,43 @@ export function urlSecrets(raw: string, strongOnly = false): string[] {
   }
 }
 
-/** A secret value, plus the token after an auth scheme ("Bearer X"). */
-function withSchemeToken(value: string): string[] {
-  const v = value.trim();
-  const token = /^(bearer|basic|token|dpop)\s+(.+)$/is.exec(v)?.[2];
-  return token ? [v, token] : [v];
+/** "user:pass" and the password of a Basic credential: a server may quote the password alone ("bad password X"). */
+function basicParts(token: string): string[] {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(token)) return [];
+  const plain = Buffer.from(token, 'base64').toString('utf8');
+  const colon = plain.indexOf(':');
+  // Not base64 of "user:pass" text: no colon, or bytes that are no text (control characters, invalid UTF-8).
+  return colon < 0 || /[\p{Cc}�]/u.test(plain) ? [] : [plain, plain.slice(colon + 1)];
 }
 
-/** The secret part of a "Name: value" header string, plus the token after an auth scheme. */
+/** A secret value, plus the token after an auth scheme ("Bearer X"), and for Basic the decoded "user:pass" and password. */
+function withSchemeToken(value: string): string[] {
+  const v = value.trim();
+  const m = /^(bearer|basic|token|dpop)\s+(.+)$/is.exec(v);
+  if (!m) return [v];
+  const token = m[2].trim();
+  return [v, token, ...(m[1].toLowerCase() === 'basic' ? basicParts(token) : [])];
+}
+
+/**
+ * Each "name=value" pair of a Cookie header, and the value alone under a secret-looking cookie name (session, auth_token)
+ * or when it looks like a token: a server may echo one session cookie without the rest of the header; "theme=dark"
+ * does not make "dark" a secret.
+ */
+function cookieParts(value: string): string[] {
+  return value.split(';').flatMap((part) => {
+    const m = /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/s.exec(part);
+    if (!m?.[2]) return [];
+    const val = m[2].replace(/^"(.*)"$/s, '$1');
+    return [`${m[1]}=${m[2]}`, ...(isSecretName(m[1]) || tokenLike(val) ? [val] : [])];
+  });
+}
+
+/** The secret part of a "Name: value" header string, plus the token after an auth scheme and the pairs of a Cookie. */
 function headerSecrets(name: string, value: string): string[] {
-  return SECRET_HEADER.test(name.trim()) || isSecretName(name.trim()) ? withSchemeToken(value) : [];
+  const n = name.trim();
+  if (!SECRET_HEADER.test(n) && !isSecretName(n)) return [];
+  return [...withSchemeToken(value), ...(/^cookie$/i.test(n) ? cookieParts(value) : [])];
 }
 
 /**

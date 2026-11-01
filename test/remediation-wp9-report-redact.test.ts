@@ -7,6 +7,8 @@ import { buildReport, visibleText } from '../src/report/index.js';
 import { renderMarkdown } from '../src/report/markdown.js';
 import { renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
+import { REDACTED } from '../src/protocol/trace.js';
+import { buildRedactor, scrub } from '../src/redact.js';
 import { loadSnapshot } from './helpers.js';
 
 const f = (ruleId: string, severity: Finding['severity'], over: Partial<Finding> = {}): Finding => ({
@@ -88,5 +90,36 @@ describe('markdown shows hidden characters and no server emphasis (F147, F127)',
     const s = loadSnapshot('minimal-http');
     s.serverInfo = { name: 'see https://evil.test and a@b.test', version: '1' };
     expect(renderMarkdown(report(s)).split('\n')[0]).toBe('# see https:\u200B//evil.test and a@&#8203;b.test 1');
+  });
+});
+
+describe('Cookie and Basic credentials are redacted in their parts (F116, F117)', () => {
+  it('a session cookie value echoed alone or as one pair is redacted; a plain cookie value is not', () => {
+    for (const r of [buildRedactor({ headers: { Cookie: 'theme=dark; session=S3cr3tSess10nValue' } }), buildRedactor({ argv: ['npx', 'mcp-remote', '--header', 'Cookie: theme=dark; session=S3cr3tSess10nValue'] })]) {
+      expect(scrub('echo session=S3cr3tSess10nValue / S3cr3tSess10nValue', r)).toBe(`echo ${REDACTED} / ${REDACTED}`);
+      expect(scrub('theme=dark mode is dark', r)).toBe(`${REDACTED} mode is dark`);
+    }
+    expect(scrub('invalid sid abcd1234efgh5678ijkl', buildRedactor({ headers: { Cookie: 'sid=abcd1234efgh5678ijkl' } }))).toBe(`invalid sid ${REDACTED}`);
+    expect(scrub('sess xyzw', buildRedactor({ headers: { Cookie: 'session_token="xyzw"' } }))).toBe(`sess ${REDACTED}`);
+  });
+
+  it('the decoded user:pass and password of a Basic credential are redacted (header, argv, env)', () => {
+    const basic = `Basic ${Buffer.from('admin:SuperSecret99').toString('base64')}`;
+    for (const r of [
+      buildRedactor({ headers: { Authorization: basic } }),
+      buildRedactor({ argv: ['npx', 'mcp-remote', '--header', `Authorization: ${basic}`] }),
+      buildRedactor({ env: { AUTH_HEADER: basic } }),
+    ]) {
+      expect(scrub('error: bad password SuperSecret99 for admin', r)).toBe(`error: bad password ${REDACTED} for admin`);
+      expect(scrub('creds admin:SuperSecret99', r)).toBe(`creds ${REDACTED}`);
+    }
+  });
+
+  it('a Basic token that is not base64 of "user:pass" text adds nothing decoded', () => {
+    const binary = Buffer.from([0x01, 0x3a, 0xff, 0xfe, 0x41, 0x42, 0x43, 0x44]).toString('base64');
+    for (const token of [binary, 'not-base64!!']) {
+      const values = [...buildRedactor({ headers: { Authorization: `Basic ${token}` } }).values];
+      expect(values.every((v) => v.includes(token) || v.includes(encodeURIComponent(token)))).toBe(true);
+    }
   });
 });
