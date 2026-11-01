@@ -17,7 +17,7 @@ export interface Report {
   snap: Snapshot;
   findings: Finding[];
   ignored: Finding[];
-  /** Root causes on the score's basis, every platform, not the --target findings; not in JSON. */
+  /** Root causes on the score's basis, every platform, not the --target findings; JSON summary.rootCauses. */
   rootCauses: { errors: number; warnings: number };
   skipped: EngineResult['skipped'];
   rulesRun: number;

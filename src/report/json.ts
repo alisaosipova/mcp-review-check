@@ -20,7 +20,8 @@ export function toJson(r: Report): Record<string, unknown> {
     startedAt: r.startedAt,
     durationMs: Math.round(r.durationMs),
     server: {
-      ...(snap.target.kind === 'http' ? { url: targetLabel(snap) } : { command: [snap.target.command, ...snap.target.args].join(' ') }),
+      // command is for display; argv keeps each argument whole ("a b" stays one argument).
+      ...(snap.target.kind === 'http' ? { url: targetLabel(snap) } : { command: [snap.target.command, ...snap.target.args].join(' '), argv: [snap.target.command, ...snap.target.args] }),
       serverInfo: snap.serverInfo ?? null,
       era: snap.era,
       protocolVersion: snap.protocolVersion ?? null,
@@ -30,7 +31,8 @@ export function toJson(r: Report): Record<string, unknown> {
     },
     coverage: snap.connectDiagnosis ? { ...snap.coverage, diagnosis: snap.connectDiagnosis } : snap.coverage,
     limits: snap.limits ?? null,
-    summary: r.summary,
+    // rootCauses: the basis of summary.score (every platform, whatever --target), so the score can be explained from the JSON.
+    summary: { ...r.summary, rootCauses: r.rootCauses },
     findings: r.findings.map(findingJson),
     skipped: r.skipped,
     ignored: r.ignored.map(findingJson),
