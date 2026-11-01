@@ -128,9 +128,11 @@ export const DATA_004 = defineRule(
     fix: 'Remove restricted-data inputs; use a compliant hosted flow instead.',
     sources: [OAI_GUIDE],
   },
+  // Unambiguous card, government-ID and health-record names are errors; names that also fit ordinary data
+  // (account_number, exp_month, license_number) are warnings.
   (snap) => scanNames(snap, [
-    { re: /^(card_?number|credit_?card(_number)?|cc_?num(ber)?|cvv2?|cvc|card_?expir(y|ation)|ssn|social_?security(_number)?|national_?id|passport(_number)?|drivers?_?licen[cs]e(_number)?|medical_?record(_number)?|mrn|health_?insurance_?id|insurance_?member_?id)$/i, label: 'collects restricted data' },
-    { re: /^(pan|tin|tax_?id|iban|diagnosis|exp(iry)?_date)$/i, severity: 'warning', label: 'may collect restricted data' },
+    { re: /^(card_?number|credit_?card(_number)?|cc_?num(ber)?|cvv2?|cvc|(card_?)?(cvv2?|cvc)_?(code)?|card_?security_?code|card_?expir(y|ation)(_(date|month|year))?|card_?exp(_(date|month|year))?|ssn(_last_?4)?|social_?security(_number)?|national_?id|passport(_(number|no|num|id))?|drivers?_?licen[cs]e(_(number|no|num))?|aadhaar(_number)?|medical_?record(_number)?|mrn|health_?insurance_?id|insurance_?member_?id)$/i, label: 'collects restricted data' },
+    { re: /^(pan|tin|tax_?id|iban|diagnosis|exp(iry)?_date|exp(iry)?_(month|year)|routing_?number|(bank_)?account_?number|bank_?account|licen[cs]e_?number|nino|sin)$/i, severity: 'warning', label: 'may collect restricted data' },
   ]),
 );
 
