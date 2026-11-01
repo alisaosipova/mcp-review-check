@@ -297,10 +297,11 @@ export const APPS_012 = defineRule(
         out.push({ resource: r.uri, message: 'no widget domain (required when submitting a plugin with UI)', fix: hint });
         continue;
       }
-      let ok = false;
-      try { const u = new URL(String(d)); ok = isStr(d) && u.protocol === 'https:' && (u.pathname === '/' && !/\/$/.test(d)) && !u.search && !u.hash; } catch { ok = false; }
-      if (!ok) out.push({ resource: r.uri, message: `widget domain ${JSON.stringify(d)} is not an absolute https origin without a path` });
-      else if (String(d).replace(/\/$/, '') === 'https://web-sandbox.oaiusercontent.com') out.push({ resource: r.uri, severity: 'warning', message: 'widget domain is the shared default sandbox (not unique)' });
+      let origin: string | undefined;
+      try { const u = new URL(String(d)); if (isStr(d) && u.protocol === 'https:' && (u.pathname === '/' && !/\/$/.test(d)) && !u.search && !u.hash) origin = u.origin; } catch { origin = undefined; }
+      if (!origin) out.push({ resource: r.uri, message: `widget domain ${JSON.stringify(d)} is not an absolute https origin without a path` });
+      // Compared as origins: scheme and host are case-insensitive, so HTTPS://WEB-SANDBOX... is the same shared sandbox.
+      else if (origin === 'https://web-sandbox.oaiusercontent.com') out.push({ resource: r.uri, severity: 'warning', message: 'widget domain is the shared default sandbox (not unique)' });
     }
     return out;
   },

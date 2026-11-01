@@ -1,6 +1,6 @@
 // Regression tests for the WP5-apps remediation package (review 2026-11-01): APPS rules and the ui/html helpers.
 import { describe, expect, it } from 'vitest';
-import { APPS_006, APPS_007 } from '../src/rules/apps.js';
+import { APPS_001, APPS_003, APPS_005, APPS_006, APPS_007, APPS_012, APPS_013, APPS_015, APPS_016, APPS_017, APPS_019, normalizeMime } from '../src/rules/apps.js';
 import { extractLinks, extractOrigins } from '../src/rules/util/html.js';
 import { POL_004 } from '../src/rules/policy.js';
 import type { Snapshot } from '../src/snapshot.js';
@@ -95,5 +95,12 @@ describe('F099: extractLinks takes hrefs of <a> and <area> only', () => {
   it('POL-004 no longer reads a pricing.css stylesheet as an upsell link', () => {
     const f = evaluate(POL_004, ui({ html: '<!doctype html><link rel="stylesheet" href="https://cdn.acme.test/css/pricing.css"><p>board</p>' }));
     expect(messages(f)).toEqual([]);
+  });
+});
+
+describe('R041: the shared ChatGPT sandbox is recognised in any case', () => {
+  it.each(['https://web-sandbox.oaiusercontent.com', 'HTTPS://WEB-SANDBOX.OAIUSERCONTENT.COM', 'https://Web-Sandbox.OaiUserContent.com'])('%s', (d) => {
+    const f = evaluate(APPS_012, ui({ meta: { ...META, 'openai/widgetDomain': d } }));
+    expect(f.map((x) => [x.severity, x.message])).toEqual([['warning', 'widget domain is the shared default sandbox (not unique)']]);
   });
 });
