@@ -500,13 +500,17 @@ export const TOOL_031 = defineRule(
       if (!v) continue;
       trueCount++;
       if (annotations(t).readOnlyHint !== true) out.push({ tool: name, message: 'profile tool is not readOnlyHint: true' });
-      const req = isObj(t.inputSchema) && Array.isArray(t.inputSchema.required) ? t.inputSchema.required : [];
+      // SDK and zod wrappers often emit a root `{ $ref: '#/$defs/X', $defs: {...} }`: read the referenced schema.
+      const input = deref(t.inputSchema, t.inputSchema);
+      const req = isObj(input) && Array.isArray(input.required) ? input.required : [];
       if (req.length) out.push({ tool: name, message: 'profile tool has required input properties' });
-      const op = properties(t.outputSchema);
-      const oreq = isObj(t.outputSchema) && Array.isArray(t.outputSchema.required) ? t.outputSchema.required : [];
-      if (!(isObj(op.id) && (op.id as Obj).type === 'string' && oreq.includes('id'))) out.push({ tool: name, message: 'profile outputSchema lacks a required string id' });
+      const output = deref(t.outputSchema, t.outputSchema);
+      const op = properties(output);
+      const id = deref(t.outputSchema, op.id);
+      const oreq = isObj(output) && Array.isArray(output.required) ? output.required : [];
+      if (!(isObj(id) && id.type === 'string' && oreq.includes('id'))) out.push({ tool: name, message: 'profile outputSchema lacks a required string id' });
       const extra = Object.keys(op).filter((k) => !PROFILE_FIELDS.has(k));
-      if (extra.length || (isObj(t.outputSchema) && t.outputSchema.additionalProperties !== false)) {
+      if (extra.length || (isObj(output) && output.additionalProperties !== false)) {
         out.push({ tool: name, severity: 'warning', message: `profile output should contain only id, name, email, nickname with additionalProperties: false${extra.length ? ` (extra: ${extra.join(', ')})` : ''}` });
       }
     }

@@ -200,4 +200,20 @@ describe('F071 walkSchema and schemaMetrics enter dependentSchemas, dependencies
     expect(evaluate(byId('TOOL-022'), one(tool({ inputSchema })))).toHaveLength(1);
   });
 });
+
+describe('F073 TOOL-031 reads a root $ref outputSchema', () => {
+  const profile = (outputSchema: Record<string, unknown>) => one(tool({
+    name: 'get_me', inputSchema: { type: 'object', additionalProperties: false }, _meta: { 'openai/profile': true }, outputSchema,
+  }));
+  it('a root $ref to a valid profile schema passes', () => {
+    const P = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false };
+    expect(evaluate(byId('TOOL-031'), profile({ $ref: '#/$defs/P', $defs: { P } }))).toEqual([]);
+    // the id property itself behind a $ref
+    expect(evaluate(byId('TOOL-031'), profile({ type: 'object', properties: { id: { $ref: '#/$defs/Id' } }, required: ['id'], additionalProperties: false, $defs: { Id: { type: 'string' } } }))).toEqual([]);
+  });
+  it('a root $ref to a schema without id is still reported', () => {
+    const P = { type: 'object', properties: { name: { type: 'string' } }, additionalProperties: false };
+    expect(messages('TOOL-031', profile({ $ref: '#/$defs/P', $defs: { P } }))).toEqual(['profile outputSchema lacks a required string id']);
+  });
+});
 //@@END
