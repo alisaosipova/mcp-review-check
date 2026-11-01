@@ -346,9 +346,11 @@ export const AUTH_012 = defineRule(
     const pkjwt = Array.isArray(methods) && methods.includes('private_key_jwt');
     const dcr = isStr(m.registration_endpoint);
     // Claude
-    if (cimd && !none) out.push({ platforms: ['claude'], severity: 'warning', message: 'CIMD advertised without token auth method "none": CIMD ignored, falls back to DCR' });
     // Pre-registered (Anthropic-held) and connection-time credentials are supported paths the linter cannot see.
-    if (!(cimd && none) && !dcr) out.push({ platforms: ['claude'], severity: 'warning', message: `neither CIMD nor DCR: Claude requires Anthropic-held credentials (contact ${AUTH_CONTACT}) or connection-time credentials; the linter cannot see whether pre-registration is in place` });
+    const preRegistered = `Claude requires Anthropic-held credentials (contact ${AUTH_CONTACT}) or connection-time credentials; the linter cannot see whether pre-registration is in place`;
+    if (cimd && !none && dcr) out.push({ platforms: ['claude'], severity: 'warning', message: 'CIMD advertised without token auth method "none": CIMD ignored, falls back to DCR' });
+    else if (cimd && !none) out.push({ platforms: ['claude'], severity: 'warning', message: `CIMD advertised without token auth method "none" (Claude ignores it) and no DCR: ${preRegistered}` });
+    else if (!cimd && !dcr) out.push({ platforms: ['claude'], severity: 'warning', message: `neither CIMD nor DCR: ${preRegistered}` });
     // ChatGPT
     if (cimd && methods === undefined) out.push({ platforms: ['chatgpt'], message: 'CIMD advertised but token_endpoint_auth_methods_supported is absent (RFC 8414 default client_secret_basic)' });
     else if (cimd && !none && !pkjwt) out.push({ platforms: ['chatgpt'], message: 'CIMD advertised without "none" or "private_key_jwt"' });

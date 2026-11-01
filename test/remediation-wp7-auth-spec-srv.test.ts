@@ -204,4 +204,20 @@ describe('F045 DPoP challenges count like Bearer', () => {
     expect(evaluate(byId('AUTH-016'), s)).toEqual([]);
   });
 });
+
+describe('F042 AUTH-012 CIMD without "none" and without DCR', () => {
+  const claude = (as: Record<string, unknown>) => evaluate(byId('AUTH-012'), authSnap({ as })).filter((f) => f.platforms.includes('claude'));
+
+  it('gives one Claude warning that names the ignored CIMD and the missing DCR', () => {
+    const f = claude({ token_endpoint_auth_methods_supported: ['client_secret_basic'], registration_endpoint: undefined });
+    expect(f).toHaveLength(1);
+    expect(f[0].message).toMatch(/CIMD advertised without token auth method "none" \(Claude ignores it\) and no DCR/);
+    expect(f[0].message).not.toMatch(/falls back to DCR|neither CIMD nor DCR/);
+  });
+
+  it('with DCR it still says CIMD falls back to DCR; with neither it says so', () => {
+    expect(claude({ token_endpoint_auth_methods_supported: ['client_secret_basic'] }).map((x) => x.message)).toEqual(['CIMD advertised without token auth method "none": CIMD ignored, falls back to DCR']);
+    expect(claude({ client_id_metadata_document_supported: undefined, registration_endpoint: undefined })[0].message).toMatch(/^neither CIMD nor DCR/);
+  });
+});
 // @end
