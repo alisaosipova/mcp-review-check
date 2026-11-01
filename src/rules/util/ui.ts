@@ -73,6 +73,8 @@ export interface CspView {
   redirect: string[];
   /** Fields present but not string[] (APPS-005). */
   malformed: string[];
+  /** Keys the hosts do not read (APPS-005), with the known field they most likely mean. */
+  unknown: Array<{ field: string; suggestion?: string }>;
   /** Raw entries with their field name and the list they feed (APPS-006). */
   entries: Array<{ field: string; value: string; list: CspList }>;
 }
@@ -86,12 +88,20 @@ const OAI_FIELDS: Record<string, keyof Pick<CspView, 'resource' | 'connect' | 'f
   resource_domains: 'resource', connect_domains: 'connect', frame_domains: 'frame', redirect_domains: 'redirect',
 };
 
+const squash = (k: string) => k.toLowerCase().replace(/[-_]/g, '').replace(/s$/, '');
+
 export function cspOf(r: UiResource): CspView {
-  const v: CspView = { declared: false, resource: [], connect: [], frame: [], base: [], redirect: [], malformed: [], entries: [] };
+  const v: CspView = { declared: false, resource: [], connect: [], frame: [], base: [], redirect: [], malformed: [], unknown: [], entries: [] };
   const read = (obj: unknown, fields: Record<string, CspList>, label: string) => {
     if (obj === undefined) return;
     v.declared = true;
     if (!isObj(obj)) { v.malformed.push(label); return; }
+    for (const field of Object.keys(obj)) {
+      if (field in fields) continue;
+      // connectDomains in openai/widgetCSP, connect_domains or connectDomain in ui.csp: same letters, other spelling.
+      const k = squash(field);
+      v.unknown.push({ field: `${label}.${field}`, suggestion: Object.keys(fields).find((f) => squash(f) === k) });
+    }
     for (const [field, key] of Object.entries(fields)) {
       const val = obj[field];
       if (val === undefined) continue;

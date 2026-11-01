@@ -112,6 +112,9 @@ export const APPS_005 = defineRule(
       out.push({ resource: r.uri, platforms: ['claude'], message: 'no CSP declared; host default blocks all external origins' });
     }
     if (csp.malformed.length) out.push({ resource: r.uri, severity: 'error', message: `CSP fields are not string[]: ${csp.malformed.join(', ')}` });
+    for (const { field, suggestion } of csp.unknown) {
+      out.push({ resource: r.uri, severity: 'warning', message: `unknown CSP field ${field} is ignored by hosts${suggestion ? ` (did you mean ${suggestion}?)` : ''}` });
+    }
     return out;
   }),
 );

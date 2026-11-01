@@ -247,3 +247,21 @@ describe('R038: APPS-019 leaves tools that a fresh full-capability connection la
     expect(run()).toHaveLength(2);
   });
 });
+
+describe('R036: APPS-005 names CSP keys the hosts do not read', () => {
+  it('camelCase inside openai/widgetCSP, snake_case or a typo inside ui.csp', () => {
+    const meta = { ...META, ui: { ...META.ui, csp: { connectDomains: ['https://api.acme.test'], resource_domains: [], connectDomain: [], scriptSrc: [] } }, 'openai/widgetCSP': { resourceDomains: ['https://cdn.acme.test'] } };
+    const f = evaluate(APPS_005, ui({ meta }));
+    expect(f.every((x) => x.severity === 'warning')).toBe(true);
+    expect(messages(f).sort()).toEqual([
+      'unknown CSP field openai/widgetCSP.resourceDomains is ignored by hosts (did you mean resource_domains?)',
+      'unknown CSP field ui.csp.connectDomain is ignored by hosts (did you mean connectDomains?)',
+      'unknown CSP field ui.csp.resource_domains is ignored by hosts (did you mean resourceDomains?)',
+      'unknown CSP field ui.csp.scriptSrc is ignored by hosts',
+    ]);
+  });
+
+  it('known fields only: no finding', () => {
+    expect(messages(evaluate(APPS_005, ui({ meta: { ...META, 'openai/widgetCSP': { connect_domains: [], redirect_domains: [] } } })))).toEqual([]);
+  });
+});
