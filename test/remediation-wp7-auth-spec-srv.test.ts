@@ -414,4 +414,3 @@ describe('F053 AUTH-008 metadata without issuer', () => {
     expect(f[0].message).not.toMatch(/undefined/);
   });
 });
-// @end
