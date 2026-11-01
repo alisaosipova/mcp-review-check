@@ -12,7 +12,7 @@ import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCa
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
-import { createTracer, scrub, type Redactor, type Tracer } from './protocol/trace.js';
+import { createTracer, FULL_READ_CAP, scrub, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
@@ -60,7 +60,7 @@ interface Progress {
   stopped?: boolean;
   tracer?: Tracer;
   stderrTail?: () => string;
-  nonJsonStdout?: string[];
+  nonJsonStdout?: NonJsonStdout;
   /** Close open clients (and the stdio child) when the deadline hits. */
   close?: () => Promise<void>;
   /** Every stdio server process still running (main and fresh connections), ended at the deadline and after every run. */
@@ -401,12 +401,90 @@ async function freshTools(url: URL, headers: Record<string, string>, tracer: Tra
 interface StdioConn {
   client: Client;
   rec: RecordingTransport;
-  nonJson: string[];
+  nonJson: NonJsonStdout;
   stderr: () => string;
 }
 
-function isJsonLine(line: string): boolean {
-  try { JSON.parse(line); return true; } catch { return false; }
+/** stdout lines that are not JSON-RPC messages (SRV-018): the first NON_JSON_KEPT lines, each cut to
+ *  NON_JSON_LINE_CAP characters after masking, and the count of all of them. */
+export interface NonJsonStdout {
+  lines: string[];
+  total: number;
+}
+
+export const NON_JSON_KEPT = 50;
+export const NON_JSON_LINE_CAP = 1024;
+/** Raw bytes kept from the start of a non-JSON line before masking and the NON_JSON_LINE_CAP cut. */
+const NON_JSON_HEAD = 4 * NON_JSON_LINE_CAP;
+/** The SDK's stdio read buffer (default 10 MB), raised to what an HTTP response body may be. */
+export const STDIO_MAX_MESSAGE = FULL_READ_CAP;
+
+/** A line the SDK accepts as a JSON-RPC message: a JSON object (or a batch of them) with jsonrpc "2.0".
+ *  A JSON log line ({"level":30,"msg":...} from pino, winston, bunyan) is not one; the SDK rejects it too. */
+export function isJsonRpcLine(line: string): boolean {
+  const t = line.trimStart();
+  if (t[0] !== '{' && t[0] !== '[') return false; // most log lines: no JSON.parse needed
+  let v: unknown;
+  try { v = JSON.parse(t); } catch { return false; }
+  const one = (m: unknown) => isObj(m) && m.jsonrpc === '2.0';
+  return Array.isArray(v) ? v.length > 0 && v.every(one) : one(v);
+}
+
+function stdioObservation(nonJson: NonJsonStdout | undefined, stderrTail: string): NonNullable<Snapshot['transport']['stdio']> {
+  return { nonJsonStdout: [...(nonJson?.lines ?? [])], nonJsonTotal: nonJson?.total ?? 0, stderrTail };
+}
+
+/** Collect the non-JSON-RPC lines of a stdio server's stdout. Lines are split as bytes and decoded afterwards (the SDK
+ *  reads the same stream as Buffers, and a chunk can end inside a UTF-8 character); chunks are joined once per line,
+ *  a non-JSON line keeps only its head, and a line over STDIO_MAX_MESSAGE is dropped (the SDK fails on it). */
+export function stdoutTap(r: Redactor): { out: NonJsonStdout; push(chunk: Buffer): void } {
+  const out: NonJsonStdout = { lines: [], total: 0 };
+  let parts: Buffer[] = [];
+  let size = 0;
+  /** Past NON_JSON_HEAD bytes a line is either a JSON message (kept whole up to STDIO_MAX_MESSAGE, then dropped:
+   *  the SDK fails on it) or not JSON (kept as its head only). */
+  let mode: 'line' | 'json' | 'head' | 'drop' = 'line';
+  const add = (raw: Buffer) => {
+    const line = raw.toString('utf8').replace(/\r$/, '');
+    if (!line.trim() || isJsonRpcLine(line)) return;
+    out.total++;
+    if (out.lines.length < NON_JSON_KEPT) {
+      const masked = scrub(line, r); // masked before the cut
+      out.lines.push(masked.length > NON_JSON_LINE_CAP ? `${masked.slice(0, NON_JSON_LINE_CAP)}…` : masked);
+    }
+  };
+  const end = () => {
+    if (mode !== 'drop') add(Buffer.concat(parts, size));
+    parts = []; size = 0; mode = 'line';
+  };
+  const take = (b: Buffer) => {
+    if (mode === 'drop' || !b.length) return;
+    if (mode === 'head') {
+      if (size < NON_JSON_HEAD) { const k = b.subarray(0, NON_JSON_HEAD - size); parts.push(k); size += k.length; }
+      return;
+    }
+    parts.push(b); size += b.length;
+    if (mode === 'json') {
+      if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; parts = []; size = 0; }
+    } else if (size > NON_JSON_HEAD) {
+      const head = Buffer.concat(parts, size);
+      const first = head.toString('utf8', 0, 64).trimStart()[0];
+      if (first === '{' || first === '[') { mode = 'json'; parts = [head]; }
+      else { mode = 'head'; parts = [head.subarray(0, NON_JSON_HEAD)]; size = NON_JSON_HEAD; }
+    }
+  };
+  return {
+    out,
+    push(chunk: Buffer) {
+      let i;
+      while ((i = chunk.indexOf(10)) >= 0) {
+        take(chunk.subarray(0, i));
+        end();
+        chunk = chunk.subarray(i + 1);
+      }
+      take(chunk);
+    },
+  };
 }
 
 /** The first error-looking stderr line (the cause in a stack trace) plus the last line, masked before the 200-character cut. */
@@ -420,12 +498,13 @@ export function stderrSummary(tail: string, r: Redactor): string {
 }
 
 async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs: number, r: Redactor, variant: ClientVariant = {}, progress?: Progress): Promise<StdioConn> {
-  const inner = new GroupStdioTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe' });
+  const inner = new GroupStdioTransport({ command: t.command, args: t.args, env: { ...getDefaultEnvironment(), ...(t.env ?? {}) }, cwd: t.cwd, stderr: 'pipe', maxBufferSize: STDIO_MAX_MESSAGE });
   let stderrTail = '';
   // Masked before the 4096-character tail and the 200-character summary lines cut it.
   // Decoded as a stream, so an echo split inside a UTF-8 character between two chunks is still one string to mask.
   (inner.stderr as NodeJS.ReadableStream | null)?.setEncoding('utf8').on('data', (c: string) => { stderrTail = scrub(stderrTail + c, r).slice(-4096); });
-  const nonJson: string[] = [];
+  const stdout = stdoutTap(r);
+  const nonJson = stdout.out;
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
     if (proc && progress?.children) {
@@ -433,17 +512,7 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
       // On POSIX the entry stays while the server's process group outlives its wrapper.
       else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
-    // Split into lines as bytes, then decoded: the SDK reads the same stream as Buffers, and a chunk can end inside a UTF-8 character.
-    let buf = Buffer.alloc(0);
-    proc?.stdout?.on('data', (c: Buffer) => {
-      buf = Buffer.concat([buf, c]);
-      let i;
-      while ((i = buf.indexOf(10)) >= 0) {
-        const line = buf.subarray(0, i).toString('utf8').replace(/\r$/, '');
-        buf = buf.slice(i + 1);
-        if (line.trim() && !isJsonLine(line)) nonJson.push(line);
-      }
-    });
+    proc?.stdout?.on('data', (c: Buffer) => stdout.push(c));
   };
   const rec = new RecordingTransport(inner as Transport, tap);
   const client = newClient(variant.clientName, variant.capabilities);
@@ -507,7 +576,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     }
   }
   await new Promise((r) => setTimeout(r, 50)); // let trailing stdout/stderr arrive
-  snap.transport.stdio = { nonJsonStdout: conn.nonJson, stderrTail: conn.stderr() };
+  snap.transport.stdio = stdioObservation(conn.nonJson, conn.stderr());
   snap.transport.observedErrors = collectErrors(undefined, conn.rec);
   await conn.client.close().catch(() => {});
   return { snap, stderrTail: conn.stderr() };
@@ -653,7 +722,7 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
     transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: [...(progress.tracer?.exchanges ?? live.transport.exchanges)] },
   };
   if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };
-  if (progress.stderrTail && snap.target.kind === 'stdio') snap.transport.stdio ??= { nonJsonStdout: [...(progress.nonJsonStdout ?? [])], stderrTail: progress.stderrTail() };
+  if (progress.stderrTail && snap.target.kind === 'stdio') snap.transport.stdio ??= stdioObservation(progress.nonJsonStdout, progress.stderrTail());
   snap.limits = { truncated: [...(live.limits?.truncated ?? [])], stopped: { maxDurationMs: ms, phase: progress.phase } };
   const why = `stopped by --max-duration (${ms} ms) during ${progress.phase}`;
   if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {

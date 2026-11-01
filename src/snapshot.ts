@@ -166,7 +166,9 @@ export interface Snapshot {
     probes: Partial<Record<WireProbeName, ProbeObservation>>;
     timings: Record<string, number[]>;
     sessionId?: string;
-    stdio?: { nonJsonStdout: string[]; stderrTail: string };
+    /** nonJsonStdout: the first 50 stdout lines that are not JSON-RPC messages (each cut to 1024 characters);
+     *  nonJsonTotal: how many there were in all. */
+    stdio?: { nonJsonStdout: string[]; nonJsonTotal?: number; stderrTail: string };
     modernResults?: Array<{ method: string; result: unknown }>;
     observedErrors?: ObservedError[];
   };
