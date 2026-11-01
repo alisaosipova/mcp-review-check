@@ -81,7 +81,8 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     if (modernOnly) {
       p.delete = (await tracer.request('delete', url, { method: 'DELETE', headers: { ...authHeaders }, timeoutMs })).exchange;
     }
-    if (snap.transport.kind !== 'sse') Object.assign(p, await originProbes(tracer, url, authHeaders, modernOnly, timeoutMs, ctx.sleep));
+    const originMode = snap.transport.kind === 'sse' ? 'sse' : modernOnly ? 'discover' : 'initialize';
+    Object.assign(p, await originProbes(tracer, url, authHeaders, originMode, timeoutMs, ctx.sleep));
     p.challenge = await challengeProbe(tracer, url, timeoutMs, ctx.sleep);
   }
   return p;

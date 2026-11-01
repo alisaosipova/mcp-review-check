@@ -104,6 +104,39 @@ describe('F018: the GET probe does not open a second stream in the SDK session',
   });
 });
 
+describe('R009: Origin is probed on legacy HTTP+SSE servers too', () => {
+  async function sseProbe(rejectForeign: boolean) {
+    const { base, seen } = await listen((req, res) => {
+      if (req.method !== 'GET' || req.url !== '/sse') { res.writeHead(404); res.end(); return; }
+      if (rejectForeign && req.headers.origin && req.headers.origin !== 'https://claude.ai') { res.writeHead(403); res.end('forbidden origin'); return; }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write('event: endpoint\ndata: /messages?sessionId=abc\n\n');
+    });
+    const url = `${base}/sse`;
+    const s = httpSnap(url, (x) => { x.transport.kind = 'sse'; x.era = 'sse-legacy'; });
+    s.transport.probes = await runWireProbes({
+      snap: s, timeoutMs: 5000, now: () => performance.now(), sleep: async () => {},
+      http: { tracer: createTracer(createRedactor()), url: new URL(url), authHeaders: {} },
+    });
+    return { s, seen };
+  }
+
+  it('opens the stream with foreign Origins and reports a local SSE server that accepts them (SRV-008 spec error)', async () => {
+    const { s, seen } = await sseProbe(false);
+    expect(seen.filter((r) => r.path === '/sse').map((r) => [r.method, r.headers.origin ?? '(none)'])).toEqual([
+      ['GET', '(none)'], ['GET', 'https://claude.ai'], ['GET', 'https://chatgpt.com'], ['GET', 'https://evil.mcp-review-check.invalid'],
+    ]);
+    expect(seen.every((r) => r.method === 'GET')).toBe(true);
+    expect(ruleHits(s, ['SRV-008'])).toEqual(['SRV-008:error']);
+  });
+
+  it('stays quiet when the SSE server answers a foreign Origin with 403', async () => {
+    const { s } = await sseProbe(true);
+    expect(s.transport.probes.originEvil).toMatchObject({ status: 403 });
+    expect(evaluate(byId('SRV-008'), s).filter((f) => f.severity === 'error')).toEqual([]);
+  });
+});
+
 /** A fake modern client that records tools/call params and answers with `answer`. */
 function recordingModern(answer: (params: { name: string; arguments: unknown }) => unknown = () => ({ content: [{ type: 'text', text: 'ok' }] })) {
   const calls: Array<{ name: string; arguments: unknown }> = [];

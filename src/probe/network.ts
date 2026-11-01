@@ -127,16 +127,24 @@ export function sameHostRedirect(url: URL, ex: HttpExchange | undefined): URL | 
   return target;
 }
 
-/** initialize (or server/discover for modern-only) with different Origin headers. */
-export async function originProbes(tracer: Tracer, url: URL, headers: Record<string, string>, modernOnly: boolean, timeoutMs: number, wait?: (ms: number) => Promise<void>) {
-  const body = modernOnly
-    ? { jsonrpc: '2.0', id: 0, method: 'server/discover', params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } } }
-    : initializeBody();
-  const extra: Record<string, string> = modernOnly ? { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' } : {};
-  const send = (label: string, origin?: string) =>
-    requestRetried(tracer, label, url, {
-      method: 'POST', headers: { ...headers, ...JSON_HEADERS, ...extra, ...(origin ? { origin } : {}) }, body: JSON.stringify(body), timeoutMs,
-    }, wait);
+/** What the Origin probes send: initialize, server/discover (modern-only), or the legacy HTTP+SSE stream GET. */
+export type OriginProbeMode = 'initialize' | 'discover' | 'sse';
+
+/**
+ * initialize (server/discover for modern-only) with different Origin headers. On a legacy HTTP+SSE endpoint, where a POST
+ * means nothing, the same Origins open the event stream with a GET that is cut after the headers.
+ */
+export async function originProbes(tracer: Tracer, url: URL, headers: Record<string, string>, mode: OriginProbeMode, timeoutMs: number, wait?: (ms: number) => Promise<void>) {
+  const init = (origin?: string): Parameters<Tracer['request']>[2] => {
+    const o: Record<string, string> = origin ? { origin } : {};
+    if (mode === 'sse') return { method: 'GET', headers: { ...headers, accept: 'text/event-stream', ...o }, abortAfterHeaders: true, timeoutMs };
+    const body = mode === 'discover'
+      ? { jsonrpc: '2.0', id: 0, method: 'server/discover', params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } } }
+      : initializeBody();
+    const extra: Record<string, string> = mode === 'discover' ? { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' } : {};
+    return { method: 'POST', headers: { ...headers, ...JSON_HEADERS, ...extra, ...o }, body: JSON.stringify(body), timeoutMs };
+  };
+  const send = (label: string, origin?: string) => requestRetried(tracer, label, url, init(origin), wait);
   return {
     originNone: await send('origin (none)'),
     originClaude: await send('origin claude.ai', 'https://claude.ai'),
