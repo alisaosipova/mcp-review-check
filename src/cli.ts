@@ -8,7 +8,7 @@ import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './expl
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
-import { buildReport, resultLine, scoreLabel, type Report } from './report/index.js';
+import { buildReport, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
@@ -363,8 +363,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, renderMarkdown(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }));
     }
     if (values.verbose) {
-      for (const e of tracer?.exchanges ?? []) stderr += `[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})\n`;
-      if (stderrTail) stderr += `[stdio stderr]\n${stderrTail}\n`;
+      // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
+      // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135).
+      for (const e of tracer?.exchanges ?? []) stderr += visibleText(`[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})`) + '\n';
+      if (stderrTail) stderr += `[stdio stderr]\n${stderrTail.split(/\r?\n/).map(visibleText).join('\n')}\n`;
       stderr = scrub(stderr, redactor);
     }
     const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on
