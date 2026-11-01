@@ -116,4 +116,20 @@ describe('F067 TOOL-006 falls back to annotations.title past an empty or non-str
     expect(evaluate(byId('TOOL-006'), one(tool({ title: 42, annotations: { title: 'Search notes' } }))).map((x) => x.message)).toEqual(['title is 42, not a string']);
   });
 });
+
+describe('F074 TOOL-018 does not call a schema with pattern or map keys parameterless', () => {
+  const schemas = [
+    { type: 'object', patternProperties: { '^x-': { type: 'string' } } },
+    { type: 'object', additionalProperties: { type: 'string' } },
+    { type: 'object', propertyNames: { pattern: '^a' } },
+    { type: 'object', unevaluatedProperties: { type: 'number' } },
+    { type: 'object', dependentSchemas: { a: { required: ['b'] } } },
+  ];
+  for (const inputSchema of schemas) {
+    it(Object.keys(inputSchema)[1], () => expect(evaluate(byId('TOOL-018'), one(tool({ inputSchema })))).toEqual([]));
+  }
+  it('an empty object schema is still reported', () => {
+    expect(evaluate(byId('TOOL-018'), one(tool({ inputSchema: { type: 'object', additionalProperties: true } })))).toHaveLength(1);
+  });
+});
 //@@END

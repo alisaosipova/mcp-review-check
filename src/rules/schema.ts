@@ -147,6 +147,8 @@ export const TOOL_017 = defineRule(
 );
 
 const COMPOSITION = ['anyOf', 'oneOf', 'allOf', 'not', 'if', '$ref'];
+// Keywords that admit keys without listing them in `properties`: such a tool takes parameters.
+const OPEN_KEYS = ['patternProperties', 'propertyNames', 'unevaluatedProperties', 'dependentSchemas', 'dependentRequired', 'dependencies'];
 
 export const TOOL_018 = defineRule(
   {
@@ -160,6 +162,7 @@ export const TOOL_018 = defineRule(
     if (!isObj(s) || s.type !== 'object') return undefined;
     const hasProps = isObj(s.properties) && Object.keys(s.properties).length > 0;
     if (hasProps || COMPOSITION.some((k) => s[k] !== undefined) || s.additionalProperties === false) return undefined;
+    if (OPEN_KEYS.some((k) => s[k] !== undefined && s[k] !== false) || isObj(s.additionalProperties)) return undefined;
     return { message: 'tool takes no parameters but does not set additionalProperties: false' };
   }),
 );
