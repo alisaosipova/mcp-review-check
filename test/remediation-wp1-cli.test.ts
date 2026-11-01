@@ -27,3 +27,53 @@ describe('--timeout and --max-duration take whole milliseconds only (F015)', () 
     }
   });
 });
+
+/** A stdio server with one read-only tool whose every call fails with an auth message as isError text (RT-009). */
+const AUTH_TEXT_SERVER = `
+const rl = require('node:readline').createInterface({ input: process.stdin });
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\\n');
+const tool = { name: 'get_data', title: 'Get data', description: 'Returns the stored data for the signed-in user.',
+  inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } };
+rl.on('line', (line) => {
+  let m; try { m = JSON.parse(line); } catch { return; }
+  if (m.id === undefined) return;
+  if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'authtext', version: '1' } } });
+  if (m.method === 'tools/list') return send({ id: m.id, result: { tools: [tool] } });
+  if (m.method === 'tools/call') return send({ id: m.id, result: { isError: true, content: [{ type: 'text', text: 'Not authenticated: please sign in first' }] } });
+  send({ id: m.id, error: { code: -32601, message: 'Method not found' } });
+});
+`;
+const authTextStdio = ['--stdio', '--', 'node', '-e', AUTH_TEXT_SERVER];
+const rt009 = (json: any) => json.findings.filter((f: any) => f.ruleId === 'RT-009');
+
+describe('--bearer, --header and $MCP_REVIEW_CHECK_TOKEN with --stdio (F001)', () => {
+  it('--bearer or --header with --stdio is a usage error: nothing would be sent to the server', async () => {
+    for (const extra of [['--bearer', 'tok-SECRETVALUE'], ['--header', 'X-Api-Key: SECRETVALUE']]) {
+      const r = await usage([...extra, '--stdio', 'node x.mjs']);
+      expect(r.code, extra[0]).toBe(2);
+      expect(r.stderr).toContain('--bearer and --header apply only to <url>');
+      expect(r.stderr).not.toContain('SECRETVALUE');
+    }
+  });
+
+  it('an exported $MCP_REVIEW_CHECK_TOKEN does not mark a stdio run as authenticated, so RT-009 still runs', async () => {
+    const plain = await usage(['--active', '--format', 'json', '--fail-on', 'never', ...authTextStdio]);
+    const withToken = await usage(['--active', '--format', 'json', '--fail-on', 'never', ...authTextStdio], { MCP_REVIEW_CHECK_TOKEN: 'abcdef123456tok' });
+    expect(plain.code, plain.stderr).toBe(0);
+    expect(withToken.code, withToken.stderr).toBe(0);
+    expect(rt009(JSON.parse(plain.stdout)).length).toBeGreaterThan(0);
+    expect(rt009(JSON.parse(withToken.stdout))).toEqual(rt009(JSON.parse(plain.stdout)));
+  });
+});
+
+describe('Authorization from --header and --bearer, and repeated --header names (F005)', () => {
+  it('--header "Authorization: …" with --bearer is a usage error; so is a header name given twice in any case', async () => {
+    const both = await usage([URL_, '--header', 'Authorization: Bearer AAA-SECRET', '--bearer', 'BBB-SECRET']);
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain('either with --bearer or with --header "Authorization: …", not both');
+    expect(both.stderr).not.toMatch(/AAA-SECRET|BBB-SECRET/);
+    const twice = await usage([URL_, '--header', 'X-A: 1', '--header', 'x-a: 2']);
+    expect(twice.code).toBe(2);
+    expect(twice.stderr).toContain('--header x-a is given more than once');
+  });
+});

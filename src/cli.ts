@@ -242,8 +242,16 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const unknownId = values.ignore?.find((id) => !known.has(id.toUpperCase()));
     if (unknownId !== undefined) throw new UsageError(`--ignore ${/^[a-z]+-\d+$/i.test(unknownId) ? unknownId : 'value'} is not a rule or MAN ID; --list-rules prints the catalog`);
     const headers: Record<string, string> = {};
-    for (const h of values.header ?? []) { const [k, v] = parseHeader(h); headers[k] = v; }
-    const bearer = values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;
+    for (const h of values.header ?? []) {
+      const [k, v] = parseHeader(h);
+      // fetch joins names that differ only in case into one "A, B" value: a name is given once.
+      if (Object.keys(headers).some((n) => n.toLowerCase() === k.toLowerCase())) throw new UsageError(`--header ${k} is given more than once; give each header once`);
+      headers[k] = v;
+    }
+    const authHeader = Object.keys(headers).some((n) => n.toLowerCase() === 'authorization');
+    if (authHeader && values.bearer !== undefined) throw new UsageError('give the token either with --bearer or with --header "Authorization: …", not both');
+    // Bearer and headers go only to a <url>; an --header Authorization wins over $MCP_REVIEW_CHECK_TOKEN, as an explicit option.
+    const bearer = isStdio || authHeader ? values.bearer : values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;
     if (bearer !== undefined && /[\r\n]/.test(bearer)) throw new UsageError('--bearer must not contain CR or LF');
 
     let spec: TargetSpec;
@@ -253,6 +261,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (split.command) parts = split.command;
       else try { parts = tokenizeCommand(values.stdio!); } catch (e) { throw new UsageError(`--stdio: ${(e as Error).message}`); }
       if (!parts.length) throw new UsageError('--stdio needs a command');
+      // Nothing is sent to a stdio server: a token or header would only mark the run as authenticated (RT-009 off).
+      if (values.bearer !== undefined || values.header?.length) throw new UsageError('--bearer and --header apply only to <url>');
       const envVars: Record<string, string> = {};
       for (const kv of values.env ?? []) {
         const i = kv.indexOf('=');
