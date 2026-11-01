@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { placeholder, runActive, synthesizeArgs, wrongTypeValue } from '../src/probe/active.js';
+import { METADATA_RETRY_BUDGET, METADATA_TIMEOUT_MS, prmCandidates, runAuthProbe } from '../src/probe/auth.js';
 import { closeProbeSession, defaultTlsCheck, originProbes, preflight, sameHostRedirect, TLS_TIMEOUT_MS, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
@@ -195,6 +196,42 @@ describe('F031: the TLS check follows --timeout and stops at the --max-duration 
     const ctrl = new AbortController();
     ctrl.abort();
     expect(await defaultTlsCheck('127.0.0.1', 9, 10000, ctrl.signal)).toEqual({ ok: false, code: 'ABORT_ERR' });
+  });
+});
+
+describe('F037: the auth probe requests each metadata URL once and shares one retry budget', () => {
+  it('does not list the well-known URL again when the header already names it', () => {
+    const u = new URL('https://a.test/mcp');
+    expect(prmCandidates(u, 'https://a.test/.well-known/oauth-protected-resource/mcp').map((c) => c.via)).toEqual(['header', 'well-known-root']);
+    expect(prmCandidates(u, 'https://a.test/.well-known/oauth-protected-resource').map((c) => c.via)).toEqual(['header', 'well-known-path']);
+    expect(prmCandidates(u, 'https://a.test/prm').map((c) => c.via)).toEqual(['header', 'well-known-path', 'well-known-root']);
+  });
+
+  it('stops retrying failing AS metadata URLs once the shared budget is spent, and caps each GET at 10 s', async () => {
+    let base = '';
+    const { base: b, seen } = await listen((req, res) => {
+      if (req.url === '/.well-known/oauth-protected-resource/mcp') {
+        json(res, 200, { resource: `${base}/mcp`, authorization_servers: [1, 2, 3].map((i) => `${base}/tenant${i}`) });
+        return;
+      }
+      if (req.method === 'GET') { json(res, 503, { error: 'unavailable' }); return; }
+      json(res, 401, {}, { 'www-authenticate': 'Bearer' });
+    });
+    base = b;
+    const url = new URL(`${base}/mcp`);
+    const tracer = createTracer(createRedactor());
+    const timeouts: Array<number | undefined> = [];
+    const labels: string[] = [];
+    const request = tracer.request;
+    tracer.request = (label, u, init) => { labels.push(label); timeouts.push(init?.timeoutMs); return request(label, u, init); };
+    const challengeExchange = exchange({ status: 401, headers: { 'www-authenticate': `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"` } });
+    const deps: Deps = { resolve4: async () => [], resolve6: async () => [], tlsCheck: async () => ({ ok: true }), now: () => performance.now(), sleep: async () => {} };
+    const { probe } = await runAuthProbe({ tracer, url, trigger: 'preflight-401', challengeExchange, deps, timeoutMs: 60000, activeAuth: false });
+    expect(probe.prm?.via).toBe('header');
+    // 3 issuers x 3 discovery URLs = 9 URLs; the budget of 6 retries covers the first three, the rest get one attempt
+    expect(seen.filter((r) => r.path.includes('oauth-authorization-server') || r.path.includes('openid-configuration'))).toHaveLength(9 + METADATA_RETRY_BUDGET);
+    expect(probe.as.map((a) => a.attempts.length)).toEqual([9, 3, 3]);
+    expect(new Set(timeouts.filter((t, i) => labels[i].startsWith('auth prm') || labels[i].startsWith('auth as-metadata')))).toEqual(new Set([METADATA_TIMEOUT_MS]));
   });
 });
 

@@ -17,15 +17,21 @@ export interface AuthProbeInput {
 }
 
 const isJsonObject = (e: HttpExchange) => e.status === 200 && isObj(e.json);
+/** Longest wait for one metadata GET: these documents are small and static. A lower --timeout lowers it. */
+export const METADATA_TIMEOUT_MS = 10000;
+/** Retries (beyond the first attempt of each URL) shared by all metadata GETs of one auth probe. */
+export const METADATA_RETRY_BUDGET = 6;
 const CALLBACKS = ['https://claude.ai/api/mcp/auth_callback', 'http://localhost:3118/callback', 'http://127.0.0.1:3118/callback'];
 
 export function prmCandidates(url: URL, headerUrl?: string): Array<{ url: string; via: 'header' | 'well-known-path' | 'well-known-root' }> {
   const out: Array<{ url: string; via: 'header' | 'well-known-path' | 'well-known-root' }> = [];
-  if (headerUrl) { try { out.push({ url: new URL(headerUrl).href, via: 'header' }); } catch { /* invalid header URL */ } }
+  // The header usually names a well-known URL: request each URL once, under the first way it was found.
+  const add = (u: string, via: 'header' | 'well-known-path' | 'well-known-root') => { if (!out.some((c) => c.url === u)) out.push({ url: u, via }); };
+  if (headerUrl) { try { add(new URL(headerUrl).href, 'header'); } catch { /* invalid header URL */ } }
   // RFC 9728 §3.1: drop a terminating '/' from the path and keep the query.
   const p = url.pathname.replace(/\/$/, '');
-  if (p || url.search) out.push({ url: `${url.origin}/.well-known/oauth-protected-resource${p}${url.search}`, via: 'well-known-path' });
-  out.push({ url: `${url.origin}/.well-known/oauth-protected-resource`, via: 'well-known-root' });
+  if (p || url.search) add(new URL(`${url.origin}/.well-known/oauth-protected-resource${p}${url.search}`).href, 'well-known-path');
+  add(new URL(`${url.origin}/.well-known/oauth-protected-resource`).href, 'well-known-root');
   return out;
 }
 
@@ -46,9 +52,18 @@ async function get(tracer: Tracer, label: string, url: string, timeoutMs: number
   return (await tracer.request(label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs })).exchange;
 }
 
-/** A metadata GET retried on timeouts, resets, 5xx and 429: every attempt, the last one being the result. */
-function getRetried(input: AuthProbeInput, label: string, url: string): Promise<HttpExchange[]> {
-  return requestWithRetry(input.tracer, label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs: input.timeoutMs }, input.deps.sleep);
+const metadataTimeout = (timeoutMs: number) => Math.min(timeoutMs, METADATA_TIMEOUT_MS);
+
+/**
+ * A metadata GET retried on timeouts, resets, 5xx and 429 while the probe's shared retry budget lasts: every attempt,
+ * the last one being the result. Once the budget is spent each URL gets one attempt.
+ */
+async function getRetried(input: AuthProbeInput, budget: { retries: number }, label: string, url: string): Promise<HttpExchange[]> {
+  const timeoutMs = metadataTimeout(input.timeoutMs);
+  if (budget.retries <= 0) return [await get(input.tracer, label, url, timeoutMs)];
+  const tries = await requestWithRetry(input.tracer, label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs }, input.deps.sleep);
+  budget.retries -= tries.length - 1;
+  return tries;
 }
 
 const last = <T>(xs: T[]): T => xs[xs.length - 1];
@@ -71,15 +86,17 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
     prmAttempts: [], as: [], timings: {},
   };
   const bearer = parsed.find((c) => c.scheme === 'bearer' || c.scheme === 'dpop');
+  const budget = { retries: METADATA_RETRY_BUDGET };
+  const sampleTimeout = metadataTimeout(timeoutMs);
 
   // PRM discovery
   for (const cand of prmCandidates(url, bearer?.params.resource_metadata)) {
-    const tries = await getRetried(input, `auth prm ${cand.via}`, cand.url);
+    const tries = await getRetried(input, budget, `auth prm ${cand.via}`, cand.url);
     probe.prmAttempts.push(...tries);
     const ex = last(tries);
     if (isJsonObject(ex)) {
       probe.prm = { url: cand.url, via: cand.via, json: ex.json as Record<string, unknown>, contentType: ex.contentType };
-      probe.timings['protected resource metadata'] = await sample(tracer, 'auth prm', cand.url, ex.durationMs, timeoutMs);
+      probe.timings['protected resource metadata'] = await sample(tracer, 'auth prm', cand.url, ex.durationMs, sampleTimeout);
       break;
     }
   }
@@ -87,12 +104,12 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
   // Legacy (2025-03-26) fallback, as the MCP SDK client does: without PRM the MCP origin acts as the authorization server.
   if (!probe.prm) {
     const legacyUrl = `${url.origin}/.well-known/oauth-authorization-server`;
-    const tries = await getRetried(input, 'auth as-metadata (legacy origin)', legacyUrl);
+    const tries = await getRetried(input, budget, 'auth as-metadata (legacy origin)', legacyUrl);
     const ex = last(tries);
     if (isJsonObject(ex)) {
       probe.legacyDiscovery = true;
       probe.as.push({ issuer: url.origin, attempts: tries, discoveryUrl: legacyUrl, json: ex.json as Record<string, unknown> });
-      probe.timings['authorization server metadata'] = await sample(tracer, 'auth as-metadata', legacyUrl, ex.durationMs, timeoutMs);
+      probe.timings['authorization server metadata'] = await sample(tracer, 'auth as-metadata', legacyUrl, ex.durationMs, sampleTimeout);
     }
   }
 
@@ -104,13 +121,13 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
     let urls: string[];
     try { urls = asDiscoveryUrls(issuer); } catch { continue; }
     for (const u of urls) {
-      const tries = await getRetried(input, `auth as-metadata #${i + 1}`, u);
+      const tries = await getRetried(input, budget, `auth as-metadata #${i + 1}`, u);
       as.attempts.push(...tries);
       const ex = last(tries);
       if (isJsonObject(ex)) {
         as.discoveryUrl = u;
         as.json = ex.json as Record<string, unknown>;
-        if (i === 0) probe.timings['authorization server metadata'] = await sample(tracer, 'auth as-metadata', u, ex.durationMs, timeoutMs);
+        if (i === 0) probe.timings['authorization server metadata'] = await sample(tracer, 'auth as-metadata', u, ex.durationMs, sampleTimeout);
         break;
       }
     }
