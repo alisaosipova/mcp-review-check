@@ -26,8 +26,9 @@ export const POL_001 = defineRule(
   }),
 );
 
-const MEDIA = /(generate|create|synthesi[sz]e|render|make|produce|edit)[_ -]?(an? )?(ai )?(image|images|photo|picture|art|artwork|illustration|avatar|video|clip|animation|audio|speech|voice|music|song|sound|podcast)/i;
-const MEDIA2 = /\b(text[- ]to[- ](image|video|speech|audio|music)|tts|txt2img|img2img|stable diffusion|dall-?e|midjourney|voice clon)/i;
+// The noun must end there (an optional plural aside): "create article", "edit voicemail" and "edit clipboard" are not media.
+const MEDIA = /(generate|create|synthesi[sz]e|render|make|produce|edit)[_ -]?(an? )?(ai )?(image|photo|picture|art|artwork|illustration|avatar|video|clip|animation|audio|speech|voice|music|song|sound|podcast)s?(?![a-z])/i;
+const MEDIA2 = /\b(text[- ]to[- ](image|video|speech|audio|music)|tts(?![a-z])|txt2img|img2img|stable diffusion|dall-?e|midjourney|voice clon)/i;
 const DESIGN = /\b(diagram|chart|graph|slide|presentation|mockup|wireframe|ui|logo|flowchart|design asset)\b/i;
 
 export const POL_002 = defineRule(
