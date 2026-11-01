@@ -77,7 +77,7 @@ const cases: Record<string, Case> = {
   'AUTH-014': { pos: authSnap({ as: { authorization_response_iss_parameter_supported: undefined } }), neg: good, severity: 'info' },
   'AUTH-015': { pos: authSnap({ challenge: `Bearer resource_metadata="https://mcp.acme.test/.well-known/oauth-protected-resource/mcp"` }), neg: good, severity: 'info' },
   'AUTH-016': { pos: authSnap({ probe: { invalidToken: exchange({ status: 200 }) } }), neg: good, severity: 'error' },
-  'AUTH-017': { pos: authSnap({ probe: { timings: { 'authorization server metadata': [100, 11000] } } }), neg: good, severity: 'error' },
+  'AUTH-017': { pos: authSnap({ probe: { timings: { 'authorization server metadata': [11000, 100, 12000] } } }), neg: good, severity: 'error' },
   'AUTH-018': { pos: authSnap({ url: 'https://acme.azurewebsites.net/mcp' }), neg: good },
   'AUTH-019': {
     pos: authSnap({ set: (s) => { s.options.activeAuth = true; s.authProbe!.active = { dcr: exchange({ status: 415 }) }; } }),

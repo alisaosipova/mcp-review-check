@@ -453,7 +453,12 @@ export const AUTH_017 = defineRule(
     for (const [k, xs] of Object.entries(snap.authProbe?.timings ?? {})) {
       if (!xs.length) continue;
       const max = Math.max(...xs);
-      if (max > AUTH_LATENCY.errorMs) out.push({ message: `${k} took ${Math.round(max)} ms (> ${AUTH_LATENCY.errorMs} ms)` });
+      // An error needs most samples over the limit: one network spike among three (a cold start, a slow first DNS
+      // lookup) is a warning, so a single outlier does not block.
+      const over = xs.filter((x) => x > AUTH_LATENCY.errorMs).length;
+      const of = xs.length > 1 ? ` in ${over} of ${xs.length} samples` : '';
+      if (over * 2 > xs.length) out.push({ message: `${k} took ${Math.round(max)} ms${of} (> ${AUTH_LATENCY.errorMs} ms)` });
+      else if (over) out.push({ severity: 'warning', message: `${k} took ${Math.round(max)} ms${of} (> ${AUTH_LATENCY.errorMs} ms); a single slow sample is not a verdict, but Claude may time out` });
       else if (max > AUTH_LATENCY.warningMs) out.push({ severity: 'warning', message: `${k} took ${Math.round(max)} ms (> ${AUTH_LATENCY.warningMs} ms)` });
     }
     return out;

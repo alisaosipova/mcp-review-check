@@ -133,4 +133,17 @@ describe('F020 unquoted URL in WWW-Authenticate', () => {
     expect(f).toMatchObject([{ platforms: ['spec'], severity: 'warning', message: expect.stringMatching(/quoted-string/) }]);
   });
 });
+
+describe('F052 AUTH-017 one slow sample out of three', () => {
+  const latency = (xs: number[]) => evaluate(byId('AUTH-017'), authSnap({ probe: { timings: { 'authorization server metadata': xs } } }));
+
+  it('a single spike over 10 s is a warning naming the sample count', () => {
+    expect(latency([100, 11000, 120])).toMatchObject([{ severity: 'warning', message: expect.stringMatching(/1 of 3 samples/) }]);
+  });
+
+  it('most samples over 10 s, or a single one-shot call, stay an error', () => {
+    expect(latency([11000, 100, 12000])[0].severity).toBe('error');
+    expect(latency([11000])[0].severity).toBe('error');
+  });
+});
 // @end
