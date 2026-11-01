@@ -51,7 +51,7 @@ Options:
   --tool-args <file>      JSON {toolName: args} for --active calls.
   --env K=V               Environment variable for --stdio (repeatable). Values are redacted in output.
   --cwd <dir>             Working directory for --stdio.
-  --ignore <RULE-ID>      Ignore a rule (repeatable); an ID that is not a rule or MAN item is a usage error.
+  --ignore <RULE-ID>      Ignore a rule (repeatable or comma-separated); an ID that is not a rule or MAN item is a usage error.
   --list-rules [prefix]   Print the rule catalog (--format text, json or markdown; IDs starting with prefix) and exit.
   --no-color              Disable colors (also off when not a TTY or NO_COLOR is set; FORCE_COLOR=1 forces them on).
   --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
@@ -203,6 +203,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const { values, positionals } = parseArgs({
       args: split.args, allowPositionals: true, strict: true, options: OPTIONS,
     });
+    // Keywords in any case, as --ignore and explain take IDs in any case: --format JSON, --target Claude, --fail-on Warning.
+    const format = values.format!.toLowerCase();
     if (values.help) return { code: 0, stdout: HELP, stderr };
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
     if (values['list-rules']) {
@@ -212,10 +214,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const rules = RULES.filter((r) => r.id.startsWith(prefix));
       const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
       if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);
-      if (!['text', 'json', 'markdown', 'sarif'].includes(values.format!)) throw new UsageError('--list-rules --format must be text, json or markdown');
+      if (!['text', 'json', 'markdown', 'sarif'].includes(format)) throw new UsageError('--list-rules --format must be text, json or markdown');
       // SARIF has no catalog form; print the text catalog with a warning and exit 0, as the 0.1.0 baseline did.
-      if (values.format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\n';
-      const list = values.format === 'json' ? listRulesJson(rules, manual) : values.format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
+      if (format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\n';
+      const list = format === 'json' ? listRulesJson(rules, manual) : format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
       return { code: 0, stdout: list, stderr };
     }
     if (positionals[0] === 'explain') {
@@ -231,14 +233,13 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
     const isStdio = values.stdio !== undefined || split.command !== undefined;
     if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
-    const target = values.target as TargetOpt;
+    const target = values.target!.toLowerCase() as TargetOpt;
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
-    const format = values.format!;
     if (!['text', 'json', 'markdown', 'sarif'].includes(format)) throw new UsageError('--format must be text, json, markdown or sarif');
     const sarifLocation = values['sarif-location'] ?? SARIF_LOCATION;
     // Code scanning takes repository-relative paths only: no scheme (C: included), no leading / or \, no "..".
     if (!sarifLocation || /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(sarifLocation) || sarifLocation.split(/[\\/]/).includes('..')) throw new UsageError('--sarif-location must be a relative path without a scheme or ".." (the value is not shown)');
-    const failOn = values['fail-on'] as FailOn;
+    const failOn = values['fail-on']!.toLowerCase() as FailOn;
     if (!['error', 'warning', 'never'].includes(failOn)) throw new UsageError('--fail-on must be error, warning or never');
     // Digits only: Number() would also take 0x10, 1e2, 1.5 and blanks.
     const timeoutMs = /^\d+$/.test(values.timeout!) ? Number(values.timeout) : NaN;
@@ -254,7 +255,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values.output === '') throw new UsageError('--output needs a file path');
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
-    const unknownId = values.ignore?.find((id) => !known.has(id.toUpperCase()));
+    // "--ignore A,B" as many linters take it, besides --ignore A --ignore B.
+    const ignore = (values.ignore ?? []).flatMap((v) => v.split(',')).map((v) => v.trim());
+    const unknownId = ignore.find((id) => !known.has(id.toUpperCase()));
     if (unknownId !== undefined) throw new UsageError(`--ignore ${/^[a-z]+-\d+$/i.test(unknownId) ? unknownId : 'value'} is not a rule or MAN ID; --list-rules prints the catalog`);
     const headers: Record<string, string> = {};
     for (const h of values.header ?? []) {
@@ -332,9 +335,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
-    const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
+    const result = runRules(snap, RULES, { ignore });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
-    const ignoredIds = new Set((values.ignore ?? []).map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
+    const ignoredIds = new Set(ignore.map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
     const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);

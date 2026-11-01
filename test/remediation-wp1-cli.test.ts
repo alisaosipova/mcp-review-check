@@ -110,6 +110,30 @@ describe('--cwd, --output and the -- separator are checked before the run (F008,
   });
 });
 
+describe('keyword values in any case, --ignore as a comma-separated list (F016, R018)', () => {
+  it('--target, --format and --fail-on take any case, as --ignore and explain do', async () => {
+    const r = await usage(['--stdio', `node ${GOOD.slice('node '.length)}`, '--target', 'CLAUDE', '--format', 'JSON', '--fail-on', 'Warning']);
+    expect(r.code, r.stderr).not.toBe(2);
+    const json = JSON.parse(r.stdout);
+    expect(json.target).toBe('claude');
+    const list = await usage(['--list-rules', 'RT-001', '--format', 'Markdown']);
+    expect(list.code, list.stderr).toBe(0);
+    expect(list.stdout).toMatch(/^\| ID \| Title/);
+  });
+
+  it('--ignore A,B ignores both; a bad entry in a list is named when it looks like an ID', async () => {
+    const one = await cli(['--stdio', GOOD, '--format', 'json', '--ignore', 'tool-011,MAN-001']);
+    const two = await cli(['--stdio', GOOD, '--format', 'json', '--ignore', 'TOOL-011', '--ignore', 'MAN-001']);
+    expect(one.code, one.stderr).toBe(two.code);
+    expect(one.json.manual.map((m: any) => m.id)).toEqual(two.json.manual.map((m: any) => m.id));
+    expect(one.json.manual.map((m: any) => m.id)).not.toContain('MAN-001');
+    expect(one.json.ignored).toEqual(two.json.ignored);
+    const bad = await usage([URL_, '--ignore', 'TOOL-006,TOOL-999']);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('--ignore TOOL-999 is not a rule or MAN ID');
+  });
+});
+
 describe('options that do not apply to the run (F004, F161)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-wp1-'));
   const toolArgs = join(dir, 'tool-args.json');
