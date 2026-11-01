@@ -14,7 +14,7 @@
 > were narrowed or extended after 0.1.0 to fix false positives; CHANGELOG.md names each change, and the code in
 > `src/rules/` is authoritative where this document quotes an older pattern.
 
-Spec version 0.1. Rule catalog date 2026-10-22. Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md), not here.
+Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md), not here.
 
 `mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 20.19 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 
@@ -1399,7 +1399,7 @@ Score 62/100 · 3 errors · 5 warnings · 4 info
 Claude: BLOCKED (2 errors) · ChatGPT: BLOCKED (1 error) · Result: FAIL (--fail-on error)
 
 Passing these automated checks does not guarantee approval. Directory reviews include manual
-testing and policy judgment, and requirements change. Rules reflect public docs as of 2026-10-22.
+testing and policy judgment, and requirements change. Rules reflect public docs as of 2026-10-22; the catalog date moved to 2026-11-01 when the 0.1.x fixes changed rule severities.
 mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
 ```
 - Findings are grouped by severity (errors, then warnings, then info), sorted by rule ID and then by subject.

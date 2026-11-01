@@ -58,6 +58,10 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - Common settings given under a plain `--env` name (`production`, `debug`, log levels, version numbers) are no longer masked in the report; under a secret-looking name they still are.
 - The exported `failed()` helper defaults to the CLI's gate (claude and chatgpt; spec only when passed).
 - CI and release builds install dependencies without their install scripts, CI runs the end-of-life Node 20.19 on Linux only (Node 22 and 24 on every OS), runs on `main` are no longer cancelled by a newer push, and releases publish through npm trusted publishing, with the `NPM_TOKEN` secret used only in a separate first-release step while it is set.
+- the rule catalog date is now 2026-11-01, because this release changes rule severities.
+- SRV-018 counts every non-JSON-RPC stdout line (not only the first 50 kept) and says "non-JSON-RPC line(s)".
+- SRV-009 reports one finding per exchange and each bot-challenge signal once, so one Cloudflare challenge page gives one warning instead of three.
+- `--help` lists the exit codes one per line, including exit 3 for an internal error and 128+N when ended by a signal.
 
 ### Fixed
 
@@ -85,6 +89,14 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - Finding snippets show emoji ZWJ sequences such as 👨‍💻 as written, and fix snippets no longer depend on the wording of the TOOL-006 message.
 - The markdown appended to `$GITHUB_STEP_SUMMARY` is cut at a line end to fit GitHub's 1 MiB step limit, with a note, instead of being dropped whole by GitHub.
 - `npm test` from a source archive without `.git` skips the `npm pack` test instead of failing.
+- An HTTP URL with `user:pass@` now works. The credentials are sent as an `Authorization: Basic` header and redacted, and `--bearer` or an `Authorization` `--header` takes precedence. Before, every request failed with "Request cannot be constructed from a URL that includes credentials".
+- `server/discover`, the auth-probe trigger and the auth probe now follow a same-host redirect of the preflight (`/mcp` -> `/mcp/`). A dual-era or modern server behind such a redirect is no longer marked legacy, and a 401 behind the redirect starts the auth probe.
+- TLS certificate checks on the MCP host and on the authorization-server hosts now obey `--timeout` (capped at 10 s) and stop at the `--max-duration` deadline without retrying.
+- on legacy HTTP+SSE servers, `transport.timings` now holds the time from each request to its result, which arrives on the GET stream.
+- the modern (2026-07-28) wire probes read response bodies under the probes' 256 KB / 10 s cap, so a server that keeps an SSE stream open costs at most 10 s per probe.
+- APPS-014 no longer reports "never calls connect()" for a UI resource whose HTML was cut at the 2 MB cap.
+- INJ, DATA, POL and TOOL findings on a prompt name the prompt (prompt "<name>" description / argument <arg> description).
+- `--verbose` prints control and format characters in the `[http]` trace and the `[stdio stderr]` tail as `\u{..}`, so a server cannot move the cursor, recolour or overwrite lines in a terminal or CI log.
 
 #### Severity lowered / false positives fixed
 
