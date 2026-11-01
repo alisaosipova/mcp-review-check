@@ -2,6 +2,7 @@
 // WWW-Authenticate helpers). One describe block per finding id.
 import { describe, expect, it } from 'vitest';
 import { authRules } from '../src/rules/auth.js';
+import { manualChecklist } from '../src/rules/manual.js';
 import { serverRules } from '../src/rules/server.js';
 import { specRules } from '../src/rules/spec.js';
 import type { Rule } from '../src/rules/types.js';
@@ -237,6 +238,32 @@ describe('F027 IPv6 notations in the net helpers', () => {
     const h = new URL('http://[::ffff:10.0.0.1]/').hostname.replace(/^\[|\]$/g, '');
     expect(h).toBe('::ffff:a00:1');
     expect(isNonPublicIp(h)).toBe(true);
+  });
+});
+
+describe('F040 SPEC-016 range policy follows the server era', () => {
+  const errs = [{ source: 'discover', requestId: 1, responseId: 1, code: -32050, modern: true }];
+
+  it('a legacy server answering our 2026-07-28 discover probe with -32050 is not flagged', () => {
+    for (const era of ['legacy', 'sse-legacy'] as const) {
+      expect(evaluate(byId('SPEC-016'), snap({ set: (s) => { s.era = era; s.transport.observedErrors = errs; } })), era).toEqual([]);
+    }
+  });
+
+  it('a modern or dual server still gets the reserved-range error', () => {
+    expect(evaluate(byId('SPEC-016'), modern((s) => { s.transport.observedErrors = errs; }))).toMatchObject([{ severity: 'error', message: expect.stringMatching(/reserved range/) }]);
+  });
+});
+
+describe('F121 manual OAuth items for legacy discovery without PRM', () => {
+  it('lists the [oauth] items when only legacy origin discovery found the authorization server', () => {
+    const s = authSnap({ prm: null, probe: { legacyDiscovery: true } });
+    const ids = manualChecklist(s).map((i) => i.id);
+    for (const id of ['MAN-007', 'MAN-008', 'MAN-013', 'MAN-014', 'MAN-026', 'MAN-028']) expect(ids, id).toContain(id);
+  });
+
+  it('leaves them out without any OAuth', () => {
+    expect(manualChecklist(snap({ url: URL_OK })).map((i) => i.id)).not.toContain('MAN-007');
   });
 });
 // @end

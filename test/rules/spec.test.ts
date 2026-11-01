@@ -70,7 +70,7 @@ const cases: Record<string, Case> = {
     neg: modern((s) => { s.transport.probes.get = exchange({ method: 'GET', status: 405 }); s.transport.probes.delete = exchange({ method: 'DELETE', status: 405 }); }),
   },
   'SPEC-016': {
-    pos: snap({ set: (s) => { s.transport.observedErrors = [{ source: 'tools/list', requestId: 1, responseId: 1, code: -32050, modern: true }]; } }),
+    pos: snap({ set: (s) => { s.era = 'dual'; s.transport.observedErrors = [{ source: 'tools/list', requestId: 1, responseId: 1, code: -32050, modern: true }]; } }),
     neg: snap({ set: (s) => { s.transport.observedErrors = [{ source: 'tools/list', requestId: 1, responseId: 1, code: -32601 }]; } }), severity: 'error',
   },
   'SPEC-017': {

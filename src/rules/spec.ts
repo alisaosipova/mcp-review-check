@@ -373,8 +373,9 @@ export const SPEC_016 = defineRule(
       const c = e.code;
       // The -32020..-32099 partition and the -32002/-32042 removal are 2026-07-28 policy. 2025-11-25 defines -32042
       // (URL elicitation required) and lets implementations use that range, so legacy responses get only the
-      // integer and id checks.
-      const modernPath = e.modern ?? snap.era === 'modern';
+      // integer and id checks. `modern` marks a response to OUR 2026-07-28 request (the discover probe goes to every
+      // server), so the policy applies only when the server speaks 2026-07-28 too.
+      const modernPath = (e.modern ?? snap.era === 'modern') && isModern(snap);
       if (typeof c !== 'number' || !Number.isInteger(c)) add({ message: `${e.source}: error code ${JSON.stringify(c)} is not an integer` });
       else if (modernPath && (c === -32002 || c === -32042)) add({ message: `${e.source}: 2026-07-28 response uses code ${c}, which that version removed` });
       else if (modernPath && c >= -32099 && c <= -32020 && !MODERN_HEADER_CODES.includes(c)) add({ message: `${e.source}: error code ${c} is in the reserved range` });
