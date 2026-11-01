@@ -4,6 +4,13 @@ export interface Challenge {
   scheme: string;
   params: Record<string, string>;
   token68?: string;
+  /** Params whose value was neither a token nor a quoted-string (e.g. an unquoted URL), read leniently up to `,`. */
+  unquoted?: string[];
+}
+
+/** A challenge scheme that carries OAuth bearer-token parameters (resource_metadata, scope, error). */
+export function isBearerLike(c: { scheme: string }): boolean {
+  return c.scheme === 'bearer' || c.scheme === 'dpop';
 }
 
 const TOKEN = /[!#$%&'*+.^_`|~0-9A-Za-z-]/;
@@ -52,7 +59,20 @@ export function parseWwwAuthenticate(header: string | null | undefined): Challen
       if (!name || s[i] !== '=') { i = before; break; } // next challenge starts
       i++;
       skipWs();
-      const value = s[i] === '"' ? readQuoted() : readToken();
+      let value: string;
+      if (s[i] === '"') value = readQuoted();
+      else {
+        // RFC 9110 allows only a token here, but servers send unquoted URLs (resource_metadata=https://...). Read up
+        // to the next comma or whitespace as the MCP SDK client does, rather than cutting at ':' and parsing the rest
+        // as a phantom challenge.
+        value = readToken();
+        const start = i;
+        while (i < s.length && !/[\s,]/.test(s[i])) i++;
+        if (i > start) {
+          value += s.slice(start, i);
+          (ch.unquoted ??= []).push(name.toLowerCase());
+        }
+      }
       ch.params[name.toLowerCase()] = value;
       skipWs();
       if (s[i] === ',') i++;

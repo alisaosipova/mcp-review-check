@@ -5,6 +5,7 @@ import { authRules } from '../src/rules/auth.js';
 import { serverRules } from '../src/rules/server.js';
 import { specRules } from '../src/rules/spec.js';
 import type { Rule } from '../src/rules/types.js';
+import { parseWwwAuthenticate } from '../src/rules/util/wwwAuth.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, exchange, snap } from './helpers.js';
 
@@ -62,6 +63,74 @@ describe('F038 AUTH-020 login page carrying redirect_uri', () => {
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: '<p>The redirect_uri is not registered for this client</p>' }))[0].severity).toBe('error');
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 403, json: { error: 'invalid_request', error_description: 'redirect_uri mismatch' } }))[0].severity).toBe('error');
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 400 }))[0].severity).toBe('error');
+  });
+});
+
+const ISSUER = 'https://auth.acme.test';
+const GOOD_AS = {
+  issuer: ISSUER,
+  authorization_endpoint: `${ISSUER}/authorize`,
+  token_endpoint: `${ISSUER}/token`,
+  registration_endpoint: `${ISSUER}/register`,
+  response_types_supported: ['code'],
+  grant_types_supported: ['authorization_code', 'refresh_token'],
+  code_challenge_methods_supported: ['S256'],
+  token_endpoint_auth_methods_supported: ['none'],
+  client_id_metadata_document_supported: true,
+  authorization_response_iss_parameter_supported: true,
+};
+const PRM_URL = 'https://mcp.acme.test/.well-known/oauth-protected-resource/mcp';
+const CHALLENGE = `Bearer resource_metadata="${PRM_URL}", scope="notes.read"`;
+
+interface AuthOpts {
+  challenge?: string | null;
+  prm?: Record<string, unknown> | null;
+  as?: Record<string, unknown>;
+  probe?: Partial<NonNullable<Snapshot['authProbe']>>;
+  url?: string;
+  set?: (s: Snapshot) => void;
+}
+
+function authSnap(o: AuthOpts = {}): Snapshot {
+  const url = o.url ?? URL_OK;
+  return snap({
+    url,
+    set: (s) => {
+      const raw = o.challenge === null ? '' : o.challenge ?? CHALLENGE;
+      const prmJson = o.prm === null ? undefined : { resource: url, authorization_servers: [ISSUER], scopes_supported: ['notes.read'], ...(o.prm ?? {}) };
+      s.transport.preflight = exchange({ status: 401, headers: raw ? { 'www-authenticate': raw } : {} });
+      s.authProbe = {
+        trigger: 'preflight-401',
+        challenge: { status: 401, raw, parsed: parseWwwAuthenticate(raw).map((c) => ({ scheme: c.scheme, params: c.params })) },
+        prmAttempts: [],
+        prm: prmJson ? { url: PRM_URL, via: 'header', json: prmJson, contentType: 'application/json' } : undefined,
+        as: [{ issuer: ISSUER, attempts: [], discoveryUrl: `${ISSUER}/.well-known/oauth-authorization-server`, json: { ...GOOD_AS, ...(o.as ?? {}) } }],
+        invalidToken: exchange({ status: 401, headers: { 'www-authenticate': CHALLENGE } }),
+        timings: { 'protected resource metadata': [120, 90, 100] },
+        ...(o.probe ?? {}),
+      };
+      o.set?.(s);
+    },
+  });
+}
+
+describe('F020 unquoted URL in WWW-Authenticate', () => {
+  it('reads an unquoted resource_metadata URL whole, without a phantom challenge', () => {
+    const parsed = parseWwwAuthenticate(`Bearer resource_metadata=${PRM_URL}, scope="a b"`);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({ scheme: 'bearer', params: { resource_metadata: PRM_URL, scope: 'a b' }, unquoted: ['resource_metadata'] });
+  });
+
+  it('keeps tokens, quoted strings and multiple challenges as before', () => {
+    expect(parseWwwAuthenticate('Basic realm="r", Bearer error=invalid_token, resource_metadata="https://a/x"')).toEqual([
+      { scheme: 'basic', params: { realm: 'r' } },
+      { scheme: 'bearer', params: { error: 'invalid_token', resource_metadata: 'https://a/x' } },
+    ]);
+  });
+
+  it('AUTH-002 accepts the URL and adds only a spec note about quoting', () => {
+    const f = evaluate(byId('AUTH-002'), authSnap({ challenge: `Bearer resource_metadata=${PRM_URL}` }));
+    expect(f).toMatchObject([{ platforms: ['spec'], severity: 'warning', message: expect.stringMatching(/quoted-string/) }]);
   });
 });
 // @end

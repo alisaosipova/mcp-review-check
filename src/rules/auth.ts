@@ -92,6 +92,10 @@ export const AUTH_002 = defineRule(
       } else out.push(...missing(`challenge has no Bearer scheme: ${ch.raw.slice(0, 120)}`));
     } else if (!bearer.params.resource_metadata) out.push(...missing('Bearer challenge has no resource_metadata parameter'));
     else if (!httpsOrLocal(snap, bearer.params.resource_metadata)) out.push({ severity: 'error', message: `resource_metadata ${bearer.params.resource_metadata} is not an absolute https URL` });
+    // An unquoted URL is read whole (as MCP SDK clients do), but RFC 9110 allows only a token or a quoted-string.
+    if (bearer?.params.resource_metadata && parseWwwAuthenticate(ch?.raw).find((c) => c.scheme === bearer.scheme)?.unquoted?.includes('resource_metadata')) {
+      out.push({ platforms: ['spec'], message: 'resource_metadata is not a quoted-string (RFC 9110 auth-param); quote the URL' });
+    }
     return out;
   },
 );
