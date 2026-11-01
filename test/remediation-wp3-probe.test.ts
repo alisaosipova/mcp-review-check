@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { placeholder, runActive, synthesizeArgs, wrongTypeValue } from '../src/probe/active.js';
-import { closeProbeSession, originProbes, preflight, sameHostRedirect } from '../src/probe/network.js';
+import { closeProbeSession, defaultTlsCheck, originProbes, preflight, sameHostRedirect, TLS_TIMEOUT_MS, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
 import type { Snapshot } from '../src/snapshot.js';
@@ -165,6 +165,36 @@ describe('F030: sessions minted by raw initialize probes are closed', () => {
     await closeProbeSession(tracer, 'http://127.0.0.1:9/mcp', exchange({ status: 200, headers: { 'mcp-session-id': '«redacted»' } }), {}, 5000);
     await closeProbeSession(tracer, 'http://127.0.0.1:9/mcp', exchange({ status: 404, headers: { 'mcp-session-id': 'abc' } }), {}, 5000);
     expect(tracer.exchanges).toEqual([]);
+  });
+});
+
+describe('F031: the TLS check follows --timeout and stops at the --max-duration deadline', () => {
+  const baseDeps = (tlsCheck: Deps['tlsCheck']): Deps => ({
+    resolve4: async () => [], resolve6: async () => [], tlsCheck, now: () => 0, sleep: async () => {},
+  });
+
+  it('passes the lower of --timeout and 10 s to each handshake', async () => {
+    const seen: Array<number | undefined> = [];
+    const deps = baseDeps(async (_h, _p, o) => { seen.push(o?.timeoutMs); return { ok: true }; });
+    await tlsCheckWithRetry(deps, 'a.test', 443, { timeoutMs: 2000 });
+    await tlsCheckWithRetry(deps, 'a.test', 443, { timeoutMs: 60000 });
+    await tlsCheckWithRetry(deps, 'a.test', 443);
+    expect(seen).toEqual([2000, TLS_TIMEOUT_MS, TLS_TIMEOUT_MS]);
+  });
+
+  it('does not retry after the deadline aborts and reports the result as inconclusive, not as a failed certificate', async () => {
+    const ctrl = new AbortController();
+    let attempts = 0;
+    const deps = baseDeps(async () => { attempts++; ctrl.abort(); return { ok: false, code: 'ECONNRESET' }; });
+    const r = await tlsCheckWithRetry(deps, 'a.test', 443, { signal: ctrl.signal });
+    expect(attempts).toBe(1);
+    expect(r).toMatchObject({ ok: false, transient: true });
+  });
+
+  it('defaultTlsCheck returns at once when the signal has already aborted', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    expect(await defaultTlsCheck('127.0.0.1', 9, 10000, ctrl.signal)).toEqual({ ok: false, code: 'ABORT_ERR' });
   });
 });
 

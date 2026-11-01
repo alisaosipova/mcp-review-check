@@ -8,12 +8,21 @@ import { CLIENT_CAPABILITIES } from '../protocol/clientCaps.js';
 import { isTransient, isTransientCode, timedOut } from '../rules/util/obs.js';
 import { VERSION } from '../version.js';
 
+/** Limits of one TLS handshake check: its timeout and the run's --max-duration deadline. */
+export interface TlsCheckOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+/** Longest TLS handshake wait; a lower --timeout lowers it. */
+export const TLS_TIMEOUT_MS = 10000;
+
 export interface Deps {
   resolve4(host: string): Promise<string[]>;
   resolve6(host: string): Promise<string[]>;
   /** The system resolver (dns.lookup), which also sees /etc/hosts and container DNS names. */
   lookup?(host: string): Promise<string[]>;
-  tlsCheck(host: string, port: number): Promise<{ ok: boolean; code?: string }>;
+  tlsCheck(host: string, port: number, opts?: TlsCheckOptions): Promise<{ ok: boolean; code?: string }>;
   now(): number;
   /** Wait between retries (tests inject a no-op). */
   sleep?(ms: number): Promise<void>;
@@ -57,10 +66,13 @@ export async function requestRetried(tracer: Tracer, label: string, url: string 
   return all[all.length - 1];
 }
 
-export function defaultTlsCheck(host: string, port: number, timeoutMs = 10000): Promise<{ ok: boolean; code?: string }> {
+export function defaultTlsCheck(host: string, port: number, timeoutMs = TLS_TIMEOUT_MS, signal?: AbortSignal): Promise<{ ok: boolean; code?: string }> {
   return new Promise((resolve) => {
+    if (signal?.aborted) { resolve({ ok: false, code: 'ABORT_ERR' }); return; }
     const socket = tls.connect({ host, port, servername: isIP(host) ? undefined : host, rejectUnauthorized: true });
-    const done = (r: { ok: boolean; code?: string }) => { socket.destroy(); resolve(r); };
+    const onAbort = () => done({ ok: false, code: 'ABORT_ERR' });
+    const done = (r: { ok: boolean; code?: string }) => { signal?.removeEventListener('abort', onAbort); socket.destroy(); resolve(r); };
+    signal?.addEventListener('abort', onAbort, { once: true });
     socket.setTimeout(timeoutMs, () => done({ ok: false, code: 'ETIMEDOUT' }));
     socket.once('secureConnect', () => done({ ok: true }));
     socket.once('error', (e: Error & { code?: string }) => done({ ok: false, code: e.code ?? e.message }));
@@ -71,7 +83,7 @@ export const defaultDeps: Deps = {
   resolve4: (h) => dns.resolve4(h),
   resolve6: (h) => dns.resolve6(h),
   lookup: (h) => dns.lookup(h, { all: true }).then((r) => r.map((x) => x.address)),
-  tlsCheck: (h, p) => defaultTlsCheck(h, p),
+  tlsCheck: (h, p, o) => defaultTlsCheck(h, p, o?.timeoutMs, o?.signal),
   now: () => performance.now(),
 };
 
@@ -183,18 +195,23 @@ export interface TlsResult {
   transient?: boolean;
 }
 
-/** TLS handshake check that strips IPv6 brackets, never throws, and retries resets (up to 3 attempts) and a timeout (once). */
-export async function tlsCheckWithRetry(deps: Deps, hostname: string, port: number): Promise<TlsResult> {
+/**
+ * TLS handshake check that strips IPv6 brackets, never throws, and retries resets (up to 3 attempts) and a timeout (once).
+ * Each handshake waits at most `opts.timeoutMs` (capped at TLS_TIMEOUT_MS); once `opts.signal` aborts, nothing is retried.
+ */
+export async function tlsCheckWithRetry(deps: Deps, hostname: string, port: number, opts: TlsCheckOptions = {}): Promise<TlsResult> {
   const codes: string[] = [];
+  const timeoutMs = Math.min(opts.timeoutMs ?? TLS_TIMEOUT_MS, TLS_TIMEOUT_MS);
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     let r: { ok: boolean; code?: string };
     try {
-      r = await deps.tlsCheck(hostname.replace(/^\[|\]$/g, ''), port);
+      r = await deps.tlsCheck(hostname.replace(/^\[|\]$/g, ''), port, { timeoutMs, signal: opts.signal });
     } catch (e) {
       r = { ok: false, code: (e as { code?: string }).code ?? (e as Error).message };
     }
     if (r.ok) return codes.length ? { ok: true, attempts: [...codes, 'ok'] } : { ok: true };
     codes.push(r.code ?? 'unknown error');
+    if (opts.signal?.aborted) break; // cut off by the --max-duration deadline: certificate trust is unknown, not failed
     if (!isTransientCode(r.code)) return codes.length > 1 ? { ...r, attempts: codes } : r;
     if (r.code === 'ETIMEDOUT' && i >= 1) break; // a timeout already cost the full handshake timeout: retry it once
     if (i + 1 < MAX_ATTEMPTS) await (deps.sleep ?? sleep)(250 * 3 ** i);
