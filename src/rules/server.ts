@@ -267,8 +267,11 @@ function latencySamples(snap: Snapshot, keys: string[]): Array<{ k: string; ms: 
     const m = isObj(e.requestJson) ? e.requestJson.method : undefined;
     return typeof m === 'string' && keys.includes(m) && (e.label === `sdk ${m}` || e.label === `modern ${m}` || (e.label === 'discover' && m === 'server/discover')) ? [{ e, k: m }] : [];
   });
-  if (!calls.length) return keys.flatMap((k) => (snap.transport.timings[k] ?? []).map((ms) => ({ k, ms })));
-  return calls.filter(({ e }) => is2xx(e)).map(({ e, k }) => ({ k, ms: e.durationMs }));
+  // Legacy HTTP+SSE answers on the GET stream: the POST exchange is a 202 within a millisecond, so the request-to-result
+  // timings the recording transport measured are the only real samples there.
+  if (!calls.length || snap.transport.kind === 'sse') return keys.flatMap((k) => (snap.transport.timings[k] ?? []).map((ms) => ({ k, ms })));
+  // bodyMs runs until the body (or the matching SSE event on a streamed POST response) arrived; durationMs stops at the headers.
+  return calls.filter(({ e }) => is2xx(e)).map(({ e, k }) => ({ k, ms: e.bodyMs ?? e.durationMs }));
 }
 
 export const SRV_010 = defineRule(

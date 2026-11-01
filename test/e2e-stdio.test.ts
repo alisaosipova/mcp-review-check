@@ -238,7 +238,8 @@ describe('e2e stdio', () => {
     const text = await cli(['--stdio', HUGE]);
     expect(text.stdout).toContain('1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
     const md = await cli(['--stdio', HUGE, '--format', 'markdown']);
-    expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run_sql (80000 chars, cap 16 KB).');
+    // Markdown escapes the underscore in the tool name so it renders literally.
+    expect(md.stdout).toContain('> 1 oversized input truncated before pattern checks: tool run\\_sql (80000 chars, cap 16 KB).');
   });
 
   it('MCP Apps capability: UI hidden behind getUiCapability is checked; a missing text-only fallback is APPS-019', async () => {

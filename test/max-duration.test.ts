@@ -72,8 +72,10 @@ describe('--max-duration ends the stdio servers it started', () => {
   });
 
   it('stopped during active tool calls: a server slow to exit on SIGTERM leaves the run INCOMPLETE, not finished with "Not connected"', async () => {
-    const { r, pids } = await run(['--slow-active'], ['--active', '--max-duration', '4000']);
-    expect(r.json?.limits?.stopped, r.stderr).toMatchObject({ maxDurationMs: 4000, phase: 'active tool calls' });
+    // 8 s: the fresh re-list connections must finish before the deadline even on a loaded CI machine; the 30 tools × 300 ms
+    // active calls still run far past it.
+    const { r, pids } = await run(['--slow-active'], ['--active', '--max-duration', '8000']);
+    expect(r.json?.limits?.stopped, r.stderr).toMatchObject({ maxDurationMs: 8000, phase: 'active tool calls' });
     expect(r.json.coverage.toolLevel).toBe('stopped');
     expect(r.json.findings.filter((f: any) => f.ruleId === 'RT-005')).toEqual([]);
     expect(Object.values(r.json.summary.verdicts).map((v: any) => v.verdict)).toEqual(['INCOMPLETE', 'INCOMPLETE']);

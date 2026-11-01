@@ -97,6 +97,7 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - APPS-014 no longer reports "never calls connect()" for a UI resource whose HTML was cut at the 2 MB cap.
 - INJ, DATA, POL and TOOL findings on a prompt name the prompt (prompt "<name>" description / argument <arg> description).
 - `--verbose` prints control and format characters in the `[http]` trace and the `[stdio stderr]` tail as `\u{..}`, so a server cannot move the cursor, recolour or overwrite lines in a terminal or CI log.
+- SRV-010 measures latency until the result arrived (the body, or the matching event on a streamed response), not until the response headers, and on legacy HTTP+SSE servers uses the request-to-result timings; before, every SSE answer looked like about 1 ms.
 
 #### Severity lowered / false positives fixed
 

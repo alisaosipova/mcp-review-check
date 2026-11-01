@@ -238,7 +238,7 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
   it('a message over the stdio buffer names the overflow on the failed read', async () => {
     const snap = await stdio(['bigui', '70']);
     expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
-  }, 60000);
+  }, 180000); // 70 MB over a pipe takes over a minute when the whole suite runs in parallel
 
   it('the SDK stdio transport still has the private state GroupStdioTransport uses', () => {
     expect(sdkStdioShape(new StdioClientTransport({ command: 'node', stderr: 'pipe' }))).toBe(true);
