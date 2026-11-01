@@ -101,6 +101,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 // ---------- shared listing ----------
 
 const NETWORK_ERROR = /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UND_ERR/i;
+/** The request got no answer from the server (the SDK's closed connection or timeout, or a network error). */
+const TRANSPORT_ERROR = new RegExp(`Connection closed|Not connected|Request timed out|timed out after|${NETWORK_ERROR.source}`, 'i');
 
 async function listEverything(snap: Snapshot, list: Lister): Promise<void> {
   const caps = snap.capabilities ?? {};
@@ -116,8 +118,10 @@ async function listEverything(snap: Snapshot, list: Lister): Promise<void> {
   }
   // A declared (or, on 2026-07-28, implied) tools capability whose list fails means nothing could be checked:
   // say so instead of reporting a clean run (SPEC-020 reports the failure itself).
+  // So does a transport failure without the capability: a server that dies after initialize has not answered
+  // "no tools" (only a JSON-RPC error such as -32601 does).
   const toolsErr = snap.listMeta.tools?.error;
-  if (toolsErr && (caps.tools !== undefined || snap.era === 'modern') && snap.coverage.toolLevel === 'ok') {
+  if (toolsErr && (caps.tools !== undefined || snap.era === 'modern' || TRANSPORT_ERROR.test(toolsErr)) && snap.coverage.toolLevel === 'ok') {
     snap.coverage = { toolLevel: 'list-failed', reason: `tools/list failed: ${toolsErr}` };
   }
 }

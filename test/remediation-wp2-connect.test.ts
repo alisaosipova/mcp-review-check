@@ -207,3 +207,12 @@ describe('403 diagnosis (C-imp-2)', () => {
     expect(describeForbidden({ status: 403, headers: { 'content-type': 'application/json' }, body: '{}' })).toEqual({ kind: 'http', status: 403, summary: 'HTTP 403 (forbidden)' });
   });
 });
+
+describe('a server that exits after initialize (C001)', () => {
+  it('is a partial check, not a clean pass, even without a tools capability', async () => {
+    const r = await cli(['--stdio', server('die'), '--format', 'json', '--timeout', '5000']);
+    expect(r.json.coverage.toolLevel, r.stderr).toBe('list-failed');
+    expect(r.json.coverage.reason).toMatch(/^tools\/list failed: .*(Connection closed|Not connected)/);
+    expect(r.json.summary.score).toBeNull();
+  });
+});

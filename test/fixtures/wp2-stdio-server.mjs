@@ -3,7 +3,7 @@
 //   pino          a JSON log line ({"level":30,...}) on stdout before every response (SRV-018 must see it)
 //   spam N        N non-JSON lines on stdout before the initialize response (bounded memory, counted)
 //   banner        a banner on stdout and a cause on stderr, then no answer at all (failed handshake keeps both)
-//   die           initialize with capabilities {}, then exit (a transport failure, not a missing capability)
+//   die           initialize with capabilities {}, then exit on notifications/initialized (a transport failure, not a missing capability)
 //   bigui MB      one tool linking ui://big, whose resources/read answer is MB megabytes (over the SDK's 10 MB default)
 import readline from 'node:readline';
 
@@ -30,11 +30,11 @@ if (mode === 'banner') {
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const m = JSON.parse(line);
     if (mode === 'pino') log(`request ${m.method}`);
+    if (mode === 'die' && m.method === 'notifications/initialized') process.exit(0);
     if (m.id === undefined) return;
     if (m.method === 'initialize') {
       const capabilities = mode === 'die' ? {} : { tools: {}, ...(mode === 'bigui' ? { resources: {} } : {}) };
       send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-11-25', capabilities, serverInfo: { name: 'wp2', title: 'WP2', version: '1.0.0' } } });
-      if (mode === 'die') setTimeout(() => process.exit(0), 100);
     } else if (m.method === 'tools/list') {
       send({ jsonrpc: '2.0', id: m.id, result: { tools: [tool] } });
     } else if (m.method === 'resources/list') {
