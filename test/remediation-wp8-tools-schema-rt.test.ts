@@ -245,4 +245,18 @@ describe('F077 TOOL-014 reads the clause after "like" as behavior', () => {
     expect(evaluate(byId('TOOL-014'), one(tool({ description: 'Search notes with queries like "delete old drafts".' })))).toEqual([]);
   });
 });
+
+describe('F070 TOOL-019 resolves $ref to an embedded resource inside the document', () => {
+  const t019 = (inputSchema: Record<string, unknown>) => messages('TOOL-019', one(tool({ inputSchema })));
+  it('a urn $id in $defs', () => {
+    expect(t019({ type: 'object', properties: { a: { $ref: 'urn:acme:addr', description: 'A' } }, $defs: { Addr: { $id: 'urn:acme:addr', type: 'string' } } })).toEqual([]);
+  });
+  it('a relative $id resolved against the root $id', () => {
+    expect(t019({ $id: 'https://acme.test/schemas/root.json', type: 'object', properties: { a: { $ref: 'addr.json#/x', description: 'A' } }, $defs: { Addr: { $id: 'addr.json', type: 'string' } } })).toEqual([]);
+  });
+  it('a $ref to a resource the document does not contain is still reported', () => {
+    expect(t019({ type: 'object', properties: { a: { $ref: 'urn:acme:other', description: 'A' } }, $defs: { Addr: { $id: 'urn:acme:addr', type: 'string' } } }))
+      .toEqual(['$ref points outside the document: urn:acme:other']);
+  });
+});
 //@@END

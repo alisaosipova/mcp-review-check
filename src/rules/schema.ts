@@ -180,15 +180,23 @@ export const TOOL_019 = defineRule(
       const root = t[key];
       if (!isObj(root)) continue;
       const base = isStr(root.$id) ? root.$id : undefined;
-      const baseNoFrag = base?.split('#')[0];
+      const resolve = (ref: string): string | undefined => {
+        let abs: string | undefined;
+        try { abs = new URL(ref, base).href; } catch { abs = /^[a-z][a-z0-9+.-]*:/i.test(ref) ? ref : undefined; }
+        return abs && /^[a-z][a-z0-9+.-]*:/i.test(abs) ? abs : undefined;
+      };
+      // The document's own resources: the root and every embedded schema with its own $id (e.g. in $defs).
+      const local = new Set<string>();
+      walkSchema(root, (v) => {
+        const abs = isStr(v.node.$id) ? resolve(v.node.$id) : undefined;
+        if (abs) local.add(abs.split('#')[0]);
+      });
       walkSchema(root, (v) => {
         for (const k of ['$ref', '$dynamicRef']) {
           const ref = v.node[k];
           if (!isStr(ref) || ref.startsWith('#')) continue;
-          let abs: string | undefined;
-          try { abs = new URL(ref, base).href; } catch { abs = /^[a-z][a-z0-9+.-]*:/i.test(ref) ? ref : undefined; }
-          if (!abs || !/^[a-z][a-z0-9+.-]*:/i.test(abs)) continue;
-          if (baseNoFrag && abs.split('#')[0] === baseNoFrag) continue;
+          const abs = resolve(ref);
+          if (!abs || local.has(abs.split('#')[0])) continue;
           out.push({ path: `${key}${v.path === '/' ? '' : v.path}`, message: `${k} points outside the document: ${ref}` });
         }
       });
