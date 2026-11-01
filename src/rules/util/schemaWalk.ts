@@ -49,7 +49,10 @@ function resolvePointer(root: unknown, ref: string): unknown {
 
 const MAX_DEPTH = 64;
 const COMBINATORS = ['anyOf', 'oneOf', 'allOf'];
-const SINGLE = ['not', 'if', 'then', 'else', 'additionalProperties', 'items', 'contains', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties'];
+const SINGLE = ['not', 'if', 'then', 'else', 'additionalProperties', 'additionalItems', 'items', 'contains', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties'];
+// name → subschema maps that are not properties. `dependencies` (draft-07) mixes subschemas with string arrays
+// (the dependentRequired form); only the object values are schemas.
+const SCHEMA_MAPS = ['$defs', 'definitions', 'dependentSchemas', 'dependencies'];
 
 export function walkSchema(schema: unknown, visit: (v: SchemaVisit) => void): void {
   if (!isObj(schema)) return;
@@ -74,7 +77,7 @@ export function walkSchema(schema: unknown, visit: (v: SchemaVisit) => void): vo
       const v = node[key];
       if (Array.isArray(v)) v.forEach((s, i) => go(s, `${path}/${key}/${i}`, '', false, false, depth + 1));
     }
-    for (const defs of ['$defs', 'definitions']) {
+    for (const defs of SCHEMA_MAPS) {
       const d = node[defs];
       if (isObj(d)) for (const [k, v] of Object.entries(d)) go(v, `${path}/${defs}/${esc(k)}`, '', false, false, depth + 1);
     }
@@ -100,7 +103,7 @@ export function schemaMetrics(schema: unknown): { depth: number; count: number }
     count++;
     maxDepth = Math.max(maxDepth, depth);
     for (const [k, v] of Object.entries(node)) {
-      if (k === 'properties' || k === 'patternProperties' || k === '$defs' || k === 'definitions') {
+      if (k === 'properties' || k === 'patternProperties' || SCHEMA_MAPS.includes(k)) {
         if (isObj(v)) for (const s of Object.values(v)) go(s, depth + 1);
       } else if (COMBINATORS.includes(k) || k === 'prefixItems' || (k === 'items' && Array.isArray(v))) {
         if (Array.isArray(v)) for (const s of v) go(s, depth + 1);

@@ -5,6 +5,7 @@ import { runtimeRules } from '../src/rules/runtime.js';
 import { schemaRules, validateAgainst } from '../src/rules/schema.js';
 import { toolRules } from '../src/rules/tools.js';
 import type { ActiveCall, Snapshot } from '../src/snapshot.js';
+import { schemaMetrics, walkSchema } from '../src/rules/util/schemaWalk.js';
 import { evaluate, snap, tool, toolWithProps } from './helpers.js';
 
 const all = [...toolRules, ...annotationRules, ...schemaRules, ...runtimeRules];
@@ -175,6 +176,28 @@ describe('F066 TOOL-021 names a missing type and reads a $ref target type', () =
     expect(t021({ type: 'object', properties: { h: { $ref: '#/$defs/S', 'x-mcp-header': 'X-Tenant' } }, $defs: { S: { type: 'string' } } })).toEqual([]);
     expect(t021({ type: 'object', properties: { h: { $ref: '#/$defs/S', 'x-mcp-header': 'X-Tenant' } }, $defs: { S: { type: 'object' } } }))
       .toEqual(['x-mcp-header on a "object" property. Streamable HTTP clients will drop this tool.']);
+  });
+});
+
+describe('F071 walkSchema and schemaMetrics enter dependentSchemas, dependencies and additionalItems', () => {
+  const paths = (schema: unknown) => { const out: string[] = []; walkSchema(schema, (v) => out.push(v.path)); return out; };
+  it('dependentSchemas', () => {
+    const s = { type: 'object', dependentSchemas: { a: { properties: { secret_token: { type: 'string', 'x-mcp-header': 'X' } } } } };
+    expect(paths(s)).toContain('/dependentSchemas/a/properties/secret_token');
+    expect(schemaMetrics(s)).toEqual({ depth: 2, count: 3 });
+  });
+  it('dependencies: schema values only', () => {
+    const s = { type: 'object', dependencies: { a: ['b'], c: { properties: { d: { type: 'string' } } } } };
+    expect(paths(s)).toEqual(['/', '/dependencies/c', '/dependencies/c/properties/d']);
+  });
+  it('additionalItems', () => {
+    const s = { type: 'array', items: [{ type: 'string' }], additionalItems: { properties: { x: { type: 'string' } } } };
+    expect(paths(s)).toContain('/additionalItems/properties/x');
+    expect(schemaMetrics(s).count).toBe(4);
+  });
+  it('TOOL-022 now sees a sensitive header inside dependentSchemas', () => {
+    const inputSchema = { type: 'object', properties: { a: prop() }, dependentSchemas: { a: { properties: { secret_token: { type: 'string', description: 'S', 'x-mcp-header': 'X-Secret' } } } } };
+    expect(evaluate(byId('TOOL-022'), one(tool({ inputSchema })))).toHaveLength(1);
   });
 });
 //@@END
