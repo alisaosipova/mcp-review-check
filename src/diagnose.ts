@@ -89,6 +89,15 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   return { kind: 'http', status, summary: f.message ?? (status !== undefined ? `HTTP ${status}` : 'unknown error'), ...(sse && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}) };
 }
 
+/** The URL opened an HTTP+SSE stream, but the SSE handshake failed (no endpoint event, an endpoint on another origin
+ *  behind a proxy, no initialize answer): its error is the cause, not the Streamable HTTP POST's 404 or 405. */
+export function describeSseFailure(url: URL, message: string): ConnectDiagnosis {
+  return {
+    kind: 'http', summary: `${displayUrl(url.href)} serves the deprecated HTTP+SSE transport, but its handshake failed: ${message}`,
+    hint: 'serve Streamable HTTP, or fix the SSE endpoint event (it must point to the same origin)',
+  };
+}
+
 /** "summary; hint" for coverage.reason and the fatal message. */
 export function diagnosisText(d: ConnectDiagnosis): string {
   return d.hint ? `${d.summary}; ${d.hint}` : d.summary;

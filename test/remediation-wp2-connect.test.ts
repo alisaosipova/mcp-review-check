@@ -2,15 +2,32 @@
 // protocol/recording.ts and diagnose.ts.
 import { fileURLToPath } from 'node:url';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { describe, expect, it } from 'vitest';
-import { isJsonRpcLine, NON_JSON_KEPT, NON_JSON_LINE_CAP, stdoutTap } from '../src/connect.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { buildSnapshot, isJsonRpcLine, NON_JSON_KEPT, NON_JSON_LINE_CAP, stdoutTap, type BuildOptions } from '../src/connect.js';
 import { RecordingTransport, TRANSPORT_ERRORS_KEPT } from '../src/protocol/recording.js';
 import { createRedactor } from '../src/protocol/trace.js';
 import { cli } from './cli-runner.js';
+import { listen, type Started } from './fixtures/http-bridge.js';
 
 const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
 const server = (...args: string[]) => `node "${WP2}" ${args.join(' ')}`;
 const noRedact = createRedactor();
+
+let servers: Started[] = [];
+afterEach(async () => { await Promise.all(servers.map((s) => s.close())); servers = []; });
+type Handler = (req: IncomingMessage, res: ServerResponse, body: string) => void;
+/** An in-process HTTP fixture; the handler gets the request body read. */
+async function http(handler: Handler, path = '/mcp'): Promise<Started> {
+  const s = await listen(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    handler(req, res, Buffer.concat(chunks).toString('utf8'));
+  }, path);
+  servers.push(s);
+  return s;
+}
+const build = (url: string, over: Partial<BuildOptions> = {}) => buildSnapshot({ target: { kind: 'http', url }, timeoutMs: 3000, ...over }).then((r) => r.snap);
 
 describe('stdio stdout tap (R046, F141, F012, C003)', () => {
   it('counts every non-JSON-RPC line but keeps only the first lines, each cut', () => {
@@ -96,5 +113,34 @@ describe('a stdio handshake that fails or is stopped keeps what the server print
     expect(r.stdout).toContain('no handshake within --max-duration (1500 ms); stderr: srv: waiting for DATABASE_URL');
     expect(r.stderr).toContain('[stdio stderr]');
     expect(r.stderr).toContain('srv: waiting for DATABASE_URL');
+  });
+});
+
+describe('the HTTP+SSE fallback error is kept (R007)', () => {
+  it('a 401 on GET /sse only (no POST route) is an auth requirement, not "not an MCP endpoint"', async () => {
+    const s = await http((req, res) => {
+      if (req.method === 'GET' && req.url?.startsWith('/sse')) {
+        res.writeHead(401, { 'www-authenticate': `Bearer resource_metadata="http://${req.headers.host}/.well-known/oauth-protected-resource"` }).end();
+      } else res.writeHead(404).end();
+    }, '/sse');
+    const snap = await build(s.url);
+    expect(snap.coverage.toolLevel).toBe('auth-required');
+    expect(snap.authProbe?.challenge?.status).toBe(401);
+    expect(snap.transport.kind).toBe('sse');
+    expect(snap.fatal).toBeUndefined();
+  });
+
+  it('an SSE stream whose endpoint is on another origin reports the SSE error', async () => {
+    const s = await http((req, res) => {
+      if (req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write('event: endpoint\ndata: http://internal-backend:8000/messages?session=1\n\n');
+      } else res.writeHead(405).end();
+    }, '/sse');
+    const snap = await build(s.url);
+    expect(snap.coverage.toolLevel).toBe('connect-failed');
+    expect(snap.fatal).toContain('serves the deprecated HTTP+SSE transport, but its handshake failed: SSE fallback:');
+    expect(snap.fatal).toMatch(/origin/i);
+    expect(snap.fatal).not.toContain('usually serve');
   });
 });

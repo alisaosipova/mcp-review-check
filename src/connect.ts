@@ -1,12 +1,12 @@
 // buildSnapshot: preflight → auth probe → era → connect/fallback → listing → wire probes → active.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { SSEClientTransport, SseError } from '@modelcontextprotocol/sdk/client/sse.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
-import { describeCause, describeHttpFailure, diagnosisText, networkCause } from './diagnose.js';
+import { describeCause, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
@@ -180,6 +180,9 @@ interface LegacyConn {
   /** The failing initialize response (for the connection diagnostics). */
   contentType?: string;
   body?: string;
+  /** The HTTP+SSE fallback after a 400/404/405 also failed: its HTTP status (401 on a GET-only auth route), its error,
+   *  and whether its GET opened a stream (the URL is a legacy SSE endpoint). */
+  sse?: { status?: number; message: string; reached: boolean };
 }
 
 const MODERN_CODES = [-32020, -32021, -32022];
@@ -215,8 +218,13 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
         cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet,
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
+        const before = tracer.exchanges.length;
         const sse = await connectSse(url, headers, tracer, timeoutMs, variant);
         if (sse.ok) return sse;
+        await tracer.flush();
+        // The SSE stream's GET answered: the URL is a legacy HTTP+SSE endpoint, so its failure is the one to report.
+        const get = tracer.exchanges.slice(before).reverse().find((x) => x.label === 'sdk GET');
+        last.sse = { status: sse.status ?? get?.status, message: sse.message ?? 'SSE fallback failed', reached: get?.status === 200 };
       }
       return last;
     }
@@ -246,7 +254,9 @@ async function connectSse(url: URL, headers: Record<string, string>, tracer: Tra
     return { ok: true, client, rec, kind: 'sse', protocolVersion: (rec.initializeRaw as { protocolVersion?: string })?.protocolVersion };
   } catch (e) {
     await client.close().catch(() => {});
-    return { ok: false, message: `SSE fallback: ${(e as Error).message}` };
+    const code = (e as { code?: unknown }).code;
+    const status = e instanceof SseError && typeof code === 'number' && code >= 100 ? code : undefined;
+    return { ok: false, status, message: cleanErrorMessage(`SSE fallback: ${(e as Error).message}`, status, tracer.redactor) };
   }
 }
 
@@ -297,7 +307,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const conn = await connectLegacyHttp(url, authHeaders, tracer, connectTimeout, {}, !discOk && !discSignal);
   if (progress) progress.close = async () => { await conn.client?.close().catch(() => {}); };
   await tracer.flush();
-  const authFailed = conn.status === 401 || (!conn.ok && !discOk && disc.exchange.status === 401);
+  // A legacy SSE server can guard only its GET /sse route: the POST gets 404 or 405, the SSE fallback's GET the 401.
+  const authFailed = conn.status === 401 || conn.sse?.status === 401 || (!conn.ok && !discOk && disc.exchange.status === 401);
+  if (!conn.ok && (conn.sse?.reached || conn.sse?.status === 401)) snap.transport.kind = 'sse';
   if (conn.ok) {
     snap.transport.kind = conn.kind!;
     snap.transport.sessionId = conn.sessionId;
@@ -326,7 +338,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   if (!connected && !authFailed) {
     const d = conn.status === 403
       ? { kind: 'http' as const, status: 403, summary: 'HTTP 403 (forbidden)' }
-      : conn.cause ? describeCause(url, conn.cause) : describeHttpFailure(url, { status: conn.status, contentType: conn.contentType, body: conn.body, message: conn.message });
+      : conn.cause ? describeCause(url, conn.cause)
+      : conn.sse?.reached ? describeSseFailure(url, conn.sse.message)
+      : describeHttpFailure(url, { status: conn.status, contentType: conn.contentType, body: conn.body, message: conn.message });
     snap.connectDiagnosis = d;
     snap.fatal = `could not complete a handshake: ${diagnosisText(d)}`;
     snap.coverage = { toolLevel: 'connect-failed', reason: diagnosisText(d) };
