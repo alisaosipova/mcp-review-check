@@ -249,6 +249,26 @@ export const RT_010 = defineRule(
   }),
 );
 
+/** The string leaves of a JSON value, one per line. */
+function jsonStrings(v: unknown): string {
+  const out: string[] = [];
+  walkJson(v, (_k, x) => { if (isStr(x)) out.push(x); });
+  return out.join('\n');
+}
+
+/** Every part of a result that reaches the model or a widget: text items, structuredContent, embedded resource text. */
+function outputParts(r: Obj | undefined): Array<{ where: string; text: string }> {
+  if (!r) return [];
+  const resources = (Array.isArray(r.content) ? r.content : []).filter(isObj)
+    .map((c) => (c.type === 'resource' && isObj(c.resource) && isStr(c.resource.text) ? c.resource.text : ''))
+    .filter(Boolean);
+  return [
+    { where: 'output', text: textOf(r) },
+    { where: 'structuredContent', text: r.structuredContent === undefined ? '' : jsonStrings(r.structuredContent) },
+    { where: 'embedded resource', text: resources.join('\n') },
+  ].filter((p) => p.text.length > 0);
+}
+
 export const RT_011 = defineRule(
   {
     id: 'RT-011', title: 'Injection patterns in tool output', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['active'],
@@ -260,15 +280,17 @@ export const RT_011 = defineRule(
     const groups = [INJ_005_PATTERNS, INJ_006_PATTERNS, INJ_007_PATTERNS, INJ_009_PATTERNS];
     const own = ownToolFilter(snap);
     return calls(snap).filter(isSuccess).flatMap((c): RawFinding[] => {
-      const text = nfkc(textOf(resultObj(c)));
-      for (const patterns of groups) {
-        // As in scanCorpus, the first matching pattern of a group decides; an informational match is not injection,
-        // but a later pattern of the group may still match harder wording in the same text.
-        for (const p of patterns) {
-          const m = matchPattern(p, text);
-          if (!m || !own({ text, where: 'tool.description' }, m, p)) continue;
-          if (p.severity === 'info') continue;
-          return [{ tool: c.tool, message: `output contains "${snippet(text, m.index, m[0].length)}"` }];
+      for (const part of outputParts(resultObj(c))) {
+        const text = nfkc(part.text);
+        for (const patterns of groups) {
+          // As in scanCorpus, the first matching pattern of a group decides; an informational match is not injection,
+          // but a later pattern of the group may still match harder wording in the same text.
+          for (const p of patterns) {
+            const m = matchPattern(p, text);
+            if (!m || !own({ text, where: 'tool.description' }, m, p)) continue;
+            if (p.severity === 'info') continue;
+            return [{ tool: c.tool, message: `${part.where} contains "${snippet(text, m.index, m[0].length)}"` }];
+          }
         }
       }
       return [];
