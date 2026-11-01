@@ -60,7 +60,11 @@ export const RT_002 = defineRule(
     fix: 'Validate inputs and return an isError result for wrong types.',
     sources: [CLAUDE_REVIEW],
   },
-  (snap) => calls(snap).filter((c) => c.kind === 'invalid-type' && isSuccess(c)).map((c) => ({ tool: c.tool, message: 'wrong-type argument returned a success result' })),
+  // The invalid-missing call ({} for a tool with required parameters) is the commonest validation gap.
+  (snap) => calls(snap).filter((c) => isInvalid(c) && isSuccess(c)).map((c) => ({
+    tool: c.tool,
+    message: c.kind === 'invalid-type' ? 'wrong-type argument returned a success result' : 'call without the required arguments returned a success result',
+  })),
 );
 
 export const RT_003 = defineRule(

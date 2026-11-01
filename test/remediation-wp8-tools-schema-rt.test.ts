@@ -291,4 +291,14 @@ describe('F079 TOOL-020 bounds outputSchema too', () => {
     expect(messages('TOOL-020', one(tool({ outputSchema: deep(4) })))).toEqual([]);
   });
 });
+
+describe('C-imp-3 RT-002 also judges the call without required arguments', () => {
+  it('a success on {} is reported with its own message', () => {
+    expect(messages('RT-002', active([call({ kind: 'invalid-missing', result: text('ok') })]))).toEqual(['call without the required arguments returned a success result']);
+    expect(messages('RT-002', active([call({ kind: 'invalid-type', result: text('ok') })]))).toEqual(['wrong-type argument returned a success result']);
+  });
+  it('an isError answer passes', () => {
+    expect(messages('RT-002', active([call({ kind: 'invalid-missing', result: { isError: true, ...text('Missing required field "keywords".') } })]))).toEqual([]);
+  });
+});
 //@@END
