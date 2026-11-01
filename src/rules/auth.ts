@@ -5,7 +5,7 @@ import { describeCause, isTlsCode } from '../diagnose.js';
 import { isObj, isStr, isStrArray, type Obj } from './util/access.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, isSecretQueryParam } from './util/net.js';
 import { describeAttempts, endedTransient, INCONCLUSIVE, isTransient } from './util/obs.js';
-import { parseWwwAuthenticate } from './util/wwwAuth.js';
+import { isBearerLike, parseWwwAuthenticate } from './util/wwwAuth.js';
 
 const CLAUDE_AUTH = 'https://claude.com/docs/connectors/building/authentication';
 const OAI_AUTH = 'https://developers.openai.com/plugins/build/auth';
@@ -68,7 +68,7 @@ export const AUTH_002 = defineRule(
     const a = snap.authProbe!;
     const ch = a.challenge;
     const parsed = ch?.parsed ?? [];
-    const bearer = parsed.find((c) => c.scheme === 'bearer' || c.scheme === 'dpop');
+    const bearer = parsed.find(isBearerLike);
     const out: RawFinding[] = [];
     // The spec needs only one discovery mechanism: with a well-known PRM the header pointer is a Claude
     // reliability concern (Claude treats the header as the reliable path), not a spec or ChatGPT defect.
@@ -116,7 +116,7 @@ export const AUTH_003 = defineRule(
     if (pf?.status === 403) out.push({ platforms: hosts, severity: 'warning', message: 'unauthenticated initialize got 403; only a 401 starts sign-in (a WAF block can look the same, see SRV-009)' });
     for (const e of snap.transport.exchanges) {
       if (e.status !== 403 || !e.label.startsWith('sdk ')) continue;
-      const ch = parseWwwAuthenticate(e.headers?.['www-authenticate']).find((c) => c.scheme === 'bearer');
+      const ch = parseWwwAuthenticate(e.headers?.['www-authenticate']).find(isBearerLike);
       if (ch?.params.error !== 'insufficient_scope') out.push({ platforms: ['claude'], severity: 'info', message: `${e.label}: 403 without error="insufficient_scope"` });
       else if (!ch.params.scope) {
         // Claude recovers (challenge scope, then PRM and AS scopes_supported); the spec says SHOULD include scope.
@@ -371,7 +371,7 @@ export const AUTH_013 = defineRule(
     const a = snap.authProbe!;
     const out = forEachAs(snap, (_as, m) => (Array.isArray(m.grant_types_supported) && !m.grant_types_supported.includes('authorization_code')
       ? [{ message: `grant_types_supported (${m.grant_types_supported.join(', ')}) lacks authorization_code` }] : []));
-    const bearer = (a.challenge?.parsed ?? []).some((c) => c.scheme === 'bearer' || c.scheme === 'dpop');
+    const bearer = (a.challenge?.parsed ?? []).some(isBearerLike);
     if (!a.prm && !a.legacyDiscovery && !bearer) {
       // AUTH-004 already fails every platform for the missing discovery; this explains what it means for ChatGPT.
       out.push({ platforms: ['chatgpt'], severity: 'info', message: 'server rejects unauthenticated requests without OAuth discovery: API-key or custom-header auth is unsupported (see AUTH-004)' });
@@ -409,7 +409,7 @@ export const AUTH_015 = defineRule(
   (snap) => {
     const a = snap.authProbe!;
     const out: RawFinding[] = [];
-    const bearer = a.challenge?.parsed.find((c) => c.scheme === 'bearer');
+    const bearer = a.challenge?.parsed.find(isBearerLike);
     const challengeScope = bearer?.params.scope?.split(/\s+/).filter(Boolean) ?? [];
     const prmScopes = isStrArray(a.prm?.json.scopes_supported) ? (a.prm!.json.scopes_supported as string[]) : [];
     const asMeta = a.as[0]?.json ?? {};
@@ -438,7 +438,7 @@ export const AUTH_016 = defineRule(
     if (!ex?.status) return [];
     if (isTransient(ex)) return [{ severity: 'info', message: `${INCONCLUSIVE}: invalid bearer token got ${ex.status} after retries` }];
     if (ex.status !== 401) return [{ message: `invalid bearer token got ${ex.status}, expected 401` }];
-    const ch = parseWwwAuthenticate(ex.headers?.['www-authenticate']).find((c) => c.scheme === 'bearer');
+    const ch = parseWwwAuthenticate(ex.headers?.['www-authenticate']).find(isBearerLike);
     return ch?.params.resource_metadata ? [] : [{ severity: 'warning', message: '401 for an invalid token lacks a WWW-Authenticate resource_metadata' }];
   },
 );

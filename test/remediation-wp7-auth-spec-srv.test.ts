@@ -192,4 +192,16 @@ describe('F051 a 401 without any OAuth discovery is one error (AUTH-004)', () =>
     expect(evaluate(byId('AUTH-002'), authSnap({ challenge: null }))).toMatchObject([{ severity: 'warning', platforms: ['claude'] }]);
   });
 });
+
+describe('F045 DPoP challenges count like Bearer', () => {
+  it('AUTH-015 reads scope= from a DPoP challenge', () => {
+    const f = evaluate(byId('AUTH-015'), authSnap({ challenge: `DPoP resource_metadata="${PRM_URL}", scope="a b"` }));
+    expect(f.map((x) => x.message).join('\n')).not.toMatch(/has no scope=/);
+  });
+
+  it('AUTH-016 accepts resource_metadata on a DPoP invalid-token challenge', () => {
+    const s = authSnap({ probe: { invalidToken: exchange({ status: 401, headers: { 'www-authenticate': `DPoP resource_metadata="${PRM_URL}"` } }) } });
+    expect(evaluate(byId('AUTH-016'), s)).toEqual([]);
+  });
+});
 // @end
