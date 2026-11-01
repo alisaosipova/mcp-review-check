@@ -235,4 +235,14 @@ describe('F069, F077 a write verb joined by and/or/then makes a read-verb name a
     expect(messages('TOOL-014', one(tool({ name: 'get_order_status', description: 'Get the status of an order.' })))).toEqual([]);
   });
 });
+
+describe('F077 TOOL-014 reads the clause after "like" as behavior', () => {
+  it('a write word after "like" is not dropped', () => {
+    const t = one(tool({ name: 'notes_tool', description: 'Works like a scratchpad and deletes notes older than a week.' }));
+    expect(evaluate(byId('TOOL-014'), t)).toMatchObject([{ severity: 'info', message: expect.stringMatching(/description says "deletes"/) }]);
+  });
+  it('a quoted example after "like" is still ignored', () => {
+    expect(evaluate(byId('TOOL-014'), one(tool({ description: 'Search notes with queries like "delete old drafts".' })))).toEqual([]);
+  });
+});
 //@@END

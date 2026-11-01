@@ -84,7 +84,9 @@ const WRITE_DESC = /\b(creates?|updates?|deletes?|removes?|sends?|posts?|uploads
 export function behaviorText(d: string): string {
   return d
     .replace(/"[^"\n]{0,300}"|“[^”\n]{0,300}”|`[^`\n]{0,300}`|(^|[\s(])'[^'\n]{0,300}'(?=[\s.,;:)!?]|$)/g, '$1 ')
-    .replace(/\b(e\.g\.|i\.e\.|for example|for instance|such as|like|examples?:)[^.;\n]{0,200}/gi, ' ');
+    // "like" is left out: "works like a scratchpad and deletes notes" describes behavior; a quoted example after it
+    // is already gone with the quotes.
+    .replace(/\b(e\.g\.|i\.e\.|for example|for instance|such as|examples?:)[^.;\n]{0,200}/gi, ' ');
 }
 const IRREV_DESC = /\b(irreversibl|permanent|cannot be undone|overwrite|send(s)? (an? )?(email|message|sms))/i;
 
