@@ -5,7 +5,7 @@ import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotoc
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { emptySnapshot, type AuthProbe, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
+import { emptySnapshot, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
@@ -67,14 +67,24 @@ interface Progress {
   children?: Set<ChildProcess>;
   /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight. */
   abort: AbortController;
+  /** What the run has observed so far that it otherwise stores only at its end (modern results, observed errors). */
+  collect?: () => Partial<Snapshot['transport']>;
 }
 
 class Stopped extends Error {}
+
+/** The phase after the last check: closing connections and waiting for servers to exit. */
+const CLOSING = 'closing';
 
 function checkpoint(p: Progress | undefined, phase: string): void {
   if (!p) return;
   if (p.stopped) throw new Stopped(phase);
   p.phase = phase;
+}
+
+/** Every check has run; a deadline from here on finds a complete snapshot. */
+function closing(p: Progress | undefined): void {
+  if (p && !p.stopped) p.phase = CLOSING;
 }
 
 export interface BuildResult {
@@ -328,13 +338,15 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     if (snap.discoverRaw && isObj(snap.discoverRaw)) adoptDiscover(snap, snap.discoverRaw as Record<string, unknown>);
   }
 
+  if (progress) progress.collect = () => ({ modernResults: [...modern.results], observedErrors: collectErrors(tracer, conn.rec) });
   const finishHttp = async (): Promise<BuildResult> => {
-    await conn.client?.close().catch(() => {});
     await tracer.flush();
-    snap.transport.exchanges = tracer.exchanges;
-    snap.transport.timings = tracer.timings;
+    snap.transport.exchanges = ruleExchanges(tracer);
+    snap.transport.timings = { ...tracer.timings };
     snap.transport.modernResults = modern.results;
     snap.transport.observedErrors = collectErrors(tracer, conn.rec);
+    closing(progress);
+    await endSession(conn, tracer);
     return { snap, tracer };
   };
 
@@ -434,8 +446,29 @@ async function freshTools(url: URL, headers: Record<string, string>, tracer: Tra
     const r = await listAll(conn.client!, 'tools/list', 'tools', timeoutMs);
     return r.error ? undefined : r.items;
   } finally {
-    await conn.client!.close().catch(() => {});
+    await endSession(conn, tracer);
   }
+}
+
+/** The DELETE requests that ended the check's own sessions: kept in the trace, but not evidence for the rules. */
+const sessionEnds = new WeakSet<HttpExchange>();
+
+/** The run's HTTP exchanges for the snapshot (without the session-ending DELETEs). */
+function ruleExchanges(tracer: Tracer): HttpExchange[] {
+  return tracer.exchanges.filter((e) => !sessionEnds.has(e));
+}
+
+/** Close a connection; a Streamable HTTP session is ended with DELETE first (the spec's SHOULD for a client that no
+ *  longer needs it), so repeated checks leave no sessions behind on a stateful server. 405 means it does not support that. */
+async function endSession(conn: LegacyConn, tracer: Tracer): Promise<void> {
+  const inner = conn.rec?.inner;
+  if (conn.ok && conn.kind === 'streamable-http' && inner instanceof StreamableHTTPClientTransport && inner.sessionId) {
+    const before = tracer.exchanges.length;
+    await withTimeout(inner.terminateSession(), 5000, 'session DELETE').catch(() => {});
+    await tracer.flush();
+    for (const e of tracer.exchanges.slice(before)) if (e.method === 'DELETE') sessionEnds.add(e);
+  }
+  await conn.client?.close().catch(() => {});
 }
 
 // ---------- stdio ----------
@@ -612,6 +645,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   }
   if (progress) {
     progress.close = async () => { await conn.client.close().catch(() => {}); };
+    progress.collect = () => ({ observedErrors: collectErrors(undefined, conn.rec) });
   }
   snap.era = 'legacy';
   adoptInitialize(snap, conn.rec.initializeRaw);
@@ -636,8 +670,8 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     snap.toolsFreshConnection = (await fresh())?.map(toolName);
     checkpoint(progress, 'text-only tools/list');
     if (linksUi(snap)) snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES });
-    checkpoint(progress, 'active tool calls');
     if (opts.active) {
+      checkpoint(progress, 'active tool calls');
       snap.active = await runActive({
         snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client,
         listWithClientName: async (name) => (await fresh({ clientName: name }))?.map(toolName),
@@ -648,6 +682,8 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   explainOverflow(snap, conn.rec);
   snap.transport.stdio = stdioObservation(conn.nonJson, conn.stderr());
   snap.transport.observedErrors = collectErrors(undefined, conn.rec);
+  // Every check has run: a deadline while the server takes its time to exit (up to 2 s after stdin EOF) stops nothing.
+  closing(progress);
   await conn.client.close().catch(() => {});
   return { snap, stderrTail: conn.stderr() };
 }
@@ -800,10 +836,18 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
   const snap: Snapshot = {
     ...live, tools: [...live.tools], resources: [...live.resources], resourceTemplates: [...live.resourceTemplates], prompts: [...live.prompts],
     listMeta: { ...live.listMeta }, resourceReads: { ...live.resourceReads }, coverage: { ...live.coverage },
-    transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: [...(progress.tracer?.exchanges ?? live.transport.exchanges)] },
+    transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: progress.tracer ? ruleExchanges(progress.tracer) : [...live.transport.exchanges] },
   };
   if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };
   if (progress.stderrTail && snap.target.kind === 'stdio') snap.transport.stdio ??= stdioObservation(progress.nonJsonStdout, progress.stderrTail());
+  // Errors and modern results observed so far are evidence for the rules that read them (SPEC-016, SPEC-012/013).
+  const seen = progress.collect?.();
+  if (seen) {
+    snap.transport.observedErrors ??= seen.observedErrors;
+    snap.transport.modernResults ??= seen.modernResults;
+  }
+  // Every check had run: the deadline only cut short the wait for connections to close.
+  if (progress.phase === CLOSING) return snap;
   snap.limits = { truncated: [...(live.limits?.truncated ?? [])], stopped: { maxDurationMs: ms, phase: progress.phase } };
   const why = `stopped by --max-duration (${ms} ms) during ${progress.phase}`;
   if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {

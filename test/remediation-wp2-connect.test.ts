@@ -9,7 +9,10 @@ import { buildSnapshot, isJsonRpcLine, NON_JSON_KEPT, NON_JSON_LINE_CAP, sdkStdi
 import { RecordingTransport, TRANSPORT_ERRORS_KEPT } from '../src/protocol/recording.js';
 import { createRedactor } from '../src/protocol/trace.js';
 import { cli } from './cli-runner.js';
-import { listen, type Started } from './fixtures/http-bridge.js';
+import { randomUUID } from 'node:crypto';
+import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
+// @ts-expect-error untyped .mjs fixture
+import { createGoodServer } from './fixtures/good-server.mjs';
 import { describeForbidden } from '../src/diagnose.js';
 
 const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
@@ -236,5 +239,45 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
   it('the SDK stdio transport still has the private state GroupStdioTransport uses', () => {
     expect(sdkStdioShape(new StdioClientTransport({ command: 'node', stderr: 'pipe' }))).toBe(true);
     expect(sdkStdioShape({})).toBe(false);
+  });
+});
+
+describe('--max-duration at the end of a run (R001, R003)', () => {
+  const stdio = (args: string[], maxDurationMs?: number) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs: 20000, maxDurationMs }).then((r) => r.snap);
+
+  it('a deadline while a server that ignores stdin EOF is closing does not mark a finished run as stopped', async () => {
+    const t0 = Date.now();
+    const full = await stdio(['keep']);
+    const took = Date.now() - t0;
+    expect(full.limits?.stopped).toBeUndefined();
+    // The main connection's close waits ~2 s for the server to exit: a deadline 1 s before the end lands in it.
+    const snap = await stdio(['keep'], took - 1000);
+    expect(snap.limits?.stopped).toBeUndefined();
+    expect(snap.coverage.toolLevel).toBe('ok');
+    expect(snap.transport.probes.unknownMethod).toBeDefined();
+  }, 60000);
+
+  it('a stopped run keeps the JSON-RPC errors it had observed', async () => {
+    const snap = await stdio(['callhang'], 2000);
+    expect(snap.limits?.stopped?.phase).toBe('wire probes');
+    expect(snap.transport.observedErrors?.some((e) => e.code === -32601)).toBe(true);
+  }, 30000);
+});
+
+describe('Streamable HTTP sessions (R012)', () => {
+  it('the SDK connections end their sessions with DELETE, which the rules do not see', async () => {
+    const created: string[] = [];
+    const deleted: string[] = [];
+    const handler = createBridgeHandler(createGoodServer, { sessionId: () => { const id = randomUUID(); created.push(id); return id; } });
+    const s = await listen((req, res) => {
+      if (req.method === 'DELETE') deleted.push(String(req.headers['mcp-session-id']));
+      return handler(req, res);
+    });
+    servers.push(s);
+    const snap = await build(s.url);
+    expect(snap.era).toBe('legacy');
+    expect(deleted.length).toBeGreaterThanOrEqual(2); // the main connection and the fresh tools/list connection
+    expect(deleted.every((id) => created.includes(id))).toBe(true);
+    expect(snap.transport.exchanges.some((e) => e.method === 'DELETE')).toBe(false);
   });
 });
