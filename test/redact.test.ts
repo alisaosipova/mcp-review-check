@@ -174,7 +174,7 @@ describe('redactor units: one-word secret names, header names, the --flag= forms
   });
 
   it('redactDeep keeps the field names and the own vocabulary of the snapshot and the report; keys are masked only inside what the server sent', () => {
-    const r = buildRedactor({ env: { LOG_LEVEL: 'error', MODE: 'summary', STATE: 'failed' } });
+    const r = buildRedactor({ env: { API_KEY: 'error', MODE: 'summary', STATE: 'failed' } });
     const input = {
       summary: { errors: 1, warnings: 2, failed: true, gate: { failed: 'x' } },
       failOn: 'error',
@@ -202,7 +202,7 @@ describe('redactor units: one-word secret names, header names, the --flag= forms
 
 describe('redactor units: the report\'s own vocabulary outside server data', () => {
   it('the own vocabulary is kept only outside what the server sent: kind and role under capabilities, initializeRaw, discoverRaw and resourceReads are masked, their keys are not', () => {
-    const r = buildRedactor({ env: { K: 'S3cretValue99', LOG_LEVEL: 'error' } });
+    const r = buildRedactor({ env: { K: 'S3cretValue99', API_KEY: 'error' } });
     const input = {
       summary: { errors: 1, warnings: 0 },
       failOn: 'error',

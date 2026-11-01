@@ -12,6 +12,12 @@ const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-
 /** Values never treated as secrets on their own: they would blank out unrelated report text, or, as protocol and schema words, server data. */
 const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|object|string|number|integer|array|boolean|type|title|name|description|properties|required|items|enum|const|default|format|pattern|anyOf|oneOf|allOf|\$ref|\$schema|\$defs|uri|mimeType|text|image|audio|resource|resource_link|json|html|plain|xml|application)$/i;
 
+/**
+ * Common settings an --env value under a plain name often holds (NODE_ENV=production, LOG_LEVEL=debug, APP_VERSION=1.2.3):
+ * not masked in the report, as they would blank out the same words in tool names, descriptions and serverInfo.version.
+ */
+const PLAIN_SETTING = /^(production|prod|development|dev|staging|stage|test|testing|local|debug|info|warn|warning|error|trace|verbose|silent|fatal|v?\d+(\.\d+){1,3}([-+][\w.]+)?)$/i;
+
 /** A percent-decoded URL part, or the part as written when its escapes are malformed. */
 const decoded = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
 
@@ -138,7 +144,11 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   }
   if (input.argv) values.push(...argvSecrets(input.argv, strongOnly));
   // A whole value under a plain name is strong when it is one token-like word (GITHUB_PAT=ghp_…), not a URL or "Bearer X".
-  for (const [k, v] of Object.entries(input.env ?? {})) if (!strongOnly || isSecretName(k) || (tokenLike(v.trim()) && !/\s|:\/\//.test(v.trim()))) values.push(v);
+  // A common setting under a plain name (NODE_ENV=production) is no secret in either tier.
+  for (const [k, v] of Object.entries(input.env ?? {})) {
+    const t = v.trim();
+    if (isSecretName(k) || (!PLAIN_SETTING.test(t) && (!strongOnly || (tokenLike(t) && !/\s|:\/\//.test(t))))) values.push(v);
+  }
   return createRedactor(Object.keys(headers), values.map((v) => v.trim()).filter((v) => v && !TRIVIAL.test(v)));
 }
 

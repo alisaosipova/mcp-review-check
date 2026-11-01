@@ -93,6 +93,16 @@ describe('markdown shows hidden characters and no server emphasis (F147, F127)',
   });
 });
 
+describe('common --env settings under a plain name are not masked in the report (F118)', () => {
+  it('production, debug and a version stay; the same values under a secret name and other plain values are masked', () => {
+    const r = buildRedactor({ env: { NODE_ENV: 'production', LOG_LEVEL: 'debug', APP_VERSION: '1.2.3', TAG: 'v2.0.1-rc.1', NOTE: 'plain-WEAK05', API_TOKEN: 'production' } });
+    expect(scrub('Tool deploy_production: deploys to production; debug_logs; server 1.2.3 v2.0.1-rc.1', buildRedactor({ env: { NODE_ENV: 'production', LOG_LEVEL: 'debug', APP_VERSION: '1.2.3', TAG: 'v2.0.1-rc.1' } })))
+      .toBe('Tool deploy_production: deploys to production; debug_logs; server 1.2.3 v2.0.1-rc.1');
+    expect(r.values.has('plain-WEAK05')).toBe(true);
+    expect(r.values.has('production'), 'under a secret name it is masked').toBe(true);
+  });
+});
+
 describe('Cookie and Basic credentials are redacted in their parts (F116, F117)', () => {
   it('a session cookie value echoed alone or as one pair is redacted; a plain cookie value is not', () => {
     for (const r of [buildRedactor({ headers: { Cookie: 'theme=dark; session=S3cr3tSess10nValue' } }), buildRedactor({ argv: ['npx', 'mcp-remote', '--header', 'Cookie: theme=dark; session=S3cr3tSess10nValue'] })]) {
