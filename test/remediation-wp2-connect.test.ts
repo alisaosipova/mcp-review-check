@@ -78,3 +78,23 @@ describe('stdio servers that write to stdout (C003, R046)', () => {
     expect(r.json.findings.find((x: any) => x.ruleId === 'SRV-018')).toBeDefined();
   }, 60000);
 });
+
+describe('a stdio handshake that fails or is stopped keeps what the server printed (R002, R048, C-imp-1)', () => {
+  it('--timeout: the fatal names stdout and stderr, points to HTTP, and SRV-018 reports the banner', async () => {
+    const r = await cli(['--stdio', server('banner'), '--format', 'json', '--timeout', '1500']);
+    expect(r.code, r.stderr).toBe(3);
+    const srv003 = r.json.findings.find((x: any) => x.ruleId === 'SRV-003');
+    expect(srv003.message).toContain('stderr: srv: waiting for DATABASE_URL');
+    expect(srv003.message).toContain('stdout: MCP server listening on http://localhost:3000/mcp');
+    expect(srv003.message).toContain('check it over HTTP (mcp-review-check http://localhost:3000/mcp)');
+    expect(r.json.findings.find((x: any) => x.ruleId === 'SRV-018')?.message).toContain('listening on');
+  });
+
+  it('--max-duration during connect: the stderr cause is in the fatal and --verbose prints stderr', async () => {
+    const r = await cli(['--stdio', server('banner'), '--verbose', '--max-duration', '1500', '--timeout', '20000']);
+    expect(r.code).toBe(3);
+    expect(r.stdout).toContain('no handshake within --max-duration (1500 ms); stderr: srv: waiting for DATABASE_URL');
+    expect(r.stderr).toContain('[stdio stderr]');
+    expect(r.stderr).toContain('srv: waiting for DATABASE_URL');
+  });
+});

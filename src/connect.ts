@@ -12,7 +12,7 @@ import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCa
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
-import { createTracer, FULL_READ_CAP, scrub, type Redactor, type Tracer } from './protocol/trace.js';
+import { createRedactor, createTracer, FULL_READ_CAP, scrub, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
@@ -516,14 +516,30 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   };
   const rec = new RecordingTransport(inner as Transport, tap);
   const client = newClient(variant.clientName, variant.capabilities);
+  // The main connection's output is visible before the handshake: --max-duration can stop the run during it.
+  if (progress && !progress.stderrTail) { progress.stderrTail = () => stderrTail; progress.nonJsonStdout = nonJson; }
   try {
     await withTimeout(client.connect(rec, { timeout: timeoutMs }), timeoutMs + 1000, 'initialize');
   } catch (e) {
     await client.close().catch(() => {});
     const err = e as Error;
-    throw Object.assign(new Error(`${err.message}${stderrTail ? `; stderr: ${stderrSummary(stderrTail, r)}` : ''}`), { stderrTail });
+    throw Object.assign(new Error(`${err.message}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
   }
   return { client, rec, nonJson, stderr: () => stderrTail };
+}
+
+/** What a stdio server printed before a failed or stopped handshake: "; stderr: <summary>; stdout: <first non-JSON-RPC
+ *  line>", plus a pointer to HTTP when stdout announces a URL (an HTTP server started with --stdio). */
+export function startupOutput(stderrTail: string, nonJson: NonJsonStdout | undefined, r: Redactor): string {
+  let out = stderrTail ? `; stderr: ${stderrSummary(stderrTail, r)}` : '';
+  const first = nonJson?.lines[0];
+  if (first !== undefined) {
+    const line = scrub(first, r).trim();
+    out += `; stdout: ${line.length > 200 ? `${line.slice(0, 200)}…` : line}`;
+    const url = /\b(?:listen|running|started|serving|available)\w*\b.*?(https?:\/\/[^\s"'<>]+)/i.exec(line)?.[1];
+    if (url) out += `; the server announces ${url}: check it over HTTP (mcp-review-check ${url}) instead of --stdio`;
+  }
+  return out;
 }
 
 async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio' }>, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
@@ -535,13 +551,14 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   try {
     conn = await connectStdio(t, connectTimeout, redactorFor(opts), {}, progress);
   } catch (e) {
+    const { stderrTail, nonJson } = e as { stderrTail?: string; nonJson?: NonJsonStdout };
     snap.fatal = `could not start or initialize the stdio server: ${(e as Error).message}`;
     snap.coverage = { toolLevel: 'connect-failed', reason: (e as Error).message };
-    return { snap, stderrTail: (e as { stderrTail?: string }).stderrTail };
+    // SRV-018 still reads what the server wrote to stdout instead of answering.
+    snap.transport.stdio = stdioObservation(nonJson, stderrTail ?? '');
+    return { snap, stderrTail };
   }
   if (progress) {
-    progress.stderrTail = conn.stderr;
-    progress.nonJsonStdout = conn.nonJson;
     progress.close = async () => { await conn.client.close().catch(() => {}); };
   }
   snap.era = 'legacy';
@@ -726,7 +743,9 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
   snap.limits = { truncated: [...(live.limits?.truncated ?? [])], stopped: { maxDurationMs: ms, phase: progress.phase } };
   const why = `stopped by --max-duration (${ms} ms) during ${progress.phase}`;
   if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {
-    snap.fatal = `no handshake within --max-duration (${ms} ms)`;
+    // As after a --timeout: what the stdio server wrote (stderr is masked as it arrives) names the cause of the hang.
+    const output = snap.target.kind === 'stdio' && progress.stderrTail ? startupOutput(progress.stderrTail(), progress.nonJsonStdout, createRedactor()) : '';
+    snap.fatal = `no handshake within --max-duration (${ms} ms)${output}`;
     snap.coverage = { toolLevel: 'connect-failed', reason: why };
   } else if (snap.coverage.toolLevel === 'ok') {
     snap.coverage = { toolLevel: 'stopped', reason: why };
