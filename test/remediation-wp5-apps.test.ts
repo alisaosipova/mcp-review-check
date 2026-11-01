@@ -1,7 +1,8 @@
 // Regression tests for the WP5-apps remediation package (review 2026-11-01): APPS rules and the ui/html helpers.
 import { describe, expect, it } from 'vitest';
 import { APPS_006, APPS_007 } from '../src/rules/apps.js';
-import { extractOrigins } from '../src/rules/util/html.js';
+import { extractLinks, extractOrigins } from '../src/rules/util/html.js';
+import { POL_004 } from '../src/rules/policy.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, snap, tool } from './helpers.js';
 
@@ -81,5 +82,18 @@ describe('F101: ES module imports and import maps are resource origins', () => {
   it('APPS-007 reports an undeclared module origin at warning (js confidence)', () => {
     const f = evaluate(APPS_007, ui({ html: '<!doctype html><script type="module">import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps";</script>' }));
     expect(f.map((x) => [x.severity, x.message])).toEqual([['warning', 'resource origin https://esm.sh is not declared in the CSP']]);
+  });
+});
+
+describe('F099: extractLinks takes hrefs of <a> and <area> only', () => {
+  it('stylesheet, icon and base hrefs are not links', () => {
+    const html = '<base href="https://acme.test/"><link rel="stylesheet" href="https://cdn.example.com/css/pricing.css"><link rel="icon" href="/billing.ico">'
+      + '<a class="x" href="https://acme.test/upgrade">Upgrade</a><map><area shape="rect" href=\'https://acme.test/checkout\'></map><a href="{{base}}/billing">t</a>';
+    expect(extractLinks(html)).toEqual(['https://acme.test/upgrade', 'https://acme.test/checkout']);
+  });
+
+  it('POL-004 no longer reads a pricing.css stylesheet as an upsell link', () => {
+    const f = evaluate(POL_004, ui({ html: '<!doctype html><link rel="stylesheet" href="https://cdn.acme.test/css/pricing.css"><p>board</p>' }));
+    expect(messages(f)).toEqual([]);
   });
 });

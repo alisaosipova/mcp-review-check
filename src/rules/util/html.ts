@@ -129,9 +129,17 @@ export function isTemplated(url: string): boolean {
   return /\$\{|\{\{|<%|\$\d/.test(url);
 }
 
-/** All literal href targets in the HTML (POL-004); templated URLs are not real links and are skipped. */
+/**
+ * Literal href targets of `<a>` and `<area>` links in the HTML (POL-004). `<link>` and `<base>` hrefs load resources
+ * or set the base URL, not links the user follows; templated URLs are not real links and are skipped.
+ */
 export function extractLinks(html: string): string[] {
-  return [...html.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]).filter((u) => !isTemplated(u));
+  const out: string[] = [];
+  for (const m of html.matchAll(/<(?:a|area)\b[^<>]*>/gi)) {
+    const href = attr(m[0], 'href');
+    if (href && !isTemplated(href)) out.push(href);
+  }
+  return out;
 }
 
 /**
