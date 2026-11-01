@@ -65,6 +65,15 @@ export function scanCorpus(
 // ---- INJ-001 hidden characters (raw text) ----
 
 const PICTO = /\p{Extended_Pictographic}/u;
+/** Variation selectors and skin-tone modifiers sit between a pictograph and its ZWJ (❤️‍🔥, 👩🏽‍💻, 🏳️‍🌈). */
+const EMOJI_TAIL = /^[\u{FE0E}\u{FE0F}\u{1F3FB}-\u{1F3FF}]$/u;
+
+/** The nearest code point from `i` in direction `step` that is not a variation selector or skin-tone modifier. */
+function emojiNeighbor(cps: string[], i: number, step: 1 | -1): string {
+  let j = i + step;
+  while (j >= 0 && j < cps.length && EMOJI_TAIL.test(cps[j])) j += step;
+  return cps[j] ?? '';
+}
 
 export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
   const cps = [...text];
@@ -75,7 +84,7 @@ export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
     const hex = `\\u{${cp.toString(16).toUpperCase()}}`;
     if ((cp >= 0xe0000 && cp <= 0xe007f) || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)) hard.push(hex);
     else if (/\p{Cf}/u.test(ch)) {
-      if (cp === 0x200d && PICTO.test(cps[i - 1] ?? '') && PICTO.test(cps[i + 1] ?? '')) return; // emoji ZWJ sequence
+      if (cp === 0x200d && PICTO.test(emojiNeighbor(cps, i, -1)) && PICTO.test(emojiNeighbor(cps, i, 1))) return; // emoji ZWJ sequence
       soft.push(hex);
     }
   });
