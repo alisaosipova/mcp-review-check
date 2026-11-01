@@ -42,9 +42,25 @@ export function synthesizeArgs(inputSchema: unknown): Record<string, unknown> {
   return args;
 }
 
+/** Candidate wrong-type values, each with the JSON Schema types that would accept it. */
+const WRONG_TYPE_CANDIDATES: Array<[unknown, string[]]> = [
+  [12345, ['number', 'integer']],
+  ['mcp-review-check-wrong-type', ['string']],
+  [true, ['boolean']],
+  [['mcp-review-check-wrong-type'], ['array']],
+  [{ 'mcp-review-check': 'wrong-type' }, ['object']],
+];
+
+/**
+ * A value whose JSON type the property schema does not allow, or undefined when no such value is certain: the schema
+ * is missing, has no `type` (any value, or types only inside anyOf/oneOf/$ref), or allows every candidate type.
+ * A sibling `type` constrains the value even next to anyOf/oneOf/$ref, so a value outside it is still invalid.
+ */
 export function wrongTypeValue(schema: unknown): unknown {
-  const type = isObj(schema) ? (Array.isArray(schema.type) ? schema.type[0] : schema.type) : 'string';
-  return type === 'string' ? 12345 : 'mcp-review-check-wrong-type';
+  if (!isObj(schema)) return undefined;
+  const types = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter((t): t is string => typeof t === 'string');
+  if (!types.length) return undefined;
+  return WRONG_TYPE_CANDIDATES.find(([, accepts]) => !accepts.some((t) => types.includes(t)))?.[0];
 }
 
 export interface ActiveContext {
@@ -87,8 +103,9 @@ export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapsho
     if (required.length) {
       calls.push(await call(ctx, name, 'invalid-missing', {}));
       const first = required[0];
-      const bad = { ...(isObj(args) ? args : {}), [first]: wrongTypeValue(properties(t.inputSchema)[first]) };
-      calls.push(await call(ctx, name, 'invalid-type', bad));
+      const wrong = wrongTypeValue(properties(t.inputSchema)[first]);
+      // Without a value the schema certainly rejects, a success would not show that invalid input is accepted (RT-002).
+      if (wrong !== undefined) calls.push(await call(ctx, name, 'invalid-type', { ...(isObj(args) ? args : {}), [first]: wrong }));
     }
   }
   const result: NonNullable<Snapshot['active']> = { calls };

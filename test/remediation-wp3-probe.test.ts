@@ -2,12 +2,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
+import { runActive, wrongTypeValue } from '../src/probe/active.js';
 import { sameHostRedirect } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
 import type { Snapshot } from '../src/snapshot.js';
-import { evaluate, exchange, snap } from './helpers.js';
+import { evaluate, exchange, snap, tool } from './helpers.js';
 
 interface Seen { method: string; path: string; headers: IncomingMessage['headers'] }
 
@@ -99,5 +101,41 @@ describe('F018: the GET probe does not open a second stream in the SDK session',
     const a = exchange({ label: 'sdk GET', method: 'GET', requestHeaders: { 'mcp-session-id': 'other' }, status: 200 });
     const b = exchange({ label: 'sdk GET', method: 'GET', requestHeaders: { 'mcp-session-id': 'mine' } });
     expect(sdkSessionGet([a, b], 'mine')).toBeUndefined();
+  });
+});
+
+/** A fake modern client that records tools/call params and answers with `answer`. */
+function recordingModern(answer: (params: { name: string; arguments: unknown }) => unknown = () => ({ content: [{ type: 'text', text: 'ok' }] })) {
+  const calls: Array<{ name: string; arguments: unknown }> = [];
+  const modern = {
+    request: async (_m: string, params: { name: string; arguments: unknown }) => {
+      calls.push(params);
+      return { result: answer(params), exchange: { status: 200 } };
+    },
+  } as unknown as ModernClient;
+  return { modern, calls };
+}
+
+const activeSnap = (tools: Record<string, unknown>[]) => snap({ tools, active: true });
+
+describe('F023: the wrong-type call uses a value the schema really rejects', () => {
+  it('picks a type outside a union, and none for an untyped, anyOf-only or $ref-only property', () => {
+    expect(wrongTypeValue({ type: 'string' })).toBe(12345);
+    expect(wrongTypeValue({ type: 'number' })).toBe('mcp-review-check-wrong-type');
+    expect(wrongTypeValue({ type: ['string', 'number'] })).toBe(true);
+    expect(wrongTypeValue({ type: ['number', 'string'] })).toBe(true);
+    expect(wrongTypeValue({ type: ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null'] })).toBeUndefined();
+    for (const s of [undefined, {}, { anyOf: [{ type: 'string' }, { type: 'number' }] }, { $ref: '#/$defs/x' }, { description: 'any' }]) {
+      expect(wrongTypeValue(s), JSON.stringify(s)).toBeUndefined();
+    }
+  });
+
+  it('runActive skips the invalid-type call when no certain wrong-type value exists, so RT-002 cannot fire on it', async () => {
+    const { modern, calls } = recordingModern();
+    const s = activeSnap([tool({ name: 'get_item', inputSchema: { type: 'object', properties: { id: { anyOf: [{ type: 'string' }, { type: 'number' }] } }, required: ['id'] } })]);
+    s.active = await runActive({ snap: s, timeoutMs: 5000, now: () => 0, modern });
+    expect(s.active.calls.map((c) => c.kind)).toEqual(['synthetic', 'invalid-missing']);
+    expect(calls).toHaveLength(2);
+    expect(evaluate(byId('RT-002'), s)).toEqual([]);
   });
 });
