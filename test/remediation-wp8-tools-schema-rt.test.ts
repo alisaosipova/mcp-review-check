@@ -56,4 +56,21 @@ describe('F063 TOOL-023/025/026 resolve a $ref parameter before judging it', () 
     expect(evaluate(byId('TOOL-026'), withRef('run_query', 'sql', { type: 'string' }))).toHaveLength(1);
   });
 });
+
+describe('F065 TOOL-026 treats body/payload as a raw request only in a request context', () => {
+  const t026 = (name: string, props: Record<string, unknown>, description: string) =>
+    evaluate(byId('TOOL-026'), snap({ tools: [toolWithProps(name, props, { title: 'X', description })], set: (s) => { s.serverInfo = { name: 'mcp-server', version: '1' }; } }));
+  it('message and issue text is not a raw request body', () => {
+    expect(t026('create_issue', { repo: prop(), title: prop(), body: prop('Issue text') }, 'Create a new issue in the given repository with a title and body.')).toEqual([]);
+    expect(t026('send_email', { to: prop(), body: prop('Mail text') }, 'Send an email.')).toEqual([]);
+    expect(t026('post_message', { channel: prop(), payload: prop('Message text') }, 'Post a message to a channel.')).toEqual([]);
+  });
+  it('a body next to a method, URL or headers, or a free-form payload object, still counts', () => {
+    expect(t026('send_request', { method: prop(), url: prop(), body: prop() }, 'Send a request.')).toHaveLength(1);
+    expect(t026('send_request', { endpoint: { type: 'string', enum: ['/a'], description: 'E' }, body: prop() }, 'Send a request.')).toMatchObject([{ message: expect.stringMatching(/"body"/) }]);
+    expect(t026('post_event', { payload: { type: 'object', description: 'Raw JSON' } }, 'Post an event.')).toHaveLength(1);
+    // query languages need no context
+    expect(t026('run_query', { sql: prop() }, 'Run a query.')).toHaveLength(1);
+  });
+});
 //@@END

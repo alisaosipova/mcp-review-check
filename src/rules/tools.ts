@@ -314,10 +314,14 @@ export const TOOL_025 = defineRule(
 );
 
 // Raw request and query-language parameters. A natural-language `query` or a filesystem `path` is not one;
-// url/path/uri/route count only next to a method or verb parameter (a raw request builder).
-const RAW_QUERY = /^(endpoint|query_?string|body|request_?body|payload|graphql|gql|sql|jql|soql|cql|kql|spl|promql|filter_expression)$/i;
+// url/path/uri/route count only next to a method or verb parameter (a raw request builder). A `body` or `payload`
+// string is usually the text of an issue, e-mail or message: it counts as a raw request body only next to a method,
+// URL, endpoint or headers parameter, or when it is a free-form object.
+const RAW_QUERY = /^(endpoint|query_?string|graphql|gql|sql|jql|soql|cql|kql|spl|promql|filter_expression)$/i;
+const RAW_BODY = /^(body|request_?body|payload)$/i;
 const RAW_TARGET = /^(path|url|uri|route)$/i;
 const METHOD_PROP = /^(method|http_?method|verb|request_?method)$/i;
+const REQUEST_PROP = /^(method|http_?method|verb|request_?method|url|uri|endpoint|headers?|request_?headers)$/i;
 // At most 6 capitalized words before "API": an unbounded repeat is quadratic on long capitalized text.
 const API_NAMED = /\b[A-Z][\w.&-]{0,40}( [A-Z][\w.&-]{0,40}){0,5}\s+(Web |REST |GraphQL |Admin )?API\b/;
 
@@ -346,7 +350,12 @@ export const TOOL_026 = defineRule(
   (snap) => perTool(snap, (t, name) => {
     const props = resolvedProperties(t.inputSchema);
     const hasMethod = Object.keys(props).some((k) => METHOD_PROP.test(k));
-    const hit = Object.entries(props).find(([k, v]) => (RAW_QUERY.test(k) || (hasMethod && RAW_TARGET.test(k))) && isObj(v) && (isFreeString(v) || isFreeObject(v)));
+    const hasRequest = Object.keys(props).some((k) => REQUEST_PROP.test(k));
+    const hit = Object.entries(props).find(([k, v]) => {
+      if (!isObj(v)) return false;
+      if (RAW_BODY.test(k)) return isFreeObject(v) || (hasRequest && isFreeString(v));
+      return (RAW_QUERY.test(k) || (hasMethod && RAW_TARGET.test(k))) && (isFreeString(v) || isFreeObject(v));
+    });
     if (!hit) return undefined;
     const d = isStr(t.description) ? t.description : '';
     if (/https?:\/\/\S+/.test(d) || API_NAMED.test(d)) return undefined;
