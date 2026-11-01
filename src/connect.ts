@@ -565,9 +565,19 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   } catch (e) {
     await client.close().catch(() => {});
     const err = e as Error;
-    throw Object.assign(new Error(`${err.message}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
+    throw Object.assign(new Error(`${err.message}${rec.overflow ? ` (${rec.overflow})` : ''}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
   }
   return { client, rec, nonJson, stderr: () => stderrTail };
+}
+
+/** A stdio message over STDIO_MAX_MESSAGE makes the SDK close the connection: name that cause on the requests that
+ *  then failed with "Connection closed" or "Not connected" (listings, UI reads, the coverage reason). */
+function explainOverflow(snap: Snapshot, rec: RecordingTransport): void {
+  if (!rec.overflow) return;
+  const why = (e: string) => (/Connection closed|Not connected/i.test(e) ? `${e} (a server message exceeded the ${STDIO_MAX_MESSAGE / (1024 * 1024)} MB stdio read buffer: ${rec.overflow})` : e);
+  for (const m of Object.values(snap.listMeta)) if (m.error) m.error = why(m.error);
+  for (const r of Object.values(snap.resourceReads)) if (typeof r.error === 'string') r.error = why(r.error);
+  if (snap.coverage.reason) snap.coverage.reason = why(snap.coverage.reason);
 }
 
 /** What a stdio server printed before a failed or stopped handshake: "; stderr: <summary>; stdout: <first non-JSON-RPC
@@ -635,6 +645,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     }
   }
   await new Promise((r) => setTimeout(r, 50)); // let trailing stdout/stderr arrive
+  explainOverflow(snap, conn.rec);
   snap.transport.stdio = stdioObservation(conn.nonJson, conn.stderr());
   snap.transport.observedErrors = collectErrors(undefined, conn.rec);
   await conn.client.close().catch(() => {});
@@ -740,22 +751,33 @@ export function endAllNow(kill = false): Promise<void> {
 /** The SDK 1.32.1 transport's private state that GroupStdioTransport works on (client/stdio.js). */
 type SdkStdio = { _process?: ChildProcess; _serverParams: ConstructorParameters<typeof StdioClientTransport>[0]; _readBuffer: { append(chunk: Buffer): void }; _stderrStream: NodeJS.WritableStream | null; processReadBuffer(): void };
 
+/** The transport still has the private state GroupStdioTransport relies on (a test pins it for SDK bumps). */
+export function sdkStdioShape(t: object): boolean {
+  const s = t as Partial<SdkStdio>;
+  return isObj(s._serverParams) && typeof s._readBuffer?.append === 'function' && typeof s.processReadBuffer === 'function' && '_stderrStream' in s;
+}
+
 /** The SDK's stdio transport, but a server started through a wrapper (npx, .cmd, .bat, sh -c) ends with everything it
  *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
 class GroupStdioTransport extends StdioClientTransport {
   /** The SDK's start (client/stdio.js:60-107) with detached: true; Windows keeps it as is (no groups there). */
   override async start(): Promise<void> {
-    if (process.platform === 'win32') return super.start();
     const self = this as unknown as SdkStdio;
+    // An SDK whose private state differs (renamed in a release) keeps its own start: no process group, but a working check.
+    if (process.platform === 'win32' || !sdkStdioShape(self)) return super.start();
     if (self._process) throw new Error('StdioClientTransport already started!');
     const p = self._serverParams;
+    let overflowed = false; // the SDK closes the transport on a read-buffer overflow; later chunks are not parsed again
     return new Promise((resolve, reject) => {
       const proc = self._process = spawn(p.command, p.args ?? [], { env: { ...getDefaultEnvironment(), ...p.env }, stdio: ['pipe', 'pipe', p.stderr ?? 'inherit'], shell: false, cwd: p.cwd, detached: true });
       proc.on('error', (e) => { reject(e); this.onerror?.(e); });
       proc.on('spawn', () => resolve());
       proc.on('close', () => { self._process = undefined; this.onclose?.(); });
       proc.stdin?.on('error', (e) => this.onerror?.(e));
-      proc.stdout?.on('data', (chunk: Buffer) => { try { self._readBuffer.append(chunk); self.processReadBuffer(); } catch (e) { this.onerror?.(e as Error); this.close().catch(() => {}); } });
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        if (overflowed) return;
+        try { self._readBuffer.append(chunk); self.processReadBuffer(); } catch (e) { overflowed = true; this.onerror?.(e as Error); this.close().catch(() => {}); }
+      });
       proc.stdout?.on('error', (e) => this.onerror?.(e));
       if (self._stderrStream && proc.stderr) proc.stderr.pipe(self._stderrStream);
     });

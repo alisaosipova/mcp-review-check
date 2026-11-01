@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildSnapshot, isJsonRpcLine, NON_JSON_KEPT, NON_JSON_LINE_CAP, stdoutTap, type BuildOptions } from '../src/connect.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { buildSnapshot, isJsonRpcLine, NON_JSON_KEPT, NON_JSON_LINE_CAP, sdkStdioShape, stdoutTap, type BuildOptions } from '../src/connect.js';
 import { RecordingTransport, TRANSPORT_ERRORS_KEPT } from '../src/protocol/recording.js';
 import { createRedactor } from '../src/protocol/trace.js';
 import { cli } from './cli-runner.js';
@@ -214,5 +215,26 @@ describe('a server that exits after initialize (C001)', () => {
     expect(r.json.coverage.toolLevel, r.stderr).toBe('list-failed');
     expect(r.json.coverage.reason).toMatch(/^tools\/list failed: .*(Connection closed|Not connected)/);
     expect(r.json.summary.score).toBeNull();
+  });
+});
+
+describe('large stdio messages (R047) and the SDK stdio transport shape (F017)', () => {
+  const stdio = (args: string[]) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs: 20000 }).then((r) => r.snap);
+
+  it('an 11 MB UI resource is read over stdio, as over HTTP (the SDK default buffer is 10 MB)', async () => {
+    const snap = await stdio(['bigui', '11']);
+    expect(snap.resourceReads['ui://big']?.ok).toBe(true);
+    expect(snap.transport.probes.unknownMethod).toBeDefined();
+    expect(JSON.stringify(snap.transport.probes.unknownMethod)).not.toContain('Not connected');
+  }, 60000);
+
+  it('a message over the stdio buffer names the overflow on the failed read', async () => {
+    const snap = await stdio(['bigui', '70']);
+    expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
+  }, 60000);
+
+  it('the SDK stdio transport still has the private state GroupStdioTransport uses', () => {
+    expect(sdkStdioShape(new StdioClientTransport({ command: 'node', stderr: 'pipe' }))).toBe(true);
+    expect(sdkStdioShape({})).toBe(false);
   });
 });
