@@ -147,3 +147,7 @@ Follow-up from W3A's notes applied in the same commit: SRV-010 now samples `body
 | Still deferred: needs another change first | 3 (F024/R010 needs SPEC-016 to skip code checks for id-mismatch records; R003-rest partial results at `--max-duration`; F156 coverage thresholds) |
 
 Commits on `main` since `8b0f41e`: 127 (wave 1) + 11 (wave 2) + 18 (wave 3) + 2 (integration) = 158. All pushed with plain fast-forward pushes.
+
+### 7.2 Post-push note on secret-scanning patterns
+
+GitHub answered every push with "Bypassed rule violations", meaning some content matched a secret-scanning pattern and went through only because the account has bypass rights. Two sources were found and neutralised: a GitLab-token-shaped test fixture (rewritten before the first push, see §4) and a placeholder Anthropic key string (`sk-ant-api03-AbCd…`) quoted inside the review evidence for F085, which was replaced with a `SYNTH`-marked placeholder in a follow-up commit. The placeholder is still present in the pushed commit `7ee0e9b`; it was never a real key. If GitHub opens a secret-scanning alert for it, close it as a false positive. The remaining `ghp_…` strings in tests and evidence already carry the repo's `SYNTH` marker.
