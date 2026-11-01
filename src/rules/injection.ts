@@ -349,6 +349,8 @@ export const INJ_007 = defineRule(
   (snap) => scanCorpus(snap, INJ_007_PATTERNS, ownToolFilter(snap)),
 );
 
+const NOT_TOPIC = String.raw`(?!\s+([\w-]+\s+){0,2}(about|regarding|related to|concerning|involving)\b)`;
+
 export const INJ_008 = defineRule(
   {
     id: 'INJ-008', title: 'Overly broad triggering', severity: { chatgpt: 'warning', claude: 'info' }, needs: ['tools'],
@@ -357,7 +359,8 @@ export const INJ_008 = defineRule(
     sources: [OAI_GUIDE],
   },
   // "for every query" counts only after a call verb in the same clause: "returns at most 20 matches for any query" is a limit, not a claim.
-  (snap) => scanCorpus(snap, [{ re: /(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b|\b(use|call|invoke|run|trigger)\b[^.;:]{0,40}\bfor (every|any|all) (request|message|query|question|prompt|conversation)s?\b|\b(should|must) be (used|called|invoked) (for|on) (every|any|all) (request|message|query|question|prompt|conversation)s?\b|call (this|me) first|at the start of every/i }]),
+  // A topic after the quantifier narrows the trigger: "for any question about billing" is a scope hint.
+  (snap) => scanCorpus(snap, [{ re: new RegExp(String.raw`(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b${NOT_TOPIC}|\b(use|call|invoke|run|trigger)\b[^.;:]{0,40}\bfor (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|\b(should|must) be (used|called|invoked) (for|on) (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|call (this|me) first|at the start of every`, 'i') }]),
 );
 
 export const INJ_009_PATTERNS: Pattern[] = [
