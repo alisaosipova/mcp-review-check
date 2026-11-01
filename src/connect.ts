@@ -186,6 +186,8 @@ interface LegacyConn {
 }
 
 const MODERN_CODES = [-32020, -32021, -32022];
+/** A --header that carries credentials (an API key, a token, a cookie). */
+const CREDENTIAL_HEADER = /^(authorization|proxy-authorization|cookie)$|api[-_]?key|token|secret|auth|password|credential/i;
 
 function modernErrorBody(tracer: Tracer): boolean {
   const last = [...tracer.exchanges].reverse().find((e) => e.label === 'sdk initialize');
@@ -321,18 +323,36 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     if (snap.discoverRaw && isObj(snap.discoverRaw)) adoptDiscover(snap, snap.discoverRaw as Record<string, unknown>);
   }
 
+  const finishHttp = async (): Promise<BuildResult> => {
+    await conn.client?.close().catch(() => {});
+    await tracer.flush();
+    snap.transport.exchanges = tracer.exchanges;
+    snap.transport.timings = tracer.timings;
+    snap.transport.modernResults = modern.results;
+    snap.transport.observedErrors = collectErrors(tracer, conn.rec);
+    return { snap, tracer };
+  };
+
   // 4. auth probe
-  if (authFailed) {
-    snap.coverage = opts.bearer ? { toolLevel: 'token-rejected', reason: 'token rejected (401)' } : { toolLevel: 'auth-required', reason: 'server requires OAuth' };
-    trigger ??= opts.bearer ? 'bearer-rejected' : 'preflight-401';
-  }
-  if (trigger) {
+  // Credentials sent with --header (an API key, an Authorization header) that get a 401 were rejected too.
+  const credentials = !!opts.bearer || Object.keys(headers).some((h) => CREDENTIAL_HEADER.test(h));
+  const rejected = () => {
+    snap.coverage = credentials ? { toolLevel: 'token-rejected', reason: opts.bearer ? 'token rejected (401)' : 'supplied credentials rejected (401)' } : { toolLevel: 'auth-required', reason: 'server requires OAuth' };
+    trigger ??= credentials ? 'bearer-rejected' : 'preflight-401';
+  };
+  const probeAuth = async () => {
     checkpoint(progress, 'auth probe');
-    const challengeExchange = pf.status === 401 || pf.status === 403 ? pf : [...tracer.exchanges].reverse().find((e) => e.status === 401) ?? pf;
-    const { probe, tlsHosts } = await runAuthProbe({ tracer, url, trigger, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
+    // The unauthenticated preflight holds the challenge only when it started the probe (a 401, or a 403 with
+    // WWW-Authenticate); otherwise the latest 401, preferably one with a challenge, from the requests that carried credentials.
+    const last401 = [...tracer.exchanges].reverse().filter((e) => e.status === 401);
+    const challengeExchange = trigger?.startsWith('preflight-') && (pf.status === 401 || (pf.status === 403 && pf.headers?.['www-authenticate']))
+      ? pf : last401.find((e) => e.headers?.['www-authenticate']) ?? last401[0] ?? pf;
+    const { probe, tlsHosts } = await runAuthProbe({ tracer, url, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
     snap.authProbe = probe;
     for (const h of tlsHosts) tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port)) });
-  }
+  };
+  if (authFailed) rejected();
+  if (trigger) await probeAuth();
 
   const connected = conn.ok || snap.era === 'modern';
   if (!connected && !authFailed) {
@@ -351,6 +371,15 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs) : modernReader(modern);
     checkpoint(progress, 'listing');
     await listEverything(snap, lister);
+    await tracer.flush();
+    // initialize (or server/discover) can be public while the methods behind it need a token: a 401 on tools/list
+    // asks for auth as much as one on initialize, and the wire probes would only collect more 401s.
+    if (snap.listMeta.tools?.error && tracer.exchanges.some((e) => e.status === 401 && isObj(e.requestJson) && e.requestJson.method === 'tools/list')) {
+      rejected();
+      snap.tools = []; snap.resources = []; snap.resourceTemplates = []; snap.prompts = []; snap.listMeta = {};
+      await probeAuth();
+      return finishHttp();
+    }
     checkpoint(progress, 'UI resource reads');
     await readUiResources(snap, reader, deps.now);
     const useModern = snap.era === 'modern' || snap.era === 'dual';
@@ -379,13 +408,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
       });
     }
   }
-  await conn.client?.close().catch(() => {});
-  await tracer.flush();
-  snap.transport.exchanges = tracer.exchanges;
-  snap.transport.timings = tracer.timings;
-  snap.transport.modernResults = modern.results;
-  snap.transport.observedErrors = collectErrors(tracer, conn.rec);
-  return { snap, tracer };
+  return finishHttp();
 }
 
 /** Some listed tool links a UI resource (the text-only re-list for APPS-019 is needed). */

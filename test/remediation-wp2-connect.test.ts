@@ -144,3 +144,49 @@ describe('the HTTP+SSE fallback error is kept (R007)', () => {
     expect(snap.fatal).not.toContain('usually serve');
   });
 });
+
+/** A 401 with a Bearer challenge pointing at a PRM document. */
+function unauthorized(req: IncomingMessage, res: ServerResponse): void {
+  res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': `Bearer resource_metadata="http://${req.headers.host}/meta/prm"` });
+  res.end('{"error":"unauthorized"}');
+}
+
+describe('auth detection (F006, R044, R045)', () => {
+  it('a 401 to credentials sent with --header is "credentials rejected", not "requires OAuth"', async () => {
+    const s = await http(unauthorized);
+    const snap = await build(s.url, { headers: { 'X-Api-Key': 'k-123' } });
+    expect(snap.coverage).toEqual({ toolLevel: 'token-rejected', reason: 'supplied credentials rejected (401)' });
+    expect(snap.authProbe?.trigger).toBe('preflight-401'); // the unauthenticated preflight got the 401 first, as with --bearer
+    const plain = await build(s.url, { headers: { 'X-Trace': '1' } });
+    expect(plain.coverage.toolLevel).toBe('auth-required');
+  });
+
+  it('a preflight 403 without a challenge does not hide the 401 challenge the token got', async () => {
+    const s = await http((req, res) => {
+      if (req.url === '/meta/prm') { res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ resource: `http://${req.headers.host}/mcp`, authorization_servers: [`http://${req.headers.host}`] })); return; }
+      if (!req.headers.authorization) { res.writeHead(403, { 'content-type': 'application/json' }).end('{"message":"Missing Authentication Token"}'); return; }
+      unauthorized(req, res);
+    }, '/mcp');
+    const snap = await build(s.url, { bearer: 'expired' });
+    expect(snap.authProbe?.trigger).toBe('bearer-rejected');
+    expect(snap.authProbe?.challenge?.status).toBe(401);
+    expect(snap.authProbe?.prm?.via).toBe('header');
+  });
+
+  it('a public initialize with a 401 on tools/list runs the auth probe instead of reporting list and wire failures', async () => {
+    const s = await http((req, res, body) => {
+      if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+      const m = JSON.parse(body || '{}');
+      if (m.method === 'initialize') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'half', version: '1' } } }));
+      } else if (m.method === 'notifications/initialized') res.writeHead(202).end();
+      else unauthorized(req, res);
+    });
+    const snap = await build(s.url);
+    expect(snap.coverage.toolLevel).toBe('auth-required');
+    expect(snap.authProbe?.challenge?.status).toBe(401);
+    expect(snap.listMeta).toEqual({});
+    expect(snap.transport.probes.unknownMethod).toBeUndefined();
+  });
+});
