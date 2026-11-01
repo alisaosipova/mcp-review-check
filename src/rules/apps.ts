@@ -30,6 +30,7 @@ export const APPS_001 = defineRule(
       if (!r.read) continue;
       if (!r.read.ok) out.push({ resource: r.uri, message: 'resources/read failed for the UI resource' });
       else if (!r.item) out.push({ resource: r.uri, message: 'resources/read returned no content item with a matching uri' });
+      else if (r.itemUriMismatch) out.push({ resource: r.uri, message: `resources/read returned no content item with a matching uri (the item has uri ${JSON.stringify(r.item.uri)}; its content is checked as the widget)` });
     }
     return out;
   },

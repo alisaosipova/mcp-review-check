@@ -11,8 +11,13 @@ export interface UiResource {
   tools: string[];
   listEntry?: Obj;
   read?: Snapshot['resourceReads'][string];
-  /** The resources/read content item whose uri matches. */
+  /**
+   * The resources/read content item whose uri matches; failing that, the only item (or the only text/html item), so
+   * its HTML and _meta are still checked (APPS-001 reports the uri mismatch).
+   */
   item?: Obj;
+  /** item is that fallback: its uri differs from the requested one. */
+  itemUriMismatch?: boolean;
   /** _meta from the read item, falling back to the list entry. */
   meta: Obj;
   ui: Obj;
@@ -45,6 +50,12 @@ export function uiResources(snap: Snapshot): UiResource[] {
     r.read = snap.resourceReads[r.uri];
     const contents = isObj(r.read?.raw) && Array.isArray(r.read.raw.contents) ? r.read.raw.contents : [];
     r.item = contents.find((c): c is Obj => isObj(c) && c.uri === r.uri);
+    if (!r.item) {
+      const items = contents.filter(isObj);
+      const html = items.filter((c) => isStr(c.mimeType) && /^\s*text\/html\b/i.test(c.mimeType));
+      const only = items.length === 1 ? items[0] : html.length === 1 ? html[0] : undefined;
+      if (only) { r.item = only; r.itemUriMismatch = true; }
+    }
     const itemMeta = metaOf(r.item);
     r.meta = Object.keys(itemMeta).length ? itemMeta : metaOf(r.listEntry);
     r.ui = isObj(r.meta.ui) ? r.meta.ui : {};

@@ -104,3 +104,23 @@ describe('R041: the shared ChatGPT sandbox is recognised in any case', () => {
     expect(f.map((x) => [x.severity, x.message])).toEqual([['warning', 'widget domain is the shared default sandbox (not unique)']]);
   });
 });
+
+describe('R030: a read item under a different uri is still the widget', () => {
+  const html = '<!doctype html><script src="https://evil.example/x.js"></script>';
+
+  it('the only item is checked: APPS-001 names its uri, APPS-005/012 read its _meta, APPS-007 sees its HTML', () => {
+    const s = ui({ itemUri: `${URI}?v=2`, html });
+    expect(messages(evaluate(APPS_001, s))).toEqual([`resources/read returned no content item with a matching uri (the item has uri "${URI}?v=2"; its content is checked as the widget)`]);
+    expect(messages(evaluate(APPS_005, s))).toEqual([]);
+    expect(messages(evaluate(APPS_012, s))).toEqual([]);
+    expect(messages(evaluate(APPS_007, s))).toEqual(['resource origin https://evil.example is not declared in the CSP']);
+  });
+
+  it('with several items the single text/html one is used; with two HTML items none is guessed', () => {
+    const extra = { uri: 'ui://acme/data.json', mimeType: 'application/json', text: '{}' };
+    expect(messages(evaluate(APPS_007, ui({ itemUri: 'ui://other', html, extraItems: [extra] })))).toHaveLength(1);
+    const twoHtml = ui({ itemUri: 'ui://other', html, extraItems: [{ uri: 'ui://b', mimeType: MIME, text: html }] });
+    expect(messages(evaluate(APPS_001, twoHtml))).toEqual(['resources/read returned no content item with a matching uri']);
+    expect(messages(evaluate(APPS_007, twoHtml))).toEqual([]);
+  });
+});
