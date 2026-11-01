@@ -1,15 +1,17 @@
 // Regression tests for the WP9 report and redaction fixes (review 2026-11-01).
 import { describe, expect, it } from 'vitest';
-import { runRules } from '../src/rules/engine.js';
+import { runRules, subjectOf } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
-import type { Finding } from '../src/rules/types.js';
+import { defineRule, type Finding } from '../src/rules/types.js';
+import { annotations } from '../src/report/github.js';
 import { buildReport, visibleText } from '../src/report/index.js';
 import { renderMarkdown } from '../src/report/markdown.js';
+import { toSarif } from '../src/report/sarif.js';
 import { renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { REDACTED } from '../src/protocol/trace.js';
 import { buildRedactor, scrub } from '../src/redact.js';
-import { loadSnapshot } from './helpers.js';
+import { loadSnapshot, snap } from './helpers.js';
 
 const f = (ruleId: string, severity: Finding['severity'], over: Partial<Finding> = {}): Finding => ({
   ruleId, title: 't', severity, platforms: ['claude'], message: 'm', fix: 'fix', docs: ['https://x.test'], ...over,
@@ -131,5 +133,42 @@ describe('Cookie and Basic credentials are redacted in their parts (F116, F117)'
       const values = [...buildRedactor({ headers: { Authorization: `Basic ${token}` } }).values];
       expect(values.every((v) => v.includes(token) || v.includes(encodeURIComponent(token)))).toBe(true);
     }
+  });
+});
+
+describe('a rule that throws is never lost (F124, F123)', () => {
+  const chatgptOnly = defineRule(
+    { id: 'XX-002', title: 't', severity: { chatgpt: 'error' }, needs: [], rationale: 'r', fix: 'f', sources: ['https://x.test'] },
+    () => { throw new Error('boom'); },
+  );
+
+  it('an INTERNAL finding is reported even when the rule is outside --target', () => {
+    const r = runRules(snap({ target: 'claude' }), [chatgptOnly]);
+    expect(r.findings).toEqual([expect.objectContaining({ ruleId: 'INTERNAL', severity: 'info', platforms: ['spec'], message: 'XX-002 threw: boom' })]);
+    expect(r.skipped).toEqual([{ ruleId: 'XX-002', reason: 'not applicable to --target claude' }]);
+  });
+
+  it('SARIF has a rule entry for INTERNAL results, and none when there are none', () => {
+    const s = loadSnapshot('minimal-http');
+    const r = report(s);
+    const rulesOf = (x: Record<string, any>) => x.runs[0].tool.driver.rules.map((y: { id: string }) => y.id);
+    expect(rulesOf(toSarif(r))).not.toContain('INTERNAL');
+    const sarif = toSarif({ ...r, findings: [...r.findings, ...runRules(s, [chatgptOnly]).findings] }) as Record<string, any>;
+    expect(rulesOf(sarif).filter((x: string) => x === 'INTERNAL')).toHaveLength(1);
+    expect(sarif.runs[0].tool.driver.rules.at(-1)).toMatchObject({ id: 'INTERNAL', shortDescription: { text: 'Internal rule error' }, help: { text: 'Please report this bug.' } });
+  });
+});
+
+describe('a tool named "" is shown as "(empty name)" (R023)', () => {
+  it('in the annotation title, the text and markdown subject, and the SARIF message', () => {
+    const r = report(loadSnapshot('minimal-http'));
+    const x = f('TOOL-003', 'error', { tool: '', message: 'description missing' });
+    const rr = { ...r, findings: [x], summary: { ...r.summary, gate: { ...r.summary.gate, platforms: ['claude' as const] } } };
+    expect(annotations(rr)).toContain('::error title=TOOL-003 (empty name)::[claude] description missing%0AFix: fix');
+    expect(renderText(rr, { color: false, verbose: false })).toContain('TOOL-003 [claude] (empty name): description missing');
+    expect(renderMarkdown(rr)).toContain('| TOOL-003 | claude | (empty name) | description missing |');
+    expect((toSarif(rr) as Record<string, any>).runs[0].results[0].message.text).toBe('(empty name): description missing');
+    expect(subjectOf({})).toBe('server');
+    expect(subjectOf({ resource: '' })).toBe('(empty name)');
   });
 });

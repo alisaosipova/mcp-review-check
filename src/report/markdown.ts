@@ -2,6 +2,7 @@
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
 import { limitsNotice } from '../limits.js';
+import { subjectOf } from '../rules/engine.js';
 import { RULES } from '../rules/index.js';
 import { AUTH_CONTACT } from '../rules/auth.js';
 import { localBanner, visibleFindings } from './text.js';
@@ -62,7 +63,7 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
     if (!list.length) continue;
     out.push(`## ${HEAD[sev]} (${list.length})`, '', '| Rule | Platforms | Subject | Message | Fix | Docs | Evidence |', '|---|---|---|---|---|---|---|');
     for (const f of list) {
-      const subject = `${f.tool ?? f.resource ?? 'server'}${f.path ? ` (${f.path})` : ''}`;
+      const subject = `${subjectOf(f)}${f.path ? ` (${f.path})` : ''}`;
       out.push(`| ${f.ruleId} | ${platformLabel(f)} | ${text(subject)} | ${text(f.message)} | ${cell(f.fix)} | ${cell(f.docs[0])} | ${code(f.evidence)} |`);
     }
     out.push('');

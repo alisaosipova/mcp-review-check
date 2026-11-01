@@ -1,6 +1,7 @@
 // GitHub Actions mode: workflow-command annotations on stderr and the markdown report appended to the job
 // summary. On only when GITHUB_ACTIONS=true; there is no separate switch.
 import { appendFileSync } from 'node:fs';
+import { subjectOf } from '../rules/engine.js';
 import { platformSeverity } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { platformLabel, type Report } from './index.js';
@@ -27,7 +28,7 @@ export function annotations(r: Report): string[] {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))
       .reduce<Severity>((a, b) => (RANK[b] > RANK[a] ? b : a), 'info');
     if (sev === 'info') continue;
-    const title = `${f.ruleId} ${f.tool ?? f.resource ?? 'server'}`;
+    const title = `${f.ruleId} ${subjectOf(f)}`;
     out.push(`::${sev} title=${escapeCommand(title, true)}::${escapeCommand(`[${platformLabel(f)}] ${f.message}\nFix: ${f.fix}`)}`);
   }
   return out;

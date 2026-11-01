@@ -1,4 +1,5 @@
 // Default text report (§5.1).
+import { subjectOf } from '../rules/engine.js';
 import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { AUTH_NOTICE, DISCLAIMER, LIST_FAILED_NOTICE, TOKEN_REJECTED_NOTICE } from './constants.js';
@@ -25,7 +26,7 @@ const HEAD: Record<Severity, string> = { error: 'ERRORS', warning: 'WARNINGS', i
 interface Group { first: Finding; items: Finding[] }
 
 function subject(f: Finding): string {
-  const s = f.tool ?? f.resource ?? 'server';
+  const s = subjectOf(f);
   return f.path && !f.message.includes(f.path) ? `${s} (${f.path})` : s;
 }
 
@@ -50,9 +51,9 @@ export function groupFindings(list: Finding[], verbose: boolean): Group[] {
 function line(g: Group): string {
   const f = g.first;
   if (g.items.length === 1) return `${f.ruleId} [${platformLabel(f)}] ${subject(f)}: ${f.message}`;
-  const subjects = g.items.map((x) => x.tool ?? x.resource ?? 'server');
+  const subjects = g.items.map(subjectOf);
   const shown = subjects.slice(0, 3).join(', ');
-  const kind = g.items.every((x) => x.tool) ? 'tools' : 'items';
+  const kind = g.items.every((x) => x.tool !== undefined) ? 'tools' : 'items';
   return `${f.ruleId} [${platformLabel(f)}] ${g.items.length} ${kind}: ${f.message}: ${shown}${subjects.length > 3 ? `, +${subjects.length - 3} more` : ''}`;
 }
 

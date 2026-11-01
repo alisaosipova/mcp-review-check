@@ -68,8 +68,13 @@ export interface EngineOptions {
   ignore?: string[];
 }
 
+/** The finding a rule that throws becomes, with the text SARIF gives its rule entry. */
+export const INTERNAL = { id: 'INTERNAL', title: 'Internal rule error', fix: 'Please report this bug.' } as const;
+
+/** The tool or resource a finding is about, "(empty name)" for one the server named "", or "server". */
 export function subjectOf(f: Pick<Finding, 'tool' | 'resource'>): string {
-  return f.tool ?? f.resource ?? 'server';
+  const s = f.tool ?? f.resource;
+  return s === undefined ? 'server' : s || '(empty name)';
 }
 
 export function sortFindings(list: Finding[]): Finding[] {
@@ -106,9 +111,10 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     try {
       raw = rule.check(snap);
     } catch (err) {
-      if (applies) findings.push({
-        ruleId: 'INTERNAL', title: 'Internal rule error', severity: 'info', platforms: ['spec'],
-        message: `${rule.id} threw: ${(err as Error).message}`, fix: 'Please report this bug.', docs: [],
+      // Also for a rule outside --target: it runs for the score, which is then short of its findings (spec is always active).
+      findings.push({
+        ruleId: INTERNAL.id, title: INTERNAL.title, severity: 'info', platforms: ['spec'],
+        message: `${rule.id} threw: ${(err as Error).message}`, fix: INTERNAL.fix, docs: [],
       });
       continue;
     }

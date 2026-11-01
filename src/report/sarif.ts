@@ -1,5 +1,6 @@
 // SARIF 2.1.0 report (§5.3). Manual items are excluded.
 import { createHash } from 'node:crypto';
+import { INTERNAL, subjectOf } from '../rules/engine.js';
 import { RULES } from '../rules/index.js';
 import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
@@ -26,6 +27,22 @@ export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, un
   const uri = artifactUri(location);
   const seen = new Map<string, number>();
   const prints = r.findings.map((f) => { const n = seen.get(fingerprint(f)) ?? 0; seen.set(fingerprint(f), n + 1); return fingerprint(f, n); });
+  const rules: Record<string, unknown>[] = RULES.map((rule) => ({
+    id: rule.id,
+    shortDescription: { text: rule.title },
+    fullDescription: { text: rule.rationale },
+    helpUri: rule.sources[0],
+    help: { text: rule.fix },
+    properties: { platforms: Object.keys(rule.severity) },
+  }));
+  // A rule that threw is reported as INTERNAL: its results get a rule entry like every other result.
+  if (r.findings.some((f) => f.ruleId === INTERNAL.id)) {
+    rules.push({
+      id: INTERNAL.id, shortDescription: { text: INTERNAL.title },
+      fullDescription: { text: 'A check of mcp-review-check threw an exception, so its findings are missing from this report.' },
+      help: { text: INTERNAL.fix }, properties: { platforms: ['spec'] },
+    });
+  }
   return {
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
@@ -36,21 +53,14 @@ export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, un
             name: 'mcp-review-check',
             version: r.tool.version,
             ...(REPOSITORY_URL ? { informationUri: REPOSITORY_URL } : {}),
-            rules: RULES.map((rule) => ({
-              id: rule.id,
-              shortDescription: { text: rule.title },
-              fullDescription: { text: rule.rationale },
-              helpUri: rule.sources[0],
-              help: { text: rule.fix },
-              properties: { platforms: Object.keys(rule.severity) },
-            })),
+            rules,
           },
         },
         results: r.findings.map((f, i) => ({
           ruleId: f.ruleId,
           partialFingerprints: { 'mcpReviewCheck/v1': prints[i] },
           level: LEVEL[f.severity],
-          message: { text: `${f.tool ? `${f.tool}: ` : f.resource ? `${f.resource}: ` : ''}${f.message}` },
+          message: { text: `${f.tool !== undefined || f.resource !== undefined ? `${subjectOf(f)}: ` : ''}${f.message}` },
           locations: [
             {
               physicalLocation: { artifactLocation: { uri } },
