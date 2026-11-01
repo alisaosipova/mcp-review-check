@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { sameHostRedirect } from '../src/probe/network.js';
-import { runWireProbes } from '../src/probe/wire.js';
+import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, exchange, snap } from './helpers.js';
@@ -72,5 +72,32 @@ describe('F019: raw probes follow a same-host redirect the SDK client followed',
     expect(ruleHits(s, ['SPEC-005', 'SPEC-007', 'SRV-008'])).toEqual(['SRV-008:error']);
     // SRV-006 still reports the redirect from the preflight
     expect(evaluate(byId('SRV-006'), s).map((f) => f.message)).toEqual([expect.stringMatching(/POST redirects \(308\) .*register the final URL/)]);
+  });
+});
+
+describe('F018: the GET probe does not open a second stream in the SDK session', () => {
+  it("reuses the SDK client's answered session GET instead of sending one the server rejects with 409", async () => {
+    const { base, seen } = await listen((req, res) => {
+      if (req.method === 'GET' && req.headers['mcp-session-id']) { json(res, 409, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Conflict: Only one SSE stream is allowed per session' } }); return; }
+      json(res, 400, {});
+    });
+    const url = `${base}/mcp`;
+    const tracer = createTracer(createRedactor());
+    const sdkGet = exchange({ label: 'sdk GET', method: 'GET', url, requestHeaders: { 'mcp-session-id': 'sess-1234567890abcdef', accept: 'text/event-stream' }, status: 200, contentType: 'text/event-stream' });
+    tracer.exchanges.push(sdkGet);
+    const s = httpSnap(url, (x) => { x.transport.sessionId = 'sess-1234567890abcdef'; });
+    s.transport.probes = await runWireProbes({
+      snap: s, timeoutMs: 5000, now: () => performance.now(), sleep: async () => {},
+      http: { tracer, url: new URL(url), authHeaders: {}, sessionId: 'sess-1234567890abcdef', protocolVersion: '2025-11-25' },
+    });
+    expect(s.transport.probes.get).toBe(sdkGet);
+    expect(seen.filter((r) => r.method === 'GET' && r.path === '/mcp')).toEqual([]);
+    expect(evaluate(byId('SPEC-005'), s)).toEqual([]);
+  });
+
+  it('does not reuse an SDK GET from another session or one that got no answer', () => {
+    const a = exchange({ label: 'sdk GET', method: 'GET', requestHeaders: { 'mcp-session-id': 'other' }, status: 200 });
+    const b = exchange({ label: 'sdk GET', method: 'GET', requestHeaders: { 'mcp-session-id': 'mine' } });
+    expect(sdkSessionGet([a, b], 'mine')).toBeUndefined();
   });
 });

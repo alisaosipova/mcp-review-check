@@ -1,6 +1,6 @@
 // Side-effect-free protocol probes (§4.3).
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { ProbeObservation, Snapshot, WireProbeName } from '../snapshot.js';
+import type { HttpExchange, ProbeObservation, Snapshot, WireProbeName } from '../snapshot.js';
 import type { ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
 import type { Tracer } from '../protocol/trace.js';
@@ -28,6 +28,11 @@ export interface WireContext {
 }
 
 type Probes = Partial<Record<WireProbeName, ProbeObservation>>;
+
+/** The answered GET the SDK client sent in session `sessionId` (its standalone SSE stream), if any. */
+export function sdkSessionGet(exchanges: readonly HttpExchange[], sessionId: string): HttpExchange | undefined {
+  return exchanges.find((e) => e.label === 'sdk GET' && e.method === 'GET' && e.status !== undefined && e.requestHeaders['mcp-session-id'] === sessionId);
+}
 
 export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   const { snap, timeoutMs, client, modern, http } = ctx;
@@ -60,7 +65,10 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     if (http.sessionId) session['mcp-session-id'] = http.sessionId;
     if (http.protocolVersion && !modernOnly) session['mcp-protocol-version'] = http.protocolVersion;
     if (snap.transport.kind === 'streamable-http') {
-      p.get = (await tracer.request('get', url, {
+      // The SDK client opens the session's standalone GET stream right after initialization, and a server may allow only
+      // one per session (the TypeScript SDK answers a second one with 409). That GET is the observation: reuse it.
+      const sdkGet = http.sessionId ? sdkSessionGet(tracer.exchanges, http.sessionId) : undefined;
+      p.get = sdkGet ?? (await tracer.request('get', url, {
         method: 'GET', headers: { ...authHeaders, ...session, accept: 'text/event-stream' }, abortAfterHeaders: true, timeoutMs: 5000,
       })).exchange;
     }
