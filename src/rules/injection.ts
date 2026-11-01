@@ -259,7 +259,8 @@ const CONDITIONAL = String.raw`${SELF}(\s+first)?\s+(when(ever)?|if|for|to|befor
 export const INJ_006_PATTERNS: Pattern[] = [
   // "Do NOT use it for other MCP servers" restricts this tool's own scope (Kiwi): the object after the verb must not be a self reference.
   { re: /\b(do not|don't|never|avoid)\b[^.]{0,40}\b(use|call|invoke|trust)\b(?!\s+(it|this|me|these|them)\b)[^.]{0,40}\b(other|any other|another|competing|third[- ]party)\b[^.]{0,20}\b(tools?|servers?|connectors?|plugins?|apps?|mcp)/i },
-  { re: /\b(instead of|rather than)\b[^.]{0,40}\b(other|built-?in|default|any)\b[^.]{0,20}(tools?|search|web|plugins?)/i },
+  // The object is a tool or a way of searching: "rather than the default full web page" describes an output format.
+  { re: /\b(instead of|rather than)\b[^.]{0,40}\b(other|built-?in|default|any)\b[^.]{0,20}\b(tools?|search|web[- ]?search|browsing|browser|plugins?)\b/i },
   { re: /\bonly (use|call) this (tool|server|plugin)\b(?!\s+(when|if|for|to)\b)/i },
   // "Always use this tool when/to/for ..." says when the tool applies (MS Learn, Hugging Face skills): informational.
   { re: new RegExp(String.raw`\balways (use|call|prefer) ${CONDITIONAL}`, 'i'), severity: 'info', note: 'conditional: fine when it describes when this applies' },
