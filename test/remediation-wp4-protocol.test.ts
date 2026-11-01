@@ -97,3 +97,44 @@ describe('SSE line ends and response ids (F028, F024, R010)', () => {
     expect(r.error).toEqual({ code: -32700, message: 'Parse error' });
   });
 });
+
+describe('latency samples for SRV-010 (F021, R008)', () => {
+  /** /slow answers on SSE after 600 ms (headers at once), /json after 300 ms, /err with a fast 400, /redirect with a 307, /rpcerr with a 200 JSON-RPC error. */
+  const server = () => serve((req, body, res) => {
+    const id = (() => { try { return JSON.parse(body).id; } catch { return undefined; } })();
+    const result = JSON.stringify({ jsonrpc: '2.0', id, result: { tools: [] } });
+    if (req.url === '/slow') { sseOpen(res, ': ping\n\n'); setTimeout(() => res.write(`data: ${result}\n\n`), 600); return; }
+    if (req.url === '/json') { setTimeout(() => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(result); }, 300); return; }
+    if (req.url === '/redirect') { res.writeHead(307, { location: '/json' }); res.end(); return; }
+    if (req.url === '/rpcerr') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32602, message: 'bad' } })); return; }
+    res.writeHead(400, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32600, message: 'no' } }));
+  });
+
+  it('counts the time until the SSE answer arrives, not until the headers', async () => {
+    const base = await server();
+    const tracer = createTracer(createRedactor());
+    const res = await tracer.fetch(new URL('/slow', base), post(rpcBody('tools/list', 1)));
+    expect(res.status).toBe(200);
+    res.body?.cancel().catch(() => {}); // the SDK's own read is not needed here
+    await tracer.flush();
+    expect(tracer.exchanges[0].durationMs).toBeLessThan(300);
+    expect(tracer.timings['tools/list']).toHaveLength(1);
+    expect(tracer.timings['tools/list'][0]).toBeGreaterThanOrEqual(550);
+    const probe = await tracer.request('modern tools/list', new URL('/slow', base), { ...post(rpcBody('tools/list', 2)), timeoutMs: 4000, fullBody: true });
+    expect(probe.exchange.json).toMatchObject({ id: 2 });
+    expect(tracer.timings['tools/list'][1]).toBeGreaterThanOrEqual(550);
+  });
+
+  it('leaves out probes answered with an error status, a JSON-RPC error or a redirect', async () => {
+    const base = await server();
+    const tracer = createTracer(createRedactor());
+    await tracer.request('preflight', new URL('/err', base), { ...post(rpcBody('initialize', 1)), timeoutMs: 4000 });
+    await tracer.request('origin evil', new URL('/err', base), { ...post(rpcBody('initialize', 2)), timeoutMs: 4000 });
+    await tracer.request('badVersion', new URL('/rpcerr', base), { ...post(rpcBody('tools/list', 3)), timeoutMs: 4000 });
+    await tracer.request('hop', new URL('/redirect', base), { ...post(rpcBody('tools/list', 4)), timeoutMs: 4000 });
+    expect(tracer.timings).toEqual({});
+    await tracer.request('discover', new URL('/json', base), { ...post(rpcBody('initialize', 5)), timeoutMs: 4000, fullBody: true });
+    expect(tracer.timings.initialize).toHaveLength(1);
+    expect(tracer.timings.initialize[0]).toBeGreaterThanOrEqual(250);
+  });
+});

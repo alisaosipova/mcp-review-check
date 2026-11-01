@@ -128,19 +128,23 @@ function sseResponseWatcher(id: unknown): (chunk: string) => boolean {
 
 export interface BodyRead {
   text: string;
+  /** More than `cap` bytes arrived; `text` holds the first `cap` (or a little more). */
   truncated: boolean;
   timedOut: boolean;
   /** Stopped after the SSE response with the request id arrived, before the stream ended. */
   stoppedAtResponse: boolean;
+  /** The body ended. */
+  done: boolean;
 }
 
 /**
  * Read a response body up to `cap` bytes or `timeoutMs`. For an SSE response to a JSON-RPC request
  * (`rpcId` set), stop as soon as the matching response event arrives: some servers keep the stream open.
+ * `drainTo`: past `cap`, keep reading (without keeping the bytes) up to this many, to see when the response ends.
  */
-async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown): Promise<BodyRead> {
-  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false };
-  if (!res.body) return out;
+async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap): Promise<BodyRead> {
+  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false };
+  if (!res.body) { out.done = true; return out; }
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -152,17 +156,23 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
     for (;;) {
       const r = await Promise.race([reader.read(), timer]);
       if (r === 'timeout') { out.timedOut = true; break; }
-      if (r.done) break;
-      chunks.push(r.value);
+      if (r.done) { out.done = true; break; }
+      if (!out.truncated) chunks.push(r.value);
       size += r.value.byteLength;
       if (watch?.(decoder.decode(r.value, { stream: true }))) { out.stoppedAtResponse = true; break; }
-      if (size >= cap) { out.truncated = true; break; }
+      if (size >= cap) out.truncated = true;
+      if (size >= Math.max(cap, drainTo)) break;
     }
   } catch { /* aborted */ }
   clearTimeout(handle);
   reader.cancel().catch(() => {});
   out.text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
   return out;
+}
+
+/** A parsed body (one message or a batch) holds a result for request `id`. */
+function hasResultFor(json: unknown, id: unknown): boolean {
+  return (Array.isArray(json) ? json : [json]).some((m) => !!m && typeof m === 'object' && idMatches((m as { id?: unknown }).id, id) && 'result' in m);
 }
 
 function parseBody(text: string, contentType: string | undefined, requestJson: unknown): unknown {
@@ -229,8 +239,20 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     ex.status = res.status;
     ex.headers = redactHeaders(headersToRecord(res.headers), redactor);
     ex.contentType = res.headers.get('content-type') ?? undefined;
-    const method = (ex.requestJson as { method?: unknown } | undefined)?.method;
-    if (typeof method === 'string') (timings[method] ??= []).push(ex.durationMs);
+  };
+
+  /**
+   * SRV-010's sample: the time until the response to a JSON-RPC request arrived (not until its headers: an SSE answer
+   * sends them at once), for a 2xx response that holds a result. A probe answered with an error or a redirect is not
+   * a handshake or listing latency. `lowerBound`: a real call whose answer did not come within the read's own timeout
+   * counts with the time waited.
+   */
+  const sample = (ex: HttpExchange, b: BodyRead, lowerBound: boolean) => {
+    const { method, id } = (ex.requestJson ?? {}) as { method?: unknown; id?: unknown };
+    if (typeof method !== 'string' || id === undefined || ex.bodyMs === undefined) return;
+    if (ex.status === undefined || ex.status < 200 || ex.status > 299) return;
+    const answered = (b.stoppedAtResponse || b.done) && (hasResultFor(ex.json, id) || (b.done && b.truncated));
+    if (answered || (lowerBound && b.timedOut)) (timings[method] ??= []).push(ex.bodyMs);
   };
 
   const finishBody = (ex: HttpExchange, text: string) => {
@@ -252,7 +274,12 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       if (!isStream && res.body) {
         const clone = res.clone();
         const rpcId = (ex.requestJson as { id?: unknown } | undefined)?.id;
-        pending.push(readBody(clone, BODY_TIMEOUT_MS, READ_CAP, rpcId).then((b) => { ex.bodyMs = now() - started; finishBody(ex, b.text); }));
+        // Past READ_CAP the copy is still read (not kept) to see when the response ends, for the latency sample.
+        pending.push(readBody(clone, BODY_TIMEOUT_MS, READ_CAP, rpcId, rpcId === undefined ? READ_CAP : FULL_READ_CAP).then((b) => {
+          ex.bodyMs = now() - started;
+          finishBody(ex, b.text);
+          sample(ex, b, true);
+        }));
       }
       return res;
     } catch (err) {
@@ -286,6 +313,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
           : await readBody(res, Math.min(timeoutMs, BODY_TIMEOUT_MS), READ_CAP, rpcId);
         ex.bodyMs = now() - started;
         finishBody(ex, body.text);
+        sample(ex, body, false);
         if (fullBody && body.truncated) ex.error = { name: 'BodyTruncated', message: `response body exceeded ${FULL_READ_CAP} bytes and was truncated` };
         else if (fullBody && (body.timedOut || ctrl.signal.aborted) && ex.json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
       }
