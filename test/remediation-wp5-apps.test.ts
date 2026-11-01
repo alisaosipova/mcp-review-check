@@ -124,3 +124,14 @@ describe('R030: a read item under a different uri is still the widget', () => {
     expect(messages(evaluate(APPS_007, twoHtml))).toEqual([]);
   });
 });
+
+describe('R042: APPS-017 names a _meta.ui that is not an object', () => {
+  it.each([['csp-here', 'a string'], [[], 'an array'], [null, 'a null'], [3, 'a number']])('%j', (value, what) => {
+    const f = evaluate(APPS_017, ui({ meta: { ui: value, 'openai/widgetDomain': 'https://widgets.acme.test' } }));
+    expect(f.map((x) => [x.severity, x.message])).toEqual([['error', `_meta.ui is ${what}, not an object`]]);
+  });
+
+  it('an absent _meta.ui keeps the prefersBorder hint', () => {
+    expect(messages(evaluate(APPS_017, ui({ meta: { 'openai/widgetDomain': 'https://widgets.acme.test' } })))).toEqual(['prefersBorder is not set (explicit value recommended)']);
+  });
+});

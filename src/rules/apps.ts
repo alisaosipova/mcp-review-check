@@ -396,6 +396,8 @@ export const APPS_017 = defineRule(
   },
   (snap) => uiResources(snap).flatMap((r): RawFinding[] => {
     if (!r.item && !r.listEntry) return [];
+    // A string (often serialised JSON) or an array in place of the object hides every field below: name the root cause.
+    if (r.meta.ui !== undefined && !isObj(r.meta.ui)) return [{ resource: r.uri, message: `_meta.ui is ${Array.isArray(r.meta.ui) ? 'an array' : `a ${r.meta.ui === null ? 'null' : typeof r.meta.ui}`}, not an object` }];
     const ui = r.ui;
     const out: RawFinding[] = [];
     if (ui.prefersBorder === undefined) out.push({ resource: r.uri, severity: 'info', message: 'prefersBorder is not set (explicit value recommended)' });
