@@ -16,7 +16,7 @@ node dist/cli.js --stdio "node test/fixtures/good-server.mjs"
 
 `MCP_REVIEW_CHECK_LIVE=1 npm test` adds smoke tests against public servers; they are not part of CI. `MCP_REVIEW_CHECK_SKIP_BUILD=1` skips the build in the vitest global setup when `dist/` is already fresh.
 
-CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 20.19, 22 and 24 on Linux, macOS and Windows, checks that `docs/RULES.md` and the catalog date in the README are regenerated, and packs and smoke-tests the tarball.
+CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 20.19, 22 and 24 on Linux, macOS and Windows, checks that `docs/RULES.md` and the generated parts of the README and `docs/design/spec.md` are regenerated, and packs and smoke-tests the tarball.
 
 ## Ground rules for rules
 
@@ -53,7 +53,7 @@ CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 20.19, 2
 
 4. **Test it.** In `test/rules/<category>.test.ts`, add a case with at least one positive snapshot (`pos`, must produce a finding) and one negative snapshot (`neg`, must be clean). The negative case must be a realistic near miss (wording a legitimate server uses), not an empty snapshot. Heuristic rules also need negative cases for the false positives you know about, such as the documented guards in the existing tests. The "has a case for every rule" test fails until you do. Add the ID to the frozen list in `test/catalog.test.ts`. If the BAD fixture (`test/fixtures/bad-server.mjs`) should trigger it, update `BAD_STDIO_RULES` in `test/e2e-stdio.test.ts`.
 
-5. **Regenerate the docs**: `npm run build && npm run readme:rules` rewrites the rule table in [docs/RULES.md](docs/RULES.md) and the catalog date in `docs/RULES.md` and the README. The table comes from the same generator as `mcp-review-check --list-rules --format markdown` (`rulesMarkdown` in `src/explain.ts`), and `test/docs.test.ts` and CI fail if you forget.
+5. **Regenerate the docs**: `npm run build && npm run readme:rules` rewrites the rule table in [docs/RULES.md](docs/RULES.md), and the catalog date, the number of rules and manual items and the version in the example report header wherever they appear in `docs/RULES.md`, the README and `docs/design/spec.md` (the `<!-- CATALOG_DATE -->`, `<!-- RULE_COUNT -->` and `<!-- MANUAL_COUNT -->` markers). The table comes from the same generator as `mcp-review-check --list-rules --format markdown` (`rulesMarkdown` in `src/explain.ts`), and `test/docs.test.ts` and CI fail if you forget.
 
 6. **Update the catalog date** in `src/catalog.ts` when the change reflects documentation newer than the current date, then run `npm run readme:rules` again.
 
@@ -72,7 +72,7 @@ Run the check with `--format json --output report.json`, remove anything private
 ## Releasing (maintainers)
 
 1. Move the `## [Unreleased]` entries in CHANGELOG.md under the new version and date. New rules or raised severities mean a minor bump (see the stability policy).
-2. `npm version <patch|minor> --no-git-tag-version`, commit, then tag `vX.Y.Z` and push the tag.
+2. `npm version <patch|minor> --no-git-tag-version`, then `npm run build && npm run readme:rules` (the README's example report header shows the version), commit, then tag `vX.Y.Z` and push the tag.
 3. `.github/workflows/release.yml` checks that the tag matches `package.json`, builds, tests and publishes with `npm publish` through npm trusted publishing (OIDC, with provenance), then creates the GitHub release. Never publish from a laptop: provenance needs CI, and trusted publishing needs npm 11.5.1+.
 
 One-time setup: on npmjs.com, add a trusted publisher for this repository with workflow `release.yml` and environment `npm`. npm only allows this once the package exists, so the very first tag needs a short-lived granular token in the `NPM_TOKEN` repository secret; delete it after configuring the trusted publisher.

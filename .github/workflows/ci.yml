@@ -53,10 +53,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: docs/RULES.md and the catalog date in README.md are regenerated
+      - name: docs/RULES.md and the generated rule count, catalog date and version in README.md and docs/design/spec.md are current
         run: |
           npm run readme:rules
-          git diff --exit-code -- docs/RULES.md README.md || { echo "::error::docs/RULES.md or README.md is stale: run 'npm run build && npm run readme:rules' and commit the result"; exit 1; }
+          git diff --exit-code -- docs/RULES.md README.md docs/design/spec.md || { echo "::error::docs/RULES.md, README.md or docs/design/spec.md is stale: run 'npm run build && npm run readme:rules' and commit the result"; exit 1; }
       - name: No known vulnerabilities in runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Pack, install the tarball and run it
