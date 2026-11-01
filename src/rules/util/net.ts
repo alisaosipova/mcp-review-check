@@ -21,15 +21,38 @@ export function isNonPublicIPv4(ip: string): boolean {
   });
 }
 
+/** The eight 16-bit groups of an IPv6 address in any notation (compressed, uncompressed, trailing dotted IPv4, zone id). */
+function v6Groups(ip: string): number[] | undefined {
+  if (isIP(ip) !== 6) return undefined;
+  let s = ip.toLowerCase().replace(/%.*$/, '');
+  const v4 = /(\d+\.\d+\.\d+\.\d+)$/.exec(s);
+  if (v4) {
+    const n = v4ToInt(v4[1]);
+    s = `${s.slice(0, -v4[1].length)}${(n >>> 16).toString(16)}:${(n & 0xffff).toString(16)}`;
+  }
+  const [head, tail] = s.split('::');
+  const part = (x: string | undefined) => (x ? x.split(':').map((h) => parseInt(h, 16)) : []);
+  const a = part(head);
+  const b = part(tail);
+  return tail === undefined ? a : [...a, ...new Array(8 - a.length - b.length).fill(0), ...b];
+}
+
+/** The IPv4 address inside an IPv4-mapped IPv6 address (::ffff:a.b.c.d, also written ::ffff:7f00:1). */
+function mappedV4(g: number[]): string | undefined {
+  if (!g.slice(0, 5).every((x) => x === 0) || g[5] !== 0xffff) return undefined;
+  return [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff].join('.');
+}
+
 export function isNonPublicIPv6(ip: string): boolean {
-  if (isIP(ip) !== 6) return false;
-  const lower = ip.toLowerCase();
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped) return isNonPublicIPv4(mapped[1]);
-  if (lower === '::1' || lower === '::') return true;
-  const first = parseInt(lower.split(':')[0] || '0', 16);
-  if ((first & 0xfe00) === 0xfc00) return true; // fc00::/7
-  if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10
+  const g = v6Groups(ip);
+  if (!g) return false;
+  const mapped = mappedV4(g);
+  if (mapped) return isNonPublicIPv4(mapped);
+  if (g.slice(0, 7).every((x) => x === 0) && g[7] <= 1) return true; // :: and ::1
+  if ((g[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+  if ((g[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((g[0] & 0xff00) === 0xff00) return true; // ff00::/8 multicast
+  if (g[0] === 0x2001 && g[1] === 0x0db8) return true; // 2001:db8::/32 documentation
   return false;
 }
 
@@ -41,8 +64,11 @@ export function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, '');
   if (h === 'localhost' || h.endsWith('.localhost')) return true;
   if (isIP(h) === 4) return h.startsWith('127.');
-  if (isIP(h) === 6) return h === '::1';
-  return false;
+  const g = v6Groups(h);
+  if (!g) return false;
+  const mapped = mappedV4(g);
+  if (mapped) return mapped.startsWith('127.');
+  return g.slice(0, 7).every((x) => x === 0) && g[7] === 1;
 }
 
 /** Local mode for a host without a dot, or one whose every address (DNS and the system resolver) is non-public. */

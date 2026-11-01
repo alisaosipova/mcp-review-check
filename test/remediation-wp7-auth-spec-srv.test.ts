@@ -5,6 +5,7 @@ import { authRules } from '../src/rules/auth.js';
 import { serverRules } from '../src/rules/server.js';
 import { specRules } from '../src/rules/spec.js';
 import type { Rule } from '../src/rules/types.js';
+import { isLoopbackHost, isNonPublicIp, isNonPublicIPv6 } from '../src/rules/util/net.js';
 import { parseWwwAuthenticate } from '../src/rules/util/wwwAuth.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, exchange, snap } from './helpers.js';
@@ -218,6 +219,24 @@ describe('F042 AUTH-012 CIMD without "none" and without DCR', () => {
   it('with DCR it still says CIMD falls back to DCR; with neither it says so', () => {
     expect(claude({ token_endpoint_auth_methods_supported: ['client_secret_basic'] }).map((x) => x.message)).toEqual(['CIMD advertised without token auth method "none": CIMD ignored, falls back to DCR']);
     expect(claude({ client_id_metadata_document_supported: undefined, registration_endpoint: undefined })[0].message).toMatch(/^neither CIMD nor DCR/);
+  });
+});
+
+describe('F027 IPv6 notations in the net helpers', () => {
+  it('recognizes mapped addresses in the hex form WHATWG URL produces, uncompressed loopback, multicast and documentation', () => {
+    for (const ip of ['::ffff:7f00:1', '::ffff:a00:1', '0:0:0:0:0:0:0:1', 'ff02::1', '2001:db8::1', '::ffff:10.0.0.1', 'fe80::1']) expect(isNonPublicIPv6(ip), ip).toBe(true);
+    for (const ip of ['2606:4700::1111', '::ffff:808:808', '2001:4860::8888']) expect(isNonPublicIPv6(ip), ip).toBe(false);
+  });
+
+  it('isLoopbackHost knows mapped and uncompressed loopback, bracketed or not', () => {
+    for (const h of ['::ffff:127.0.0.1', '[::ffff:7f00:1]', '0:0:0:0:0:0:0:1', '::1']) expect(isLoopbackHost(h), h).toBe(true);
+    expect(isLoopbackHost('::ffff:a00:1')).toBe(false);
+  });
+
+  it('a hostname from new URL() for a mapped private address is non-public', () => {
+    const h = new URL('http://[::ffff:10.0.0.1]/').hostname.replace(/^\[|\]$/g, '');
+    expect(h).toBe('::ffff:a00:1');
+    expect(isNonPublicIp(h)).toBe(true);
   });
 });
 // @end
