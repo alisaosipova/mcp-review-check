@@ -10,11 +10,13 @@
 > runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
 > the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
 > and the CLI gained options such as `--max-duration`, `--quiet`, `--checklist`, `--local`, `--no-local` and `explain`.
-> See CHANGELOG.md for the full list.
+> See CHANGELOG.md for the full list. Many detection patterns quoted in §2 (INJ, DATA, POL, APPS, AUTH, SPEC, TOOL and RT rules)
+> were narrowed or extended after 0.1.0 to fix false positives; CHANGELOG.md names each change, and the code in
+> `src/rules/` is authoritative where this document quotes an older pattern.
 
 Spec version 0.1. Rule catalog date 2026-10-22. Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md), not here.
 
-`mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 18, sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
+`mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 20.19 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 
 Non-goals for v1:
 - Full JSON-schema conformance of every wire message. That is the job of `@modelcontextprotocol/conformance`, and the report may suggest running it.
@@ -841,9 +843,10 @@ Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `auth
 - Detect, on the unauthenticated 401:
   - `WWW-Authenticate` is missing, or the scheme is not Bearer (or DPoP), or `resource_metadata` is missing:
     - a well-known PRM still resolves → claude-only **warning** (the spec needs one discovery mechanism; Claude calls the header the reliable path)
-    - no PRM, but legacy origin AS metadata exists (`authProbe.legacyDiscovery`) → chatgpt and spec error, claude **warning** (deprecated discovery that Claude still follows)
-    - no discovery at all → error (see AUTH-004)
+    - no PRM, but legacy origin AS metadata exists (`authProbe.legacyDiscovery`) → chatgpt error, spec **warning**, claude **warning** (deprecated discovery that Claude still follows; the spec needs only one discovery mechanism, so the spec error for missing discovery is AUTH-004's)
+    - no discovery at all → **info** pointing to AUTH-004, which carries the one error
   - `resource_metadata` is not an absolute https URL → error.
+  - `resource_metadata` given unquoted (`resource_metadata=https://…`) is read whole, as MCP SDK clients do, and gets a spec **warning** to quote it.
   - Scheme `Basic` or `ApiKey` → chatgpt error, claude warning.
 - Source: https://claude.com/docs/connectors/building/authentication, https://datatracker.ietf.org/doc/html/rfc9728#section-5.1
 
@@ -974,10 +977,10 @@ Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `auth
 ### 2.9 RT: runtime checks (opt-in `--active`)
 Safety contract:
 - Call only tools with `annotations.readOnlyHint === true`, `destructiveHint !== true`, and no WRITE verb token in the name.
-- At most 3 calls per tool and 50 tools, one at a time.
+- At most 3 calls per tool and 50 tools, one at a time. A name listed more than once is called only when every entry with it is safe, and once (`tools/call` addresses a tool by name, so the server picks the implementation).
 - Each call uses the `--timeout` value, capped at 240 s.
-- Arguments come from `--tool-args <file.json>` (`{toolName: args}`) or are synthesized: `default` → `examples[0]` → `enum[0]` → `const` → type placeholder (`"mcp-review-check"`, `1`, `false`, `[]`, `{}`).
-- Invalid-input variants: `{}` when required properties exist, and the first required property set to the wrong type.
+- Arguments come from `--tool-args <file.json>` (`{toolName: args}`) or are synthesized: `default` → `examples[0]` → `enum[0]` → `const` → type placeholder (`"mcp-review-check"`, `1`, `false`, `[]`, `{}`). The placeholder follows the schema so that common validation passes: a sample value for a string `format` (uri, email, date-time, uuid, …), `minLength`/`maxLength`, numeric bounds and `multipleOf`, `minItems`, the required properties of nested objects, the first `anyOf`/`oneOf` branch and local `$ref`.
+- Invalid-input variants: `{}` when required properties exist, and the first required property set to the wrong type: a value outside every type the property allows (type unions, anyOf/oneOf, `$ref`); when no such value exists (no type), the wrong-type call is skipped.
 - Success-path rules apply only to non-`isError` results.
 
 **RT-001 Error messages are specific.** Severity: claude=error.
@@ -985,7 +988,7 @@ Safety contract:
 - Source: https://claude.com/docs/connectors/building/review-criteria
 
 **RT-002 Invalid input silently accepted.** Severity: claude=warning, spec=warning.
-- Detect: a wrong-type call returns a success result.
+- Detect: a wrong-type call, or the call without the required arguments, returns a success result.
 - Source: https://claude.com/docs/connectors/building/review-criteria
 
 **RT-003 Input-validation errors reported with isError.** Severity: spec=warning.
@@ -1147,11 +1150,12 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | Code | Meaning |
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
-| 1 | Completed, threshold reached |
+| 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`) |
 | 2 | Usage or config error, or `--output` could not be written |
-| 3 | Fatal: could not reach the server or complete any handshake. A report is still emitted, containing the SRV-003 error. |
+| 3 | Fatal: could not reach the server or complete any handshake (a report is still emitted, containing the SRV-003 error), `--max-duration` stopped the check, or an unexpected internal error (`fatal:` and the stack on stderr) |
+| 128+N | Ended by signal N (130 SIGINT, 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP); no report is written |
 
-A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code follows `--fail-on`.
+A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code follows `--fail-on`. A token the server rejects is not fatal either: the check is partial (`token-rejected`) and the exit code follows `--fail-on`. The README's [Exit codes](../../README.md#exit-codes) section is authoritative for the details. Open questions on this contract (a separate code for `--max-duration`, a non-zero code for a rejected token) are listed in §8 (Q5, Q6).
 
 ### 3.3 Run flow (HTTP target)
 1. **Validate the URL.** Store `urlAsEntered` byte-for-byte for the AUTH-005 and APPS-011 comparisons. Evaluate AUTH-001 from the query string.
@@ -1311,13 +1315,21 @@ interface Rule extends RuleMeta { check(snap: Snapshot): RawFinding[] }   // pur
 | resourceMissing | resources/read `mcp-review-check://does-not-exist` | SPEC-010 |
 | headerMismatch (modern) | tools/list without `Mcp-Method`, then with a wrong one | SPEC-014 |
 | delete (modern-only) | DELETE endpoint | SPEC-015 |
-| origins | initialize with Origin claude.ai, chatgpt.com, evil.invalid | SRV-008 |
+| origins | initialize with Origin claude.ai, chatgpt.com, evil.invalid (server/discover on a modern-only server; on legacy HTTP+SSE a GET of the event stream with each Origin, cut after the headers) | SRV-008 |
 | relist / fresh | tools/list again; new connection tools/list | SRV-019 |
 | challenge | GET `/.well-known/openai-apps-challenge` | SRV-016 |
+| close session | one best-effort DELETE with `Mcp-Session-Id` (no retries, at most 5 s) for a session a stateful server minted for a raw initialize (preflight, initialize-mode Origin probes, invalid token); the SDK connections end theirs the same way | none (kept out of rule evidence) |
 
-That totals about 20 requests per run with no writes. Legacy probes reuse the SDK session id via `transport.sessionId` and `transport.protocolVersion`, which are instance getters and not part of the Transport interface type.
+That totals about 20 requests per run with no writes. When the preflight gets a redirect to another path on the same host (no https→http downgrade), the get, badVersion, delete and Origin probes go to the redirect target, as the SDK client does; SRV-006 still reports the redirect. The get probe reuses the SDK session's own standalone GET when the client already opened one, because servers that allow one SSE stream per session answer a second GET with 409. Legacy probes reuse the SDK session id via `transport.sessionId` and `transport.protocolVersion`, which are instance getters and not part of the Transport interface type.
 
-### 4.4 Node 18 compatibility (mandatory)
+### 4.4 Node compatibility
+The plan targeted Node 18; the implementation requires **Node 20.19 or newer** (`engines.node: ">=20.19"`), the oldest release line CI tests. The Node 18 constraints below (forbidden packages, vitest 3, `@types/node@^18`) are historical; what holds today:
+- `engines.node: ">=20.19"`; CI runs Node 20.19, 22 and 24.
+- Dev dependencies: vitest 4, `@types/node` 20 (it tracks the oldest supported Node), TypeScript `~5.9`.
+- `lib: ["ES2022"]` without DOM: `@types/node` types `fetch`, `Response`, `Headers` and `AbortSignal.timeout`, and the DOM globals (`name`, `status`, `close`, …) would hide typos in Node code.
+- Releases are published to npm only from CI (`.github/workflows/release.yml`, see CONTRIBUTING.md); the "no publishing in this phase" note below is historical.
+
+The original Node 18 plan:
 - **Runtime dependencies:**
   - `@modelcontextprotocol/sdk` `~1.32.1`. Its engines field is `>=18`. It speaks only the 2025-11-25 era (`LATEST_PROTOCOL_VERSION = '2025-11-25'`).
   - `zod` `^4`, a required peer of the SDK. Import as `zod/v4`, the same way the SDK does.
@@ -1516,3 +1528,7 @@ export const CTA_TEXT = 'Need help getting your connector approved?';
 - **Q2:** Should SRV-004's "no A record" be checked against public DNS (DoH) instead of the system resolver? v1 uses the system resolver and says so in the message.
 - **Q3:** Should listing and manifest linting (`--listing listing.json`, `--plugin plugin.json`) turn the MAN-002/015..024 items into automated checks? This is planned for v1.1.
 - **Q4:** The score weights (12/4, cap of 3 per rule) are provisional. Revisit them after running the tool on real servers.
+- **Q5:** Should a run stopped by `--max-duration` get its own exit code (for example 4) instead of sharing 3 with "could not connect" and internal errors? CI could then tell "too slow" from "unreachable"; it changes the documented exit-code contract (§3.2), so it waits for a minor release.
+- **Q6:** Should a token the server rejects (`token-rejected`, tool checks skipped) fail the run, either always (exit 3) or behind an option such as `--fail-on-incomplete`? Today the exit code follows `--fail-on`, so a CI job with an expired token can pass with most checks skipped (a verdict without errors reads `INCOMPLETE`).
+- **Q7:** SARIF `level` maps the finding's highest severity over every platform (§5.3). Should it follow the gated platforms instead (so a spec-only error is a `note` without `--fail-on-spec`), or should an option such as `--sarif-level gated|max` choose?
+- **Q8:** Should APPS-013 count every `<a href>` in a widget as navigation that needs `redirect_domains`, not only `openExternal` / `ui/open-link`? It would add a ChatGPT warning to most widgets with links, and it is not verified that ChatGPT gates plain anchors.
