@@ -75,9 +75,36 @@ describe('INJ-007: self references and the server\'s own brand are exempt (F093,
     expect(sev('INJ-007', slack('Post a message via the Slack connector.'))).toEqual([]);
     expect(sev('INJ-007', slack('Call the Slack connector to post a message.'))).toEqual([]);
   });
+  it('the server may name its own product; another product of the same vendor is still flagged', () => {
+    expect(sev('INJ-007', desc('Use our Acme Notes app to keep notes.'))).toEqual([]);
+    expect(sev('INJ-007', desc('Use the Acme Billing app to pay.'))).toEqual(['warning']);
+  });
   it('another server naming Slack or Gmail is still flagged', () => {
     expect(sev('INJ-007', desc('Post a message via the Slack connector.'))).toEqual(['warning']);
     expect(sev('INJ-007', desc('Call the Slack connector to post.'))).toEqual(['warning']);
     expect(sev('INJ-007', slack('Then call the Gmail connector to send it.'))).toEqual(['warning']);
+  });
+});
+
+describe('POL-001: money verbs are whole name tokens (F083)', () => {
+  const t = (name: string, description: string) => snap({ tools: [tool({ name, description, annotations: { readOnlyHint: false } })] });
+  it.each([
+    ['get_bestsellers', 'List bestselling products currently in stock.'],
+    ['list_stakeholders', 'List project stakeholders and their shares of the budget.'],
+    ['send_email', 'Send an email; mention the bank holiday if relevant.'],
+    ['update_wireframe', 'Update the wireframe on the bank landing page.'],
+    ['register_trademark', 'Register a trademark for a bank.'],
+  ])('%s is not a transfer', (name, d) => {
+    expect(sev('POL-001', t(name, d))).toEqual([]);
+  });
+  it.each([
+    ['transfer_funds', 'Transfer money between accounts.'],
+    ['sendMoney', 'Send money to a contact.'],
+    ['buy_stock', 'Buy a stock at market price.'],
+    ['place_order', 'Place a buy order for shares.'],
+    ['create_payment', 'Create a payment from the bank account.'],
+    ['executeTrade', 'Execute a crypto trade.'],
+  ])('%s is still a transfer', (name, d) => {
+    expect(sev('POL-001', t(name, d))).toEqual(['warning']);
   });
 });

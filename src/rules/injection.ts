@@ -15,7 +15,10 @@ export interface Pattern {
   note?: string;
   /** INJ-007: skip when every referenced identifier is one of the server's own tools. */
   ownToolExempt?: boolean;
-  /** INJ-007: the capture group that names the referenced software when the match has no call verb ("Slack connector"). */
+  /**
+   * INJ-007: the capture group that names the referenced software ("this", "Slack", "Acme Billing"). It replaces the
+   * word after the call verb as the reference, and may also match the server's own name.
+   */
   refGroup?: number;
   /** Skip the match when this tests true on the matched text plus the next 40 characters. */
   unless?: RegExp;
@@ -254,7 +257,7 @@ export const INJ_007_PATTERNS: Pattern[] = [
   { re: /\b(always|first|must|you should|be sure to)\b[^.]{0,60}\b(call|invoke|use|run)\b[^.]{0,40}\b(tool|function|server|mcp|connector|plugin)\b/i, ownToolExempt: true },
   { re: /before (using|calling|answering)[^.]{0,40}\b(call|invoke|use)\b/i, ownToolExempt: true },
   // "Use this app to track workouts" is the app describing itself, so the self-reference exemption applies here too.
-  { re: /\b(use|call|invoke|ask) (the )?[\w\- ]{1,30} (connector|plugin|app|integration)\b/i, ownToolExempt: true },
+  { re: /\b(use|call|invoke|ask) (the )?([\w\- ]{1,30}) (connector|plugin|app|integration)\b/i, ownToolExempt: true, refGroup: 3 },
   // A first-party server may name its own brand ("Post via the Slack connector" from the Slack server).
   { re: /(google drive|gmail|slack|notion|github|outlook) (tool|connector)/i, ownToolExempt: true, refGroup: 1 },
 ];
@@ -281,12 +284,18 @@ export function ownToolFilter(snap: Snapshot) {
     for (const v of [t.name, t.title, isObj(t.annotations) ? t.annotations.title : undefined]) if (isStr(v)) own.add(v.trim().toLowerCase());
   }
   for (const n of toolNames(snap)) own.add(n.toLowerCase());
-  // The server's own product name: every word of a reference such as "Slack" or "Google Drive" appears in serverInfo.name or title.
+  const isOwn = (id: string) => own.has(id) || SELF_REFS.has(id);
+  // A named product ("Slack", "Google Drive") is the server's own when every word of it appears in serverInfo.name or title.
   const serverWords = new Set([snap.serverInfo?.name, snap.serverInfo?.title].filter(isStr).flatMap(words));
-  const isOwn = (id: string) => own.has(id) || SELF_REFS.has(id) || (words(id).length > 0 && words(id).every((w) => serverWords.has(w)));
+  const isOwnProduct = (id: string) => isOwn(id) || (words(id).length > 0 && words(id).every((w) => serverWords.has(w)));
   return (_e: CorpusEntry, m: RegExpExecArray, p: Pattern): boolean => {
     if (!p.ownToolExempt) return true;
-    const ids = [...referencedIdentifiers(m[0]), ...(p.refGroup !== undefined && m[p.refGroup] ? [m[p.refGroup]] : [])].map((id) => id.toLowerCase());
+    if (p.refGroup !== undefined) {
+      const quoted = [...m[0].matchAll(/[`'"]([^`'"\n]{1,80})[`'"]/g)].map((q) => q[1].trim().toLowerCase());
+      const ref = m[p.refGroup]?.trim().toLowerCase().replace(/^(this|these|our)\s+/, ''); // "our Acme" is Acme
+      return !(ref && isOwnProduct(ref) && quoted.every(isOwnProduct));
+    }
+    const ids = referencedIdentifiers(m[0]).map((id) => id.toLowerCase());
     return !(ids.length > 0 && ids.every(isOwn));
   };
 }
