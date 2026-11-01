@@ -235,9 +235,11 @@ export const INJ_005_PATTERNS: Pattern[] = [
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b((system|platform|host|assistant'?s?|model'?s?) (instructions|prompts?|rules|message|safeguards|guardrails)|safety (instructions|rules|guidelines|guardrails|filters|policies)|(your|all|any|previous|prior|earlier) instructions)\b/i },
   { re: /\b(do not|don't|never) (tell|inform|notify|alert) the user\b/i, unless: SECRET_OBJECT },
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b(instructions|system prompt|guardrails)\b/i, severity: 'warning' },
-  { re: /\b(do not|don't|never) (tell|inform|mention|reveal|show|disclose)[^.]{0,30}\b(the )?user\b/i, severity: 'warning', unless: SECRET_OBJECT, unlessInMatch: RAW_DATA_OBJECT },
+  // "user" must be the addressee, not a modifier: "Do not show user avatars larger than 64px" is layout guidance.
+  { re: /\b(do not|don't|never) (tell|inform|mention|reveal|show|disclose)[^.]{0,30}\b(the )?user\b(?![- ](avatars?|names?|ids?|generated|input|profiles?|photos?|pictures?|images?|data|content|accounts?|interface|agents?|groups?|roles?|settings|records?|emails?|handles?)\b)/i, severity: 'warning', unless: SECRET_OBJECT, unlessInMatch: RAW_DATA_OBJECT },
   { re: /\bwithout (asking|telling|confirming with) the user\b/i, severity: 'warning' },
-  { re: /\b(you are now|from now on,? you)\b/i, severity: 'warning' },
+  // A role change, not a status report: "You are now connected to the workspace" is not a persona switch.
+  { re: /\b(you are now(?! (connected|signed|logged|authenticated|authorized|subscribed|registered|enrolled|ready|done|online|offline|disconnected)\b)|from now on,? you)\b/i, severity: 'warning' },
   { re: /\b(system prompt|developer message)\b/i, severity: 'warning' },
 ];
 
