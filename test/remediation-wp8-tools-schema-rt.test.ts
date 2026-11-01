@@ -105,4 +105,15 @@ describe('F103 RT-011 scans structuredContent and embedded resource text', () =>
     expect(messages('RT-011', active([call({ result: { ...text('{"a":"b"}'), structuredContent: { a: 'b' } } })]))).toEqual([]);
   });
 });
+
+describe('F067 TOOL-006 falls back to annotations.title past an empty or non-string title', () => {
+  it('an empty title does not hide annotations.title', () => {
+    expect(evaluate(byId('TOOL-006'), one(tool({ title: '', annotations: { title: 'Search notes', readOnlyHint: true } })))).toEqual([]);
+  });
+  it('a non-string title is named as such', () => {
+    const f = evaluate(byId('TOOL-006'), one(tool({ title: 42 })));
+    expect(f.map((x) => x.message).sort()).toEqual(['no title', 'title is 42, not a string']);
+    expect(evaluate(byId('TOOL-006'), one(tool({ title: 42, annotations: { title: 'Search notes' } }))).map((x) => x.message)).toEqual(['title is 42, not a string']);
+  });
+});
 //@@END

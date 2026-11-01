@@ -127,14 +127,16 @@ export const TOOL_006 = defineRule(
   },
   (snap) => perTool(snap, (t) => {
     const at = annotations(t).title;
-    const title = t.title ?? at;
-    if (!isNonEmptyStr(title)) return { platforms: ['claude'], message: 'no title' };
+    // An empty or non-string top-level title does not hide annotations.title (hosts fall back to it).
+    const title = isNonEmptyStr(t.title) ? t.title : at;
     const out: RawFinding[] = [];
+    if (t.title !== undefined && !isStr(t.title)) out.push({ platforms: ['spec'], severity: 'warning', message: `title is ${JSON.stringify(t.title)}, not a string` });
+    if (!isNonEmptyStr(title)) return [...out, { platforms: ['claude'], message: 'no title' }];
     const len = [...title].length;
     if (len > TITLE_MAX) {
       out.push({ platforms: ['claude'], severity: 'info', message: `title is ${len} characters (linter-defined limit ${TITLE_MAX}): "${snippet(title, 0, title.length, TITLE_MAX)}"`, fix: 'Use a short human-readable label as the title (e.g. "Search docs"); keep details in the description.' });
     }
-    if (t.title !== undefined && at !== undefined && t.title !== at) out.push({ platforms: ['spec'], message: `title and annotations.title differ ("${snippet(String(t.title), 0, String(t.title).length, TITLE_MAX)}" wins)` });
+    if (isNonEmptyStr(t.title) && at !== undefined && t.title !== at) out.push({ platforms: ['spec'], message: `title and annotations.title differ ("${snippet(String(t.title), 0, String(t.title).length, TITLE_MAX)}" wins)` });
     return out;
   }),
 );
