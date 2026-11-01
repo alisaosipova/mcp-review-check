@@ -136,6 +136,15 @@ export const DATA_004 = defineRule(
   ]),
 );
 
+// An `address` can be an e-mail, network or wallet address, and a boolean `long` is an output flag.
+const NON_PLACE_FORMATS = new Set(['email', 'idn-email', 'ipv4', 'ipv6', 'uri', 'url', 'hostname', 'idn-hostname', 'mac']);
+const NON_PLACE_ADDRESS = /\b(e-?mail|ip(v4|v6)?|mac|wallet|contract|ethereum|eth|bitcoin|btc|solana|crypto|blockchain|hex|0x[0-9a-f]*|memory|hostname|url|web)\b/i;
+const notAPlace = (v: SchemaVisit): boolean => {
+  if (v.node.type === 'boolean') return true;
+  if (typeof v.node.format === 'string' && NON_PLACE_FORMATS.has(v.node.format.toLowerCase())) return true;
+  return v.name === 'address' && typeof v.node.description === 'string' && NON_PLACE_ADDRESS.test(v.node.description);
+};
+
 export const DATA_005 = defineRule(
   {
     id: 'DATA-005', title: 'Inputs request precise user location', severity: { chatgpt: 'warning' }, needs: ['tools'],
@@ -144,7 +153,7 @@ export const DATA_005 = defineRule(
     sources: [OAI_GUIDE],
   },
   (snap) => scanNames(snap, [
-    { re: /^(lat|latitude|lng|lon|long|longitude|coords?|coordinates|gps|geo(location)?|street(_address)?|address)$/i, label: 'requests a precise location' },
+    { re: /^(lat|latitude|lng|lon|long|longitude|coords?|coordinates|gps|geo(location)?|street(_address)?|address)$/i, label: 'requests a precise location', skip: notAPlace },
     { re: /^(postal_?code|zip(_?code)?)$/i, severity: 'info', label: 'requests a postal code' },
   ]),
 );
