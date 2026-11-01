@@ -15,7 +15,7 @@ import { RecordingTransport } from './protocol/recording.js';
 import { createRedactor, createTracer, FULL_READ_CAP, scrub, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
-import { defaultDeps, lookupHost, preflight, tlsCheckWithRetry, type Deps } from './probe/network.js';
+import { defaultDeps, lookupHost, preflight, sameHostRedirect, tlsCheckWithRetry, type Deps } from './probe/network.js';
 import { runWireProbes } from './probe/wire.js';
 import { buildRedactor, redactDeep } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
@@ -329,10 +329,15 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   // 1. preflight
   const pf = await preflight(tracer, url, connectTimeout, deps.sleep);
   snap.transport.preflight = pf;
-  let trigger: AuthProbe['trigger'] | undefined = pf.status === 401 ? 'preflight-401' : pf.status === 403 && pf.headers?.['www-authenticate'] ? 'preflight-403' : undefined;
+  // The SDK client follows a same-host redirect (/mcp -> /mcp/) by itself; the raw requests (server/discover, the
+  // unauthenticated initialize that decides on the auth probe, and the auth probe) go to its target too, or they would
+  // see only the 3xx. SRV-006 still reports the redirect from the preflight to the URL as entered.
+  const target = sameHostRedirect(url, pf) ?? url;
+  const authPf = target === url ? pf : await preflight(tracer, target, connectTimeout, deps.sleep);
+  let trigger: AuthProbe['trigger'] | undefined = authPf.status === 401 ? 'preflight-401' : authPf.status === 403 && authPf.headers?.['www-authenticate'] ? 'preflight-403' : undefined;
 
   // 2. era detection
-  const modern = new ModernClient(url, tracer, authHeaders, timeoutMs);
+  const modern = new ModernClient(target, tracer, authHeaders, timeoutMs);
   const disc = await modern.request('server/discover', {}, { label: 'discover', timeoutMs: connectTimeout });
   snap.transport.probes.discover = disc.exchange;
   const discOk = disc.exchange.status === 200 && !!disc.result && Array.isArray(disc.result.supportedVersions);
@@ -381,9 +386,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     // The unauthenticated preflight holds the challenge only when it started the probe (a 401, or a 403 with
     // WWW-Authenticate); otherwise the latest 401, preferably one with a challenge, from the requests that carried credentials.
     const last401 = [...tracer.exchanges].reverse().filter((e) => e.status === 401);
-    const challengeExchange = trigger?.startsWith('preflight-') && (pf.status === 401 || (pf.status === 403 && pf.headers?.['www-authenticate']))
-      ? pf : last401.find((e) => e.headers?.['www-authenticate']) ?? last401[0] ?? pf;
-    const { probe, tlsHosts } = await runAuthProbe({ tracer, url, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
+    const challengeExchange = trigger?.startsWith('preflight-') && (authPf.status === 401 || (authPf.status === 403 && authPf.headers?.['www-authenticate']))
+      ? authPf : last401.find((e) => e.headers?.['www-authenticate']) ?? last401[0] ?? authPf;
+    const { probe, tlsHosts } = await runAuthProbe({ tracer, url: target, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
     snap.authProbe = probe;
     for (const h of tlsHosts) tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port)) });
   };
@@ -427,7 +432,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
         http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion },
       })),
     };
-    const fresh = (variant: ClientVariant = {}) => freshTools(url, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant);
+    const fresh = (variant: ClientVariant = {}) => freshTools(conn.ok ? url : target, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant);
     if (!snap.listMeta.tools?.error) {
       checkpoint(progress, 'tools re-list');
       const relist = await lister('tools/list', 'tools');

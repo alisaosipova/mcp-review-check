@@ -1,6 +1,7 @@
 // Regression tests for the W3A-connect remediation (review 2026-11-01, wave 3): connect.ts, limits.ts,
 // protocol/recording.ts, protocol/trace.ts and catalog.ts.
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSnapshot, urlBasicAuth, type BuildOptions } from '../src/connect.js';
 import { createBridgeHandler, listen, type Started } from './fixtures/http-bridge.js';
@@ -59,5 +60,49 @@ describe('user:pass@ in the URL is sent as Authorization: Basic (F003)', () => {
     await build(`http://alice:x@127.0.0.1:${s.port}/mcp`, { bearer: 'tok-123456789' });
     expect(seen).toContain('Bearer tok-123456789');
     expect(seen.some((a) => a?.startsWith('Basic '))).toBe(false);
+  });
+});
+
+describe('server/discover, the auth trigger and the auth probe follow a same-host redirect (F019)', () => {
+  /** /mcp answers 308 -> /mcp/, where the good server runs; `discover` adds a 2026-07-28 server/discover answer. */
+  async function redirected(opts: { discover?: boolean; bearer?: string } = {}): Promise<Started> {
+    const bridge = createBridgeHandler(createGoodServer, { path: '/mcp/', bearer: opts.bearer, challenge: 'Bearer realm="x"' });
+    return serve(async (req, res) => {
+      if (req.url === '/mcp') { res.writeHead(308, { location: '/mcp/' }); res.end(); return; }
+      if (opts.discover && req.method === 'POST' && req.url === '/mcp/') {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const body = Buffer.concat(chunks).toString('utf8');
+        const msg = JSON.parse(body) as { id?: unknown; method?: string };
+        if (msg.method === 'server/discover') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { supportedVersions: ['2026-07-28', '2025-11-25'], capabilities: { tools: {} } } }));
+          return;
+        }
+        // The bridge reads the body itself: hand it a request whose body is still to be read.
+        const replay = Object.assign(Readable.from([Buffer.from(body)]), { headers: req.headers, method: req.method, url: req.url }) as unknown as IncomingMessage;
+        return bridge(replay, res);
+      }
+      return bridge(req, res);
+    });
+  }
+
+  it('a dual-era server behind the redirect is detected as dual, not legacy', async () => {
+    const s = await redirected({ discover: true });
+    const snap = await build(s.url);
+    const disc = snap.transport.probes.discover;
+    expect(disc && 'status' in disc ? disc.status : undefined).toBe(200);
+    expect(snap.era).toBe('dual');
+    expect(snap.transport.preflight?.status).toBe(308); // SRV-006 still sees the redirect
+  });
+
+  it('a 401 behind the redirect starts the auth probe, which probes the redirect target', async () => {
+    const s = await redirected({ bearer: 'good-token-1234567890' });
+    const snap = await build(s.url, { bearer: 'good-token-1234567890' });
+    expect(snap.coverage.toolLevel).toBe('ok');
+    expect(snap.authProbe?.trigger).toBe('preflight-401');
+    expect(snap.authProbe?.challenge?.status).toBe(401);
+    expect(snap.authProbe?.invalidToken?.status).toBe(401);
+    expect(snap.authProbe?.invalidToken?.url).toBe(`${s.url}/`);
   });
 });
