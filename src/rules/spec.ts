@@ -28,7 +28,7 @@ export const SPEC_001 = defineRule(
     const out: RawFinding[] = [];
     if (!isStr(r.protocolVersion)) out.push({ message: 'protocolVersion is not a string' });
     if (!isObj(r.capabilities)) out.push({ message: 'capabilities is not an object' });
-    if (r.serverInfo === undefined) out.push({ message: 'serverInfo is missing' });
+    // A missing or malformed serverInfo is SRV-013's finding (one finding per defect).
     if (r.instructions !== undefined && !isStr(r.instructions)) out.push({ message: 'instructions is present but not a string' });
     const supported = new Set<string>();
     if (isObj(snap.discoverRaw) && isStrArray(snap.discoverRaw.supportedVersions)) snap.discoverRaw.supportedVersions.forEach((v) => supported.add(v));

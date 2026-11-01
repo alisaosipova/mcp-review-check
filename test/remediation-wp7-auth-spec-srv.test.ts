@@ -146,4 +146,12 @@ describe('F052 AUTH-017 one slow sample out of three', () => {
     expect(latency([11000])[0].severity).toBe('error');
   });
 });
+
+describe('F050 missing initialize.serverInfo is reported once', () => {
+  it('SRV-013 reports it and SPEC-001 does not', () => {
+    const s = snap({ set: (x) => { x.initializeRaw = { protocolVersion: '2025-11-25', capabilities: {} }; } });
+    expect(evaluate(byId('SRV-013'), s)).toMatchObject([{ severity: 'error', message: 'initialize result has no serverInfo' }]);
+    expect(evaluate(byId('SPEC-001'), s)).toEqual([]);
+  });
+});
 // @end
