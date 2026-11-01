@@ -135,3 +135,47 @@ describe('R042: APPS-017 names a _meta.ui that is not an object', () => {
     expect(messages(evaluate(APPS_017, ui({ meta: { 'openai/widgetDomain': 'https://widgets.acme.test' } })))).toEqual(['prefersBorder is not set (explicit value recommended)']);
   });
 });
+
+describe('APPS-006 entry checks (R033, R034, R035, R043, F106)', () => {
+  const run = (c: Record<string, unknown>, extra: Record<string, unknown> = {}) => evaluate(APPS_006, ui({ meta: csp(c, extra) }));
+
+  it('R033: unencrypted ws:// to a public host is flagged like http://; loopback is not', () => {
+    expect(messages(run({ connectDomains: ['ws://realtime.example.com', 'ws://localhost:8080'] })).sort()).toEqual([
+      'connectDomains: "ws://localhost:8080" names localhost or a private IP',
+      'connectDomains: "ws://realtime.example.com" uses ws://',
+    ]);
+  });
+
+  it('R034: a wildcard that is not the leftmost label is invalid; data: and blob: are scheme sources', () => {
+    expect(messages(run({ resourceDomains: ['https://api.*.example.com', 'https://*.example.*', 'data:', 'blob:'] })).sort()).toEqual([
+      'resourceDomains: "blob:" is a scheme source (any blob: URL), not an origin',
+      'resourceDomains: "data:" is a scheme source (any data: URL), not an origin',
+      'resourceDomains: "https://*.example.*" has a wildcard outside the leftmost host label (only https://*.example.com is valid)',
+      'resourceDomains: "https://api.*.example.com" has a wildcard outside the leftmost host label (only https://*.example.com is valid)',
+    ]);
+  });
+
+  it('R035: a scheme-less host gets one APPS-006 finding and counts as declared for APPS-007', () => {
+    const meta = csp({ connectDomains: ['api.acme.test'] });
+    expect(messages(evaluate(APPS_006, ui({ meta })))).toEqual(['connectDomains: "api.acme.test" has no scheme; write https://api.acme.test']);
+    const html = '<!doctype html><script>fetch("https://api.acme.test/v1"); new WebSocket("wss://api.acme.test/ws"); fetch("http://api.acme.test/x")</script>';
+    expect(messages(evaluate(APPS_007, ui({ meta, html })))).toEqual(['connect origin http://api.acme.test is not declared in the CSP']);
+  });
+
+  it('R043: entry problems are chatgpt/spec findings and only the CDN hint is Claude info', () => {
+    const f = run({ resourceDomains: ['https://unpkg.com', 'https://cdn.acme.test/'] });
+    expect(f.map((x) => [x.platforms, x.severityByPlatform, x.message])).toEqual([
+      [['chatgpt', 'spec'], { chatgpt: 'warning', spec: 'warning' }, 'resourceDomains: "https://cdn.acme.test/" has a path, query, fragment or trailing slash'],
+      [['claude'], { claude: 'info' }, 'resourceDomains: public CDN unpkg.com; serve from your own origin in production'],
+    ]);
+    expect(APPS_006.severity).toEqual({ chatgpt: 'warning', claude: 'info', spec: 'warning' });
+  });
+
+  it('F106: one entry repeated in ui.csp and openai/widgetCSP is reported once, naming both fields', () => {
+    const f = run({ connectDomains: ['https://api.example.com/'] }, { 'openai/widgetCSP': { connect_domains: ['https://api.example.com/'], resource_domains: ['https://api.example.com/'] } });
+    expect(messages(f)).toEqual([
+      'connectDomains/connect_domains: "https://api.example.com/" has a path, query, fragment or trailing slash',
+      'resource_domains: "https://api.example.com/" has a path, query, fragment or trailing slash',
+    ]);
+  });
+});

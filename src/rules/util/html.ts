@@ -105,10 +105,18 @@ function importMapUrls(html: string): Array<[string, string]> {
   return out;
 }
 
-/** Exact scheme/host/port match, plus `https://*.example.com` wildcard subdomains. */
+/**
+ * Exact scheme/host/port match, plus `https://*.example.com` wildcard subdomains. A bare host (`api.example.com`,
+ * `*.example.com`) is a CSP host-source: in the https widget sandbox it admits the host over https and wss.
+ */
 export function originMatches(origin: string, entry: string): boolean {
-  const e = entry.trim().toLowerCase();
+  let e = entry.trim().toLowerCase();
   const o = origin.toLowerCase();
+  if (!e.includes('://') && /^(\*\.)?[a-z0-9.-]+(:\d+)?$/.test(e)) {
+    const scheme = /^(https|wss):\/\//.exec(o);
+    if (!scheme) return false;
+    e = `${scheme[1]}://${e}`;
+  }
   const wild = /^([a-z][a-z0-9+.-]*):\/\/\*\.(.+)$/.exec(e);
   try {
     const ou = new URL(o);

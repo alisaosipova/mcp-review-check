@@ -1,10 +1,10 @@
 // APPS: MCP Apps and widgets (§2.7).
 import { createHash } from 'node:crypto';
-import { defineRule, type RawFinding } from './types.js';
+import { defineRule, type Platform, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiMeta, uiTools, uiUriOf } from './util/access.js';
 import { extractOrigins, originMatches, stripComments, type OriginKind } from './util/html.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, registrableDomain } from './util/net.js';
-import { cspOf, RESOURCE_MIME_TYPE, UI_EXTENSION, uiResources } from './util/ui.js';
+import { cspOf, RESOURCE_MIME_TYPE, UI_EXTENSION, uiResources, type CspList } from './util/ui.js';
 
 const APPS_SPEC = 'https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx';
 const OAI_REF = 'https://developers.openai.com/plugins/reference';
@@ -136,30 +136,43 @@ function broadWildcard(rest: string): boolean {
 
 export const APPS_006 = defineRule(
   {
-    id: 'APPS-006', title: 'CSP entries narrow and well-formed', severity: { chatgpt: 'warning', spec: 'warning' }, needs: ['ui'],
+    id: 'APPS-006', title: 'CSP entries narrow and well-formed', severity: { chatgpt: 'warning', claude: 'info', spec: 'warning' }, needs: ['ui'],
     rationale: 'CSP entries are origins; broad wildcards defeat the sandbox.',
     fix: 'List exact https origins (scheme://host[:port]) without paths.',
     sources: [OAI_UI, CLAUDE_APPS_DESIGN],
   },
   (snap) => {
     const out: RawFinding[] = [];
+    // Entry problems are chatgpt/spec findings; only the public-CDN hint is Claude's (claude: info in the severity).
+    const platforms: Platform[] = ['chatgpt', 'spec'];
     for (const r of uiResources(snap)) {
-      for (const { field, value } of cspOf(r).entries) {
-        const resource = r.uri;
+      const resource = r.uri;
+      // The same entry under ui.csp and openai/widgetCSP (connectDomains and connect_domains) is one problem.
+      const byEntry = new Map<string, { fields: string[]; v: string; list: CspList }>();
+      for (const { field, value, list } of cspOf(r).entries) {
         const v = value.trim();
-        if (/'unsafe-/i.test(v)) { out.push({ resource, message: `${field}: "${v}" contains an unsafe-* keyword` }); continue; }
-        const wild = /^([a-z]+:\/\/)?\*\.(.+)$/i.exec(v);
-        if (BROAD.has(v) || (wild && broadWildcard(wild[2]))) {
-          out.push({ resource, message: `${field}: "${v}" is overly broad` });
-          continue;
-        }
-        if (v.includes('*') && !/^resource(Domains|_domains)$/.test(field)) out.push({ resource, platforms: ['spec'], severity: 'info', message: `${field}: wildcard "${v}" outside resourceDomains` });
+        const e = byEntry.get(`${list}|${v}`);
+        if (!e) byEntry.set(`${list}|${v}`, { fields: [field], v, list });
+        else if (!e.fields.includes(field)) e.fields.push(field);
+      }
+      for (const { fields, v, list } of byEntry.values()) {
+        const field = fields.join('/');
+        const push = (problem: string) => out.push({ resource, platforms, message: `${field}: "${v}" ${problem}` });
+        if (/'unsafe-/i.test(v)) { push('contains an unsafe-* keyword'); continue; }
+        const wild = /^([a-z][a-z0-9+.-]*:\/\/)?\*\.([^*]+)$/i.exec(v);
+        if (BROAD.has(v) || (wild && broadWildcard(wild[2]))) { push('is overly broad'); continue; }
+        if (/^[a-z][a-z0-9+.-]*:$/i.test(v)) { push(`is a scheme source (any ${v} URL), not an origin`); continue; }
+        if (v.includes('*') && !wild) { push('has a wildcard outside the leftmost host label (only https://*.example.com is valid)'); continue; }
+        if (wild && list !== 'resource') out.push({ resource, platforms: ['spec'], severity: 'info', message: `${field}: wildcard "${v}" outside resourceDomains` });
+        // A bare host is a CSP host-source the browser may accept (APPS-007 matches it), but hosts document origins.
+        const schemeless = !v.includes('://') && /^(\*\.)?[a-z0-9.-]+(:\d+)?(\/.*)?$/i.test(v);
+        if (schemeless) push(`has no scheme; write https://${v}`);
         let u: URL | undefined;
-        try { u = new URL(v.replace('*.', 'wildcard.')); } catch { out.push({ resource, message: `${field}: "${v}" is not an origin` }); continue; }
-        if (u.protocol === 'http:' && !isLoopbackHost(u.hostname)) out.push({ resource, message: `${field}: "${v}" uses http://` });
-        if (u.pathname !== '/' || u.search || u.hash || /\/$/.test(v)) out.push({ resource, message: `${field}: "${v}" has a path, query, fragment or trailing slash` });
-        if (isLoopbackHost(u.hostname) || isNonPublicIp(u.hostname.replace(/^\[|\]$/g, ''))) out.push({ resource, message: `${field}: "${v}" names localhost or a private IP` });
-        if (/^resource/.test(field) && CDNS.includes(u.hostname)) out.push({ resource, platforms: ['claude'], severity: 'info', message: `${field}: public CDN ${u.hostname}; serve from your own origin in production` });
+        try { u = new URL((schemeless ? `https://${v}` : v).replace('*.', 'wildcard.')); } catch { push('is not an origin'); continue; }
+        if ((u.protocol === 'http:' || u.protocol === 'ws:') && !isLoopbackHost(u.hostname)) push(`uses ${u.protocol}//`);
+        if (u.pathname !== '/' || u.search || u.hash || /\/$/.test(v)) push('has a path, query, fragment or trailing slash');
+        if (isLoopbackHost(u.hostname) || isNonPublicIp(u.hostname.replace(/^\[|\]$/g, ''))) push('names localhost or a private IP');
+        if (list === 'resource' && CDNS.includes(u.hostname)) out.push({ resource, platforms: ['claude'], severity: 'info', message: `${field}: public CDN ${u.hostname}; serve from your own origin in production` });
       }
     }
     return out;

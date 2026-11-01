@@ -73,9 +73,11 @@ export interface CspView {
   redirect: string[];
   /** Fields present but not string[] (APPS-005). */
   malformed: string[];
-  /** Raw entries with their field name (APPS-006). */
-  entries: Array<{ field: string; value: string }>;
+  /** Raw entries with their field name and the list they feed (APPS-006). */
+  entries: Array<{ field: string; value: string; list: CspList }>;
 }
+
+export type CspList = 'resource' | 'connect' | 'frame' | 'base' | 'redirect';
 
 const MCP_FIELDS: Record<string, keyof Pick<CspView, 'resource' | 'connect' | 'frame' | 'base'>> = {
   resourceDomains: 'resource', connectDomains: 'connect', frameDomains: 'frame', baseUriDomains: 'base',
@@ -86,7 +88,7 @@ const OAI_FIELDS: Record<string, keyof Pick<CspView, 'resource' | 'connect' | 'f
 
 export function cspOf(r: UiResource): CspView {
   const v: CspView = { declared: false, resource: [], connect: [], frame: [], base: [], redirect: [], malformed: [], entries: [] };
-  const read = (obj: unknown, fields: Record<string, keyof CspView>, label: string) => {
+  const read = (obj: unknown, fields: Record<string, CspList>, label: string) => {
     if (obj === undefined) return;
     v.declared = true;
     if (!isObj(obj)) { v.malformed.push(label); return; }
@@ -94,8 +96,8 @@ export function cspOf(r: UiResource): CspView {
       const val = obj[field];
       if (val === undefined) continue;
       if (!Array.isArray(val) || !val.every(isStr)) { v.malformed.push(`${label}.${field}`); continue; }
-      (v[key] as string[]).push(...val);
-      for (const value of val) v.entries.push({ field, value });
+      v[key].push(...val);
+      for (const value of val) v.entries.push({ field, value, list: key });
     }
   };
   read(r.ui.csp, MCP_FIELDS, 'ui.csp');
