@@ -91,12 +91,27 @@ async function call(ctx: ActiveContext, tool: string, kind: ActiveCall['kind'], 
   return { tool, kind, args, result: r.result, jsonRpcError: r.error, httpStatus: r.exchange.status, durationMs };
 }
 
+/**
+ * The tools --active may call, one entry per name. tools/call addresses a tool by name only, so a name listed more than
+ * once is called only when every entry with it is safe: the server, not the linter, picks the implementation.
+ */
+export function callableTools(tools: readonly Obj[]): Obj[] {
+  const byName = new Map<string, Obj[]>();
+  for (const t of tools) {
+    const entries = byName.get(toolName(t));
+    if (entries) entries.push(t);
+    else byName.set(toolName(t), [t]);
+  }
+  return [...byName.values()].filter((entries) => entries.every(isSafeToCall)).map((entries) => entries[0]);
+}
+
 export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapshot['active']>> {
   const calls: ActiveCall[] = [];
-  const tools = ctx.snap.tools.filter(isSafeToCall).slice(0, MAX_TOOLS);
+  const tools = callableTools(ctx.snap.tools).slice(0, MAX_TOOLS);
   for (const t of tools) {
     const name = toolName(t);
-    const provided = ctx.toolArgs?.[name];
+    // Own keys only: a tool named "constructor" or "__proto__" must not pick up Object.prototype members.
+    const provided = ctx.toolArgs && Object.prototype.hasOwnProperty.call(ctx.toolArgs, name) ? ctx.toolArgs[name] : undefined;
     const args = provided !== undefined ? provided : synthesizeArgs(t.inputSchema);
     calls.push(await call(ctx, name, provided !== undefined ? 'valid' : 'synthetic', args));
     const required = isObj(t.inputSchema) && Array.isArray(t.inputSchema.required) ? t.inputSchema.required.filter((r): r is string => typeof r === 'string') : [];

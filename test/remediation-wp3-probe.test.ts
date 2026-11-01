@@ -172,3 +172,33 @@ describe('F023: the wrong-type call uses a value the schema really rejects', () 
     expect(evaluate(byId('RT-002'), s)).toEqual([]);
   });
 });
+
+describe('F144: --tool-args is looked up by own key only', () => {
+  it('synthesizes arguments for tools named after Object.prototype members', async () => {
+    const { modern, calls } = recordingModern();
+    const schema = { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] };
+    const names = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'get_x'];
+    const s = activeSnap(names.map((name) => tool({ name, inputSchema: schema })));
+    const r = await runActive({ snap: s, toolArgs: JSON.parse('{"get_x":{"q":"a"}}'), timeoutMs: 5000, now: () => 0, modern });
+    const first = (n: string) => r.calls.find((c) => c.tool === n)!;
+    for (const n of names.slice(0, 4)) expect(first(n), n).toMatchObject({ kind: 'synthetic', args: { q: 'mcp-review-check' } });
+    expect(first('get_x')).toMatchObject({ kind: 'valid', args: { q: 'a' } });
+    expect(calls.filter((c) => c.name === 'constructor')[0].arguments).toEqual({ q: 'mcp-review-check' });
+  });
+});
+
+describe('C002: a duplicated tool name is called only when every entry with it is safe', () => {
+  it('does not call a name whose other entry is destructive, and calls a safe duplicate once', async () => {
+    const { modern, calls } = recordingModern();
+    const ro = { readOnlyHint: true, destructiveHint: false };
+    const noArgs = { type: 'object', properties: {} };
+    const s = activeSnap([
+      tool({ name: 'workspace_status', inputSchema: noArgs, annotations: ro }),
+      tool({ name: 'workspace_status', inputSchema: noArgs, annotations: { readOnlyHint: false, destructiveHint: true } }),
+      tool({ name: 'list_notes', inputSchema: noArgs, annotations: ro }),
+      tool({ name: 'list_notes', inputSchema: noArgs, annotations: ro }),
+    ]);
+    await runActive({ snap: s, timeoutMs: 5000, now: () => 0, modern });
+    expect(calls.map((c) => c.name)).toEqual(['list_notes']);
+  });
+});
