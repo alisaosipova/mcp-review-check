@@ -15,6 +15,8 @@ export interface Pattern {
   note?: string;
   /** INJ-007: skip when every referenced identifier is one of the server's own tools. */
   ownToolExempt?: boolean;
+  /** INJ-007: the capture group that names the referenced software when the match has no call verb ("Slack connector"). */
+  refGroup?: number;
   /** Skip the match when this tests true on the matched text plus the next 40 characters. */
   unless?: RegExp;
   /** Skip the match when this tests true on the matched text alone (e.g. the object between a verb and "the user"). */
@@ -251,8 +253,10 @@ export const INJ_006 = defineRule(
 export const INJ_007_PATTERNS: Pattern[] = [
   { re: /\b(always|first|must|you should|be sure to)\b[^.]{0,60}\b(call|invoke|use|run)\b[^.]{0,40}\b(tool|function|server|mcp|connector|plugin)\b/i, ownToolExempt: true },
   { re: /before (using|calling|answering)[^.]{0,40}\b(call|invoke|use)\b/i, ownToolExempt: true },
-  { re: /\b(use|call|invoke|ask) (the )?[\w\- ]{1,30} (connector|plugin|app|integration)\b/i },
-  { re: /(google drive|gmail|slack|notion|github|outlook) (tool|connector)/i },
+  // "Use this app to track workouts" is the app describing itself, so the self-reference exemption applies here too.
+  { re: /\b(use|call|invoke|ask) (the )?[\w\- ]{1,30} (connector|plugin|app|integration)\b/i, ownToolExempt: true },
+  // A first-party server may name its own brand ("Post via the Slack connector" from the Slack server).
+  { re: /(google drive|gmail|slack|notion|github|outlook) (tool|connector)/i, ownToolExempt: true, refGroup: 1 },
 ];
 
 /**
@@ -266,8 +270,10 @@ export function referencedIdentifiers(text: string): string[] {
   return ids;
 }
 
-/** Words that refer to the tool being described. */
-const SELF_REFS = new Set(['this', 'it', 'me', 'these']);
+/** Words that refer to the tool, app or server being described. */
+const SELF_REFS = new Set(['this', 'it', 'me', 'these', 'our']);
+
+const words = (s: string): string[] => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
 export function ownToolFilter(snap: Snapshot) {
   const own = new Set<string>();
@@ -275,10 +281,13 @@ export function ownToolFilter(snap: Snapshot) {
     for (const v of [t.name, t.title, isObj(t.annotations) ? t.annotations.title : undefined]) if (isStr(v)) own.add(v.trim().toLowerCase());
   }
   for (const n of toolNames(snap)) own.add(n.toLowerCase());
+  // The server's own product name: every word of a reference such as "Slack" or "Google Drive" appears in serverInfo.name or title.
+  const serverWords = new Set([snap.serverInfo?.name, snap.serverInfo?.title].filter(isStr).flatMap(words));
+  const isOwn = (id: string) => own.has(id) || SELF_REFS.has(id) || (words(id).length > 0 && words(id).every((w) => serverWords.has(w)));
   return (_e: CorpusEntry, m: RegExpExecArray, p: Pattern): boolean => {
     if (!p.ownToolExempt) return true;
-    const ids = referencedIdentifiers(m[0]).map((id) => id.toLowerCase());
-    return !(ids.length > 0 && ids.every((id) => own.has(id) || SELF_REFS.has(id)));
+    const ids = [...referencedIdentifiers(m[0]), ...(p.refGroup !== undefined && m[p.refGroup] ? [m[p.refGroup]] : [])].map((id) => id.toLowerCase());
+    return !(ids.length > 0 && ids.every(isOwn));
   };
 }
 

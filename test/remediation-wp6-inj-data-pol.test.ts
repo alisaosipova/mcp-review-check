@@ -65,3 +65,19 @@ describe('DATA-002: memory needs a host or chat owner (F088)', () => {
     expect(sev('DATA-002', desc(d))).toEqual(['warning']);
   });
 });
+
+describe('INJ-007: self references and the server\'s own brand are exempt (F093, F097)', () => {
+  const slack = (d: string) => snap({ tools: [tool({ name: 'post_message', description: d })], set: (s) => { s.serverInfo = { name: 'slack-mcp', title: 'Slack', version: '1.0.0' }; } });
+  it.each(['Use this app to track your workouts and meals.', 'Use our app to see more.'])('%s is the app describing itself', (d) => {
+    expect(sev('INJ-007', desc(d))).toEqual([]);
+  });
+  it('the Slack server may name its own Slack connector', () => {
+    expect(sev('INJ-007', slack('Post a message via the Slack connector.'))).toEqual([]);
+    expect(sev('INJ-007', slack('Call the Slack connector to post a message.'))).toEqual([]);
+  });
+  it('another server naming Slack or Gmail is still flagged', () => {
+    expect(sev('INJ-007', desc('Post a message via the Slack connector.'))).toEqual(['warning']);
+    expect(sev('INJ-007', desc('Call the Slack connector to post.'))).toEqual(['warning']);
+    expect(sev('INJ-007', slack('Then call the Gmail connector to send it.'))).toEqual(['warning']);
+  });
+});
