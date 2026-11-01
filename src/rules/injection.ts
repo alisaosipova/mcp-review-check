@@ -364,7 +364,9 @@ export const INJ_008 = defineRule(
 );
 
 export const INJ_009_PATTERNS: Pattern[] = [
-  { re: /\b(follow|obey|execute|apply|load)\b[^.]{0,40}\b(instructions?|rules|directives|system prompt)\b[^.]{0,40}\b(from|at|in|returned by)\b/i },
+  // The source must be fetched or returned content: "follow the setup instructions in the README" and "load rules from a
+  // YAML file" are documentation and configuration.
+  { re: /\b(follow|obey|execute|apply|load)\b[^.]{0,40}\b(instructions?|rules|directives|system prompt)\b[^.]{0,40}\b(from|at|in|returned by)\s+(the |a |an |any |each |every |this |that )?(responses?|results?|output|(web ?)?pages?|websites?|sites?|urls?|links?|documents?|file contents?|contents?|fetched|returned|retrieved|tool (output|results?)|e-?mails?|messages?|comments?|issues?|tickets?|remote|server)\b/i },
   { re: /instructions? (in|from) the (response|result|output)/i },
   { re: /\b(follow|do) what(ever)? the (response|result) says\b/i },
 ];
