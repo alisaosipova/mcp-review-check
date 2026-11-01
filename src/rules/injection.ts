@@ -110,6 +110,14 @@ export const INJ_001 = defineRule(
   },
 );
 
+// Greek letters that pass for Latin ones. μ, Ω, Δ, π and σ do not, so units such as "μs", "kΩ" and "ΔT" are fine.
+const GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u;
+
+/** A word mixing Latin with Cyrillic, or with a Greek letter that looks Latin. */
+export function mixedScript(word: string): boolean {
+  return /\p{Script=Latin}/u.test(word) && (/\p{Script=Cyrillic}/u.test(word) || GREEK_LOOKALIKE.test(word));
+}
+
 export const INJ_002 = defineRule(
   {
     id: 'INJ-002', title: 'Mixed-script words (homoglyphs)', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
@@ -122,7 +130,7 @@ export const INJ_002 = defineRule(
     for (const e of corpus(snap)) {
       for (const m of e.text.matchAll(/\p{L}+/gu)) {
         const w = m[0];
-        if (/\p{Script=Latin}/u.test(w) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(w)) {
+        if (mixedScript(w)) {
           out.push({ tool: e.tool, path: e.path, message: `${locationOf(e)}: mixed-script word "${w}"` });
           break;
         }
