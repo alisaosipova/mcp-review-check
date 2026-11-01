@@ -27,10 +27,29 @@ export function createRedactor(secretHeaders: string[] = [], secretValues: strin
   };
 }
 
+/** Values shorter than this are masked only as whole tokens: "test" stays in "attestation", "latest" and "run_tests". */
+const SHORT_SECRET = 8;
+const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const patterns = new WeakMap<Redactor, { size: number; re: RegExp }>();
+
+/** One pattern for all values, longest first; a short value must not touch a letter, digit, "_" or "-" on either side. */
+function patternOf(r: Redactor): RegExp {
+  const cached = patterns.get(r);
+  if (cached && cached.size === r.values.size) return cached.re;
+  const alts = [...r.values].sort((a, b) => b.length - a.length)
+    .map((v) => (v.length < SHORT_SECRET ? `(?<![\\w-])${escapeRe(v)}(?![\\w-])` : escapeRe(v)));
+  const re = new RegExp(alts.join('|'), 'g');
+  patterns.set(r, { size: r.values.size, re });
+  return re;
+}
+
+/**
+ * Replace every secret value with the marker in one pass, so a secret that is part of the marker ("redact") does not
+ * break a marker already put in for a longer one.
+ */
 export function scrub(text: string, r: Redactor): string {
-  let out = text;
-  for (const v of r.values) if (out.includes(v)) out = out.split(v).join(REDACTED);
-  return out;
+  if (!r.values.size || !text) return text;
+  return text.replace(patternOf(r), REDACTED);
 }
 
 export function redactUrl(raw: string, r: Redactor): string {

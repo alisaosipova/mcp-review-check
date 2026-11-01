@@ -180,8 +180,8 @@ describe('redactor units: one-word secret names, header names, the --flag= forms
       failOn: 'error',
       findings: [{ ruleId: 'TOOL-001', severity: 'error', platforms: ['claude'], severityByPlatform: { claude: 'error' }, message: 'an error' }],
       snap: {
-        serverInfo: { name: 's', 'x-error-hint': 'an error' },
-        tools: [{ name: 't', inputSchema: { properties: { error_code: { type: 'string' } } } }],
+        serverInfo: { name: 's', 'x.error.hint': 'an error' },
+        tools: [{ name: 't', inputSchema: { properties: { 'error.code': { type: 'string' } } } }],
         resourceReads: { 'ui://error/w': { ok: false, error: 'boom' } },
       },
     };
@@ -193,8 +193,8 @@ describe('redactor units: one-word secret names, header names, the --flag= forms
     expect(out.summary.failed).toBe(true);
     expect(Object.keys(out.summary.gate)).toEqual(['failed']);
     expect(Object.keys(out.snap)).toEqual(['serverInfo', 'tools', 'resourceReads']);
-    expect(out.snap.serverInfo).toEqual({ name: 's', 'x-«redacted»-hint': 'an «redacted»' });
-    expect(Object.keys(out.snap.tools[0].inputSchema.properties)).toEqual(['«redacted»_code']);
+    expect(out.snap.serverInfo).toEqual({ name: 's', 'x.«redacted».hint': 'an «redacted»' });
+    expect(Object.keys(out.snap.tools[0].inputSchema.properties)).toEqual(['«redacted».code']);
     // a map keyed by what the server chose: its keys are masked, its entries keep their field names
     expect(out.snap.resourceReads).toEqual({ 'ui://«redacted»/w': { ok: false, error: 'boom' } });
   });
