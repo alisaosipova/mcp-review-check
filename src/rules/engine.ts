@@ -43,7 +43,8 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
     case 'auth':
       return snap.authProbe ? undefined : isHttp ? 'server did not request auth' : 'stdio target';
     case 'legacy':
-      return LEGACY_ERAS.has(snap.era) || (!isHttp && snap.era !== 'unknown') ? undefined : `era ${snap.era}`;
+      // By the era alone, for stdio too: a stdio connect is an initialize handshake, so its era is 'legacy'.
+      return LEGACY_ERAS.has(snap.era) ? undefined : `era ${snap.era}`;
     case 'modern':
       return MODERN_ERAS.has(snap.era) ? undefined : `era ${snap.era} (not 2026-07-28)`;
     case 'active':
@@ -77,13 +78,17 @@ export function subjectOf(f: Pick<Finding, 'tool' | 'resource'>): string {
   return s === undefined ? 'server' : s || '(empty name)';
 }
 
+/** By UTF-16 code units: the same order on every machine, whatever the locale or the ICU build of Node. */
+const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Severity first, then rule, subject and message; the order of JSON and SARIF results and of the SARIF repeat numbers. */
 export function sortFindings(list: Finding[]): Finding[] {
   return list.sort(
     (a, b) =>
       SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] ||
-      a.ruleId.localeCompare(b.ruleId) ||
-      subjectOf(a).localeCompare(subjectOf(b)) ||
-      a.message.localeCompare(b.message),
+      byCodeUnit(a.ruleId, b.ruleId) ||
+      byCodeUnit(subjectOf(a), subjectOf(b)) ||
+      byCodeUnit(a.message, b.message),
   );
 }
 
