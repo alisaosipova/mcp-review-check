@@ -43,9 +43,10 @@ function scanText(snap: Snapshot, re: RegExp, label: string, severity?: Severity
   return out;
 }
 
-// Bare `memory` is not here: a VM or cache size parameter is called `memory` too. It is a weak name below.
-const STRONG_CONVO = /^(conversation(_?(history|context|log|summary|memory))?|chat_?(history|log|transcript|memory|memories)|conversation_?memories|message_?history|previous_?messages|prior_?turns|all_?messages|transcript|full_?context|context_?window|system_?prompt|user_?prompt)$/i;
-const WEAK_CONVO = /^(messages|history|thread|context|background|user_context|additional_context|memory|memories)$/i;
+// Bare `memory` is not here: a VM or cache size parameter is called `memory` too. Nor is bare `transcript`: meeting,
+// call and video tools take a transcript the user supplies. Both are weak names below.
+const STRONG_CONVO = /^(conversation(_?(history|context|log|summary|memory|transcript))?|chat_?(history|log|transcript|memory|memories)|conversation_?memories|message_?history|previous_?messages|prior_?turns|all_?messages|full_?context|context_?window|system_?prompt|user_?prompt)$/i;
+const WEAK_CONVO = /^(messages|history|thread|context|background|user_context|additional_context|memory|memories|transcript)$/i;
 /** Weak names only count for parameters that can carry text (a numeric `memory` is a size, a numeric `history` a count). */
 const NON_TEXT = new Set(['integer', 'number', 'boolean']);
 const isNonText = (node: Record<string, unknown>) =>
