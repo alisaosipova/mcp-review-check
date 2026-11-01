@@ -91,7 +91,9 @@ export const DATA_002 = defineRule(
     fix: 'Remove features that read the host memory or chat history.',
     sources: [CLAUDE_POLICY],
   },
-  (snap) => scanText(snap, /\b(read|access|retrieve|search|export|sync)\b[^.]{0,30}\b(claude'?s )?(memory|chat history|conversation summar(y|ies)|past conversations|project knowledge)\b/i, 'accesses host memory or chat history'),
+  // `memory` needs an owner that is the host or the chat: "read the memory usage of the VM" and the entities of a
+  // knowledge-graph memory server are not Claude's memory. The other objects name the chat on their own.
+  (snap) => scanText(snap, /\b(read|access|retrieve|search|export|sync)\b[^.]{0,30}\b((claude|assistant|model|host)'?s memor(y|ies)|(your|chat|conversation) memor(y|ies)|memor(y|ies) of (the|this|your) (conversation|chat)|chat history|conversation summar(y|ies)|past conversations|project knowledge)\b/i, 'accesses host memory or chat history'),
 );
 
 const SECRET_NAMES = /^(password|passwd|pwd|pass_?phrase|api_?key|apikey|secret|client_?secret|access_?token|refresh_?token|bearer|auth_?token|session_?token|otp|totp|mfa(_?code)?|2fa(_?code)?|verification_?code|private_?key|seed_?phrase|mnemonic)$/i;
