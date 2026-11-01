@@ -132,4 +132,25 @@ describe('F074 TOOL-018 does not call a schema with pattern or map keys paramete
     expect(evaluate(byId('TOOL-018'), one(tool({ inputSchema: { type: 'object', additionalProperties: true } })))).toHaveLength(1);
   });
 });
+
+describe('F085, F105 RT-010 finds known-format tokens in plain text, with the redaction token list', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r';
+  const rt010 = (result: Record<string, unknown>) => evaluate(byId('RT-010'), active([call({ result })]));
+  it('a token in prose is reported and redacted', () => {
+    const f = rt010(text(`Your session token: ${jwt}.\nAuthorization: Bearer sk-ant-api03-AbCdEfGhIjKlMnOpQrSt`));
+    expect(f).toMatchObject([{ severity: 'error', message: 'result contains token-like values: eyJh…, sk-a…' }]);
+    expect(JSON.stringify(f)).not.toContain('AbCdEf');
+  });
+  it('pretty-printed JSON in a code fence is covered', () => {
+    expect(rt010(text('```json\n{\n  "key": "ghp_0123456789abcdefghijABCDEFGHIJ012345"\n}\n```'))).toHaveLength(1);
+  });
+  it('token families from the redaction list (Stripe, GitLab, Slack, Google) count', () => {
+    for (const tok of ['sk_live_0123456789abcdefABCD', 'glpat-SYNTH0123456789abcdefAB', 'xoxb-0123456789-abcdef', `AIza${'A'.repeat(35)}`]) {
+      expect(rt010(text(`value ${tok} end`)), tok).toHaveLength(1);
+    }
+  });
+  it('ordinary words are not tokens', () => {
+    expect(rt010(text('The task-runner reported a risk-assessment-for-2026 and skipped-steps.'))).toEqual([]);
+  });
+});
 //@@END

@@ -4,6 +4,7 @@ import { INJ_005_PATTERNS, INJ_006_PATTERNS, INJ_007_PATTERNS, INJ_009_PATTERNS,
 import { validateAgainst } from './schema.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr, metaOf, toolName, uiUriOf, type Obj } from './util/access.js';
+import { isKnownToken } from './util/net.js';
 import { isGenericError, nfkc, snippet } from './util/text.js';
 import { parseWwwAuthenticate } from './util/wwwAuth.js';
 
@@ -211,7 +212,15 @@ export const RT_009 = defineRule(
 );
 
 const LEAK_KEY = /^(session_?id|trace_?id|request_?id|correlation_?id|span_?id|_?debug|stack(_?trace)?|logs?|internal_?(id|account_?id))$/i;
-const TOKEN_RE = /eyJ[\w-]+\.[\w-]+\.[\w-]+|\bsk-[A-Za-z0-9_-]{16,}|\bghp_[A-Za-z0-9]{20,}|\bAKIA[0-9A-Z]{16}\b/;
+
+/**
+ * Known-format credentials (the redaction's single list: OpenAI, Anthropic, Stripe, GitHub, GitLab, Slack, AWS,
+ * Google, npm, Hugging Face keys and JWTs) anywhere in a text: split at characters no such token contains, then
+ * test each word whole. Prose ("Your session token: eyJ…", "Authorization: Bearer sk-…") counts as well as JSON.
+ */
+function tokensIn(text: string): string[] {
+  return text.split(/[^A-Za-z0-9_.-]+/).map((w) => w.replace(/^\.+|\.+$/g, '')).filter((w) => w.length >= 16 && isKnownToken(w));
+}
 
 export function redactToken(v: string): string {
   return v.slice(0, 4) + '…';
@@ -237,11 +246,9 @@ export const RT_010 = defineRule(
     for (const part of textOf(r).split('\n')) { try { roots.push(JSON.parse(part)); } catch { /* not JSON */ } }
     try { roots.push(JSON.parse(textOf(r))); } catch { /* not JSON */ }
     const keys = new Set<string>();
+    for (const root of roots) walkJson(root, (k) => { if (k && LEAK_KEY.test(k)) keys.add(k); });
     const tokens = new Set<string>();
-    for (const root of roots) walkJson(root, (k, v) => {
-      if (k && LEAK_KEY.test(k)) keys.add(k);
-      if (isStr(v)) { const m = TOKEN_RE.exec(v); if (m) tokens.add(redactToken(m[0])); }
-    });
+    for (const part of outputParts(r)) for (const tok of tokensIn(part.text)) tokens.add(redactToken(tok));
     const out: RawFinding[] = [];
     if (keys.size) out.push({ tool: c.tool, message: `result exposes internal keys: ${[...keys].join(', ')}` });
     if (tokens.size) out.push({ tool: c.tool, severity: 'error', message: `result contains token-like values: ${[...tokens].join(', ')}` });

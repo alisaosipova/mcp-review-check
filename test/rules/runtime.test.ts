@@ -48,7 +48,7 @@ const cases: Record<string, Case> = {
     neg: active([call({ result: { isError: true, ...text('Note not found') } })]),
   },
   'RT-010': {
-    pos: active([call({ result: { ...text('{}'), structuredContent: { token: 'eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl' } } })]),
+    pos: active([call({ result: { ...text('{}'), structuredContent: { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlMTIz' } } })]),
     neg: active([call({ result: { ...text('{}'), structuredContent: { title: 'Groceries' } } })]), severity: 'error',
   },
   'RT-011': {
