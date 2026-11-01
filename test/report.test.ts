@@ -15,6 +15,7 @@ import { groupFindings, renderText } from '../src/report/text.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { loadSnapshot } from './helpers.js';
 import { VERSION } from '../src/version.js';
+import { CATALOG_DATE } from '../src/catalog.js';
 
 const f = (ruleId: string, severity: Finding['severity'], over: Partial<Finding> = {}): Finding => ({
   ruleId, title: 't', severity, platforms: ['claude'], message: 'm', fix: 'fix', docs: ['https://x.test'], ...over,
@@ -186,7 +187,7 @@ describe('text report', () => {
   it('renders header, groups, checklist, verdicts, disclaimer and CTA without ANSI when color is off', () => {
     // The full checklist needs checklist: true (--checklist); by default it is one line.
     const text = renderText(report(loadSnapshot('minimal-http')), { color: false, verbose: false, checklist: true });
-    expect(text.startsWith(`mcp-review-check ${VERSION} · rules 2026-10-22 · target: all`)).toBe(true);
+    expect(text.startsWith(`mcp-review-check ${VERSION} · rules ${CATALOG_DATE} · target: all`)).toBe(true);
     expect(text).toContain('Server  Acme Notes 1.4.2 · https://mcp.acme.test/mcp');
     expect(text).toMatch(/ERRORS \(\d+\)/);
     expect(text).toContain('  x TOOL-011 [claude] delete_invoice: neither readOnlyHint nor destructiveHint is set');
@@ -208,7 +209,7 @@ describe('other formats', () => {
     const j = toJson(report(loadSnapshot('minimal-http'))) as Record<string, any>;
     for (const k of ['schemaVersion', 'tool', 'target', 'startedAt', 'durationMs', 'server', 'coverage', 'summary', 'findings', 'skipped', 'ignored', 'manual', 'disclaimer', 'contact']) expect(j).toHaveProperty(k);
     expect(j.schemaVersion).toBe(1);
-    expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: '2026-10-22', catalogAgeDays: 0 });
+    expect(j.tool).toEqual({ name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: 0 });
     expect(j.summary).toHaveProperty('verdicts.claude');
     expect(j.findings[0]).toHaveProperty('docs');
     expect(j.contact).toEqual({ text: CTA_TEXT, url: CONTACT_URL });

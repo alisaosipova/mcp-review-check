@@ -1,5 +1,5 @@
 // Rule catalog date: the single source for the CLI header, DISCLAIMER, JSON report and README (scripts/rules-table.mjs).
-export const CATALOG_DATE = '2026-10-22';
+export const CATALOG_DATE = '2026-11-01';
 
 /** Older than this, a check run warns on stderr that the directory requirements may have moved on. */
 export const CATALOG_STALE_DAYS = 90;
