@@ -22,7 +22,11 @@ const BASE_OPTIONS: { flag: string; short: string | null; value: boolean; defaul
 const ACCEPTED_CHANGES: Record<string, string> = {};
 
 const range = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}-${String(i + 1).padStart(3, '0')}`);
-/** The 143 rule IDs and 31 manual items of the baseline. */
+/**
+ * The 143 rule IDs and 31 manual items of the 0.1.0 baseline: frozen with the baseline, never updated. A new rule
+ * goes only into the catalog's frozen list in test/catalog.test.ts; this test checks that the baseline IDs are still a
+ * subset of the catalog, so a new or retired-but-kept ID passes here unchanged.
+ */
 const BASE_RULE_IDS = [
   ...range('SRV', 20), ...range('SPEC', 20), ...range('TOOL', 32), ...range('INJ', 10), ...range('DATA', 5),
   ...range('POL', 5), ...range('APPS', 18), ...range('AUTH', 21), ...range('RT', 12),
