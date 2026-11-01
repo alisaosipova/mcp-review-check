@@ -6,6 +6,154 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
+Rule catalog dated 2026-10-22. Several rules report more than before (see **Severity raised**), so this ships as a minor release.
+
+### Added
+
+- `--ignore` accepts a comma-separated list (`--ignore TOOL-006,TOOL-011`).
+- `explain` shows what a rule needs to run (`--active`, `--active-auth`, a `<url>` target, a tools listing) and, for a manual item, the feature it is shown for; `--list-rules --verbose` prints the needs, and the text listing tags manual items `[ui]` or `[oauth]`.
+- Warnings on stderr when `--tool-args` is given without `--active`, `--sarif-location` without `--format sarif`, and for each `--tool-args` entry that no `--active` call used, with the reason (unknown tool, not read-only, or past the call cap).
+- JSON reports gain `summary.rootCauses` (the basis of `summary.score`) and, for stdio targets, `server.argv` (each argument whole).
+- README and `SECURITY.md` list every request `--active` sends (at most 50 tools, and three fresh connections named `mcp-review-check`, `claude-ai` and `Anthropic`), the session `DELETE`s, the read limits, and the exit codes for a signal (128+N) and for an internal error (3).
+- `npm run test:coverage` reports the test coverage of `src/`.
+
+#### Severity raised
+
+- SRV-008 checks local legacy HTTP+SSE servers too: the Origin probes open the event stream, so a server that accepts a foreign Origin (DNS rebinding risk) is reported instead of passing silently.
+- SRV-010 reports slow servers that answer over SSE: it measures latency until the JSON-RPC result arrives, not until the response headers, and only over calls answered with a result, so fast rejected probes no longer hide a slow handshake or listing.
+- SRV-018 also reports JSON log lines (pino, winston, bunyan) on stdout, not only lines that are not JSON at all.
+- SPEC-017 warns when an icon's `sizes` is not an array and notes `image/jpg` (use `image/jpeg`).
+- SPEC-018 flags the spec's reserved `_meta` prefix examples (`modelcontextprotocol.io/`, `mcp.dev/`, `tools.mcp.com/`).
+- SPEC-020 reports a 2026-07-28 result that answers another request id, a non-string `nextCursor` (the listing used to stop silently after the first page) and list entries that are not objects, in both protocol eras.
+- SPEC-010 notes (info) a server that returns content for a missing resource URI.
+- TOOL-014 reports a tool whose name joins `delete` to another word without `destructiveHint`.
+- TOOL-020 also bounds the depth and size of `outputSchema`.
+- Schema-walking rules (TOOL-009, TOOL-020, TOOL-021, TOOL-022 and others) also see subschemas under `dependentSchemas`, the schema form of `dependencies` and `additionalItems`.
+- DATA-003 reports compound secret parameter names such as `new_password`, `github_token`, `aws_secret_access_key` and `credentials` as warnings.
+- DATA-004 recognizes more card, bank and government-ID names: `card_cvc`, `cvv_code`, `card_exp_month`, `passport_no`, `aadhaar` and `ssn_last4` as errors, `exp_month`, `routing_number`, `account_number`, `license_number` and `nino` as warnings.
+- APPS-005 warns about CSP keys the hosts ignore (for example camelCase `connectDomains` inside `openai/widgetCSP`) and suggests the known field.
+- APPS-006 reports wildcards on multi-label public suffixes (`*.co.uk`) and shared cloud hosts (`*.cloudfront.net`, `*.amazonaws.com`), unencrypted `ws://` entries, wildcards outside the leftmost host label and `data:`/`blob:` sources, and lists `claude: info` for the public-CDN hint it already gave Claude.
+- APPS-007 checks the origins of ES module imports and `<script type="importmap">` targets (warning, as for other origins found in scripts).
+- APPS-016 also reports Google Tag Manager, Google Analytics, Hotjar and Segment as trackers.
+- APPS-017 reports a `_meta.ui` that is not an object.
+- AUTH-002 adds a spec warning to quote an unquoted `resource_metadata` in `WWW-Authenticate`.
+- AUTH-006 also validates `authorization_servers[1]` and `[2]` for ChatGPT.
+- RT-002 also reports a success answer to the `--active` call made without the required arguments.
+- RT-010 finds credentials in plain-text and code-fenced results, not only in parsed JSON, and recognizes the token formats report redaction knows (Stripe, GitLab, Slack, Google, npm and Hugging Face keys besides JWT, `sk-`, `ghp_` and `AKIA`).
+- RT-011 also scans the string values of `structuredContent` and the text of embedded resources, and says where it found the injection.
+
+### Changed
+
+- `--bearer` and `--header` with `--stdio` are usage errors (exit 2), and `$MCP_REVIEW_CHECK_TOKEN` is ignored for stdio targets, so an exported CI token no longer marks a stdio run as authenticated and turns RT-009 off.
+- More usage errors (exit 2) instead of a failed connect or a merged header: `--header "Authorization: …"` together with `--bearer`, a header name given twice in any case or one that is not an HTTP token, a `--cwd` that is not an existing directory, an empty `--output`, `--active-auth` with `--stdio`, and a `--timeout` or `--max-duration` that is not a whole number of milliseconds (`0x10`, `1e2`, `1.5`).
+- `--target`, `--format` and `--fail-on` accept values in any case, as `--ignore` and `explain` already did.
+- `--active` synthesizes arguments that pass common validation: sample values for string formats (uri, email, date-time, uuid, …), string lengths, numeric bounds and `multipleOf`, `minItems`, required properties of nested objects, the first `anyOf`/`oneOf` branch and local `$ref`.
+- The check ends each Streamable HTTP session it opens with one `DELETE`, also a session a stateful server mints for a raw `initialize` probe, so repeated runs leave no sessions behind.
+- A 403 handshake failure names a Cloudflare bot challenge or a WAF block (Cloudflare, Akamai, AWS WAF, Imperva) or the HTML page title, with a hint to allow the endpoint.
+- A stdio server that announces an HTTP URL on stdout (an HTTP server started with `--stdio`) gets a pointer to check that URL instead.
+- stdio messages up to 64 MiB are accepted (the SDK default was 10 MB), and a larger one is named as the cause of the "Connection closed" errors that follow.
+- The input caps also cover raw list pages, the text-only `tools/list`, tool call results, 2026-07-28 results and object keys, and at most 50 UI resources are read per run (the report says when more were listed).
+- The auth probe requests a metadata URL named by `resource_metadata` only once, waits at most 10 s per metadata request, and shares one budget of six retries across all of them.
+- The TLS handshake check stops at the `--max-duration` deadline (and after at most 10 s), and a check the deadline cut off is reported as inconclusive.
+- Common settings given under a plain `--env` name (`production`, `debug`, log levels, version numbers) are no longer masked in the report; under a secret-looking name they still are.
+- The exported `failed()` helper defaults to the CLI's gate (claude and chatgpt; spec only when passed).
+- CI and release builds install dependencies without their install scripts, CI runs the end-of-life Node 20.19 on Linux only (Node 22 and 24 on every OS), runs on `main` are no longer cancelled by a newer push, and releases publish through npm trusted publishing, with the `NPM_TOKEN` secret used only in a separate first-release step while it is set.
+
+### Fixed
+
+- `node dist/cli` without the `.js` extension runs the CLI; it exited 0 without checking anything.
+- After SIGINT or SIGTERM, a run that still finishes during the shutdown grace period writes no report; it overwrote `--output` with a report that looked complete.
+- `--stdio "<command>"` together with `-- <command> [args...]` says "not both" instead of "expected a single <url>".
+- The `--output` summary line reads "1 error" and "1 warning" in the singular.
+- `--list-rules <prefix> --format markdown` no longer prints an empty rule table or an empty checklist table.
+- `--tool-args` no longer matches tools named `constructor`, `toString`, `__proto__` or other `Object.prototype` members.
+- A stdio server whose handshake fails or is stopped by `--max-duration` has its stderr and stdout shown: the fatal message names the first stray stdout line, SRV-018 reports it, and `--verbose` prints the stderr.
+- A legacy HTTP+SSE server that requires auth only on `GET /sse` gets the auth probe and "requires auth" coverage instead of "not an MCP endpoint, try /mcp", and an SSE handshake error (an endpoint on another origin) is reported as such.
+- A server whose `initialize` is public but whose `tools/list` answers 401 gets the auth probe and "requires auth" coverage instead of SPEC-008, SPEC-014 and SPEC-020 errors.
+- A 401 to credentials passed with `--header` is reported as rejected credentials, not as "server requires OAuth".
+- A server that exits right after `initialize` no longer passes with a score of 100: the check is marked partial (`list-failed`).
+- A `--max-duration` deadline that falls while connections close after the last check no longer turns a finished run into INCOMPLETE "during active tool calls", and a stopped run keeps the JSON-RPC errors and 2026-07-28 results it had observed.
+- SSE responses whose lines end in a lone CR are parsed.
+- A 2026-07-28 response that echoes the request id as a string no longer makes every request wait for the full `--timeout`.
+- A list page with hundreds of thousands of entries no longer crashes the run with `fatal: RangeError` (exit 3).
+- A `--header`, `--bearer` or `--env` secret shorter than 8 characters is masked only as a whole word, so a short key such as `test` no longer rewrites tool names and descriptions (`run_tests`, `latest`) or breaks the `«redacted»` marker.
+- IPv4-mapped IPv6 addresses in hex form (`[::ffff:7f00:1]`), uncompressed loopback, multicast and documentation ranges count as local or non-public.
+- The manual checklist shows the OAuth items for servers that use legacy (2025-03-26) discovery without Protected Resource Metadata.
+- A rule outside `--target` that throws is reported as an INTERNAL finding instead of disappearing, and SARIF has a rule entry for INTERNAL results.
+- A tool or resource named `""` is shown as `(empty name)` in every format instead of an empty subject.
+- Findings are sorted by code unit, so JSON and SARIF order no longer depends on the locale or ICU build of Node.
+- Finding snippets show emoji ZWJ sequences such as 👨‍💻 as written, and fix snippets no longer depend on the wording of the TOOL-006 message.
+- The markdown appended to `$GITHUB_STEP_SUMMARY` is cut at a line end to fit GitHub's 1 MiB step limit, with a note, instead of being dropped whole by GitHub.
+- `npm test` from a source archive without `.git` skips the `npm pack` test instead of failing.
+
+#### Severity lowered / false positives fixed
+
+- A 401 without any OAuth discovery is one error (AUTH-004); AUTH-002 and the AUTH-013 ChatGPT note are info pointing to it.
+- AUTH-017 is a Claude error only when most latency samples exceed 10 s; a single slow sample is a warning.
+- In local mode, an untrusted certificate on a local authorization server is a "Deploy-time check" info in AUTH-010 and AUTH-007.
+- SRV-006: a cross-host redirect only on GET is a warning; a redirect of the POST handshake stays a Claude error.
+- SPEC-011 reports a rejected `server/discover` (-32020, -32021, -32022) as info with its HTTP status, code and `data.supported`, instead of an error saying the result is not an object.
+- INJ-003: a pseudo-tag the text names as an XML or HTML element ("the `<Secret>` element of the response") is info instead of a warning.
+- DATA-001: a bare `transcript` parameter (meeting, call or video transcription tools) is a warning instead of an error and a boolean `transcript` flag is not reported, while `chat_transcript` and `conversation_transcript` stay errors.
+- A missing `initialize.serverInfo` is reported once, by SRV-013 (no longer also by SPEC-001), and on modern-only servers the GET status and session use are reported once, by SPEC-015 (no longer also by SPEC-005 and SPEC-006).
+- AUTH-007 no longer repeats AUTH-006 for an issuer that is not a URL, and AUTH-008 says the metadata has no `issuer` instead of printing `undefined`.
+- AUTH-012 gives one Claude warning for CIMD without `"none"` and without DCR, instead of two contradictory ones.
+- AUTH-020 no longer treats a login page that carries `redirect_uri` in a hidden input as a rejected redirect URI, so a correct authorization server is no longer BLOCKED for Claude with `--active-auth`.
+- An unquoted `resource_metadata=https://…` in `WWW-Authenticate` is read whole, as MCP SDK clients do, so the Protected Resource Metadata it names is found.
+- The auth probe reads the challenge from the 401 the credentials got when the unauthenticated request got a 403 without `WWW-Authenticate`, so false AUTH-002, AUTH-004 and AUTH-013 errors no longer appear.
+- AUTH-003, AUTH-015 and AUTH-016 read `scope=`, `error=` and `resource_metadata` from DPoP challenges.
+- SPEC-016 no longer applies the 2026-07-28 error-code range policy to legacy servers answering the discover probe.
+- A same-host redirect of the entered URL (such as `/mcp` → `/mcp/`) no longer produces false SPEC-005 and SPEC-007 findings or hides SRV-008: the protocol probes follow it as the SDK client does, and SRV-006 still reports the redirect.
+- SPEC-005 no longer reports `GET returned 409` on servers that allow one SSE stream per session (such as the TypeScript SDK with sessions): the GET observation comes from the stream the client already opened.
+- SRV-015 no longer reads "audio sampling rate" or "statistical sampling" as MCP sampling.
+- The input caps no longer cut names, URIs, regex patterns and other schema syntax at 16 KB, which caused false TOOL-003 duplicates, TOOL-017 "does not compile" errors, a false APPS-019 and skipped APPS checks for long UI URIs.
+- TOOL-017 no longer reports a valid schema as not compiling when its `$schema` uses the other URL scheme (`https://json-schema.org/draft-07/schema#`), and RT-006 validates `structuredContent` against such schemas instead of skipping them.
+- TOOL-023, TOOL-025 and TOOL-026 resolve local `$ref` parameters, so a method enum kept in `$defs` yields TOOL-023's mixed-methods error and an enum behind `$ref` is no longer a "free-form" parameter.
+- TOOL-026 no longer warns about the text field of `create_issue`, `send_email` or `post_message` tools: `body`, `payload` and `request_body` count as a raw request only next to a method, URL, endpoint or headers parameter, or as a free-form object.
+- TOOL-004 no longer flags names such as `get_top_stories`, `set_preferred_language` or `get_official_rate`: top, official, preferred and leading count only when they rate the tool itself.
+- TOOL-006 no longer reports "no title" when an empty top-level `title` sits next to a set `annotations.title`, and names a non-string title as such.
+- TOOL-018 no longer calls a tool parameterless when its schema admits keys through `patternProperties`, `propertyNames`, `unevaluatedProperties`, `dependentSchemas` or a schema-valued `additionalProperties`.
+- TOOL-021 says "a property without a type" instead of "a undefined property", and an `x-mcp-header` on a `$ref` to a string, integer or boolean is no longer an error.
+- TOOL-031 no longer reports "lacks a required string id" for a profile tool whose `outputSchema` is a root `$ref` into `$defs`.
+- TOOL-019 no longer reports a `$ref` to an embedded resource with its own `$id` (for example `urn:acme:addr` in `$defs`) as pointing outside the document.
+- TOOL-014 and TOOL-027 classify names like `search_and_replace` and `get_or_create` by their joined write verb, so correctly hinted tools no longer get "read verb "search" but destructiveHint: true" or "collection tool".
+- TOOL-014 no longer ignores the rest of a sentence after "like" ("works like a scratchpad and deletes notes").
+- TOOL-008 no longer calls full Chinese, Japanese or Thai descriptions "only 1 words".
+- RT-002 no longer reports "wrong-type argument returned a success result" for parameters with a type union, no type, or only `anyOf`/`oneOf`/`$ref`: the wrong-type value is taken from outside every allowed type, and the call is skipped when no such value exists.
+- RT-010 no longer reports keys that the tool's `outputSchema` declares (`logs` of a `get_logs` tool) as leaked internals.
+- INJ-001: emoji ZWJ sequences with a variation selector or skin-tone modifier (❤️‍🔥, 👩🏽‍💻, 🏳️‍🌈) are no longer reported as invisible characters.
+- INJ-002: unit symbols such as μs, kΩ, ΔT and μg are no longer reported as homoglyphs; only Greek letters that look Latin count.
+- INJ-004: percent-encoded non-Latin words in URL examples (Russian, Japanese) are no longer reported as encoded payloads.
+- INJ-005: "Do not show user avatars …" and "You are now connected …" are no longer reported as hiding behavior or a persona switch.
+- INJ-006 and RT-011: output-format wording ("rather than the default full web page") and value comparisons ("better than the given threshold", "superior to 0.8") are no longer reported as steering.
+- INJ-007 and RT-011: "Use this app to …", "Use our app" and a first-party server naming its own brand ("the Slack connector" from the Slack server) are no longer reported as coercing calls.
+- INJ-008: "Use this tool for any question about billing" is no longer reported as overly broad triggering.
+- INJ-009: "Follow the setup instructions in the README" and "Load rules from a YAML file" are no longer reported as pulling instructions from external sources; the source must be fetched or returned content.
+- DATA-001: "send all messages matching the filter" in messaging tools is no longer read as a request for the conversation; `all` needs a chat or conversation qualifier.
+- DATA-002: reading VM, GPU, container or knowledge-graph memory is no longer reported as reading Claude's memory; `memory` needs Claude, the assistant, the host or the chat as its owner.
+- DATA-005: wallet, e-mail and IP addresses (by description or `format`) and a boolean `long` flag are no longer reported as a precise location.
+- POL-001: `get_bestsellers`, `list_stakeholders`, `send_email` and similar names are no longer reported as money transfers; transfer verbs are matched as whole name tokens, and send, buy and sell only next to a money word in the name.
+- POL-002: `create_article`, `edit_clipboard`, `edit_voicemail_greeting` and `make_artifact` are no longer reported as AI media generation.
+- POL-004 no longer reports stylesheets, icons or `<base>` hrefs (for example `/css/pricing.css`) as upsell links; only `<a>` and `<area>` links count.
+- APPS-007 no longer reports a `new URL("https://…")` target as an undeclared resource origin when the host is declared in `connectDomains`, and a CSP entry without a scheme gives one APPS-006 finding instead of also making APPS-007 report the origin as undeclared.
+- When `resources/read` returns the widget under a different URI (for example a cache-busting `?v=2`), the HTML and CSP rules check that item instead of reporting false "no CSP declared" and "no widget domain" errors; APPS-001 still reports the URI mismatch.
+- APPS-006 reports a CSP entry repeated in `_meta.ui.csp` and `openai/widgetCSP` once, not twice.
+- APPS-003 accepts a quoted MIME parameter, `text/html; profile="mcp-app"`.
+- APPS-012 recognizes the shared ChatGPT sandbox domain in any letter case.
+- APPS-015 no longer flags dialogs mentioned in comments, the widget's own `prompt`, `confirm` or `alert` functions, or clipboard writes when the `clipboardWrite` permission is declared.
+- APPS-016 no longer takes `data-alt` for alt text.
+- APPS-019 no longer blames the UI extension for a tool that is also missing from a fresh full-capability connection.
+
+### Security
+
+- Text and markdown reports show control, bidi and zero-width characters from the server (ESC, CR, LF, BEL, U+202E, …) as `\u{..}`, so a server name, tool name or message can no longer recolour or erase terminal output, add a hyperlink, reorder text, or start a line the GitHub runner reads as a workflow command.
+- Markdown reports escape `*`, `_`, `~` and `$` in server text, so a server name or message cannot render as bold, italic, struck-through or math.
+- A `Cookie` header is redacted pair by pair and a session-like cookie value on its own, and a `Basic` credential also by its decoded `user:pass` and password, so a server that echoes a session cookie or the plain password no longer leaks it into the report.
+- Recorded HTTP exchange URLs mask known-format tokens in query values, path segments and fragments under any parameter name, as displayed URLs already did.
+- Response bodies the MCP SDK reads (legacy Streamable HTTP and HTTP+SSE) are capped at 64 MiB, per event on SSE streams, as the 2026-07-28 client already was, and each listing at 64 MiB over all its pages, so a hostile server can no longer exhaust the linter's memory.
+- A stdio server that floods stdout no longer crashes the check with a JavaScript heap out-of-memory error: only the first transport errors and the first 50 stray stdout lines are kept, with their counts.
+- `--active` calls a tool name only when every `tools/list` entry with that name is read-only and non-destructive, and calls it once, so a duplicate destructive entry is never reached.
+
 ## [0.1.0] - 2026-10-25
 
 First public release.
@@ -112,3 +260,6 @@ First public release.
 - Ending stdio servers: a stdio server that ignores stdin EOF is ended also when the check itself fails after the handshake (exit 3 with `fatal:`, for example on a tool name that is not a string); it was left running. Ctrl+\\ (SIGQUIT) ends the server's process group like Ctrl+C, and a second Ctrl+C while the CLI waits for a server that ignores SIGTERM kills the group at once instead of leaving it running. On Windows, where a process cannot end by a signal, the CLI then exits with 128 + the signal number (130 for Ctrl+C) instead of signalling itself, which Windows turns into exit 1, the threshold code (to be confirmed on a Windows runner). Known limitations on Linux and macOS, where the server runs in a session of its own: the CLI's own SIGKILL (`kill -9`, a timeout or job cancellation that kills its group) cannot be caught and does not end the server's group; and a `--stdio` wrapper that prompts on the terminal (ssh asking for a password or to confirm a new host key, sudo) cannot prompt and fails, since the server has no controlling terminal.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
+
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/alisaosipova/mcp-review-check/releases/tag/v0.1.0
