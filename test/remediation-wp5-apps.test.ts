@@ -221,3 +221,29 @@ describe('R040: APPS-016 trackers and alt text', () => {
     expect(run('<img data-alt="y" src="x.png" alt="logo"><img alt="" src="z.png">')).toEqual([]);
   });
 });
+
+describe('F107: quoted MIME parameter values', () => {
+  it('normalizeMime unquotes values and trims around =', () => {
+    expect(normalizeMime('text/html; profile="mcp-app"')).toBe(MIME);
+    expect(normalizeMime('TEXT/HTML;Profile = "mcp-app"')).toBe(MIME);
+    expect(normalizeMime('text/html;profile="mcp\\-app"')).toBe(MIME);
+    expect(normalizeMime('text/html;profile="other"')).toBe('text/html;profile=other');
+  });
+
+  it('APPS-003 accepts profile="mcp-app" in resources/read and resources/list', () => {
+    expect(messages(evaluate(APPS_003, ui({ mime: 'text/html; profile="mcp-app"' })))).toEqual([]);
+  });
+});
+
+describe('R038: APPS-019 leaves tools that a fresh full-capability connection lacks too', () => {
+  const tools = [uiTool(), tool({ name: 'search_notes', _meta: { ui: { resourceUri: URI } } })];
+  const run = (fresh?: string[]) => messages(evaluate(APPS_019, snap({
+    tools, resources: [{ uri: URI, name: 'board', mimeType: MIME }],
+    set: (s) => { s.toolsWithoutUi = []; if (fresh) s.toolsFreshConnection = fresh; },
+  })));
+
+  it('only tools present on the fresh connection are attributed to the UI extension', () => {
+    expect(run(['show_board'])).toEqual(['listed only for clients that declare io.modelcontextprotocol/ui; a text-only client\'s tools/list omits it']);
+    expect(run()).toHaveLength(2);
+  });
+});

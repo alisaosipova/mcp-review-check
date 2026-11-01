@@ -58,8 +58,10 @@ export const APPS_002 = defineRule(
   }),
 );
 
+/** Lowercased type, subtype and parameter names, no spaces around `;` and `=`, and quoted parameter values unquoted (RFC 2045). */
 export function normalizeMime(m: string): string {
-  return m.split(';').map((p) => p.trim()).map((p, i) => (i === 0 ? p.toLowerCase() : p.replace(/^([^=]+)=/, (_, k: string) => k.toLowerCase() + '='))).join(';');
+  return m.split(';').map((p) => p.trim()).map((p, i) => (i === 0 ? p.toLowerCase()
+    : p.replace(/^([^=]+?)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|(.*))$/, (_, k: string, q: string | undefined, v: string | undefined) => `${k.toLowerCase()}=${q !== undefined ? q.replace(/\\(.)/g, '$1') : v}`))).join(';');
 }
 
 export const APPS_003 = defineRule(
@@ -475,7 +477,10 @@ export const APPS_019 = defineRule(
     const without = snap.toolsWithoutUi;
     if (!without) return []; // the text-only re-list did not run or failed
     const names = new Set(without.map(toolName));
-    return snap.tools.filter((t) => isStr(uiUriOf(t)) && !names.has(toolName(t))).map((t) => ({
+    // A tool also missing from a fresh full-capability connection comes and goes per session (SRV reports that),
+    // so its absence from the text-only list says nothing about the UI extension.
+    const fresh = snap.toolsFreshConnection ? new Set(snap.toolsFreshConnection) : undefined;
+    return snap.tools.filter((t) => isStr(uiUriOf(t)) && !names.has(toolName(t)) && (!fresh || fresh.has(toolName(t)))).map((t) => ({
       tool: toolName(t), message: `listed only for clients that declare ${UI_EXTENSION}; a text-only client's tools/list omits it`,
     }));
   },
