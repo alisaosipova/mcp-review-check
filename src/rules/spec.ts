@@ -248,7 +248,20 @@ export const SPEC_011 = defineRule(
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/discover'],
   },
   (snap) => {
-    const r = snap.discoverRaw;
+    // The era can be modern from a -32020..-32022 rejection of our discover alone (no result recorded): then the
+    // server answered our request's headers or version, and the result shape was never seen.
+    const probe = probeRpc(snap, 'discover');
+    const r = snap.discoverRaw ?? probe?.result;
+    if (r === undefined) {
+      const e = probe?.error;
+      if (!e) return [{ severity: 'info', message: `server/discover returned no result${probe?.status !== undefined ? ` (HTTP ${probe.status})` : ''}; its shape was not checked` }];
+      const code = e.code;
+      const why = code === -32022 ? '; the server does not accept the 2026-07-28 version as sent'
+        : code === -32020 || code === -32021 ? "; the server rejected the probe's headers" : '';
+      const supported = isObj(e.data) && isStrArray(e.data.supported) ? `; data.supported: ${e.data.supported.join(', ')}` : '';
+      const text = isStr(e.message) && e.message ? ` ${JSON.stringify(e.message.slice(0, 120))}` : '';
+      return [{ severity: 'info', message: `server/discover answered HTTP ${probe?.status ?? '?'} / code ${String(code)}${text}${why}${supported}; the result shape was not checked` }];
+    }
     if (!isObj(r)) return [{ message: 'server/discover result is not an object' }];
     const out: RawFinding[] = [];
     if (!isStrArray(r.supportedVersions) || r.supportedVersions.length === 0) out.push({ message: 'supportedVersions is not a non-empty string[]' });
