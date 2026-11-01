@@ -19,7 +19,9 @@ import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import { displayUrl, REDACTED_MARK } from './rules/util/net.js';
-import type { TargetOpt } from './snapshot.js';
+import { isSafeToCall } from './probe/active.js';
+import type { Snapshot, TargetOpt } from './snapshot.js';
+import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
@@ -178,6 +180,16 @@ function readToolArgs(file: string): Record<string, unknown> {
   return JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
 }
 
+/** One warning line per --tool-args entry that no --active call used, with the reason, so typos and non-read-only tools show. */
+function unusedToolArgs(toolArgs: Record<string, unknown>, snap: Snapshot): string {
+  const used = new Set(snap.active?.calls.filter((c) => c.kind === 'valid').map((c) => c.tool));
+  return Object.keys(toolArgs).filter((name) => !used.has(name)).map((name) => {
+    const tool = snap.tools.find((t) => toolName(t) === name);
+    const why = !tool ? 'the server lists no tool by that name' : !isSafeToCall(tool) ? 'the tool is not read-only (readOnlyHint: true), so --active does not call it' : 'the tool was past the cap on --active calls';
+    return `warning: --tool-args entry ${JSON.stringify(name)} was not used: ${why}\n`;
+  }).join('');
+}
+
 /** A URL for a usage error: everything up to the last "@" after the scheme (a password may hold "/", "?" or "#"), query and fragment hidden. */
 function shownUrl(raw: string): string {
   return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
@@ -263,6 +275,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (!parts.length) throw new UsageError('--stdio needs a command');
       // Nothing is sent to a stdio server: a token or header would only mark the run as authenticated (RT-009 off).
       if (values.bearer !== undefined || values.header?.length) throw new UsageError('--bearer and --header apply only to <url>');
+      if (values['active-auth']) throw new UsageError('--active-auth applies only to <url>: a stdio server has no authorization server to probe');
       const envVars: Record<string, string> = {};
       for (const kv of values.env ?? []) {
         const i = kv.indexOf('=');
@@ -293,6 +306,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }
     if (values['active-auth']) stderr += 'Notice: --active-auth creates a DCR client on your authorization server and sends bogus /authorize and /token requests.\n';
+    // Accepted for scripts that share one option set, but said: the user should not think they took effect.
+    if (toolArgs && !values.active) stderr += 'warning: --tool-args has no effect without --active\n';
+    if (values['sarif-location'] !== undefined && format !== 'sarif') stderr += 'warning: --sarif-location applies only to --format sarif\n';
 
     const opts: BuildOptions = {
       target: spec, headers, bearer, timeoutMs, platforms: target, maxDurationMs,
@@ -310,6 +326,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     const { snap, stderrTail, tracer } = await buildSnapshot(opts);
+    if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
     const result = runRules(snap, RULES, { ignore: values.ignore ?? [] });
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
     const ignoredIds = new Set((values.ignore ?? []).map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
