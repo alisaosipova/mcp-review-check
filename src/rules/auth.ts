@@ -6,6 +6,7 @@ import { isObj, isStr, isStrArray, type Obj } from './util/access.js';
 import { displayUrl, isLoopbackHost, isNonPublicIp, isSecretQueryParam } from './util/net.js';
 import { describeAttempts, endedTransient, INCONCLUSIVE, isTransient } from './util/obs.js';
 import { isBearerLike, parseWwwAuthenticate } from './util/wwwAuth.js';
+import { DEPLOY } from './server.js';
 
 const CLAUDE_AUTH = 'https://claude.com/docs/connectors/building/authentication';
 const OAI_AUTH = 'https://developers.openai.com/plugins/build/auth';
@@ -29,16 +30,26 @@ function forEachAs(snap: Snapshot, fn: (as: AsObservation, meta: Obj, i: number,
   });
 }
 
-/** https, or in local mode plain http on a local host: loopback, a non-public IP, a name without a dot or the MCP host. */
+/** A local host for an OAuth endpoint: loopback, a non-public IP, a name without a dot or the MCP host itself. */
+function isLocalHost(snap: Snapshot, u: URL): boolean {
+  const h = u.hostname.replace(/^\[|\]$/g, '');
+  return isLoopbackHost(h) || isNonPublicIp(h) || !/[.:]/.test(h) || (snap.target.kind === 'http' && u.hostname === snap.target.url.hostname);
+}
+
+/** https, or in local mode plain http on a local host. */
 function httpsOrLocal(snap: Snapshot, raw: string): boolean {
   try {
     const u = new URL(raw);
-    const h = u.hostname.replace(/^\[|\]$/g, '');
-    const local = isLoopbackHost(h) || isNonPublicIp(h) || !/[.:]/.test(h) || (snap.target.kind === 'http' && u.hostname === snap.target.url.hostname);
-    return u.protocol === 'https:' || (snap.localMode && u.protocol === 'http:' && local);
+    return u.protocol === 'https:' || (snap.localMode && u.protocol === 'http:' && isLocalHost(snap, u));
   } catch {
     return false;
   }
+}
+
+/** In local mode a certificate failure of a local OAuth host is a deploy-time check (as SRV-001 for the MCP host). */
+function localDeployHost(snap: Snapshot, raw: string): boolean {
+  if (!snap.localMode) return false;
+  try { return isLocalHost(snap, new URL(raw)); } catch { return false; }
 }
 
 export const AUTH_001 = defineRule(
@@ -232,7 +243,11 @@ export const AUTH_007 = defineRule(
     if (as.json) return [];
     const message = `no authorization server metadata for ${as.issuer} (tried ${describeAttempts(as.attempts) || 'nothing'})`;
     const platforms: Platform[] | undefined = i === 0 ? undefined : ['chatgpt'];
-    return [endedTransient(as.attempts) ? { platforms, severity: 'info', message: `${INCONCLUSIVE}: ${message}` } : { platforms, message }];
+    if (endedTransient(as.attempts)) return [{ platforms, severity: 'info', message: `${INCONCLUSIVE}: ${message}` }];
+    // A local AS with a self-signed or private-CA certificate fails the fetch itself; in local mode that is deploy-time.
+    const tls = as.attempts.some((e) => isTlsCode(String(e.error?.causeCode ?? e.error?.code ?? '')));
+    if (tls && localDeployHost(snap, as.issuer)) return [{ platforms, severity: 'info', message: `${DEPLOY}${message}; the certificate is not trusted (set NODE_EXTRA_CA_CERTS to check the metadata locally)` }];
+    return [{ platforms, message }];
   }),
 );
 
@@ -307,9 +322,9 @@ export const AUTH_010 = defineRule(
         out.push({ message: `${/^fetch failed/.test(d.summary) ? `${t.host} could not be reached (${t.code})` : d.summary}; TLS not checked${tries}`, fix });
         continue;
       }
-      out.push(t.transient
-        ? { severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` }
-        : { message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}` });
+      if (t.transient) out.push({ severity: 'info', message: `${INCONCLUSIVE}: TLS handshake with ${t.host} did not complete: ${t.code ?? 'unknown error'}${tries}` });
+      else if (localDeployHost(snap, `https://${t.host}`)) out.push({ severity: 'info', message: `${DEPLOY}TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}; hosts reject this certificate` });
+      else out.push({ message: `TLS handshake with ${t.host} failed: ${t.code ?? 'unknown error'}${tries}` });
     }
     if (snap.env?.nodeExtraCaCerts) out.push({ severity: 'info', message: 'NODE_EXTRA_CA_CERTS is set; certificate checks may pass here but fail for hosts' });
     return out;

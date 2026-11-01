@@ -276,4 +276,39 @@ describe('F039 SPEC-018 reserved _meta prefixes from the spec examples', () => {
     for (const k of ['mcp/x', 'com.example.mcp/x', 'com.acme/x', 'mcp/www_authenticate', 'io.modelcontextprotocol/ui']) expect(metaKeyProblem(k), k).toBeUndefined();
   });
 });
+
+describe('F043 local mode: a local authorization server with an untrusted certificate is deploy-time', () => {
+  const LOCAL_AS = 'https://localhost:4000';
+  const local = (localMode: boolean, json = true) => authSnap({
+    url: 'https://localhost:3000/mcp',
+    prm: { authorization_servers: [LOCAL_AS] },
+    probe: {
+      as: [{
+        issuer: LOCAL_AS, discoveryUrl: `${LOCAL_AS}/.well-known/oauth-authorization-server`,
+        attempts: json ? [] : [exchange({ method: 'GET', url: `${LOCAL_AS}/.well-known/oauth-authorization-server`, error: { name: 'TypeError', message: 'fetch failed', causeCode: 'DEPTH_ZERO_SELF_SIGNED_CERT' } })],
+        json: json ? { ...GOOD_AS, issuer: LOCAL_AS, authorization_endpoint: `${LOCAL_AS}/authorize`, token_endpoint: `${LOCAL_AS}/token`, registration_endpoint: `${LOCAL_AS}/register` } : undefined,
+      }],
+    },
+    set: (s) => {
+      s.localMode = localMode;
+      s.transport.tls = [{ host: 'localhost:4000', role: 'as', ok: false, code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }];
+    },
+  });
+
+  it('AUTH-010 is a Deploy-time info in local mode and an error otherwise', () => {
+    expect(evaluate(byId('AUTH-010'), local(true))).toMatchObject([{ severity: 'info', message: expect.stringMatching(/^Deploy-time check: TLS handshake with localhost:4000 failed/) }]);
+    expect(evaluate(byId('AUTH-010'), local(false))).toMatchObject([{ severity: 'error' }]);
+  });
+
+  it('AUTH-007 for metadata that failed on the certificate is a Deploy-time info in local mode', () => {
+    expect(evaluate(byId('AUTH-007'), local(true, false))).toMatchObject([{ severity: 'info', message: expect.stringMatching(/^Deploy-time check: no authorization server metadata/) }]);
+    expect(evaluate(byId('AUTH-007'), local(false, false))).toMatchObject([{ severity: 'error' }]);
+  });
+
+  it('a public AS keeps the error in local mode', () => {
+    const s = local(true);
+    s.transport.tls = [{ host: 'auth.acme.test', role: 'as', ok: false, code: 'CERT_HAS_EXPIRED' }];
+    expect(evaluate(byId('AUTH-010'), s)).toMatchObject([{ severity: 'error' }]);
+  });
+});
 // @end
