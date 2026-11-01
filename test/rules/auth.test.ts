@@ -56,7 +56,7 @@ const good = authSnap();
 
 const cases: Record<string, Case> = {
   'AUTH-001': { pos: snap({ url: 'https://mcp.acme.test/mcp?api_key=abc123' }), neg: snap({ url: URL_OK }), severity: 'error', match: /«redacted»/ },
-  'AUTH-002': { pos: authSnap({ challenge: null, prm: null }), neg: good, severity: 'error' },
+  'AUTH-002': { pos: authSnap({ challenge: 'Bearer resource_metadata="ftp://mcp.acme.test/prm"' }), neg: good, severity: 'error' },
   'AUTH-003': {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.preflight = exchange({ status: 200, headers: { 'www-authenticate': 'Bearer' } }); } }),
     neg: snap({ url: URL_OK, set: (s) => { s.transport.preflight = exchange({ status: 401, headers: { 'www-authenticate': CHALLENGE } }); } }), severity: 'error',
@@ -187,9 +187,9 @@ describe('AUTH rules', () => {
     expect(dcr).toMatchObject([{ severity: 'info', platforms: ['spec'] }]);
   });
 
-  it('AUTH-013 401 without OAuth discovery: chatgpt error, claude info', () => {
+  it('AUTH-013 401 without OAuth discovery: chatgpt and claude info (AUTH-004 carries the error)', () => {
     const f = evaluate(byId('AUTH-013'), authSnap({ challenge: null, prm: null, probe: { as: [] } }));
-    expect(f.find((x) => x.platforms.includes('chatgpt'))?.severity).toBe('error');
+    expect(f.find((x) => x.platforms.includes('chatgpt'))?.severity).toBe('info');
     expect(f.find((x) => x.platforms.includes('claude'))?.severity).toBe('info');
   });
 

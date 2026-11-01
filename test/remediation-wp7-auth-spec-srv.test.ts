@@ -175,4 +175,21 @@ describe('F049 modern-only GET and session findings come from SPEC-015 alone', (
     expect(evaluate(byId('SPEC-006'), bad)).toMatchObject([{ severity: 'error' }]);
   });
 });
+
+describe('F051 a 401 without any OAuth discovery is one error (AUTH-004)', () => {
+  const s = authSnap({ challenge: null, prm: null, probe: { as: [] } });
+
+  it('AUTH-004 fails every platform; AUTH-002 and AUTH-013 add only context', () => {
+    expect(evaluate(byId('AUTH-004'), s)).toMatchObject([{ severity: 'error' }]);
+    const a2 = evaluate(byId('AUTH-002'), s);
+    expect(a2).toMatchObject([{ severity: 'info', message: expect.stringMatching(/see AUTH-004/) }]);
+    expect(evaluate(byId('AUTH-013'), s).every((f) => f.severity === 'info')).toBe(true);
+  });
+
+  it('legacy discovery and a reachable PRM keep their AUTH-002 verdicts', () => {
+    const legacy = evaluate(byId('AUTH-002'), authSnap({ challenge: 'Bearer realm="x"', prm: null, probe: { legacyDiscovery: true } }));
+    expect(legacy.find((f) => f.platforms.includes('chatgpt'))?.severity).toBe('error');
+    expect(evaluate(byId('AUTH-002'), authSnap({ challenge: null }))).toMatchObject([{ severity: 'warning', platforms: ['claude'] }]);
+  });
+});
 // @end

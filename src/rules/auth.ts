@@ -81,7 +81,8 @@ export const AUTH_002 = defineRule(
           { platforms: ['claude'], severity: 'warning', message: `${message}; Claude falls back to legacy origin discovery, which is deprecated` },
         ];
       }
-      return [{ message }];
+      // No discovery at all: AUTH-004 carries the verdict for the one root cause; the header detail is context.
+      return [{ severity: 'info', message: `${message}; no OAuth discovery at all (see AUTH-004)` }];
     };
     if (!ch?.raw) out.push(...missing(`${ch?.status ?? 401} has no WWW-Authenticate header`));
     else if (!bearer) {
@@ -372,7 +373,8 @@ export const AUTH_013 = defineRule(
       ? [{ message: `grant_types_supported (${m.grant_types_supported.join(', ')}) lacks authorization_code` }] : []));
     const bearer = (a.challenge?.parsed ?? []).some((c) => c.scheme === 'bearer' || c.scheme === 'dpop');
     if (!a.prm && !a.legacyDiscovery && !bearer) {
-      out.push({ platforms: ['chatgpt'], severity: 'error', message: 'server rejects unauthenticated requests without OAuth discovery: API-key or custom-header auth is unsupported' });
+      // AUTH-004 already fails every platform for the missing discovery; this explains what it means for ChatGPT.
+      out.push({ platforms: ['chatgpt'], severity: 'info', message: 'server rejects unauthenticated requests without OAuth discovery: API-key or custom-header auth is unsupported (see AUTH-004)' });
       out.push({ platforms: ['claude'], severity: 'info', message: 'no OAuth discovery: static headers are beta; directory expects OAuth' });
     }
     return out;
