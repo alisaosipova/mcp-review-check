@@ -267,7 +267,8 @@ describe('F023: the wrong-type call uses a value the schema really rejects', () 
     s.active = await runActive({ snap: s, timeoutMs: 5000, now: () => 0, modern });
     expect(s.active.calls.map((c) => c.kind)).toEqual(['synthetic', 'invalid-missing']);
     expect(calls).toHaveLength(2);
-    expect(evaluate(byId('RT-002'), s)).toEqual([]);
+    // RT-002 still reports the invalid-missing call (the fake answers success to {}), but nothing about a wrong-type call.
+    expect(evaluate(byId('RT-002'), s).map((f) => f.message)).toEqual(['call without the required arguments returned a success result']);
   });
 });
 

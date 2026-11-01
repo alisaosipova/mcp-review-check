@@ -455,9 +455,10 @@ async function freshTools(url: URL, headers: Record<string, string>, tracer: Tra
 /** The DELETE requests that ended the check's own sessions: kept in the trace, but not evidence for the rules. */
 const sessionEnds = new WeakSet<HttpExchange>();
 
-/** The run's HTTP exchanges for the snapshot (without the session-ending DELETEs). */
+/** The run's HTTP exchanges for the snapshot (without the session-ending DELETEs: the SDK connections' and the
+ *  raw probes' "(close session)" requests alike, since both end sessions the check itself opened). */
 function ruleExchanges(tracer: Tracer): HttpExchange[] {
-  return tracer.exchanges.filter((e) => !sessionEnds.has(e));
+  return tracer.exchanges.filter((e) => !sessionEnds.has(e) && !(e.method === 'DELETE' && e.label.endsWith('(close session)')));
 }
 
 /** Close a connection; a Streamable HTTP session is ended with DELETE first (the spec's SHOULD for a client that no
