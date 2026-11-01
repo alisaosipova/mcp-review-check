@@ -349,4 +349,17 @@ describe('F059 SRV-010 median over successful handshake and listing calls only',
     expect(evaluate(byId('SRV-010'), s)).toEqual([]);
   });
 });
+
+describe('F056 SPEC-017 icon sizes type and image/jpg', () => {
+  const icons = (icon: Record<string, unknown>) => evaluate(byId('SPEC-017'), snap({ set: (s) => { s.serverInfo = { name: 'acme', version: '1', icons: [{ src: 'https://cdn.acme.test/i.png', ...icon }] }; } }));
+
+  it('a string sizes is a warning', () => {
+    expect(icons({ sizes: '48x48' })).toMatchObject([{ severity: 'warning', message: expect.stringMatching(/sizes must be a string\[\]/) }]);
+  });
+
+  it('image/jpg is an info pointing to image/jpeg; image/jpeg is clean', () => {
+    expect(icons({ mimeType: 'image/jpg' })).toMatchObject([{ severity: 'info', message: expect.stringMatching(/use image\/jpeg/) }]);
+    expect(icons({ mimeType: 'image/jpeg', sizes: ['48x48'] })).toEqual([]);
+  });
+});
 // @end

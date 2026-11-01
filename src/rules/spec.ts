@@ -395,7 +395,7 @@ export const SPEC_016 = defineRule(
   },
 );
 
-const ICON_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']);
+const ICON_MIME = new Set(['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp']);
 
 export const SPEC_017 = defineRule(
   {
@@ -425,13 +425,16 @@ export const SPEC_017 = defineRule(
         // The schema lists MIME types only as examples: another image/* type is valid, but hosts may not render it.
         const mime = isStr(icon.mimeType) ? icon.mimeType.toLowerCase() : undefined;
         if (icon.mimeType !== undefined && !(mime && ICON_MIME.has(mime))) {
-          if (mime?.startsWith('image/')) out.push({ ...extra, severity: 'info', message: `${where}: mimeType ${JSON.stringify(icon.mimeType)} may not be rendered by hosts (common: png, jpeg, svg+xml, webp)` });
+          if (mime === 'image/jpg') out.push({ ...extra, severity: 'info', message: `${where}: mimeType "image/jpg" is not a registered type; use image/jpeg` });
+          else if (mime?.startsWith('image/')) out.push({ ...extra, severity: 'info', message: `${where}: mimeType ${JSON.stringify(icon.mimeType)} may not be rendered by hosts (common: png, jpeg, svg+xml, webp)` });
           else out.push({ ...extra, message: `${where}: mimeType ${JSON.stringify(icon.mimeType)} is not an image type` });
         }
         if (icon.sizes !== undefined) {
-          const sizes = Array.isArray(icon.sizes) ? icon.sizes : [icon.sizes];
-          const bad = sizes.filter((s) => !(isStr(s) && /^(\d+x\d+|any)$/.test(s)));
-          if (bad.length) out.push({ ...extra, message: `${where}: invalid sizes ${JSON.stringify(bad)}` });
+          if (!Array.isArray(icon.sizes)) out.push({ ...extra, message: `${where}: sizes must be a string[], got ${JSON.stringify(icon.sizes)}` });
+          else {
+            const bad = icon.sizes.filter((s) => !(isStr(s) && /^(\d+x\d+|any)$/.test(s)));
+            if (bad.length) out.push({ ...extra, message: `${where}: invalid sizes ${JSON.stringify(bad)}` });
+          }
         }
         if (icon.theme !== undefined && icon.theme !== 'light' && icon.theme !== 'dark') out.push({ ...extra, message: `${where}: theme must be light or dark` });
         return 0;
