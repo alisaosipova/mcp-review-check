@@ -42,3 +42,26 @@ describe('F041 SPEC-011 when server/discover was rejected', () => {
     expect(evaluate(byId('SPEC-011'), s)).toMatchObject([{ severity: 'error', message: 'server/discover result is not an object' }]);
   });
 });
+
+const authorizeSnap = (ex: Parameters<typeof exchange>[0]) => snap({
+  url: URL_OK,
+  activeAuth: true,
+  set: (s) => {
+    s.authProbe = { trigger: 'preflight-401', prmAttempts: [], as: [], timings: {}, active: { authorize: [exchange({ method: 'GET', url: 'https://auth.acme.test/authorize?redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback', ...ex })] } };
+  },
+});
+
+describe('F038 AUTH-020 login page carrying redirect_uri', () => {
+  it('a 200 sign-in page with redirect_uri in a hidden input is info, not a rejection', () => {
+    const body = '<html><h1>Sign in</h1><form method="post"><input type="hidden" name="redirect_uri" value="https://claude.ai/api/mcp/auth_callback"></form></html>';
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: body }))).toMatchObject([{ severity: 'info', message: expect.stringMatching(/login page/) }]);
+  });
+
+  it('an error body naming redirect_uri is still a rejection', () => {
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: '<p>Invalid redirect_uri</p>' }))[0].severity).toBe('error');
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: '<p>The redirect_uri is not registered for this client</p>' }))[0].severity).toBe('error');
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 403, json: { error: 'invalid_request', error_description: 'redirect_uri mismatch' } }))[0].severity).toBe('error');
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 400 }))[0].severity).toBe('error');
+  });
+});
+// @end

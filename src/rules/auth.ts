@@ -495,6 +495,9 @@ export const AUTH_019 = defineRule(
   },
 );
 
+/** Error wording an authorization server uses for a refused redirect URI (OAuth error codes and common prose). */
+const REDIRECT_REJECTED = /invalid[ _-]?redirect[ _-]?uri|redirect[ _-]?uri[^<>\n]{0,60}\b(is |was )?(invalid|not (allowed|registered|valid|permitted)|mismatch|does not match)/i;
+
 export const AUTH_020 = defineRule(
   {
     id: 'AUTH-020', title: 'Redirect URIs accepted at /authorize', severity: { claude: 'error' }, needs: ['active-auth'],
@@ -505,7 +508,11 @@ export const AUTH_020 = defineRule(
   (snap) => (snap.authProbe?.active?.authorize ?? []).flatMap((ex): RawFinding[] => {
     const redirect = new URL(ex.url).searchParams.get('redirect_uri');
     const body = ex.bodySnippet ?? '';
-    if (ex.status === 400 || /redirect_uri/i.test(body)) return [{ message: `/authorize rejected redirect_uri ${redirect} (${ex.status})` }];
+    // A login or consent page carries redirect_uri in a hidden input or its script config: only an error body
+    // that names it counts as a rejection.
+    if (ex.status === 400 || REDIRECT_REJECTED.test(body) || (isObj(ex.json) && isStr(ex.json.error) && /redirect/i.test(JSON.stringify(ex.json)))) {
+      return [{ message: `/authorize rejected redirect_uri ${redirect} (${ex.status})` }];
+    }
     if (ex.status === 200 && /<form|login|sign in/i.test(body)) return [{ severity: 'info', message: `/authorize shows a login page before validating ${redirect}; verify manually` }];
     return [];
   }),
