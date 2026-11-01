@@ -59,7 +59,9 @@ export function extractOrigins(html: string): ExtractedOrigin[] {
     }
   }
   for (const m of html.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) add('resource', m[1], m[0], 'tag');
-  for (const m of html.matchAll(/url\(\s*["']?([^"')\s]+)["']?\s*\)/gi)) add('resource', m[1], m[0], 'tag');
+  // CSS url() is case-insensitive, so the JS URL constructor (`new URL("https://...")`, `URL(...)`, `x.URL(...)`) must
+  // not be read as one: it builds a value and loads nothing, and a fetch of it is a connect origin, not a resource.
+  for (const m of html.matchAll(/(?<![\w$.]|\bnew\s+)url\(\s*["']?([^"')\s]+)["']?\s*\)/gi)) add('resource', m[1], m[0], 'tag');
 
   const lit = `["'\`]((?:https?|wss?):\\/\\/[^"'\`\\s]+)["'\`]`;
   const jsPatterns: Array<[OriginKind, RegExp]> = [
