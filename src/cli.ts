@@ -73,8 +73,16 @@ The "-- <command> [args...]" form passes arguments verbatim, with options before
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
-Exit codes: 0 below --fail-on threshold, 1 threshold reached, 2 usage error (or --output not writable), 3 could not connect
-or stopped by --max-duration (at any --fail-on; the Result line reads INCOMPLETE after a handshake).
+Exit codes:
+  0       Completed, below the --fail-on threshold.
+  1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec).
+  2       Usage or configuration error, or --output could not be written.
+  3       Could not connect or complete a handshake; stopped by --max-duration (at any --fail-on; the Result
+          line reads INCOMPLETE after a handshake); or an internal error of mcp-review-check itself (fatal: and
+          a stack trace on stderr; please report it).
+  128+N   Ended by signal N: 130 Ctrl+C (SIGINT), 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP. A stdio server is ended first
+          and no report is written.
+
 The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
 findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
 The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
