@@ -61,7 +61,7 @@ inputs:
 
 outputs:
   exit-code:
-    description: 'Exit code of the CLI: 0 pass, 1 --fail-on threshold reached, 2 usage error, 3 could not connect, stopped by --max-duration or internal failure (0.2.0 and later: 4 stopped by --max-duration).'
+    description: 'Exit code of the CLI: 0 pass, 1 --fail-on threshold reached, 2 usage error, 3 could not connect or internal failure, 4 stopped by --max-duration.'
     value: ${{ steps.run.outputs.exit-code }}
   sarif-file:
     description: Path of the SARIF report (empty when none was written, for example on a usage error).
@@ -116,7 +116,7 @@ runs:
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         if [ -f "$INPUT_SARIF_FILE" ]; then echo "sarif-file=$INPUT_SARIF_FILE" >> "$GITHUB_OUTPUT"; else echo "sarif-file=" >> "$GITHUB_OUTPUT"; fi
         # Exit-code contract: 0 pass, 1 threshold, 2 usage, 3 could not connect / stopped / internal failure,
-        # 4 stopped by --max-duration (0.2.0 and later), 128+N signal. The step fails with the same code, so the
+        # 4 stopped by --max-duration, 128+N signal. The step fails with the same code, so the
         # job fails as a plain CLI step would; the upload below still runs.
         exit "$code"
     # always(): a failing check (exit 1) is exactly when the findings should reach code scanning.
