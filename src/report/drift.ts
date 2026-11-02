@@ -38,12 +38,32 @@ export interface Drift {
   tools: number;
 }
 
-/** JSON with every object's keys sorted (by UTF-16 code unit), no whitespace; undefined members are left out, as JSON.stringify does. */
+/** JSON with every object's keys sorted (by UTF-16 code unit), no whitespace; undefined members are left out, as
+ *  JSON.stringify does. No recursion: a server may nest an inputSchema thousands of levels deep. */
 export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonicalJson(v))).join(',')}]`;
-  const keys = Object.keys(value).filter((k) => (value as Record<string, unknown>)[k] !== undefined).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`).join(',')}}`;
+  const out: string[] = [];
+  // Work items, last first: a value to write, or a literal piece of punctuation.
+  const todo: Array<{ v: unknown } | string> = [{ v: value }];
+  while (todo.length) {
+    const item = todo.pop()!;
+    if (typeof item === 'string') { out.push(item); continue; }
+    const v = item.v;
+    if (v === null || typeof v !== 'object') { out.push(JSON.stringify(v) ?? 'null'); continue; }
+    const next: Array<{ v: unknown } | string> = [];
+    if (Array.isArray(v)) {
+      next.push('[');
+      v.forEach((x, i) => { if (i) next.push(','); next.push({ v: x === undefined ? null : x }); });
+      next.push(']');
+    } else {
+      const o = v as Record<string, unknown>;
+      const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      next.push('{');
+      keys.forEach((k, i) => next.push(`${i ? ',' : ''}${JSON.stringify(k)}:`, { v: o[k] }));
+      next.push('}');
+    }
+    for (let i = next.length - 1; i >= 0; i--) todo.push(next[i]);
+  }
+  return out.join('');
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');

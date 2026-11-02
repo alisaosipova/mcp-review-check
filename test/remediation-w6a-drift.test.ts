@@ -67,6 +67,11 @@ describe('fingerprints: canonical JSON and per-field digests', () => {
   it('canonical JSON sorts keys at every depth, keeps array order and drops undefined members', () => {
     expect(canonicalJson({ b: 1, a: { d: [3, { y: 1, x: 2 }], c: undefined } })).toBe('{"a":{"d":[3,{"x":2,"y":1}]},"b":1}');
     expect(canonicalJson('ü')).toBe('"ü"');
+    expect(canonicalJson([1, undefined, [], {}])).toBe('[1,null,[],{}]');
+    // No recursion: a schema nested 20000 levels deep (as the leaky fixture's --deep sends) does not overflow the stack.
+    let deep: unknown = 'x';
+    for (let i = 0; i < 20000; i++) deep = { a: deep };
+    expect(canonicalJson(deep)).toHaveLength(20000 * 6 + 3);
   });
 
   it('key order does not change a fingerprint; any covered field does, fields outside the list do not', () => {
