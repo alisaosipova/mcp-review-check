@@ -6,17 +6,18 @@
 > the catalog in `src/rules/` is authoritative for rule IDs, severities and sources.
 >
 > Known differences: the catalog has <!-- RULE_COUNT -->147<!-- /RULE_COUNT --> automated rules (APPS-019 added) and <!-- MANUAL_COUNT -->31<!-- /MANUAL_COUNT --> manual checklist items, dated
-> <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE -->; Node 20.19+ is required, so the Node 18 notes in §4.4 and milestone M0 are historical, and the test
+> <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE -->; Node 22.12+ is required, so the Node 18 notes in §4.4 and milestone M0 are historical, and the test
 > runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
 > the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
-> and the CLI gained options such as `--max-duration`, `--fail-on-incomplete`, `--baseline`, `--quiet`, `--checklist`, `--local`, `--no-local` and `explain`.
+> and the CLI gained options such as `--max-duration`, `--fail-on-incomplete`, `--baseline`, `--quiet`, `--checklist`, `--local`, `--no-local`, `explain`,
+> `--config`, `--json-output`, `--save-baseline` and `--format junit`.
 > See CHANGELOG.md for the full list. Many detection patterns quoted in §2 (INJ, DATA, POL, APPS, AUTH, SPEC, TOOL and RT rules)
 > were narrowed or extended after 0.1.0 to fix false positives; CHANGELOG.md names each change, and the code in
 > `src/rules/` is authoritative where this document quotes an older pattern.
 
-Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22; the vendor tool-name and tool-budget limits behind TOOL-002, TOOL-033 and TOOL-034 were checked on 2026-11-01). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md). The behaviour changes of 0.2.0 that alter a contract described here (exit codes §3.2, stopped runs §3.3, `--baseline` §3.5, the GitHub Action §3.6, the package surface §4.1, report fields §4.2 and §5.3, TOOL-002 and TOOL-033..035 in §2.3, SPEC-016 in §2.2, and the answers to Q5–Q8 in §8) are written into this document too.
+Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22; the vendor tool-name and tool-budget limits behind TOOL-002, TOOL-033 and TOOL-034 were checked on 2026-11-01). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md). The behaviour changes of 0.2.0 that alter a contract described here (exit codes §3.2, stopped runs §3.3, `--baseline` §3.5, the GitHub Action §3.6, the package surface §4.1, report fields §4.2 and §5.3, TOOL-002 and TOOL-033..035 in §2.3, SPEC-016 in §2.2, and the answers to Q5–Q8 in §8) are written into this document too, and so are the additions of 0.3.0 (the options in §3.1, the baseline loop in §3.5, the action outputs in §3.6, the config file in §3.7, the input caps and stopped runs in §3.3 and §4.2, Node 22.12 in §4.4, the JUnit format in §5.3).
 
-`mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 20.19 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
+`mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 22.12 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 
 Non-goals for v1:
 - Full JSON-schema conformance of every wire message. That is the job of `@modelcontextprotocol/conformance`, and the report may suggest running it.
@@ -1147,8 +1148,10 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | `--header "K: V"` | — | Repeatable. Split at the first `:`, trim both sides. Values containing CR or LF are rejected. Values are always redacted in output. |
 | `--bearer <token>` | `$MCP_REVIEW_CHECK_TOKEN` | Sent as `Authorization: Bearer`. The env var avoids leaking the token into shell history. |
 | `--target claude\|chatgpt\|all` | `all` | §1.1 |
-| `--format text\|json\|markdown\|sarif` | `text` | |
+| `--format text\|json\|markdown\|sarif\|junit` | `text` | §5.3 |
 | `--output <file>` | stdout | When given, the full report goes to the file and a one-line summary goes to stderr. If the file cannot be written, the report goes to stdout with an error message and exit 2. |
+| `--json-output <file>` | — | Also writes the JSON report (§5.3 json, with `baselined` marks under `--baseline`) to the file, whatever `--format`, from the same redacted report. A write failure is exit 2; the primary report is still emitted. Naming the `--output` file with a non-json `--format` is a usage error. New in 0.3.0. |
+| `--save-baseline <file>` | — | The same document under the baseline name (§3.5); may be given with `--json-output`. New in 0.3.0. |
 | `--timeout <ms>` | `30000` | Per request, at most 2^31−1−1000 ms (Node clamps larger timers to 1 ms). Connect uses `min(timeout, 15000)`, `--active` calls `min(timeout, 240000)`. 2026-07-28 JSON-RPC calls read the response body within the request's own timeout; probes cap the body at 256 KB and 10 s. The GET probe uses 5 s and the TLS check 10 s. |
 | `--max-duration <ms>` | no limit | Overall deadline for the whole check; a stop after the handshake keeps the partial results (§3.3) and exits 4 (§3.2). |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. |
@@ -1160,6 +1163,7 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | `--env K=V`, `--cwd <dir>` | — | stdio only. `--env` is repeatable and merged over `getDefaultEnvironment()`. |
 | `--ignore <RULE-ID>` | — | Repeatable. Ignored findings are still counted in JSON under `ignored`. |
 | `--list-rules` | — | Prints the catalog (ID, platforms, severity, title, source) and exits 0. |
+| `--config <file>`, `--no-config` | discovery | Options from a JSON file (§3.7); `--no-config` turns discovery off. Not both. New in 0.3.0. |
 | `--no-color`, `--verbose`, `--help`, `--version` | — | Color is also off when stdout is not a TTY or `NO_COLOR` is set. `--verbose` prints the HTTP trace (redacted) and stdio stderr tail. |
 
 - Exactly one of `<url>` or `--stdio` is allowed. Otherwise exit 2.
@@ -1171,7 +1175,7 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold (with `--baseline`: no new finding reaches it) |
 | 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`); with `--baseline`, counted over new findings only |
-| 2 | Usage or config error (including a `--baseline` file that is missing or not a JSON report of mcp-review-check), or `--output` could not be written |
+| 2 | Usage or config error (including a `--baseline` file that is missing or not a JSON report of mcp-review-check, and a wrong config file, §3.7), or `--output`, `--json-output` or `--save-baseline` could not be written |
 | 3 | Fatal: could not reach the server or complete any handshake (a report is still emitted, containing the SRV-003 error), also when `--max-duration` ran out before the handshake; with `--fail-on-incomplete`, a partial check (`coverage.toolLevel` is `auth-required`, `token-rejected` or `list-failed`); or an unexpected internal error (`fatal:` and the stack on stderr) |
 | 4 | `--max-duration` stopped the check after the handshake (`limits.stopped` set, no fatal error), at any `--fail-on` and with or without `--fail-on-incomplete`; the Result line reads `INCOMPLETE (stopped at --max-duration during <phase>)` and JSON `summary.failed` is `true`. New in 0.2.0; 0.1.x exited 3 |
 | 128+N | Ended by signal N (130 SIGINT, 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP); no report is written |
@@ -1209,7 +1213,7 @@ A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code
 
 stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. Capture stderr (the last 4 KB) and `onerror` parse failures for SRV-018. After that, steps 6–9 apply. The auth and network rules are skipped with the reason "stdio target".
 
-**Stopped by `--max-duration`.** The run goes through the phases `connect`, `auth probe`, `listing`, `UI resource reads`, `wire probes`, `tools re-list`, `text-only tools/list` and `active tool calls` (`PHASES` in `src/snapshot.ts`), skipping the ones it does not need. When `--max-duration` runs out, the report covers what ran. Each wire probe and each `--active` call is in the snapshot as soon as it finishes; the JSON-RPC errors and 2026-07-28 results seen so far are kept, and all of it goes through redaction and the input caps. `limits.stopped` names the phase that was cut short (`phase`), the phases that finished (`completed`) and the ones that did not (`unfinished`: the cut phase and every later one). A rule that reads data of an unfinished phase (a probe that never ran, the partial active calls, the observed errors or modern results gathered over the whole run, a listing, UI read, re-list or auth probe that did not finish) reports what it finds there. If it finds nothing, it is listed as skipped with reason `stopped by --max-duration` and is not counted as run, because finding nothing in partial data is not a pass. Rules over the request log and latency samples are judged on the requests that were made. A deadline that lands while connections are closing, after every check has run, does not mark the run as stopped. Two known gaps: the Origin probes come back from one call, so a stop inside it drops the Origin probes already made, and `clientInfoVariants` (RT-012) is published only when all variants finished.
+**Stopped by `--max-duration`.** The run goes through the phases `connect`, `auth probe`, `listing`, `UI resource reads`, `wire probes`, `tools re-list`, `text-only tools/list` and `active tool calls` (`PHASES` in `src/snapshot.ts`), skipping the ones it does not need. When `--max-duration` runs out, the report covers what ran. Each wire probe (each of the four Origin probes included, from 0.3.0) and each `--active` call is in the snapshot as soon as it finishes; the JSON-RPC errors and 2026-07-28 results seen so far are kept, and all of it goes through redaction and the input caps. `limits.stopped` names the phase that was cut short (`phase`), the phases that finished (`completed`) and the ones that did not (`unfinished`: the cut phase and every later one). A rule that reads data of an unfinished phase (a probe that never ran, the partial active calls, the observed errors or modern results gathered over the whole run, a listing, UI read, re-list or auth probe that did not finish) reports what it finds there. If it finds nothing, it is listed as skipped with reason `stopped by --max-duration` and is not counted as run, because finding nothing in partial data is not a pass. Rules over the request log and latency samples are judged on the requests that were made. A deadline that lands while connections are closing, after every check has run, does not mark the run as stopped. The clientInfo variants (RT-012) are kept only as a full set: a stop while they run leaves `active.clientInfoVariants` out, and RT-012 is listed as skipped with `stopped by --max-duration`, because a partial set would compare uneven tool lists (a wave-5 decision, not a gap). SRV-008 on a stop inside the Origin probes reports what the probes already made show; if they show nothing, it is skipped the same way (before 0.3.0 such a stop dropped all four probes).
 
 ### 3.4 Auth probe and coverage messaging
 - The probe sequence is the one in AUTH-002..016. All requests are GETs, plus one invalid-token POST. Nothing is created.
@@ -1225,10 +1229,33 @@ stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. C
 - **Identity.** Rule ID + `tool` + `resource` + `path` (the basis of the SARIF `partialFingerprints`), with platforms as a covering condition: a finding is known when an unused baseline entry with the same key lists all its platforms (a baseline for `--target all` covers a run for `--target claude`, not the reverse). Each baseline entry covers one finding, so one more repeat than the baseline had is new. Among several entries on the same key, the one whose message matches after replacing every number with `#` is taken first, then any free one, so a reworded message or a changed number stays known. SRV-020 (the era note) is never baselined. Findings are matched in their redacted form, as the baseline was written.
 - **Effect.** Known findings no longer count toward `--fail-on`, the verdicts, the `errors`/`warnings`/`info` counts or the GitHub annotations. The score still counts every finding: it describes the server, not the delta.
 - **Output.** JSON lists every finding with `baselined: true|false` and adds `summary.baselined` (`schemaVersion` stays 1, the fields are additive). SARIF sets `baselineState` (`new` / `unchanged`, SARIF 2.1.0 §3.27.24) on every result and `runs[0].properties.summary.baselined`. Text lists only the new findings plus one line `N known finding(s) from baseline, not listed: <rule IDs>` (rule IDs only, at most 8; not with `--quiet`); markdown and the job summary add a `Baseline` row to the summary table; the `--output` summary line adds `· N known from baseline`.
-- Not in 0.2.0: `--save-baseline`, tool-definition drift and `--diff-only`. `--format json --output <file>` already writes a usable baseline.
+- **Writing it.** `--save-baseline <file>` (0.3.0) writes the JSON report besides the chosen format (§3.1); the loop is a first run with `--fail-on never --save-baseline baseline.json`, then `--baseline baseline.json` on later runs. `--baseline b.json --save-baseline b.json` refreshes the file in place, since the baseline is read before connecting. `--format json --output <file>` writes the same document.
+- Not yet: tool-definition drift and `--diff-only`.
 
 ### 3.6 GitHub Action
-`action.yml` at the repository root (0.2.0) is a composite action, so every release tag is also an action version (`uses: alisaosipova/mcp-review-check@v0.2.0`). It runs the CLI once with `--format sarif --output <sarif-file>`; the annotations and the job summary come from the same run (§3.2, `GITHUB_ACTIONS`). Inputs: `target` or `stdio` (exactly one), `platform` (`--target`), `fail-on`, `fail-on-spec`, `active`, `bearer` (exported only as `MCP_REVIEW_CHECK_TOKEN` and masked), `version` (the npm version or range, default the current `MAJOR.MINOR`), `sarif-file`, `upload-sarif`, `extra-args` and `cli-path` (run a built `dist/cli.js` instead of the npm package). Outputs: `exit-code` and `sarif-file`. The step exits with the CLI's exit code, and the SARIF is uploaded with a SHA-pinned `github/codeql-action/upload-sarif` also when the check fails. Every input reaches the script through `env:`. The README's "CI recipes" section documents the inputs, and CONTRIBUTING.md the release coupling of the `version` default.
+`action.yml` at the repository root (0.2.0) is a composite action, so every release tag is also an action version (`uses: alisaosipova/mcp-review-check@v0.3.0`). It runs the CLI once with `--format sarif --output <sarif-file>` and, from 0.3.0, `--json-output` to a file under `$RUNNER_TEMP`; the annotations and the job summary come from the same run (§3.2, `GITHUB_ACTIONS`). Inputs: `target` or `stdio` (exactly one), `platform` (`--target`), `fail-on`, `fail-on-spec`, `active`, `bearer` (exported only as `MCP_REVIEW_CHECK_TOKEN` and masked), `version` (the npm version or range, default the current `MAJOR.MINOR`), `sarif-file`, `upload-sarif`, `extra-args` and `cli-path` (run a built `dist/cli.js` instead of the npm package). Outputs: `exit-code` and `sarif-file`, and from 0.3.0 `report-json` (the JSON report's path) and, read from that report by a separate `if: always()` step, `score` (`summary.score`, empty when it is `null`), `verdict` (`INCOMPLETE` when `limits.stopped` is set, else `FAIL` when `summary.failed`, else `PASS`, as the Result line), `verdict-claude` and `verdict-chatgpt` (`summary.verdicts.<platform>.verdict`, empty when the platform is not a target), `errors` and `warnings` (`summary.errors`, `summary.warnings`, over the new findings with `--baseline`) and `new-findings` (`findings.length - (summary.baselined ?? 0)`). The step writes only integers and upper-case words, so a report value cannot inject an output line, and leaves every report output empty when no report was written (exit 2) or it does not parse. Because of `--json-output`, the `version` default is `0.3` and the action needs CLI 0.3 or newer. The step exits with the CLI's exit code, and the SARIF is uploaded with a SHA-pinned `github/codeql-action/upload-sarif` also when the check fails. Every input reaches the script through `env:`. The README's "CI recipes" section documents the inputs, and CONTRIBUTING.md the release coupling of the `version` default.
+
+### 3.7 Config file
+`src/config.ts`, added in 0.3.0, so a project keeps its check settings next to the server.
+- **Discovery.** `--config <file>` names the file. Otherwise the first of `mcp-review-check.config.json` and `.mcp-review-check.json` that exists in `--cwd`, or else in the process working directory, is read. `--no-config` disables discovery, and `--config` together with `--no-config` is a usage error. A missing `--config` file is a usage error; a discovered file that does not exist is simply not read.
+- **Which commands read it.** A check only: `--help`, `--version`, `--list-rules` and `explain` return before the file is read, so a broken config file never breaks them.
+- **Format.**
+  - A JSON object (UTF-8 with or without BOM, or UTF-16LE with BOM). Keys are the camelCase long option names: `target`, `format`, `output`, `jsonOutput`, `saveBaseline`, `sarifLocation`, `timeout`, `maxDuration`, `failOn`, `failOnSpec`, `failOnIncomplete`, `baseline`, `local`, `noLocal`, `active`, `activeAuth`, `toolArgs`, `ignore`, `header`, `bearer`, `env`, `cwd`, `noColor`, `verbose`, `quiet`, `checklist`.
+  - The server is `url`, or `stdio`: a string split like `--stdio "<command>"`, or `stdio` + `args` (or a `stdio` array), kept verbatim like `--stdio -- …`.
+  - Switches take booleans (`false` counts as absent). `timeout`/`maxDuration` take a number or a string. `ignore` takes a string or an array. `header` and `env` take an array of `"Name: value"` / `"K=V"` strings or an object.
+- **Precedence.**
+  - Each value becomes the string or list the flag would give and then goes through the flag's validation.
+  - A flag on the command line overrides the key, and a list flag (`--ignore`, `--header`, `--env`) replaces the file's list instead of adding to it.
+  - The file's server is used only when the command line names neither a `<url>` nor `--stdio`.
+  - parseArgs has no defaults for `target`, `format`, `timeout` and `fail-on`; the defaults are applied after the merge, so an option absent from the command line can be told from its default.
+- **Relative paths.** `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs` and `cwd` are resolved relative to the config file's directory, as tsconfig and eslint do. `sarifLocation` stays repository-relative.
+- **Validation.** Errors (exit 2) name the file and the key and never a value:
+  - an unknown key, with "did you mean" for a kebab-case spelling (`fail-on` → `failOn`);
+  - a wrong type, a non-object, invalid JSON (the parser's message is not shown, since it quotes the file) or a missing `--config` file;
+  - `url` with `stdio`, or `args` without `stdio`.
+
+  A value rejected by the flag's validation reuses the flag's message plus `(from <file>: key "<key>")`.
+- **Secrets.** `header` and `bearer` keys are accepted with one stderr warning that names the keys and recommends `$MCP_REVIEW_CHECK_TOKEN`. File values are redacted like the flags (§4.5), since they become the same values. The markdown `rerun:` line is built from the real command line, so file values never appear in it.
 
 ---
 
@@ -1259,7 +1286,7 @@ test/
   fixtures/ good-server.mjs bad-server.mjs http-bridge.ts auth-server.ts modern-server.ts snapshots/*.json
   rules/*.test.ts  e2e-stdio.test.ts  e2e-http.test.ts  auth-probe.test.ts  report.test.ts  catalog.test.ts
 ```
-Later additions include `src/baseline.ts` (§3.5), `src/limits.ts` (input caps and linter-defined thresholds) and `action.yml` (§3.6).
+Later additions include `src/baseline.ts` (§3.5), `src/limits.ts` (input caps and linter-defined thresholds), `action.yml` (§3.6), `src/config.ts` (§3.7) and `src/report/junit.ts` (§5.3).
 
 **Package surface.** The package is CLI-only. From 0.2.0 `package.json` has no `main`, and its `exports` map exposes only `./package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail and the internal modules are not an accidental public API. The `mcp-review-check` bin (`dist/cli.js`) is the supported interface.
 
@@ -1342,6 +1369,8 @@ interface Limits {                                // snap.limits, also in the JS
   stopped?: { maxDurationMs: number; phase: string; completed?: string[]; unfinished?: string[] };   // §3.3
 }
 ```
+**Input caps** (`capSnapshot` in `src/limits.ts`, after redaction, also on a stopped snapshot). TEXT_CAP (16 KB) applies to the listed tool, prompt, resource and resource-template metadata, `serverInfo`, `instructions`, the raw list pages, the text-only `tools/list`, the `--active` call results, and the 2026-07-28 results. From 0.3.0 it also applies to the `--active` call arguments (synthesized or from `--tool-args`; the structure is kept and only long strings are cut), the calls' JSON-RPC errors (`message` and `data`) and transport errors, and every field of the observed JSON-RPC errors. Identifier keys (`name`, `uri`, `pattern`, …) inside these get ID_CAP (1 MB). Each cut adds one entry `{ where, length, cap }` to `limits.truncated` per object, with the longest string it cut: `tools/call <tool> args`, `tools/call <tool> JSON-RPC error`, `tools/call <tool> transport error`, and `observed JSON-RPC errors` (one entry for the whole list). The rules that read error text match on its start (RT-001's stack-trace and generic-phrase checks) or quote a prefix (RT-005, SPEC-016), so the cut does not change their results. A global byte budget for the whole run is not implemented: full strings stay in memory until `capSnapshot`.
+
 - The engine:
   - evaluates `needs` and records skipped rules with their reasons; on a snapshot with `limits.stopped`, also skips a rule that read data of an unfinished phase and found nothing (§3.3)
   - catches exceptions thrown by a rule and turns them into an `INTERNAL` info finding
@@ -1375,9 +1404,9 @@ interface Limits {                                // snap.limits, also in the JS
 That totals about 20 requests per run with no writes. When the preflight gets a redirect to another path on the same host (no https→http downgrade), the get, badVersion, delete and Origin probes go to the redirect target, as the SDK client does; SRV-006 still reports the redirect. The get probe reuses the SDK session's own standalone GET when the client already opened one, because servers that allow one SSE stream per session answer a second GET with 409. Legacy probes reuse the SDK session id via `transport.sessionId` and `transport.protocolVersion`, which are instance getters and not part of the Transport interface type.
 
 ### 4.4 Node compatibility
-The plan targeted Node 18; the implementation requires **Node 20.19 or newer** (`engines.node: ">=20.19"`), the oldest release line CI tests. The Node 18 constraints below (forbidden packages, vitest 3, `@types/node@^18`) are historical; what holds today:
-- `engines.node: ">=20.19"`; CI runs Node 22 and 24 on Linux, macOS and Windows and Node 20.19 on Linux (Node 20 reached end of life on 2026-04-30; raising `engines` is an open maintainer decision for 0.2.0).
-- Dev dependencies: vitest 4, `@types/node` 20 (it tracks the oldest supported Node), TypeScript `~5.9`.
+The plan targeted Node 18; the implementation requires **Node 22.12 or newer** (`engines.node: ">=22.12"`, from 0.3.0; 0.2.x required 20.19), the oldest release line CI tests. The Node 18 constraints below (forbidden packages, vitest 3, `@types/node@^18`) are historical; what holds today:
+- `engines.node: ">=22.12"`; CI runs Node 22 and 24 on Linux, macOS and Windows. Node 20 reached end of life on 2026-04-30 and was dropped in 0.3.0; while the version is 0.x, a minor release may raise the minimum.
+- Dev dependencies: vitest 4, `@types/node` 22 (it tracks the oldest supported Node; Dependabot ignores its semver-major updates), TypeScript `~5.9`.
 - `lib: ["ES2022"]` without DOM: `@types/node` types `fetch`, `Response`, `Headers` and `AbortSignal.timeout`, and the DOM globals (`name`, `status`, `close`, …) would hide typos in Node code.
 - Releases are published to npm only from CI (`.github/workflows/release.yml`, see CONTRIBUTING.md); the "no publishing in this phase" note below is historical.
 
@@ -1480,7 +1509,7 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
     skipped: [{ruleId, reason}], ignored: [...], manual: [{id, platforms, text, docs}],
     disclaimer, contact: {text, url} | null }
   ```
-  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3).
+  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3). `--json-output` and `--save-baseline` (0.3.0) write this document besides any `--format`.
 - **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
 - **sarif:** SARIF 2.1.0.
   - `tool.driver` = mcp-review-check, with `rules[]` taken from the catalog (`id`, `shortDescription`, `helpUri` = first source, `properties.platforms`).
@@ -1491,6 +1520,15 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
   - Manual items are excluded.
   - With `--baseline`, every result carries `baselineState` `new` or `unchanged` and `runs[0].properties.summary.baselined` counts the known ones (§3.5).
   - Known limitation: GitHub code scanning cannot link these results to source lines.
+- **junit** (0.3.0, `src/report/junit.ts`): JUnit XML for CI test views (GitLab `reports: junit`, Jenkins, `dorny/test-reporter`).
+  - Structure: a `<testsuites name="mcp-review-check">` root with `tests`, `failures`, `errors`, `skipped` (the sums of its suites) and `time` (the run duration in seconds). It holds one `<testsuite>` per gated platform (`summary.gate.platforms`: the `--target` directories, plus `spec` with `--fail-on-spec`) with the same counts and `<properties>`: target, score, failOn, the verdict (not on the `spec` suite) and, with known findings, baselined.
+  - Test cases: one `<testcase classname="<platform>" name="<RULE-ID> <title>">` per catalog rule of that platform, plus any other rule ID with findings there (`INTERNAL`). Test cases carry no `time`.
+  - Failure threshold: a test case whose findings reach `--fail-on` at the platform's own severity has one `<failure message="…" type="<severity>">` (the message is the first finding, or `N findings …; first: …`), whose body lists each such finding with its evidence and fix. With `--fail-on never` nothing fails.
+  - `<system-out>`: findings below `--fail-on`, findings known from `--baseline` (`known from baseline, not a failure: …`; never failures) and `--ignore`d findings. With `--baseline` each suite's own `<system-out>` has the one-line known-findings tally.
+  - Skipped: a skipped rule without findings is `<skipped message="<reason>"/>`.
+  - Error element: a failed connect or a `--max-duration` stop adds one `mcp-review-check run` test case per suite with `<error message="…" type="connect|max-duration"/>`, counted in `errors`, so a dead server is not a green test report.
+  - Escaping: text passes through `visibleText` (control and format characters as `\u{..}`), then lone surrogates, U+FFFE and U+FFFF are shown as `\u{..}` (not allowed in XML 1.0), then `& < > " '` are escaped.
+  - Manual items are excluded. On `--list-rules` the format prints the text catalog with a warning, as sarif does.
 
 ### 5.4 CTA constant
 `src/report/constants.ts`:
