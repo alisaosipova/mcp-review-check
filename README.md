@@ -84,7 +84,9 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
 | `--fail-on-incomplete` | off | Exit 3 when the check is partial: the server requires auth and no token was given (`auth-required`), the token was rejected (`token-rejected`) or `tools/list` failed (`list-failed`). Without it a partial check exits by `--fail-on` like a complete one, so an expired token in CI can leave the job green; use it in CI with a token. A `--max-duration` stop is exit 4 with or without it. |
-| `--baseline <file>` | | A JSON report of an earlier run (`--save-baseline <file>`, or `--format json --output <file>`). Findings already in it are **known**: they do not count toward `--fail-on`, the verdicts or the error, warning and info counts, and get no GitHub annotation; only new findings do. A finding is matched by rule, tool or resource, `path` and platforms (a baseline for `--target all` covers a run for `--target claude`), not by its message, so a reworded message or a changed number stays known; among several findings of one rule on one subject the message (numbers aside) decides which is which, and one more than the baseline had is new. SRV-020 (the protocol era note) is never known. JSON lists every finding with `baselined: true` or `false` and `summary.baselined`; SARIF sets `baselineState` to `unchanged` or `new`; text and markdown list only the new findings and one line `N known finding(s) from baseline, not listed: <rule IDs>` (not with `--quiet`). The score still counts every finding. A missing file or a file that is not a JSON report of mcp-review-check is a usage error (exit 2). |
+| `--baseline <file>` | | A JSON report of an earlier run (`--save-baseline <file>`, or `--format json --output <file>`). Findings already in it are **known**: they do not count toward `--fail-on`, the verdicts or the error, warning and info counts, and get no GitHub annotation; only new findings do. A finding is matched by rule, tool or resource, `path` and platforms (a baseline for `--target all` covers a run for `--target claude`), not by its message, so a reworded message or a changed number stays known; among several findings of one rule on one subject the message (numbers aside) decides which is which, and one more than the baseline had is new. SRV-020 (the protocol era note) is never known. JSON lists every finding with `baselined: true` or `false` and `summary.baselined`; SARIF sets `baselineState` to `unchanged` or `new`; text and markdown list only the new findings and one line `N known finding(s) from baseline, not listed: <rule IDs>` (not with `--quiet`). The score still counts every finding. A missing file or a file that is not a JSON report of mcp-review-check is a usage error (exit 2). The tool definitions are compared too, see [Tool-definition drift](#tool-definition-drift). |
+| `--fail-on-drift` | off | With `--baseline`: exit 1 when a tool was added, removed or changed since the baseline, also with `--fail-on never` (either one suffices). Without it, drift is reported but never changes the exit code. The verdicts and `summary.failed` stay about findings. Without `--baseline` a usage error (exit 2). Command line only (no config key yet). |
+| `--diff-only` | off | With `--baseline`, text and markdown: only the new findings and the [tool-definition drift](#tool-definition-drift), without the `N known finding(s) from baseline` line and the manual checklist (also with `--checklist`, and in the GitHub job summary). JSON, SARIF and JUnit are unchanged. Without `--baseline` a usage error (exit 2). Command line only (no config key yet). |
 | `--local`, `--no-local` | detected | Force [local mode](#local-mode) on or off, whatever the host; `--no-local` also makes a `--stdio` run strict. Not both. |
 | `--active` | off | Runs the RT rules by calling read-only tools: the first 50 that qualify, at most 3 calls each. Also lists the tools on up to three fresh connections whose `clientInfo.name` is `mcp-review-check`, `claude-ai` and `Anthropic` (RT-012). |
 | `--active-auth` | off | Probes DCR, `/authorize` and `/token`. **Creates a DCR client** on your authorization server. |
@@ -139,12 +141,12 @@ Options can live in a JSON file next to the server instead of on every command l
 | Format | What it is |
 |---|---|
 | `text` | The terminal report (default), colours on a TTY. |
-| `json` | One JSON document (`schemaVersion` 1): every finding, skipped rules, ignored findings, the manual checklist, `summary` with the score, verdicts and gate. The input of `--baseline`. `--json-output` and `--save-baseline` write this document besides any other format. |
+| `json` | One JSON document (`schemaVersion` 1, `$schema` the [report JSON Schema](#json-schema)): every finding, skipped rules, ignored findings, the manual checklist, `summary` with the score, verdicts and gate, and `toolFingerprints` (one SHA-256 per tool definition). The input of `--baseline`. `--json-output` and `--save-baseline` write this document besides any other format. |
 | `markdown` | A report for a pull request comment or the GitHub job summary, with an Evidence column and the `rerun:` line. |
 | `sarif` | SARIF 2.1.0 for GitHub code scanning (see `--sarif-location`). |
 | `junit` | JUnit XML for CI test views: GitLab `artifacts: reports: junit`, [dorny/test-reporter](https://github.com/dorny/test-reporter), Jenkins. |
 
-The JUnit report has one `<testsuite>` per gated platform (the `--target` directories, `claude` and `chatgpt` for `all`, plus `spec` with `--fail-on-spec`) and one `<testcase>` per rule of that platform, with `classname` the platform and `name` the rule ID and title. A rule whose findings reach `--fail-on` at that platform's severity has one `<failure>` (the message of each finding with its evidence and fix); lower findings, findings known from `--baseline` (never failures) and `--ignore`d ones are listed in `<system-out>`; a rule that did not run is `<skipped>` with the reason. A failed connect or a `--max-duration` stop adds an `<error>` test case to each suite. `tests`, `failures`, `errors` and `skipped` count the test cases, and each suite's `<properties>` carry the target, score, `--fail-on` and verdict. Server text is escaped and control characters are shown as `\u{..}`, as in text reports.
+The JUnit report has one `<testsuite>` per gated platform (the `--target` directories, `claude` and `chatgpt` for `all`, plus `spec` with `--fail-on-spec`) and one `<testcase>` per rule of that platform, with `classname` the platform and `name` the rule ID and title. A rule whose findings reach `--fail-on` at that platform's severity has one `<failure>` (the message of each finding with its evidence and fix); lower findings, findings known from `--baseline` (never failures) and `--ignore`d ones are listed in `<system-out>` (each suite's own `<system-out>` also lists the [tool-definition drift](#tool-definition-drift)); a rule that did not run is `<skipped>` with the reason. A failed connect or a `--max-duration` stop adds an `<error>` test case to each suite. `tests`, `failures`, `errors` and `skipped` count the test cases, and each suite's `<properties>` carry the target, score, `--fail-on` and verdict. Server text is escaped and control characters are shown as `\u{..}`, as in text reports.
 
 ```xml
 <testsuites name="mcp-review-check" tests="76" failures="8" errors="0" skipped="34" time="0.573">
@@ -160,12 +162,35 @@ The JUnit report has one `<testsuite>` per gated platform (the `--target` direct
 </testsuites>
 ```
 
+### Tool-definition drift
+
+Every JSON report records a fingerprint of each tool in `toolFingerprints`: `name`, `sha256` (SHA-256 of the canonical JSON, keys sorted at every depth and no whitespace, of the tool's `name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations` and `_meta`, those present) and `fields` (one SHA-256 per present field). It is `null` when `tools/list` did not finish (failed connect, partial check, a `--max-duration` stop before the listing). With `--baseline`, the tools of this run are paired by name with the baseline's and the report gets a **Changed tool definitions** section: tools added, removed, and changed with the top-level fields that changed (a change of key order alone is not a change).
+
+| Format | Where |
+|---|---|
+| `text` | `CHANGED TOOL DEFINITIONS (N since baseline)` after the findings, one line per tool (`+` added, `-` removed, `~ name: changed: description, inputSchema`); `Tool definitions: no change since baseline (N tools).` otherwise. With `--quiet`, only when there are changes. |
+| `markdown` | `## Changed tool definitions (N since baseline)` with a Tool and Change table, after the findings. |
+| `json` | `baseline.toolChanges`: `{"added": [...], "removed": [...], "changed": [{"name": "...", "fields": ["description"]}]}`. |
+| `sarif` | One `note` result per change with `ruleId` `BASE-001` ("Tool definition changed since baseline"), `baselineState` `new` and `properties.change` (`added`, `removed` or `changed`, with `fields`). BASE-001 is synthetic: it is added to the run's rules only when there is a change and is not in the catalog (`--list-rules`, `explain` and `--ignore` do not know it). |
+| `junit` | In each suite's `<system-out>`, never a failure. |
+
+Drift is informational: it does not change the verdicts, the counts or the exit code unless `--fail-on-drift` is given. A baseline written by 0.3 or older has no fingerprints: it is still accepted (its findings are known as before) and the section reads `Tool definitions not compared: tool fingerprints were not recorded in the baseline`; write it again with `--save-baseline` to start comparing. The fingerprints are taken from the report as written, so secrets are redacted before hashing (a rotated secret echoed in a description is not a change) and tool names in the section are redacted like everything else; a string longer than the input cap (`limits.truncated`) is compared up to the cap.
+
+### JSON Schema
+
+[`schema/report.schema.json`](schema/report.schema.json) (JSON Schema draft 2020-12) describes the JSON report and ships in the npm package (`node_modules/mcp-review-check/schema/report.schema.json`). Its `$id`, which every JSON report names in `$schema`, is `https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v0.4.0/schema/report.schema.json`. Fields added after 0.1 say since which release in their `description`. Objects do not allow other properties, so a field this schema does not know fails validation; `schemaVersion` is bumped on a breaking change. To check the report in CI, for example with [ajv-cli](https://github.com/ajv-validator/ajv-cli):
+
+```bash
+npx mcp-review-check@0.4 --fail-on never --json-output report.json --stdio -- node dist/server.js
+npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -s node_modules/mcp-review-check/schema/report.schema.json -d report.json
+```
+
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
-| 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`) |
+| 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`), or with `--fail-on-drift` a tool definition changed since `--baseline` |
 | 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID; a wrong [config file](#config-file)), or `--output`, `--json-output` or `--save-baseline` could not be written |
 | 3 | Could not reach the server or complete any handshake, also when `--max-duration` ran out before the handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist); with `--fail-on-incomplete`, a partial check (`auth-required`, `token-rejected`, `list-failed`); or the linter itself failed unexpectedly (`fatal:` and a stack trace on stderr; please [report it](https://github.com/alisaosipova/mcp-review-check/issues/new?template=bug.yml)) |
 | 4 | `--max-duration` stopped the check after the handshake (whatever `--fail-on`, also with errors found before the stop): the report covers what ran. New in 0.2.0; 0.1.x exited 3 |
@@ -309,6 +334,12 @@ npx mcp-review-check@0.3 --target claude --fail-on never --save-baseline .mcp-re
 ```
 
 `--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline.
+
+**Catch tool-definition changes** — the same baseline also holds a fingerprint of every tool, so the job reports which tools were added, removed or changed since it was saved ([Tool-definition drift](#tool-definition-drift)). Add `--fail-on-drift` to fail the job on any change until the baseline is refreshed, and `--diff-only` to keep the text or markdown report to what is new:
+
+```yaml
+      - run: npx -y mcp-review-check@0.4 --target claude --baseline .mcp-review-check/baseline.json --fail-on-drift --diff-only --stdio -- node dist/server.js
+```
 
 **JUnit test reports** — GitLab shows the `junit` report in the merge request and the pipeline's Tests tab; each rule is a test, a finding at `--fail-on` a failed test:
 
