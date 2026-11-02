@@ -45,6 +45,7 @@ Items are grouped into packages with **disjoint file ownership**, so packages ca
 | 2026-11-01 | Integration: each `worktree-wf_365c0c99-4d0-N` branch rebased onto `main` and fast-forwarded (no merge commits), typecheck + build after each; 126 commits. Two cross-package interactions fixed in one extra commit: WP3's probe "(close session)" DELETEs now excluded from rule evidence like WP2's SDK session ends (F030 vs R012); WP3 test updated for WP8's widened RT-002 (C-imp-3). |
 | 2026-11-01 | Push to `origin/main` blocked by GitHub push protection: a WP8 test fixture matched the GitLab token pattern. The 5 affected unpushed commits were rewritten (`rebase --exec` sed) to the repo's `SYNTH` fixture convention; no pushed history touched. Then plain fast-forward push `8b0f41e..cdfd53f`. |
 | 2026-11-01 | Wave 2 (WP10-docs-ci) launched on the pushed tree: CHANGELOG assembly from the 9 reports, RULES.md/README regeneration, docs/CI/packaging items, docs-only deferrals from wave 1. |
+| 2026-11-01 | Wave 4 (see §8): default decisions in `remediation/wave4-plan.md`, four code packages (W4A–W4D) rebased and fast-forwarded on `main` without conflicts, nine existing tests updated for exit 4 (`21abf35`), docs step W4E (CHANGELOG, spec.md with Q5–Q8 answered, README action recipe and `@0.2` pins, this section). Release 0.2.0 prepared, not yet tagged. |
 
 ## 5. Wave 1 results
 
@@ -145,6 +146,7 @@ Follow-up from W3A's notes applied in the same commit: SRV-010 now samples `body
 | Still deferred: feature-sized (MARKET.md backlog) | 10 (F011, R013, F146, F036, F076, F080, F079-rest, F168, F150-rest, F159-rest) |
 | Still deferred: maintainer decision | 8 (F102, F081, F077-part1, F122, F131, F151-rest, F145-rest, spec-sync) + open questions in §6 |
 | Still deferred: needs another change first | 3 (F024/R010 needs SPEC-016 to skip code checks for id-mismatch records; R003-rest partial results at `--max-duration`; F156 coverage thresholds) |
+| After wave 4 (§8) | Done or decided: all 21 items above (16 implemented, 7 kept as they are by decision: F122, F102, F151, F153, F081, F077-part1, F131). Still deferred: the follow-ups listed in §8.3 |
 
 Commits on `main` since `8b0f41e`: 127 (wave 1) + 11 (wave 2) + 18 (wave 3) + 2 (integration) = 158. All pushed with plain fast-forward pushes.
 
@@ -155,3 +157,63 @@ GitHub answered every push with "Bypassed rule violations", meaning some content
 Verified afterwards with `gitleaks detect --no-git` over the working tree: the same rule families (gitlab-pat, stripe-access-token, aws-access-token, jwt, github-pat, generic-api-key) fire on fixtures that were already in `main` before this work (`test/redact.test.ts`, `test/e2e-redaction.test.ts`, `test/incomplete.test.ts`, `test/sarif.test.ts`, …), all `SYNTH`-marked by design because the project tests secret redaction. The bypass message is therefore the repository's normal state for any push touching those tests, not a regression introduced here. No real credential was found.
 
 | 2026-11-01 | Wave 3 integrated, full suite green after three test adjustments, SRV-010 timing fix, review record committed. Final state: `origin/main` = `c1b5def`, 160 commits since `8b0f41e`, all fast-forward pushes. Remediation complete except the 21 deferred items listed in §7.1 and the open questions in §6. |
+
+## 8. Wave 4
+
+Wave 4 closed the 21 items left in §7.1 with the default decision for each open question, as the maintainer asked ("finish with the default options and release to npm"). The plan, the decision table and the package split are in [remediation/wave4-plan.md](remediation/wave4-plan.md); in short:
+
+| Item | Decision |
+|---|---|
+| F011 / Q5 | Exit 4 for a `--max-duration` stop after the handshake, in 0.2.0 (minor). |
+| R013 / Q6 | Opt-in `--fail-on-incomplete` (exit 3 on a partial check) and an always-on `::warning` for a partial check in GitHub Actions. |
+| F122 / Q7 | Keep SARIF level = highest severity over all platforms; no option. |
+| F102 / Q8 | Keep APPS-013 scoped to `openExternal` / `ui/open-link`. |
+| F151 | Keep `engines.node >=20.19`; revisit in 0.3.0. |
+| F150 | CLI-only: `exports` exposes only `./package.json`, `main` dropped. |
+| F153 | 0.1.0 CHANGELOG section left as is. |
+| F148 | 0.1.0 is on npm; README install note reworded. |
+| Catalog date | Stays 2026-11-01 (moved in wave 2, `cae2189`; the plan row was corrected in `68d0361`). |
+| F081, F077-part1, F131 | Kept as they are. |
+| F036, F146 | Lite variants only. |
+| F168 | P0 items only: `--baseline` and a composite `action.yml`. |
+| F159, F145, F156 | `npm audit` off PRs (weekly + `main`), provenance check after publish, coverage thresholds in `test:coverage` only. |
+| F024 / R010, R003 | SPEC-016 id-mismatch records; partial results kept on a `--max-duration` stop. |
+| F076, F080, F079 | New rules TOOL-033, TOOL-034, TOOL-035; TOOL-002 on chatgpt. |
+| spec-sync | `docs/design/spec.md` updated, Q5–Q8 answered (W4E). |
+
+### 8.1 Results per package
+
+| Package | Branch | Commits on `main` | Done | Deferred |
+|---|---|---|---|---|
+| W4A-cli ([report](remediation/W4A-report.md)) | `worktree-agent-a51f643012a337d9e` | `f5e539b`, `26780f5`, `3179d51`, `b9288b6`, `292e59b` | F011 (exit 4), R013 (`--fail-on-incomplete`, partial-check `::warning`; `list-failed` counts as partial), F148, F150, F168-baseline (`src/baseline.ts`) | `--save-baseline`, tool-definition drift, `--diff-only`; the existing exit-3 test expectations (done at integration, `21abf35`) |
+| W4B-rules ([report](remediation/W4B-report.md)) | `worktree-agent-ad0b0ab4fe935a0b2` | `92820d6`, `361f2a6`, `7aa84d1`, `dcbdadb` | F076 (TOOL-033, TOOL-002 chatgpt), F080 (TOOL-034), F079-rest (TOOL-035; TOOL-020 already covered `outputSchema`) | none |
+| W4C-connect ([report](remediation/W4C-report.md)) | `worktree-agent-abacd8763566a28b0` | `36f617a`, `4e8ddb2`, `ea90e70`, `1194618` | F024/R010 (SPEC-016), R003-rest (partial results, `limits.stopped.completed/unfinished`, `stopped by --max-duration` skips), F146-lite and F036-lite (already in place since wave 1; pinned with tests) | F146 beyond lite, F036 full, `clientInfoVariants` partial, Origin probes lost on a stop |
+| W4D-ci ([report](remediation/W4D-report.md)) | `worktree-agent-ab4c99ea6296ff890` | `46e6f8f`, `0698836`, `a5412d6`, `39c955a`, `44b6aa8`, `7c46590` | F145-rest (provenance check), F159-rest (`audit.yml`), F156 (thresholds 88/82/89/92, `reportOnFailure`), F168-action (`action.yml`, CI `action` job) | action outputs `score` / `verdict-*`; `v0` moving tag |
+| W4E-docs | `main` (no branch) | this commit series | CHANGELOG `[Unreleased]`, spec.md (§2.2, §2.3, §3.1–3.6, §4.1, §4.2, §5.3, §8 Q5–Q8), README action recipe and `@0.2` pins, this section | — |
+
+Two edits outside the stated ownership, both minimal and reviewed at integration: W4B appended rule cases to `test/rules/tools.test.ts` and widened the frozen ID range in `test/catalog.test.ts` (required by the repo's own guards for any new rule); W4D added `audit.yml` and the `uses: ./` exemption to `test/workflows.test.ts`. W4E narrowed the README assertion in `test/docs.test.ts` that forbade any mention of `upload-sarif` / `codeql-action` (written before the action existed) to the README outside "CI recipes" (`b2c2b6f`).
+
+### 8.2 Integration
+
+The four branches were rebased onto `main` and fast-forwarded without conflicts (19 commits from `36f617a` to `292e59b`). The exit-4 change made nine existing tests fail on their old exit-3 expectation for a stopped run (`test/incomplete.test.ts`, `test/e2e-stdio.test.ts`, `test/e2e-http.test.ts`, `test/remediation-w3c-cli-tests.test.ts`, as W4A predicted); they were updated in `21abf35`, together with the `--help` regex for the wrapped "internal error" phrase. A follow-up commit (`68d0361`) moved the TOOL-033 source comments to point at `CATALOG_DATE`, gave the 70 MB stdio overflow test a 120 s request timeout for full-suite load, and corrected the catalog-date row of the plan.
+
+### 8.3 Still deferred after wave 4
+
+| Item | Origin | Why deferred |
+|---|---|---|
+| `--save-baseline`, tool-definition drift ("Changed tool definitions"), `--diff-only` | W4A, MARKET.md §3.3 | Separate CLI modes beyond the P0 `--baseline`; `--format json --output` already writes a baseline. |
+| Action outputs `score`, `verdict-claude`, `verdict-chatgpt` | W4D | Needs a second run with `--format json` or parsing the SARIF run properties; best after `--baseline` so the outputs can count new findings. |
+| `v0` moving action tag | W4D | Moving it needs a forced tag push (`git push origin refs/tags/v0 --force`), which the repository's no-force-push rule rejects; users pin a full tag or SHA. CONTRIBUTING.md still describes it as an optional maintainer step. |
+| F146 beyond lite: cap `active.calls[].jsonRpcError` / `transportError` / `args` and `observedErrors[].message` | W4C | Needs `capStrings` exported from `src/limits.ts`; a global byte budget stays a design change. |
+| F036 full | W4C | Stop keeping the whole parsed JSON of every exchange; changes the snapshot model. |
+| R003: partial `clientInfoVariants` | W4C | Published only when all variants finish; partial sets would let RT-012 compare uneven lists. |
+| R003: Origin probes lost on a stop | W4C | They come back from one `originProbes()` call in `src/probe/network.ts`; a stop inside it drops the ones already made. |
+| Coverage job in CI; re-measure thresholds after the W4A–W4C code | W4D | `test:coverage` is not run in CI, and two timing tests (wp2 70 MB stdio, limits wall-clock) are flaky under instrumentation. |
+| Action job on real macOS / Windows runners | W4D | The `action` CI job runs only once pushed; bash 3.2 and Git Bash behaviour are unverified locally. |
+| MARKET.md roadmap: config file, `--listing`, `--format junit`, `--oauth` | wave4-plan F168 | Feature work for a later minor. |
+| F151: raise `engines.node` | wave4-plan | Revisit in 0.3.0. |
+| Open questions Q1–Q4 in spec §8, §6 items not covered above | — | Unchanged. |
+
+### 8.4 Verification (W4E)
+
+`npm run typecheck`, `npm run build`, `npm run readme:rules` (no drift: 147 rules, 31 manual items, catalog date 2026-11-01) and the docs sync tests `test/docs.test.ts test/catalog.test.ts test/remediation-w3c-cli-tests.test.ts test/remediation-w4d-action.test.ts test/workflows.test.ts`. The full suite was not run by W4E (another process was running it).
