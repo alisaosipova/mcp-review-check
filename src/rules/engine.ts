@@ -55,6 +55,10 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
     case 'active-auth':
       if (!snap.options.activeAuth) return 'needs --active-auth';
       return snap.authProbe?.active ? undefined : 'auth probe did not run';
+    case 'plugin-dir':
+      return snap.listing?.plugin ? undefined : 'needs --plugin-dir';
+    case 'openai-manifest':
+      return snap.listing?.openai ? undefined : 'needs --openai-manifest';
   }
 }
 

@@ -6,7 +6,7 @@ const range = (prefix: string, n: number) => Array.from({ length: n }, (_, i) =>
 /** Frozen ID list: IDs are never reused after removal. Append only. */
 const FROZEN = [
   ...range('SRV', 20), ...range('SPEC', 23), ...range('TOOL', 35), ...range('INJ', 10), ...range('DATA', 5),
-  ...range('POL', 5), ...range('APPS', 19), ...range('AUTH', 21), ...range('RT', 12), ...range('MAN', 31),
+  ...range('POL', 5), ...range('APPS', 19), ...range('AUTH', 21), ...range('RT', 12), ...range('MAN', 31), ...range('LST', 26),
 ];
 
 describe('rule catalog', () => {
@@ -14,7 +14,7 @@ describe('rule catalog', () => {
 
   it('IDs are unique and well-formed', () => {
     expect(new Set(ids).size).toBe(ids.length);
-    for (const id of ids) expect(id).toMatch(/^(SRV|SPEC|TOOL|INJ|DATA|POL|APPS|AUTH|RT|MAN)-\d{3}$/);
+    for (const id of ids) expect(id).toMatch(/^(SRV|SPEC|TOOL|INJ|DATA|POL|APPS|AUTH|RT|LST|MAN)-\d{3}$/);
   });
 
   it('IDs match the frozen list', () => {

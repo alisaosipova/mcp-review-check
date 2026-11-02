@@ -3,7 +3,7 @@ export type { Platform, Severity } from '../snapshot.js';
 
 export type Need =
   | 'tools' | 'resources' | 'prompts' | 'ui' | 'http' | 'stdio' | 'auth'
-  | 'legacy' | 'modern' | 'active' | 'active-auth';
+  | 'legacy' | 'modern' | 'active' | 'active-auth' | 'plugin-dir' | 'openai-manifest';
 
 export interface RuleMeta {
   id: string;

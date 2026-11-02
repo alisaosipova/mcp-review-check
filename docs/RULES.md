@@ -157,6 +157,32 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | RT-010 | Results leak internals or secrets | chatgpt: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | RT-011 | Injection patterns in tool output | claude: warning, chatgpt: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | RT-012 | Behavior gated on clientInfo | claude: info | [link](https://claude.com/docs/connectors/building/testing) |
+| LST-001 | Plugin manifest .claude-plugin/plugin.json present and valid | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-002 | Plugin name: lowercase letters, digits and hyphens, ≤64, not reserved | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-003 | Plugin manifest sets description, author and version | claude: warning | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-004 | Plugin README of at least 40 words | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-005 | Plugin has a LICENSE file or a license field | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-006 | .mcp.json is valid and every server entry has command or url | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-007 | Remote plugin servers: type http, sse or ws and an https:// or wss:// URL | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-008 | Package launchers pin an exact version | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-009 | No package-manager source configuration next to a launcher | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-010 | MCP servers declared with command or url, not .mcpb/.dxt bundles | claude: warning | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-011 | No credentials in MCP server headers or env | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-012 | No macOS or Windows system files in the plugin folder | claude: error | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-013 | Plugin files within the reviewer-free limits (size, count, type, no links) | claude: warning | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-014 | Plugin directory listing fields: https URLs and an icon in the plugin | claude: warning | [link](https://code.claude.com/docs/en/plugins-reference#directory-listing-fields) |
+| LST-015 | Plugin remote server URL matches the checked server | claude: warning | [link](https://claude.com/docs/plugins/pre-submission-checklist) |
+| LST-016 | ChatGPT package manifest parses and has listing fields | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-017 | ChatGPT listing text within the final-submission limits | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission-errors) |
+| LST-018 | ChatGPT listing URLs: four HTTPS URLs without credentials, ≤1024 characters | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-019 | ChatGPT starter prompts: ≤3, one line, ≤128 characters, unique, no @mentions | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission-errors) |
+| LST-020 | ChatGPT brand colors #RRGGBB with ≥2:1 contrast | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission-errors) |
+| LST-021 | ChatGPT icons: logo and composerIcon as ./ paths to PNG, JPEG, WebP or SVG | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-022 | ChatGPT review: exactly 5 positive and 3 negative test cases, demo URL, release notes | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-023 | ChatGPT package: no credentials, reviewer data, server headers, apps or hooks | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-024 | ChatGPT package: one remote MCP server with an https URL | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-025 | ChatGPT test cases trigger tools the server lists | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-026 | ChatGPT package MCP server URL matches the checked server | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
 
 **Manual checklist** (printed as reminders; never scored):
 

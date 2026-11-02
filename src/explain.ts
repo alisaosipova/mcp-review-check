@@ -10,6 +10,7 @@ const NEED_LABEL: Record<Need, string> = {
   tools: 'tools/list works', resources: 'resources/list works', prompts: 'prompts/list works', ui: 'the server has UI resources',
   http: 'a <url> target', stdio: 'a --stdio target', auth: 'the server asks for OAuth', legacy: 'a 2025-11-25 (or earlier) server',
   modern: 'a 2026-07-28 server', active: '--active', 'active-auth': '--active-auth (<url> only)',
+  'plugin-dir': '--plugin-dir <dir>', 'openai-manifest': '--openai-manifest <file>',
 };
 const needsText = (needs: Need[]) => needs.map((n) => NEED_LABEL[n]).join(', ');
 const FEATURE_LABEL = { ui: 'the server has UI resources', oauth: 'the server asks for OAuth' } as const;
