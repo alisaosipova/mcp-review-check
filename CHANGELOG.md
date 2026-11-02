@@ -6,7 +6,27 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Nothing yet.
+Rule catalog dated 2026-11-01. No rule changes; this is a minor release for new CLI features and the Node 22.12 minimum.
+
+### Added
+
+- A config file holds the options for a check: `--config <file>`, or else `mcp-review-check.config.json` or `.mcp-review-check.json` found in `--cwd` or the working directory (`--no-config` turns the search off), with the long option names in camelCase as keys (`failOn`, `toolArgs`, …) and `url` or `stdio`/`args` for the server, validated like the options and overridden by the command line; a wrong key or type is a usage error (exit 2) that names the file and the key but never a value, and `header` or `bearer` in the file prints a warning to keep tokens in `$MCP_REVIEW_CHECK_TOKEN`.
+- `--json-output <file>` writes the JSON report (the `--format json` document, with `baselined` marks under `--baseline`) besides the chosen format, and `--save-baseline <file>` does the same under the baseline name, so one run can print a text or SARIF report and write the file that later runs pass to `--baseline`.
+- `--format junit` writes JUnit XML for CI test views (GitLab `reports: junit`, Jenkins, `dorny/test-reporter`): one test suite per gated platform and one test case per rule, failing when its findings reach `--fail-on` (findings known from `--baseline` never do), `<skipped>` for a rule that did not run, and an `<error>` for a failed connect or a `--max-duration` stop.
+- The GitHub Action has outputs read from the JSON report of the same run: `score` (empty for a partial check), `verdict` (`PASS`, `FAIL` or `INCOMPLETE`, as the Result line), `verdict-claude` and `verdict-chatgpt` (the directory verdicts), `errors`, `warnings`, `new-findings` (findings not in the `--baseline`) and `report-json` (the report's path).
+
+### Changed
+
+- Requires Node 22.12 or newer (was 20.19), because Node 20 has been end-of-life since 2026-04-30, and CI runs Node 22 and 24 on Linux, macOS and Windows; while the version is 0.x, a minor release may raise the minimum Node version.
+- The GitHub Action's `version` input defaults to `0.3` and needs 0.3 or newer, since its outputs read the report written with `--json-output`.
+- Exit code 2 also covers a wrong config file and a `--json-output` or `--save-baseline` file that cannot be written (the primary report is still printed or written).
+- The input caps also cover the `--active` tool calls' arguments, JSON-RPC errors and transport errors and the JSON-RPC errors observed during the run, each long string cut at 16 KB and listed under `limits.truncated`, so a multi-megabyte error message no longer reaches the rules' pattern checks and the finding text whole.
+- A run stopped by `--max-duration` during the Origin probes keeps the probes already made, so SRV-008 reports what they show, or is listed as skipped (`stopped by --max-duration`) when they show nothing, instead of losing all four.
+- Each feature or coherent feature set ships as its own minor release, published through npm trusted publishing, with the `NPM_TOKEN` step kept only as a documented fallback (CONTRIBUTING.md).
+
+### Fixed
+
+- The CI self-test of the GitHub Action checks each output on its own line, so a wrong value fails the job (a `test a && test b` line under `bash -e` let a failing first test pass).
 
 ## [0.2.0] - 2026-11-01
 
