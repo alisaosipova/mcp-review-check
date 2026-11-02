@@ -14,6 +14,7 @@ import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif, SARIF_LOCATION } from './report/sarif.js';
+import { renderJunit } from './report/junit.js';
 import { ConfigError, findConfig, loadConfig, type LoadedConfig } from './config.js';
 import { annotations, appendStepSummary, escapeCommand } from './report/github.js';
 import type { FailOn } from './report/score.js';
@@ -41,7 +42,7 @@ Options:
   --header "K: V"         Extra request header (repeatable). Values are redacted in output.
   --bearer <token>        Bearer token (default: $MCP_REVIEW_CHECK_TOKEN).
   --target <t>            claude | chatgpt | all (default: all)
-  --format <f>            text | json | markdown | sarif (default: text)
+  --format <f>            text | json | markdown | sarif | junit (default: text)
   --output <file>         Write the report to a file; print a summary line to stderr.
   --json-output <file>    Also write the JSON report (as --format json prints it) to a file, whatever --format.
   --save-baseline <file>  The same, under the baseline name: write it now, pass it to --baseline on later runs.
@@ -183,6 +184,7 @@ function render(r: Report, format: string, opts: TextOptions, rerun: string, sar
     case 'json': return known ? renderJsonWithBaseline(r, known) : renderJson(r);
     case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun }, known); // --quiet and --checklist are text only
     case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation) : renderSarif(r, sarifLocation);
+    case 'junit': return renderJunit(r, known);
     default: return known ? addBaselineToText(renderText(r, opts), known, opts.quiet) : renderText(r, opts);
   }
 }
@@ -270,9 +272,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const rules = RULES.filter((r) => r.id.startsWith(prefix));
       const manual = MANUAL_ITEMS.filter((m) => m.id.startsWith(prefix));
       if (!rules.length && !manual.length) throw new UsageError(`no rule or MAN ID starts with ${prefix}`);
-      if (!['text', 'json', 'markdown', 'sarif'].includes(format)) throw new UsageError('--list-rules --format must be text, json or markdown');
-      // SARIF has no catalog form; print the text catalog with a warning and exit 0, as the 0.1.0 baseline did.
-      if (format === 'sarif') stderr += 'warning: --format sarif does not apply to --list-rules; printing text\n';
+      if (!['text', 'json', 'markdown', 'sarif', 'junit'].includes(format)) throw new UsageError('--list-rules --format must be text, json or markdown');
+      // SARIF and JUnit have no catalog form; print the text catalog with a warning and exit 0, as the 0.1.0 baseline did.
+      if (format === 'sarif' || format === 'junit') stderr += `warning: --format ${format} does not apply to --list-rules; printing text\n`;
       const list = format === 'json' ? listRulesJson(rules, manual) : format === 'markdown' ? `${rulesMarkdown(rules, manual)}\n` : listRulesText(rules, manual, !!values.verbose);
       return { code: 0, stdout: list, stderr };
     }
@@ -321,7 +323,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
     const target = values.target!.toLowerCase() as TargetOpt;
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
-    if (!['text', 'json', 'markdown', 'sarif'].includes(format)) throw new UsageError('--format must be text, json, markdown or sarif');
+    if (!['text', 'json', 'markdown', 'sarif', 'junit'].includes(format)) throw new UsageError('--format must be text, json, markdown, sarif or junit');
     const sarifLocation = values['sarif-location'] ?? SARIF_LOCATION;
     // Code scanning takes repository-relative paths only: no scheme (C: included), no leading / or \, no "..".
     if (!sarifLocation || /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(sarifLocation) || sarifLocation.split(/[\\/]/).includes('..')) throw new UsageError('--sarif-location must be a relative path without a scheme or ".." (the value is not shown)');
@@ -463,7 +465,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;
     const color = tty && !values['no-color'] && format === 'text' && !values.output;
     const banner = localBanner(report);
-    if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document
+    if (banner && (format === 'json' || format === 'sarif' || format === 'junit')) stderr += `${banner}\n`; // stdout stays the document
     const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
     const rerun = rerunCommand(argv, redactor);
     const body = render(report, format, textOpts, rerun, sarifLocation, baselined);

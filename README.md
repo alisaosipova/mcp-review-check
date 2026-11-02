@@ -74,7 +74,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--header "K: V"` | | Repeatable. Values are redacted in every output format. |
 | `--bearer <token>` | `$MCP_REVIEW_CHECK_TOKEN` | Sent as `Authorization: Bearer`. Prefer the env var to keep tokens out of shell history. |
 | `--target claude\|chatgpt\|all` | `all` | `spec` rules always run and are reported; the exit code counts only the chosen directories (see [Exit codes](#exit-codes)). |
-| `--format text\|json\|markdown\|sarif` | `text` | |
+| `--format text\|json\|markdown\|sarif\|junit` | `text` | See [Output formats](#output-formats). |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
 | `--json-output <file>` | | Also writes the JSON report to the file, whatever `--format`: the same document `--format json` prints (with `baselined` marks under `--baseline`), redacted the same way. For a job that wants a readable or SARIF report and a JSON file from one run. A file that cannot be written is exit 2 (the primary report is still printed or written). |
 | `--save-baseline <file>` | | The same JSON report under the baseline name: write it once, then pass the file to `--baseline` on later runs (see [CI recipes](#ci-recipes)). May be given with `--json-output`. |
@@ -92,9 +92,9 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--stdio "<command>"`, `--stdio -- <command> [args...]` | | Launch a local server over stdio. The string form splits on whitespace and honours single and double quotes; a backslash is literal, so Windows paths such as `C:\Users\me\server.js` and `"\\host\My Share\server.js"` work. Inside double quotes a backslash escapes only `"`, by the Windows rule on every OS: `\"` is a literal `"`, `\\"` is one backslash that ends the quote (`"C:\srv\\"`), and `\\` and `\$` stay as written (on Linux and macOS too, unlike a shell). The `--` form passes every argument verbatim (no quoting rules) and must come last. |
 | `--env K=V`, `--cwd <dir>` | | stdio only. `--env` values are redacted in every output format (see Redaction below). The server gets only `HOME, LOGNAME, PATH, SHELL, TERM, USER` from your environment (on Windows `APPDATA, HOMEDRIVE, HOMEPATH, LOCALAPPDATA, PATH, PROCESSOR_ARCHITECTURE, PROGRAMFILES, SYSTEMDRIVE, SYSTEMROOT, TEMP, USERNAME, USERPROFILE`) plus the `--env` values: pass anything else it needs, such as an API key or `TMPDIR` (macOS), with `--env`. On Windows names are case-insensitive, so `--env Path=…` replaces the inherited `PATH`. |
 | `--ignore <RULE-ID>` | | Repeatable, any case, or a comma-separated list. Ignored findings stay visible in JSON under `ignored` and count neither toward the exit code nor toward the score. An ID that is neither a rule nor a `MAN` item is a usage error (exit 2), so a typo does not silently ignore nothing. |
-| `--list-rules [prefix]` | | Prints the catalog and exits: `--format text` (default; with `--verbose`, each rule's rationale), `json` or `markdown` (the tables in [docs/RULES.md](docs/RULES.md)); `--format sarif` prints the text catalog with a warning on stderr and exits 0. A prefix such as `TOOL` or `MAN` keeps the IDs that start with it. |
+| `--list-rules [prefix]` | | Prints the catalog and exits: `--format text` (default; with `--verbose`, each rule's rationale), `json` or `markdown` (the tables in [docs/RULES.md](docs/RULES.md)); `--format sarif` and `junit` print the text catalog with a warning on stderr and exit 0. A prefix such as `TOOL` or `MAN` keeps the IDs that start with it. |
 | `explain <RULE-ID>` | | Prints a rule's severity per directory, rationale, sources and fix, and how to `--ignore` it; also takes `MAN` IDs. An unknown ID exits 2. |
-| `--quiet` | off | Text only: prints just the error and warning findings, the Score line (without the info count), the Result line and the disclaimer. A failed connect (with its cause) or a partial check, such as missing auth, is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
+| `--quiet` | off | Text only: prints just the error and warning findings, the Score line (without the info count), the Result line and the disclaimer. A failed connect (with its cause) or a partial check, such as missing auth, is named in the Result line. Ignored by `json`, `markdown`, `sarif` and `junit`. |
 | `--checklist` | off | Text only: prints the manual checklist in full. By default the text report shows one line, `N manual items: --checklist to show`; markdown and JSON always list every item. |
 | `--config <file>`, `--no-config` | discovered | Options from a JSON file, see [Config file](#config-file). Without `--config`, `mcp-review-check.config.json` or else `.mcp-review-check.json` in the `--cwd` directory (or the working directory) is read when it exists; `--no-config` turns that off. Not both. |
 | `--no-color`, `--verbose`, `--help`, `--version` | | `--no-color` turns colours off (they are also off without a TTY or with `NO_COLOR`; `FORCE_COLOR=1` turns them on without a TTY, see [GitHub Actions](#github-actions)). `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
@@ -133,6 +133,32 @@ Options can live in a JSON file next to the server instead of on every command l
 - **Paths** in `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs` and `cwd` are relative to the config file's directory; `sarifLocation` stays repository-relative.
 - **Validation** is the same as for the options. An unknown key (`fail-on` is answered with "did you mean failOn"), a value of the wrong type, a file that is not a JSON object, a file that is not valid JSON and a `--config` file that does not exist are usage errors (exit 2) that name the file and the key and never repeat a value.
 - **Secrets**: `header` and `bearer` are accepted but print a warning, since a token in a file is easily committed; keep the token in `$MCP_REVIEW_CHECK_TOKEN`. Values from the file are redacted in every output like the same options.
+
+### Output formats
+
+| Format | What it is |
+|---|---|
+| `text` | The terminal report (default), colours on a TTY. |
+| `json` | One JSON document (`schemaVersion` 1): every finding, skipped rules, ignored findings, the manual checklist, `summary` with the score, verdicts and gate. The input of `--baseline`. `--json-output` and `--save-baseline` write this document besides any other format. |
+| `markdown` | A report for a pull request comment or the GitHub job summary, with an Evidence column and the `rerun:` line. |
+| `sarif` | SARIF 2.1.0 for GitHub code scanning (see `--sarif-location`). |
+| `junit` | JUnit XML for CI test views: GitLab `artifacts: reports: junit`, [dorny/test-reporter](https://github.com/dorny/test-reporter), Jenkins. |
+
+The JUnit report has one `<testsuite>` per gated platform (the `--target` directories, `claude` and `chatgpt` for `all`, plus `spec` with `--fail-on-spec`) and one `<testcase>` per rule of that platform, with `classname` the platform and `name` the rule ID and title. A rule whose findings reach `--fail-on` at that platform's severity has one `<failure>` (the message of each finding with its evidence and fix); lower findings, findings known from `--baseline` (never failures) and `--ignore`d ones are listed in `<system-out>`; a rule that did not run is `<skipped>` with the reason. A failed connect or a `--max-duration` stop adds an `<error>` test case to each suite. `tests`, `failures`, `errors` and `skipped` count the test cases, and each suite's `<properties>` carry the target, score, `--fail-on` and verdict. Server text is escaped and control characters are shown as `\u{..}`, as in text reports.
+
+```xml
+<testsuites name="mcp-review-check" tests="76" failures="8" errors="0" skipped="34" time="0.573">
+  <testsuite name="claude" tests="76" failures="8" errors="0" skipped="34">
+    <testcase classname="claude" name="TOOL-006 Tool has a title">
+      <failure message="[error] update_settings: no title" type="error">[error] update_settings: no title
+  fix: Add `title` (top level, or in `annotations.title`).</failure>
+    </testcase>
+    <testcase classname="claude" name="SRV-001 Remote server served over HTTPS">
+      <skipped message="stdio target"/>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
 
 ### Exit codes
 
@@ -283,6 +309,22 @@ npx mcp-review-check@0.2 --target claude --fail-on never --save-baseline .mcp-re
 ```
 
 `--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline.
+
+**JUnit test reports** — GitLab shows the `junit` report in the merge request and the pipeline's Tests tab; each rule is a test, a finding at `--fail-on` a failed test:
+
+```yaml
+mcp-review-check:
+  image: node:22
+  script:
+    - npm ci && npm run build
+    - npx -y mcp-review-check@0.2 --target claude --format junit --output mcp-review-check.xml --stdio -- node dist/server.js
+  artifacts:
+    when: always
+    reports:
+      junit: mcp-review-check.xml
+```
+
+On GitHub Actions, [dorny/test-reporter](https://github.com/dorny/test-reporter) reads the same file (`reporter: java-junit`, `path: mcp-review-check.xml`, in a step with `if: always()`).
 
 **Fail when the token stops working** — without a valid token the tool checks are skipped and the run can still pass (the job gets a `::warning`). With a token in CI, add `--fail-on-incomplete` so that a missing, expired or rejected token fails the job (exit 3):
 
