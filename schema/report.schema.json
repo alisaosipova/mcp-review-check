@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v0.4.0/schema/report.schema.json",
+  "title": "mcp-review-check JSON report",
+  "description": "The document --format json prints and --json-output and --save-baseline write (schemaVersion 1). Fields marked 'since 0.x' are absent from reports of older releases; a consumer should accept their absence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tool", "target", "startedAt", "durationMs", "server", "coverage", "limits", "summary", "findings", "skipped", "ignored", "manual", "disclaimer", "contact"],
+  "properties": {
+    "schemaVersion": { "const": 1, "description": "Bumped on any breaking change to the JSON shape." },
+    "$schema": { "type": "string", "format": "uri", "description": "Since 0.4: the $id of this schema." },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "catalogDate", "catalogAgeDays"],
+      "properties": {
+        "name": { "const": "mcp-review-check" },
+        "version": { "type": "string" },
+        "catalogDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "catalogAgeDays": { "type": "integer" }
+      }
+    },
+    "target": { "enum": ["claude", "chatgpt", "all"], "description": "--target." },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverInfo", "era", "protocolVersion", "transport", "auth", "localMode"],
+      "properties": {
+        "url": { "type": "string", "description": "HTTP target, secret query values and userinfo redacted." },
+        "command": { "type": "string", "description": "stdio target, for display (arguments joined with spaces)." },
+        "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Since 0.3: stdio target, each argument whole." },
+        "serverInfo": { "type": ["object", "null"], "description": "initialize serverInfo as the server sent it (secrets redacted)." },
+        "era": { "enum": ["modern", "legacy", "dual", "sse-legacy", "unknown"] },
+        "protocolVersion": { "type": ["string", "null"] },
+        "transport": { "enum": ["streamable-http", "sse", "stdio"] },
+        "auth": { "type": "string" },
+        "localMode": { "type": "boolean" }
+      },
+      "oneOf": [
+        { "required": ["url"], "properties": { "command": false, "argv": false } },
+        { "required": ["command"], "properties": { "url": false } }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolLevel"],
+      "properties": {
+        "toolLevel": { "enum": ["ok", "auth-required", "token-rejected", "connect-failed", "list-failed", "stopped"] },
+        "reason": { "type": "string" },
+        "diagnosis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "summary"],
+          "description": "Why an HTTP handshake failed.",
+          "properties": {
+            "kind": { "enum": ["dns", "refused", "timeout", "reset", "tls", "not-mcp", "http", "other"] },
+            "summary": { "type": "string" },
+            "code": { "type": "string" },
+            "status": { "type": "integer" },
+            "hint": { "type": "string" }
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["truncated"],
+      "description": "Input caps applied and the --max-duration stop; null when neither happened.",
+      "properties": {
+        "truncated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["where", "length", "cap"],
+            "properties": {
+              "where": { "type": "string" },
+              "length": { "type": "integer", "minimum": 0 },
+              "cap": { "type": "integer", "minimum": 0 },
+              "unit": { "const": "items" }
+            }
+          }
+        },
+        "stopped": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxDurationMs", "phase"],
+          "properties": {
+            "maxDurationMs": { "type": "integer", "minimum": 1 },
+            "phase": { "type": "string" },
+            "completed": { "type": "array", "items": { "type": "string" }, "description": "Since 0.3: the phases that ran to their end before the stop, in order." },
+            "unfinished": { "type": "array", "items": { "type": "string" }, "description": "Since 0.3: the phase cut short and every later one." }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "warnings", "info", "score", "scoreVersion", "verdicts", "failed", "gate"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 },
+        "score": { "type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "null for a partial check." },
+        "scoreVersion": { "type": "integer" },
+        "verdicts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "claude": { "$ref": "#/$defs/verdict" },
+            "chatgpt": { "$ref": "#/$defs/verdict" }
+          }
+        },
+        "failed": { "type": "boolean" },
+        "gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platforms", "reason", "notGated"],
+          "properties": {
+            "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" } },
+            "reason": { "type": ["string", "null"] },
+            "notGated": { "type": ["string", "null"] }
+          }
+        },
+        "rootCauses": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["errors", "warnings"],
+          "description": "Since 0.3: the basis of score (every platform, whatever --target).",
+          "properties": {
+            "errors": { "type": "integer", "minimum": 0 },
+            "warnings": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "baselined": { "type": "integer", "minimum": 0, "description": "Since 0.3, with --baseline: the findings known from the baseline." }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "reason"],
+        "properties": { "ruleId": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    "ignored": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "manual": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "platforms", "text", "docs"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^MAN-\\d{3}$" },
+          "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" } },
+          "text": { "type": "string" },
+          "docs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "toolFingerprints": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/toolFingerprint" },
+      "description": "Since 0.4: one SHA-256 per tool definition, in tools/list order; null when tools/list did not finish. --baseline compares them."
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolChanges"],
+      "description": "Since 0.4, with --baseline: the tool-definition drift.",
+      "properties": {
+        "toolChanges": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["added", "removed", "changed"],
+          "description": "null when no comparison could be made (see notCompared).",
+          "properties": {
+            "added": { "type": "array", "items": { "type": "string" } },
+            "removed": { "type": "array", "items": { "type": "string" } },
+            "changed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "fields"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/toolField" } }
+                }
+              }
+            }
+          }
+        },
+        "notCompared": { "type": "string" }
+      }
+    },
+    "disclaimer": { "type": "string" },
+    "contact": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["text", "url"],
+      "properties": { "text": { "type": "string" }, "url": { "type": "string" } }
+    }
+  },
+  "$defs": {
+    "platform": { "enum": ["claude", "chatgpt", "spec"] },
+    "severity": { "enum": ["error", "warning", "info"] },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "errors", "warnings"],
+      "properties": {
+        "verdict": { "enum": ["BLOCKED", "NEEDS ATTENTION", "NO AUTOMATED BLOCKERS", "INCOMPLETE"] },
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "severity", "platforms", "title", "message", "fix", "docs"],
+      "properties": {
+        "ruleId": { "type": "string", "pattern": "^[A-Z]+-\\d{3}$" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "platforms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/platform" } },
+        "severityByPlatform": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "claude": { "$ref": "#/$defs/severity" },
+            "chatgpt": { "$ref": "#/$defs/severity" },
+            "spec": { "$ref": "#/$defs/severity" }
+          }
+        },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "tool": { "type": "string" },
+        "resource": { "type": "string" },
+        "path": { "type": "string" },
+        "evidence": { "type": "string" },
+        "fix": { "type": "string" },
+        "docs": { "type": "array", "items": { "type": "string" } },
+        "baselined": { "type": "boolean", "description": "Since 0.3, with --baseline: true for a finding known from the baseline." }
+      }
+    },
+    "toolField": { "enum": ["name", "title", "description", "inputSchema", "outputSchema", "annotations", "_meta"] },
+    "toolFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256", "fields"],
+      "properties": {
+        "name": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256", "description": "SHA-256 of the canonical JSON (keys sorted, no whitespace) of the tool's present name, title, description, inputSchema, outputSchema, annotations and _meta." },
+        "fields": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "SHA-256 of the canonical JSON of each present field.",
+          "properties": {
+            "name": { "$ref": "#/$defs/sha256" },
+            "title": { "$ref": "#/$defs/sha256" },
+            "description": { "$ref": "#/$defs/sha256" },
+            "inputSchema": { "$ref": "#/$defs/sha256" },
+            "outputSchema": { "$ref": "#/$defs/sha256" },
+            "annotations": { "$ref": "#/$defs/sha256" },
+            "_meta": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -12,10 +12,14 @@ const findingJson = (f: Finding) => ({
 /** Bumped on any breaking change to the JSON shape (renamed or removed fields, changed types). */
 export const JSON_SCHEMA_VERSION = 1;
 
+/** The JSON Schema of the report (schema/report.schema.json, its `$id`), as published with the tag that added it. */
+export const JSON_SCHEMA_URL = 'https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v0.4.0/schema/report.schema.json';
+
 export function toJson(r: Report): Record<string, unknown> {
   const snap = r.snap;
   return {
     schemaVersion: JSON_SCHEMA_VERSION,
+    $schema: JSON_SCHEMA_URL,
     tool: r.tool,
     target: snap.options.target,
     startedAt: r.startedAt,
