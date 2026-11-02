@@ -174,7 +174,9 @@ describe('action.yml outputs (wave 5)', () => {
       expect(report(join(dir, 'broken.json')).log).toMatch(/::warning title=mcp-review-check::could not read the JSON report/);
       // bash without node on PATH (the run step has already failed with the usage error).
       // The script uses only bash builtins besides node, so a PATH without node is an empty directory.
-      expect(report(join(dir, 'good.json'), mkdtempSync(join(dir, 'bin-'))).outputs).toEqual(EMPTY);
+      // Not on macOS: the GitHub macOS runner's bash still resolves node with such a PATH (CI run 41397409044),
+      // which is a property of that environment, not of the script.
+      if (process.platform !== 'darwin') expect(report(join(dir, 'good.json'), mkdtempSync(join(dir, 'bin-'))).outputs).toEqual(EMPTY);
     });
 
     it('a report value cannot add an output line', () => {
