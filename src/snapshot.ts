@@ -65,6 +65,10 @@ export interface ObservedError {
   message?: unknown;
   /** The response answered a 2026-07-28 request (MCP-Protocol-Version: 2026-07-28). */
   modern?: boolean;
+  /** A successful response (a result, no error object) whose id is not the request's: no code to check (SPEC-016). */
+  result?: boolean;
+  /** The request's JSON-RPC method (set on `result` entries). */
+  method?: string;
 }
 
 export interface DnsResult {

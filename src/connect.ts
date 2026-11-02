@@ -292,14 +292,24 @@ async function connectSse(url: URL, headers: Record<string, string>, tracer: Tra
   }
 }
 
-function collectErrors(tracer: Tracer | undefined, rec: RecordingTransport | undefined): ObservedError[] {
+/**
+ * The JSON-RPC errors the run's own requests got (and the SDK connection's), plus every successful response whose id
+ * is not the request's (`result: true`, no code): a real client cannot match such a result to its request (SPEC-016).
+ * A message with a `method` is a request or notification from the server, not a response.
+ */
+export function collectErrors(tracer: Pick<Tracer, 'exchanges'> | undefined, rec: Pick<RecordingTransport, 'errors'> | undefined): ObservedError[] {
   const out: ObservedError[] = [...(rec?.errors ?? [])];
   for (const e of tracer?.exchanges ?? []) {
     if (e.label.startsWith('sdk ') || !isObj(e.requestJson) || e.requestJson.jsonrpc !== '2.0') continue;
+    const req = e.requestJson;
+    const modern = e.requestHeaders['mcp-protocol-version'] === MODERN_VERSION;
     const msgs = Array.isArray(e.json) ? e.json : [e.json];
     for (const m of msgs) {
-      if (isObj(m) && isObj(m.error)) {
-        out.push({ source: e.label, requestId: e.requestJson.id, responseId: m.id, code: m.error.code, message: m.error.message, modern: e.requestHeaders['mcp-protocol-version'] === MODERN_VERSION });
+      if (!isObj(m)) continue;
+      if (isObj(m.error)) {
+        out.push({ source: e.label, requestId: req.id, responseId: m.id, code: m.error.code, message: m.error.message, modern });
+      } else if ('result' in m && !('method' in m) && req.id !== undefined && m.id !== req.id) {
+        out.push({ source: e.label, requestId: req.id, responseId: m.id, modern, result: true, ...(isStr(req.method) ? { method: req.method } : {}) });
       }
     }
   }

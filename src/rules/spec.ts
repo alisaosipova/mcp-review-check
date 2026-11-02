@@ -378,6 +378,14 @@ export const SPEC_016 = defineRule(
     const seen = new Set<string>();
     const add = (f: RawFinding) => { if (!seen.has(f.message)) { seen.add(f.message); out.push(f); } };
     for (const e of snap.transport.observedErrors ?? []) {
+      // A result with another id carries no code. A failed listing of a declared capability is SPEC-020's (it names
+      // the mismatch as the cause); every other request (probes, reads, a fresh connection's re-list) is reported here.
+      if (e.result) {
+        if (!(isStr(e.method) && listFailureReported(snap, e.method))) {
+          add({ severity: 'warning', message: `${e.source}: result answers another request id (response id ${JSON.stringify(e.responseId)}, request id ${JSON.stringify(e.requestId)})` });
+        }
+        continue;
+      }
       const c = e.code;
       // The -32020..-32099 partition and the -32002/-32042 removal are 2026-07-28 policy. 2025-11-25 defines -32042
       // (URL elicitation required) and lets implementations use that range, so legacy responses get only the
@@ -525,6 +533,19 @@ const LIST_CAPS: Array<[string, string, string]> = [
   ['tools', 'tools', 'tools/list'], ['resources', 'resources', 'resources/list'], ['prompts', 'prompts', 'prompts/list'],
 ];
 
+/** The listing error SPEC-020 reports for a list method (a declared capability, or tools on a 2026-07-28-only server). */
+function listFailure(snap: Snapshot, metaKey: string, cap: string): string | undefined {
+  const err = snap.listMeta[metaKey]?.error;
+  const declared = (snap.capabilities ?? {})[cap] !== undefined || (cap === 'tools' && snap.era === 'modern');
+  return err && declared ? err : undefined;
+}
+
+/** SPEC-020 reports `method`'s listing as failed because a response answered another request id (ModernClient). */
+export function listFailureReported(snap: Snapshot, method: string): boolean {
+  const entry = LIST_CAPS.find(([, , m]) => m === method);
+  return !!entry && /does not match request id/.test(listFailure(snap, entry[0], entry[1]) ?? '');
+}
+
 export const SPEC_020 = defineRule(
   {
     id: 'SPEC-020', title: 'List methods for declared capabilities succeed', severity: { spec: 'error', claude: 'error', chatgpt: 'error' }, needs: [],
@@ -533,13 +554,10 @@ export const SPEC_020 = defineRule(
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/tools#listing-tools', 'https://modelcontextprotocol.io/specification/2026-07-28/server/resources#listing-resources'],
   },
   (snap) => {
-    const caps = snap.capabilities ?? {};
     const out: RawFinding[] = [];
     for (const [metaKey, cap, method] of LIST_CAPS) {
-      const err = snap.listMeta[metaKey]?.error;
-      if (!err) continue;
-      const declared = caps[cap] !== undefined || (cap === 'tools' && snap.era === 'modern');
-      if (declared) out.push({ message: `${method} failed: ${err}` });
+      const err = listFailure(snap, metaKey, cap);
+      if (err) out.push({ message: `${method} failed: ${err}` });
     }
     return out;
   },
