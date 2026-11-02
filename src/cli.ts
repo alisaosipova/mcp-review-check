@@ -14,6 +14,7 @@ import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
 import { renderSarif, SARIF_LOCATION } from './report/sarif.js';
+import { ConfigError, findConfig, loadConfig, type LoadedConfig } from './config.js';
 import { annotations, appendStepSummary, escapeCommand } from './report/github.js';
 import type { FailOn } from './report/score.js';
 import { localBanner, renderText, type TextOptions } from './report/text.js';
@@ -66,6 +67,9 @@ Options:
   --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
   --quiet                 Text only: print just error and warning findings, the Score and Result lines and the disclaimer.
   --checklist             Text only: print the manual checklist in full (default: one line with the item count).
+  --config <file>         Read options from a JSON file (keys: long option names in camelCase, such as failOn).
+  --no-config             Do not look for mcp-review-check.config.json or .mcp-review-check.json in --cwd or the
+                          working directory (read when --config is not given). Command-line options override the file.
   -h, --help              Show this help.
   -v, --version           Show the version.
 
@@ -79,13 +83,17 @@ Examples:
 --stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash is literal (Windows paths work),
 also inside double quotes, except before a ": there, as on Windows, \\\\" is one \\ and ends the quote, \\" a literal ".
 The "-- <command> [args...]" form passes arguments verbatim, with options before --.
+The config file may also name the server: {"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}.
+Its paths are relative to the file; a list option given on the command line (--ignore, --header, --env) replaces
+the file's list. Secrets belong in $MCP_REVIEW_CHECK_TOKEN, not in the file (header and bearer keys get a warning).
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
 Exit codes:
   0       Completed, below the --fail-on threshold.
   1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec).
-  2       Usage or configuration error, or --output, --json-output or --save-baseline could not be written.
+  2       Usage or configuration error (also in the config file), or --output, --json-output or --save-baseline
+          could not be written.
   3       Could not connect or complete a handshake (also when --max-duration ran out before it); with
           --fail-on-incomplete, a partial check (auth required, token rejected, tools/list failed); or an internal
           error of mcp-review-check itself (fatal: and a stack trace on stderr; please report it).
@@ -106,9 +114,11 @@ class UsageError extends Error {}
 
 const OPTIONS = {
   stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
-  target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
-  timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
+  // No parseArgs defaults: an option left out may come from the config file; the defaults are applied after it.
+  target: { type: 'string' }, format: { type: 'string' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
+  timeout: { type: 'string' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string' }, 'fail-on-spec': { type: 'boolean' },
   'fail-on-incomplete': { type: 'boolean' }, baseline: { type: 'string' }, 'save-baseline': { type: 'string' }, 'json-output': { type: 'string' },
+  config: { type: 'string' }, 'no-config': { type: 'boolean' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -217,6 +227,17 @@ function unusedToolArgs(toolArgs: Record<string, unknown>, snap: Snapshot): stri
   }).join('');
 }
 
+/** A usage error about a value from the config file names the file and the key ('--fail-on must be … (from
+ *  mcp-review-check.config.json: key "failOn")'); the value itself is never shown, as for the flags. */
+function configNote(message: string, cfg: LoadedConfig | undefined, fromConfig: Record<string, string>): string {
+  if (!cfg) return message;
+  const opts = [...message.matchAll(/--([a-z][a-z-]*)/g)].map((m) => m[1]);
+  if (/\bURL\b|<url>/.test(message)) opts.push('url');
+  if (/\bstdio\b/.test(message)) opts.push('stdio');
+  const keys = [...new Set(opts.filter((o) => Object.hasOwn(fromConfig, o)).map((o) => fromConfig[o]))];
+  return keys.length ? `${message} (from ${cfg.file}: ${keys.map((k) => `key "${k}"`).join(', ')})` : message;
+}
+
 /** A URL for a usage error: everything up to the last "@" after the scheme (a password may hold "/", "?" or "#"), query and fragment hidden. */
 function shownUrl(raw: string): string {
   return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
@@ -229,13 +250,17 @@ function shownUrl(raw: string): string {
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY, interrupted?: AbortSignal): Promise<CliResult> {
   let stderr = '';
   let redactor: Redactor | undefined;
+  let cfg: LoadedConfig | undefined;
+  const fromConfig: Record<string, string> = {}; // option name (or url, stdio) → the config key it came from
   try {
     const split = splitStdioArgv(argv);
-    const { values, positionals } = parseArgs({
+    const parsed = parseArgs({
       args: split.args, allowPositionals: true, strict: true, options: OPTIONS,
     });
+    const values = { ...parsed.values };
+    let positionals = parsed.positionals;
     // Keywords in any case, as --ignore and explain take IDs in any case: --format JSON, --target Claude, --fail-on Warning.
-    const format = values.format!.toLowerCase();
+    let format = (values.format ?? 'text').toLowerCase();
     if (values.help) return { code: 0, stdout: HELP, stderr };
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
     if (values['list-rules']) {
@@ -261,8 +286,38 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // A "--" that splitStdioArgv did not take (--stdio has a value, or no bare --stdio before it) left the command in positionals.
     if ((split.command || split.args.includes('--')) && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
     if (!split.command && split.args.includes('--')) throw new UsageError('"-- <command> [args...]" needs a bare --stdio before the --');
+    let command = split.command;
+
+    // The config file applies to a check (not to --help, --version, --list-rules or explain). A flag given on the
+    // command line wins over the file's key; the server comes from the file only when the command line names none.
+    if (values.config !== undefined && values['no-config']) throw new UsageError('give either --config or --no-config, not both');
+    if (values.config === '') throw new UsageError('--config needs a file path');
+    const cfgFile = values.config ?? (values['no-config'] ? undefined : findConfig(values.cwd ?? process.cwd()));
+    if (cfgFile !== undefined) {
+      try { cfg = loadConfig(cfgFile, values.config !== undefined); } catch (e) {
+        if (e instanceof ConfigError) throw new UsageError(e.message);
+        throw e;
+      }
+      stderr += cfg.warnings.join('');
+      const merged = values as Record<string, unknown>;
+      for (const [opt, v] of Object.entries(cfg.options)) {
+        if (merged[opt] !== undefined) continue;
+        merged[opt] = v;
+        fromConfig[opt] = cfg.keys[opt];
+      }
+      if (!positionals.length && values.stdio === undefined && !command) {
+        if (cfg.url !== undefined) { positionals = [cfg.url]; fromConfig.url = 'url'; }
+        if (cfg.stdio !== undefined) { values.stdio = cfg.stdio; fromConfig.stdio = 'stdio'; }
+        if (cfg.command) { command = cfg.command; fromConfig.stdio = 'stdio'; }
+      }
+    }
+    format = (values.format ?? 'text').toLowerCase();
+    values.target ??= 'all';
+    values.timeout ??= '30000';
+    values['fail-on'] ??= 'error';
+
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
-    const isStdio = values.stdio !== undefined || split.command !== undefined;
+    const isStdio = values.stdio !== undefined || command !== undefined;
     if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
     const target = values.target!.toLowerCase() as TargetOpt;
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
@@ -315,7 +370,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const typedEnv: Record<string, string> = {}; // --env names as typed: they decide a value's redaction tier
     if (isStdio) {
       let parts: string[];
-      if (split.command) parts = split.command;
+      if (command) parts = command;
       else try { parts = tokenizeCommand(values.stdio!); } catch (e) { throw new UsageError(`--stdio: ${(e as Error).message}`); }
       if (!parts.length) throw new UsageError('--stdio needs a command');
       // Nothing is sent to a stdio server: a token or header would only mark the run as authenticated (RT-009 off).
@@ -459,7 +514,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
       // parseArgs names an option without its "=value"; the rest of its message is not repeated.
-      const message = e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string });
+      const message = configNote(e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string }), cfg, fromConfig);
       return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
     }
     // In GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.

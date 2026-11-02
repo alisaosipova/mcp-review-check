@@ -96,10 +96,43 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `explain <RULE-ID>` | | Prints a rule's severity per directory, rationale, sources and fix, and how to `--ignore` it; also takes `MAN` IDs. An unknown ID exits 2. |
 | `--quiet` | off | Text only: prints just the error and warning findings, the Score line (without the info count), the Result line and the disclaimer. A failed connect (with its cause) or a partial check, such as missing auth, is named in the Result line. Ignored by `json`, `markdown` and `sarif`. |
 | `--checklist` | off | Text only: prints the manual checklist in full. By default the text report shows one line, `N manual items: --checklist to show`; markdown and JSON always list every item. |
+| `--config <file>`, `--no-config` | discovered | Options from a JSON file, see [Config file](#config-file). Without `--config`, `mcp-review-check.config.json` or else `.mcp-review-check.json` in the `--cwd` directory (or the working directory) is read when it exists; `--no-config` turns that off. Not both. |
 | `--no-color`, `--verbose`, `--help`, `--version` | | `--no-color` turns colours off (they are also off without a TTY or with `NO_COLOR`; `FORCE_COLOR=1` turns them on without a TTY, see [GitHub Actions](#github-actions)). `--verbose` expands collapsed findings, shows TOOL-013 info and each rule's rationale (the markdown report always lists them under "Why these rules"), and prints the redacted HTTP trace. |
 
 Environment variables: `MCP_REVIEW_CHECK_TOKEN` is the default for `--bearer` (see [Token recipe](#token-recipe)); `NO_COLOR` and `FORCE_COLOR` set colours; `GITHUB_ACTIONS` and `GITHUB_STEP_SUMMARY` turn on [GitHub Actions](#github-actions) output.
 `MCP_REVIEW_CHECK_NO_CTA=1` hides the call to action: the maintainer's e-mail address, which text and markdown reports show above the disclaimer on a `BLOCKED`, legacy-era or auth-required result (JSON always has it in `contact`, SARIF never).
+
+### Config file
+
+Options can live in a JSON file next to the server instead of on every command line. `--config <file>` names it; without `--config` the first of `mcp-review-check.config.json` and `.mcp-review-check.json` that exists in the `--cwd` directory, or else in the working directory, is read (`--no-config` skips that). The config file applies to a check, not to `--help`, `--version`, `--list-rules` or `explain`.
+
+```json
+{
+  "stdio": "node",
+  "args": ["dist/server.js"],
+  "env": { "API_BASE": "http://localhost:4000" },
+  "target": "claude",
+  "failOn": "warning",
+  "failOnSpec": true,
+  "failOnIncomplete": false,
+  "ignore": ["TOOL-013"],
+  "timeout": 60000,
+  "maxDuration": 300000,
+  "active": true,
+  "toolArgs": "tool-args.json",
+  "format": "markdown",
+  "output": "mcp-review.md",
+  "baseline": ".mcp-review-check/baseline.json",
+  "jsonOutput": "mcp-review.json"
+}
+```
+
+- **Keys** are the long option names in camelCase: `target`, `format`, `output`, `jsonOutput`, `saveBaseline`, `sarifLocation`, `timeout`, `maxDuration`, `failOn`, `failOnSpec`, `failOnIncomplete`, `baseline`, `local`, `noLocal`, `active`, `activeAuth`, `toolArgs`, `ignore`, `header`, `bearer`, `env`, `cwd`, `noColor`, `verbose`, `quiet`, `checklist`. Switches take `true` or `false` (`false` is the same as leaving the key out); `timeout` and `maxDuration` a number; `ignore` a string or an array; `header` an array of `"Name: value"` strings or an object `{"Name": "value"}`; `env` an array of `"K=V"` strings or an object.
+- **The server**: `url` (`{"url": "https://mcp.example.com/mcp"}`), or `stdio` as one command line, split as `--stdio "<command>"` is, or `stdio` with `args`, passed verbatim like `--stdio -- <command> [args...]` (`stdio` may also be an array). A `<url>` or `--stdio` on the command line replaces the file's server.
+- **Precedence**: an option on the command line wins over the file's key; a list option on the command line (`--ignore`, `--header`, `--env`) replaces the file's list instead of adding to it.
+- **Paths** in `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs` and `cwd` are relative to the config file's directory; `sarifLocation` stays repository-relative.
+- **Validation** is the same as for the options. An unknown key (`fail-on` is answered with "did you mean failOn"), a value of the wrong type, a file that is not a JSON object, a file that is not valid JSON and a `--config` file that does not exist are usage errors (exit 2) that name the file and the key and never repeat a value.
+- **Secrets**: `header` and `bearer` are accepted but print a warning, since a token in a file is easily committed; keep the token in `$MCP_REVIEW_CHECK_TOKEN`. Values from the file are redacted in every output like the same options.
 
 ### Exit codes
 
@@ -107,7 +140,7 @@ Environment variables: `MCP_REVIEW_CHECK_TOKEN` is the default for `--bearer` (s
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
 | 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`) |
-| 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID), or `--output`, `--json-output` or `--save-baseline` could not be written |
+| 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID; a wrong [config file](#config-file)), or `--output`, `--json-output` or `--save-baseline` could not be written |
 | 3 | Could not reach the server or complete any handshake, also when `--max-duration` ran out before the handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist); with `--fail-on-incomplete`, a partial check (`auth-required`, `token-rejected`, `list-failed`); or the linter itself failed unexpectedly (`fatal:` and a stack trace on stderr; please [report it](https://github.com/alisaosipova/mcp-review-check/issues/new?template=bug.yml)) |
 | 4 | `--max-duration` stopped the check after the handshake (whatever `--fail-on`, also with errors found before the stop): the report covers what ran. New in 0.2.0; 0.1.x exited 3 |
 | 128+N | Ended by signal N: 130 for SIGINT (Ctrl+C), 143 for SIGTERM (a CI job cancelled), 131 for SIGQUIT, 129 for SIGHUP. A stdio server is ended first, and no report is written. On Windows the exit code is set to the same 128+N |
