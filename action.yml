@@ -7,8 +7,9 @@ branding:
 
 # One run of the CLI does everything: with GITHUB_ACTIONS=true it prints the findings as ::error/::warning
 # annotations on stderr and appends the markdown report to the job summary whatever --format is (src/cli.ts), so
-# the action runs it once with --format sarif --output <sarif-file>. Every input reaches the script through env,
-# never through ${{ }} inside the script, so no input value is parsed as shell code.
+# the action runs it once with --format sarif --output <sarif-file>, plus --json-output <file> (0.3.0 and newer) for
+# the outputs score, verdict and the counts. Every input reaches the scripts through env, never through ${{ }} inside
+# a script, so no input value is parsed as shell code.
 inputs:
   target:
     description: URL of the MCP server to check. Required unless `stdio` is given; not both.
@@ -39,9 +40,9 @@ inputs:
     required: false
     default: ''
   version:
-    description: npm version or range of mcp-review-check to run (bump with each release; see CONTRIBUTING.md).
+    description: npm version or range of mcp-review-check to run, 0.3 or newer (the outputs need --json-output; bump with each release, see CONTRIBUTING.md).
     required: false
-    default: '0.2'
+    default: '0.3'
   cli-path:
     description: Path to a built dist/cli.js to run with node instead of the npm package (for testing a checkout). Overrides `version`.
     required: false
@@ -66,6 +67,30 @@ outputs:
   sarif-file:
     description: Path of the SARIF report (empty when none was written, for example on a usage error).
     value: ${{ steps.run.outputs.sarif-file }}
+  report-json:
+    description: Path of the JSON report (the `--format json` document, written with `--json-output` under RUNNER_TEMP; empty when none was written).
+    value: ${{ steps.run.outputs.report-json }}
+  score:
+    description: Score 0-100 (JSON summary.score). Empty when the check is partial (score null) or no report was written.
+    value: ${{ steps.report.outputs.score }}
+  verdict:
+    description: 'Overall result as the report line shows it: PASS, FAIL (the --fail-on threshold was reached or the server could not be checked) or INCOMPLETE (stopped by --max-duration). Empty when no report was written (exit 2).'
+    value: ${{ steps.report.outputs.verdict }}
+  verdict-claude:
+    description: 'Claude directory verdict (JSON summary.verdicts.claude.verdict): BLOCKED, NEEDS ATTENTION, NO AUTOMATED BLOCKERS or INCOMPLETE. Empty when Claude is not a target platform.'
+    value: ${{ steps.report.outputs.verdict-claude }}
+  verdict-chatgpt:
+    description: ChatGPT directory verdict (JSON summary.verdicts.chatgpt.verdict), same values. Empty when ChatGPT is not a target platform.
+    value: ${{ steps.report.outputs.verdict-chatgpt }}
+  errors:
+    description: Number of error findings (JSON summary.errors; with a baseline, of the new findings only).
+    value: ${{ steps.report.outputs.errors }}
+  warnings:
+    description: Number of warning findings (JSON summary.warnings; with a baseline, of the new findings only).
+    value: ${{ steps.report.outputs.warnings }}
+  new-findings:
+    description: Findings of every severity not in the baseline (all findings minus summary.baselined; all findings without --baseline).
+    value: ${{ steps.report.outputs.new-findings }}
 
 runs:
   using: composite
@@ -86,12 +111,15 @@ runs:
         INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
       run: |
         set -u
-        usage() { echo "::error title=mcp-review-check::$1"; echo "exit-code=2" >> "$GITHUB_OUTPUT"; echo "sarif-file=" >> "$GITHUB_OUTPUT"; exit 2; }
-        command -v node > /dev/null || usage "node is not on PATH: add actions/setup-node (Node 20.19 or newer) before this action"
+        usage() { echo "::error title=mcp-review-check::$1"; echo "exit-code=2" >> "$GITHUB_OUTPUT"; echo "sarif-file=" >> "$GITHUB_OUTPUT"; echo "report-json=" >> "$GITHUB_OUTPUT"; exit 2; }
+        command -v node > /dev/null || usage "node is not on PATH: add actions/setup-node (Node 22.12 or newer) before this action"
         if [ -n "$INPUT_TARGET" ] && [ -n "$INPUT_STDIO" ]; then usage "give either target or stdio, not both"; fi
         if [ -z "$INPUT_TARGET" ] && [ -z "$INPUT_STDIO" ]; then usage "give target (a URL) or stdio (a command)"; fi
         platform="$INPUT_PLATFORM"; [ "$platform" = both ] && platform=all
-        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON" --format sarif --output "$INPUT_SARIF_FILE")
+        # The JSON report for the outputs, in the runner's temp directory; the PID keeps two uses of the action in one
+        # job apart.
+        json_file="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mcp-review-check-$$.json"
+        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON" --format sarif --output "$INPUT_SARIF_FILE" --json-output "$json_file")
         [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
         [ "$INPUT_ACTIVE" = true ] && args+=(--active)
         # Split on whitespace only (read -a does no globbing or quote removal). ${x[@]+...}: under set -u, bash 3.2
@@ -100,7 +128,7 @@ runs:
         if [ -n "$INPUT_STDIO" ]; then args+=(--stdio "$INPUT_STDIO"); else args+=("$INPUT_TARGET"); fi
         # The token goes through the environment only, so it is not in the process list or the rerun line.
         if [ -n "$INPUT_BEARER" ]; then echo "::add-mask::$INPUT_BEARER"; export MCP_REVIEW_CHECK_TOKEN="$INPUT_BEARER"; fi
-        rm -f -- "$INPUT_SARIF_FILE"
+        rm -f -- "$INPUT_SARIF_FILE" "$json_file"
         if [ -n "$INPUT_CLI_PATH" ]; then
           cli=(node "$INPUT_CLI_PATH")
         else
@@ -115,10 +143,46 @@ runs:
         set -e
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         if [ -f "$INPUT_SARIF_FILE" ]; then echo "sarif-file=$INPUT_SARIF_FILE" >> "$GITHUB_OUTPUT"; else echo "sarif-file=" >> "$GITHUB_OUTPUT"; fi
+        if [ -f "$json_file" ]; then echo "report-json=$json_file" >> "$GITHUB_OUTPUT"; else echo "report-json=" >> "$GITHUB_OUTPUT"; fi
         # Exit-code contract: 0 pass, 1 threshold, 2 usage, 3 could not connect / stopped / internal failure,
         # 4 stopped by --max-duration, 128+N signal. The step fails with the same code, so the
         # job fails as a plain CLI step would; the upload below still runs.
         exit "$code"
+    # The outputs from the JSON report. always(): exit 1 (threshold) and 3 (could not connect, stopped) still write a
+    # report. Without one (exit 2, or an older CLI without --json-output) every output is empty and the step passes;
+    # the run step above already failed the job with the CLI's exit code.
+    - id: report
+      if: always()
+      shell: bash
+      env:
+        REPORT_JSON: ${{ steps.run.outputs.report-json }}
+      run: |
+        set -u
+        keys="score verdict verdict-claude verdict-chatgpt errors warnings new-findings"
+        empty() { for k in $keys; do echo "$k=" >> "$GITHUB_OUTPUT"; done; }
+        if [ -z "${REPORT_JSON:-}" ] || [ ! -f "$REPORT_JSON" ] || ! command -v node > /dev/null; then empty; exit 0; fi
+        # Only numbers and the fixed verdict words are written, so a report value cannot add an output line.
+        node -e '
+          const fs = require("fs");
+          const r = JSON.parse(fs.readFileSync(process.env.REPORT_JSON, "utf8"));
+          const s = r.summary || {};
+          const num = (v) => (Number.isInteger(v) && v >= 0 ? String(v) : "");
+          const word = (v) => (typeof v === "string" && /^[A-Z][A-Z ]*$/.test(v) ? v : "");
+          const findings = Array.isArray(r.findings) ? r.findings.length : NaN;
+          const baselined = Number.isInteger(s.baselined) ? s.baselined : 0;
+          const out = {
+            score: num(s.score),
+            // As the CLI report line: a --max-duration stop is INCOMPLETE, otherwise summary.failed decides.
+            verdict: r.limits && r.limits.stopped ? "INCOMPLETE" : typeof s.failed === "boolean" ? (s.failed ? "FAIL" : "PASS") : "",
+            "verdict-claude": word(s.verdicts && s.verdicts.claude && s.verdicts.claude.verdict),
+            "verdict-chatgpt": word(s.verdicts && s.verdicts.chatgpt && s.verdicts.chatgpt.verdict),
+            errors: num(s.errors),
+            warnings: num(s.warnings),
+            "new-findings": num(findings - baselined),
+          };
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(out).map(([k, v]) => k + "=" + v + "\n").join(""));
+          console.log(Object.entries(out).map(([k, v]) => k + ": " + (v || "(empty)")).join(", "));
+        ' || { echo "::warning title=mcp-review-check::could not read the JSON report $REPORT_JSON; the outputs are empty"; empty; }
     # always(): a failing check (exit 1) is exactly when the findings should reach code scanning.
     - if: always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif-file != ''
       uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

@@ -125,8 +125,32 @@ jobs:
           BAD_CODE: ${{ steps.bad.outputs.exit-code }}
           BAD_SARIF: ${{ steps.bad.outputs.sarif-file }}
           BAD_OUTCOME: ${{ steps.bad.outcome }}
+          GOOD_SCORE: ${{ steps.good.outputs.score }}
+          GOOD_VERDICT: ${{ steps.good.outputs.verdict }}
+          GOOD_ERRORS: ${{ steps.good.outputs.errors }}
+          GOOD_NEW: ${{ steps.good.outputs.new-findings }}
+          GOOD_JSON: ${{ steps.good.outputs.report-json }}
+          BAD_VERDICT: ${{ steps.bad.outputs.verdict }}
+          BAD_CLAUDE: ${{ steps.bad.outputs.verdict-claude }}
+          BAD_ERRORS: ${{ steps.bad.outputs.errors }}
         run: |
           echo "good: exit $GOOD_CODE, $GOOD_SARIF; bad: exit $BAD_CODE ($BAD_OUTCOME), $BAD_SARIF"
-          test "$GOOD_CODE" = 0 && test "$GOOD_SARIF" = good.sarif
-          test "$BAD_CODE" = 1 && test "$BAD_SARIF" = bad.sarif && test "$BAD_OUTCOME" = failure
+          echo "good: score $GOOD_SCORE, $GOOD_VERDICT, $GOOD_ERRORS errors, $GOOD_NEW new; bad: $BAD_VERDICT, claude $BAD_CLAUDE, $BAD_ERRORS errors"
+          # One check per line: bash -e does not stop on a failed command before the last && of a list.
+          test "$GOOD_CODE" = 0
+          test "$GOOD_SARIF" = good.sarif
+          test "$BAD_CODE" = 1
+          test "$BAD_SARIF" = bad.sarif
+          test "$BAD_OUTCOME" = failure
+          # The report outputs (--json-output): a numeric score and a verdict for the clean server, FAIL with errors
+          # for the bad one, even though its run step failed.
+          [[ "$GOOD_SCORE" =~ ^[0-9]+$ ]]
+          test -n "$GOOD_VERDICT"
+          test "$GOOD_VERDICT" = PASS
+          test "$GOOD_ERRORS" = 0
+          [[ "$GOOD_NEW" =~ ^[0-9]+$ ]]
+          test -n "$GOOD_JSON"
+          test "$BAD_VERDICT" = FAIL
+          test "$BAD_CLAUDE" = BLOCKED
+          [[ "$BAD_ERRORS" =~ ^[1-9][0-9]*$ ]]
           node -e "for (const f of process.argv.slice(1)) { const s = JSON.parse(require('fs').readFileSync(f, 'utf8')); if (s.version !== '2.1.0' || !s.runs?.length) throw new Error(f + ' is not a SARIF 2.1.0 report') }" good.sarif bad.sarif

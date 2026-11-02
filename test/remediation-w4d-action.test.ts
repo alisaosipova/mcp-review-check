@@ -49,7 +49,8 @@ describe('action.yml (F168)', () => {
     expect(childKeys(ACTION, 'inputs')).toEqual(expect.arrayContaining([
       'target', 'stdio', 'platform', 'fail-on', 'fail-on-spec', 'active', 'bearer', 'version', 'sarif-file', 'upload-sarif', 'extra-args',
     ]));
-    expect(childKeys(ACTION, 'outputs')).toEqual(['exit-code', 'sarif-file']);
+    // The report outputs (score, verdict, counts) are checked in test/remediation-w5d-action.test.ts.
+    expect(childKeys(ACTION, 'outputs')).toEqual(expect.arrayContaining(['exit-code', 'sarif-file']));
   });
 
   it('defaults to the CLI defaults and to the current minor release', () => {
@@ -107,7 +108,7 @@ describe('action.yml (F168)', () => {
         };
         const r = spawnSync('bash', ['-c', actionScript()], {
           cwd: new URL('.', root), encoding: 'utf8', timeout: 60000,
-          env: { PATH: process.env.PATH, HOME: process.env.HOME, GITHUB_OUTPUT: out, GITHUB_ACTIONS: 'true', MCP_REVIEW_CHECK_NO_CTA: '1', ...inputs },
+          env: { PATH: process.env.PATH, HOME: process.env.HOME, GITHUB_OUTPUT: out, GITHUB_ACTIONS: 'true', RUNNER_TEMP: dir, MCP_REVIEW_CHECK_NO_CTA: '1', ...inputs },
         });
         const outputs = Object.fromEntries(readFileSync(out, 'utf8').split('\n').filter(Boolean).map((l) => l.split(/=(.*)/s).slice(0, 2)));
         return { code: r.status, log: r.stdout + r.stderr, outputs, sarif: outputs['sarif-file'] ? JSON.parse(readFileSync(outputs['sarif-file'], 'utf8')) : undefined };
@@ -121,7 +122,7 @@ describe('action.yml (F168)', () => {
         const r = run(env);
         expect(r.code).toBe(2);
         expect(r.log).toMatch(/::error title=mcp-review-check::give/);
-        expect(r.outputs).toEqual({ 'exit-code': '2', 'sarif-file': '' });
+        expect(r.outputs).toEqual({ 'exit-code': '2', 'sarif-file': '', 'report-json': '' });
       }
     });
 
@@ -133,7 +134,8 @@ describe('action.yml (F168)', () => {
       }
     });
 
-    it('writes the SARIF report and the outputs, exits with the CLI code, keeps the token off argv', () => {
+    // The action passes --json-output (0.3.0): until the built CLI has it, the CLI exits 2 on the unknown option.
+    it.skipIf(!spawnSync(process.execPath, ['dist/cli.js', '--help'], { cwd: new URL('.', root), encoding: 'utf8' }).stdout?.includes('--json-output'))('writes the SARIF report and the outputs, exits with the CLI code, keeps the token off argv', () => {
       const r = run({ INPUT_STDIO: 'node test/fixtures/good-server.mjs', INPUT_PLATFORM: 'both', INPUT_BEARER: 'SYNTH-w4d-token-1234', INPUT_EXTRA_ARGS: '  --timeout 20000  ' });
       expect(r.code, r.log).toBe(0);
       expect(r.outputs['exit-code']).toBe('0');
