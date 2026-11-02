@@ -1,6 +1,7 @@
 // MAN: manual checklist (§2.10). Never affects score or exit code.
 import type { Platform, Snapshot } from '../snapshot.js';
 import { activePlatforms } from './engine.js';
+import { LISTING_MANUAL } from './listing.js';
 import { hasUi } from './util/access.js';
 import { displayUrl } from './util/net.js';
 
@@ -67,7 +68,15 @@ export function manualChecklist(snap: Snapshot): ManualItem[] {
   // OAuth found: a PRM, or authorization server metadata through legacy (2025-03-26) origin discovery.
   const a = snap.authProbe;
   const oauth = !!a && (!!a.prm || !!a.legacyDiscovery || a.as.some((x) => !!x.json));
+  // With --plugin-dir / --openai-manifest the LST rules check what these items ask: an item they cover fully is dropped,
+  // one they cover in part keeps only its manual remainder and names the rules.
+  const given = { plugin: !!snap.listing?.plugin, openai: !!snap.listing?.openai };
   return MANUAL_ITEMS.filter((i) => i.platforms.some((p) => active.includes(p)))
     .filter((i) => (i.feature === 'ui' ? ui : i.feature === 'oauth' ? oauth : true))
+    .flatMap((i) => {
+      const auto = LISTING_MANUAL[i.id];
+      if (!auto || !given[auto.input]) return [i];
+      return auto.residual ? [{ ...i, text: `${auto.residual} (the rest is checked by ${auto.rules.join(', ')})` }] : [];
+    })
     .map((i) => (i.id === 'MAN-031' && snap.target.kind === 'http' ? { ...i, text: i.text.replace('<url>', displayUrl(snap.target.urlAsEntered)) } : i));
 }
