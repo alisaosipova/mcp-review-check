@@ -12,7 +12,7 @@ updates:
       dev-dependencies:
         dependency-type: development
     ignore:
-      # @types/node tracks the oldest supported Node (engines >=20.19).
+      # @types/node tracks the oldest supported Node major (engines >=22.12), not the newest release.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions

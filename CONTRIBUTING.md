@@ -4,7 +4,7 @@ Thanks for helping. The most useful contributions are **false-positive reports**
 
 ## Setup
 
-Node 20.19 or newer.
+Node 22.12 or newer.
 
 ```bash
 npm install
@@ -16,7 +16,7 @@ node dist/cli.js --stdio "node test/fixtures/good-server.mjs"
 
 `MCP_REVIEW_CHECK_LIVE=1 npm test` adds smoke tests against public servers; they are not part of CI. `MCP_REVIEW_CHECK_SKIP_BUILD=1` skips the build in the vitest global setup when `dist/` is already fresh.
 
-CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 22 and 24 on Linux, macOS and Windows and on Node 20.19 (the oldest supported release) on Linux, checks that `docs/RULES.md` and the generated parts of the README and `docs/design/spec.md` are regenerated, packs and smoke-tests the tarball, and runs the GitHub Action (`action.yml`, through `uses: ./` with the checkout's `dist/cli.js`) against `test/fixtures/good-server.mjs` and `bad-server.mjs` on every OS. `npm audit --omit=dev --audit-level=high` runs on pushes to `main` and weekly (`.github/workflows/audit.yml`, also runnable by hand), not on pull requests: a new advisory in a dependency is not a pull request's fault.
+CI (`.github/workflows/ci.yml`) runs build, typecheck and tests on Node 22 and 24 (the supported LTS lines; `engines` is `>=22.12`) on Linux, macOS and Windows, checks that `docs/RULES.md` and the generated parts of the README and `docs/design/spec.md` are regenerated, packs and smoke-tests the tarball, and runs the GitHub Action (`action.yml`, through `uses: ./` with the checkout's `dist/cli.js`) against `test/fixtures/good-server.mjs` and `bad-server.mjs` on every OS. `npm audit --omit=dev --audit-level=high` runs on pushes to `main` and weekly (`.github/workflows/audit.yml`, also runnable by hand), not on pull requests: a new advisory in a dependency is not a pull request's fault.
 
 `npm run test:coverage` runs the suite with V8 coverage over `src/` and fails below the thresholds in `vitest.config.ts` (5 points under the last full measurement); `npm test` does not check coverage. Raise the thresholds when a new measurement shows the margin has grown; do not lower them to make a change pass.
 

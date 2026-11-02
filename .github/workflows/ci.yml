@@ -23,14 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # engines: >=20.19. 20.19 is the oldest supported release (Node 20 reached end of life on 2026-04-30, so it
-        # runs on Linux only); 22 and 24 are the LTS lines and run on every OS.
-        node: ['20.19', '22', '24']
-        exclude:
-          - os: macos-latest
-            node: '20.19'
-          - os: windows-latest
-            node: '20.19'
+        # engines: >=22.12. 22 and 24 are the supported LTS lines.
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
