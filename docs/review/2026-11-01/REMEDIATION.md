@@ -48,6 +48,7 @@ Items are grouped into packages with **disjoint file ownership**, so packages ca
 | 2026-11-01 | Wave 4 (see §8): default decisions in `remediation/wave4-plan.md`, four code packages (W4A–W4D) rebased and fast-forwarded on `main` without conflicts, nine existing tests updated for exit 4 (`21abf35`), docs step W4E (CHANGELOG, spec.md with Q5–Q8 answered, README action recipe and `@0.2` pins, this section). Release 0.2.0 prepared, not yet tagged. |
 | 2026-11-02 | Release run 41391016385 for tag `v0.2.0`: `build` green (build, typecheck, full suite, pack on the runner); `publish` failed in 3 s in the step **Publish to npm (first release, NPM_TOKEN)**, so the `NPM_TOKEN` secret is still set and npm rejected it (most likely expired or revoked; the 0.1.0 publish on 2026-10-25 used it). The OIDC step did not run because it is skipped while the secret exists. `gh-release` skipped. npm still serves 0.1.0. **Maintainer action:** on npmjs.com add the trusted publisher (repository `alisaosipova/mcp-review-check`, workflow `release.yml`, environment `npm`), delete the `NPM_TOKEN` repository secret (or store a fresh granular token), then re-run the failed jobs of run 41391016385 from the Actions UI; the tag needs no change and nothing is force-pushed. |
 | 2026-11-02 | 0.2.0 published to npm from the maintainer's machine with a granular token (`npm pack` of the `v0.2.0` tree, `npm publish --provenance=false`): `dist-tags.latest = 0.2.0`, `npx mcp-review-check@0.2.0 --version` → `0.2.0`. **No provenance attestation on 0.2.0** (npm cannot generate one outside CI; 0.1.0 has one). The GitHub release for `v0.2.0` was not created (the `gh-release` job depends on the `publish` job). Maintainer follow-ups: configure the trusted publisher and delete/refresh the `NPM_TOKEN` secret so 0.2.1+ publish from `release.yml` with provenance again; create the `v0.2.0` GitHub release by hand (or re-run the failed jobs after fixing the secret: `npm publish` of an existing version fails, so only do that for the next tag). |
+| 2026-11-02 | Wave 5 (0.3.0, see §9): decisions in `remediation/wave5-plan.md`; three code packages (W5A-cli, W5C-connect, W5D-ci) rebased and fast-forwarded on `main` without conflicts (12 commits, `ce31cd9`…`b396353`); docs step W5E (CHANGELOG `[Unreleased]`, spec.md §3.1–3.7, §4.2, §4.4, §5.3, README action outputs and `@0.3` / `@v0.3.0` pins, this §9). Release 0.3.0 prepared, not yet tagged. |
 
 ## 5. Wave 1 results
 
@@ -203,17 +204,17 @@ The four branches were rebased onto `main` and fast-forwarded without conflicts 
 
 | Item | Origin | Why deferred |
 |---|---|---|
-| `--save-baseline`, tool-definition drift ("Changed tool definitions"), `--diff-only` | W4A, MARKET.md §3.3 | Separate CLI modes beyond the P0 `--baseline`; `--format json --output` already writes a baseline. |
-| Action outputs `score`, `verdict-claude`, `verdict-chatgpt` | W4D | Needs a second run with `--format json` or parsing the SARIF run properties; best after `--baseline` so the outputs can count new findings. |
+| `--save-baseline`, tool-definition drift ("Changed tool definitions"), `--diff-only` | W4A, MARKET.md §3.3 | `--save-baseline`: **closed in wave 5** (W5A, §9). Drift and `--diff-only`: separate CLI modes beyond the P0 `--baseline`, still open. |
+| Action outputs `score`, `verdict-claude`, `verdict-chatgpt` | W4D | **Closed in wave 5** (W5D, §9): read from the `--json-output` report of the same run, plus `verdict`, `errors`, `warnings`, `new-findings`, `report-json`. |
 | `v0` moving action tag | W4D | Moving it needs a forced tag push (`git push origin refs/tags/v0 --force`), which the repository's no-force-push rule rejects; users pin a full tag or SHA. CONTRIBUTING.md still describes it as an optional maintainer step. |
-| F146 beyond lite: cap `active.calls[].jsonRpcError` / `transportError` / `args` and `observedErrors[].message` | W4C | Needs `capStrings` exported from `src/limits.ts`; a global byte budget stays a design change. |
+| F146 beyond lite: cap `active.calls[].jsonRpcError` / `transportError` / `args` and `observedErrors[].message` | W4C | **Closed in wave 5** (W5C, `ce31cd9`). The global byte budget stays a design change (§9.3). |
 | F036 full | W4C | Stop keeping the whole parsed JSON of every exchange; changes the snapshot model. |
-| R003: partial `clientInfoVariants` | W4C | Published only when all variants finish; partial sets would let RT-012 compare uneven lists. |
-| R003: Origin probes lost on a stop | W4C | They come back from one `originProbes()` call in `src/probe/network.ts`; a stop inside it drops the ones already made. |
+| R003: partial `clientInfoVariants` | W4C | **Closed in wave 5** as "kept as is; documented" (spec §3.3; pinned by a test in `37340d4`): partial sets would let RT-012 compare uneven lists. |
+| R003: Origin probes lost on a stop | W4C | **Closed in wave 5** (W5C, `ec78d72`): each probe is published into the snapshot as it finishes. |
 | Coverage job in CI; re-measure thresholds after the W4A–W4C code | W4D | `test:coverage` is not run in CI, and two timing tests (wp2 70 MB stdio, limits wall-clock) are flaky under instrumentation. |
 | Action job on real macOS / Windows runners | W4D | The `action` CI job runs only once pushed; bash 3.2 and Git Bash behaviour are unverified locally. |
-| MARKET.md roadmap: config file, `--listing`, `--format junit`, `--oauth` | wave4-plan F168 | Feature work for a later minor. |
-| F151: raise `engines.node` | wave4-plan | Revisit in 0.3.0. |
+| MARKET.md roadmap: config file, `--listing`, `--format junit`, `--oauth` | wave4-plan F168 | Config file and `--format junit`: **closed in wave 5** (W5A, §9). `--listing`, `--oauth`: still open (0.4.0 candidates). |
+| F151: raise `engines.node` | wave4-plan | **Closed in wave 5** (W5D, `f400f38`): `engines.node >=22.12`, CI on Node 22 and 24. |
 | Open questions Q1–Q4 in spec §8, §6 items not covered above | — | Unchanged. |
 
 ### 8.4 Verification (W4E)
@@ -228,3 +229,54 @@ The four branches were rebased onto `main` and fast-forwarded without conflicts 
 | Full suite with the GitHub Actions environment (`CI=true GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=… MCP_REVIEW_CHECK_SKIP_BUILD=1`) | 1232 passed, 4 skipped, 0 failed. |
 | CI on `main` | Red on every push since the wave-1 integration (`cdfd53f` … `14cce30`), on every OS and Node version, always in `npm test`. The public job pages show one failing assertion: the 70 MB stdio overflow test got `MCP error -32001: Request timed out` instead of the overflow message. The SDK read buffer re-concatenates on every 64 KB chunk, so 70 MB takes ~40 s on a loaded 14-core box and more on a 2-core runner; the test's 20 s request timeout expired first. Fixed by a 170 s request timeout and a 300 s test timeout (`52f1909`). CI run 41390270506 on `52f1909`: success. |
 | Release | `[Unreleased]` → `## [0.2.0] - 2026-11-01`, `npm version minor`, docs regenerated (`e065cb1`). Annotated tag `v0.2.0` on `52f1909` pushed after the green CI run; `release.yml` builds, tests, publishes (trusted publishing or the `NPM_TOKEN` first-release step) and verifies `dist.attestations` before creating the GitHub release. The result is recorded in the status log. |
+
+## 9. Wave 5 (0.3.0)
+
+The maintainer asked for a real feature release to exercise the npm trusted publisher configured on 2026-11-02, and set the cadence: each feature or coherent feature set is its own minor release. The plan, the decision table and the package split are in [remediation/wave5-plan.md](remediation/wave5-plan.md); in short:
+
+| Item | Decision |
+|---|---|
+| Config file | `--config <file>`, else `mcp-review-check.config.json` / `.mcp-review-check.json` in `--cwd` or the working directory; `--no-config`; JSON, camelCase keys, same validation as the flags, a command-line flag wins, unknown keys exit 2. |
+| `--save-baseline`, `--json-output` | Both write the `--format json` document besides the primary output, from the same redacted report. |
+| `--format junit` | `src/report/junit.ts`: a suite per gated platform, a test case per rule, `<failure>` at `--fail-on`, baselined findings never fail. |
+| Action outputs | `score`, `verdict`, `errors`, `warnings`, `new-findings` read from a `--json-output` report of the single CLI run (W5D added `verdict-claude`, `verdict-chatgpt`, `report-json`). |
+| F146 rest | Cap `active.calls[].args/jsonRpcError/transportError` and `observedErrors` at TEXT_CAP, recorded in `limits.truncated`. |
+| R003 Origin probes on a stop | Each probe is published into the snapshot accumulator as it finishes. |
+| R003 partial `clientInfoVariants` | Kept as is (RT-012 needs the full set); documented in spec §3.3. |
+| F151 engines | `engines.node >=22.12`, CI matrix Node 22 and 24 on every OS, `@types/node` 22. |
+| `--listing`, `--oauth` | Stay on the roadmap (0.4.0 candidates), each needs a design note first. |
+| Coverage job in CI | Still deferred. |
+| Release cadence | CONTRIBUTING.md: a minor release per feature set, trusted publishing, `NPM_TOKEN` step only as a documented fallback. |
+
+### 9.1 Results per package
+
+| Package | Branch | Commits on `main` | Done | Deferred |
+|---|---|---|---|---|
+| W5A-cli ([report](remediation/W5A-report.md)) | `worktree-agent-a0cb75bf5ea2fb43e` | `bab6028`, `0e1a831`, `34632d7`, `b396353` | Config file (`src/config.ts`), `--json-output` and `--save-baseline`, `--format junit` (`src/report/junit.ts`); README Options, Config file, Output formats, Exit codes and the baseline and GitLab recipes | none |
+| W5C-connect ([report](remediation/W5C-report.md)) | `worktree-agent-a7ee1eb1e2a89cb91` | `ce31cd9`, `ec78d72`, `37340d4`, `bbf4931` | F146 rest (`capValue`, caps on the active calls' args and errors and on the observed errors), R003 Origin probes kept on a stop, R003 partial `clientInfoVariants` pinned by a test | F146 global byte budget, F036 full |
+| W5D-ci ([report](remediation/W5D-report.md)) | `worktree-agent-acc3d594710219548` | `f400f38`, `467f8f9`, `83fdf74`, `c6097ab` | F151 (Node 22.12, CI matrix, `@types/node` 22, Dependabot comment), action outputs and `version` default `0.3`, CONTRIBUTING cadence and trusted publishing, the `ci.yml` `test a && test b` check fix | `v0` moving tag, coverage job (unchanged from §8.3) |
+| W5E-docs | `main` (no branch) | this commit series | CHANGELOG `[Unreleased]`, spec.md (§3.1, §3.2, §3.3, §3.5, §3.6, new §3.7, §4.1, §4.2 input caps, §4.4, §5.3 junit), README action outputs, Node 22.12 and `@0.3` / `@v0.3.0` pins, this section | — |
+
+One edit outside the stated ownership: W5D changed `test/remediation-w4d-action.test.ts` (the outputs assertion became `arrayContaining`, the exit-2 outputs include `report-json`, and the happy-path script test is skipped while the built CLI lacks `--json-output`). With W5A integrated that test runs and passes; W5E checked that it is no longer skipped. W5A's commits carry a `Claude Opus 5.5` co-author trailer instead of the plan's `Claude Fable 5.1`, as its report explains.
+
+### 9.2 Integration
+
+The three branches were rebased onto `main` and fast-forwarded without conflicts (12 commits from `ce31cd9` to `b396353`). No fix commit was needed at integration.
+
+### 9.3 Still open after wave 5
+
+| Item | Origin | Why open |
+|---|---|---|
+| `--listing` (listing and manifest linting, spec §8 Q3) | MARKET.md roadmap | 0.4.0 candidate; needs a design note on the listing formats first. |
+| `--oauth` (interactive OAuth flow) | MARKET.md roadmap | 0.4.0 candidate; needs a design note first. |
+| Tool-definition drift, `--diff-only` | W4A, MARKET.md §3.3 | Separate CLI modes beyond `--baseline` / `--save-baseline`. |
+| F036 full | W4C, W5C | Stop keeping the whole parsed JSON of every exchange; changes the snapshot model. |
+| F146 global byte budget | W4C, W5C | The run keeps full strings in memory until `capSnapshot`; a design change. |
+| Coverage job in CI; re-measure thresholds | W4D, wave5-plan | Two timing tests are flaky under instrumentation. |
+| Action job on real macOS / Windows runners | W4D, W5D | The `action` CI job (now with the output assertions) runs only once pushed; bash 3.2 and Git Bash behaviour are unverified locally. |
+| `v0` moving action tag | W4D | Needs a forced tag push, which the no-force-push rule rejects. |
+| Open questions Q1–Q4 in spec §8 | — | Unchanged. |
+
+### 9.4 Verification (W5E)
+
+`npm run typecheck`, `npm run build`, `npm run readme:rules` (no drift: 147 rules, 31 manual items, catalog date 2026-11-01) and `npx vitest run test/docs.test.ts test/catalog.test.ts test/lifecycle.test.ts test/remediation-w3c-cli-tests.test.ts test/remediation-w4d-action.test.ts test/remediation-w5d-action.test.ts test/workflows.test.ts` (7 files, 49 passed, none skipped). The full suite was not run by W5E (another process was running it).
