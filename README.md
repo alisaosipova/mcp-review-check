@@ -6,9 +6,9 @@ Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account).
 
 `mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->147<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
 
-- Requires Node 20.19 or newer; no telemetry.
+- Requires Node 22.12 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
-- Text, JSON, Markdown and SARIF output; CI-friendly exit codes.
+- Text, JSON, Markdown, SARIF and JUnit output; an optional config file; CI-friendly exit codes.
 
 ## What it checks
 
@@ -63,7 +63,7 @@ npx mcp-review-check explain TOOL-011
 npx mcp-review-check --list-rules TOOL --format json
 ```
 
-On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.2` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
+On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.3` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
 
@@ -84,7 +84,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
 | `--fail-on-incomplete` | off | Exit 3 when the check is partial: the server requires auth and no token was given (`auth-required`), the token was rejected (`token-rejected`) or `tools/list` failed (`list-failed`). Without it a partial check exits by `--fail-on` like a complete one, so an expired token in CI can leave the job green; use it in CI with a token. A `--max-duration` stop is exit 4 with or without it. |
-| `--baseline <file>` | | A JSON report of an earlier run (`--format json --output <file>`). Findings already in it are **known**: they do not count toward `--fail-on`, the verdicts or the error, warning and info counts, and get no GitHub annotation; only new findings do. A finding is matched by rule, tool or resource, `path` and platforms (a baseline for `--target all` covers a run for `--target claude`), not by its message, so a reworded message or a changed number stays known; among several findings of one rule on one subject the message (numbers aside) decides which is which, and one more than the baseline had is new. SRV-020 (the protocol era note) is never known. JSON lists every finding with `baselined: true` or `false` and `summary.baselined`; SARIF sets `baselineState` to `unchanged` or `new`; text and markdown list only the new findings and one line `N known finding(s) from baseline, not listed: <rule IDs>` (not with `--quiet`). The score still counts every finding. A missing file or a file that is not a JSON report of mcp-review-check is a usage error (exit 2). |
+| `--baseline <file>` | | A JSON report of an earlier run (`--save-baseline <file>`, or `--format json --output <file>`). Findings already in it are **known**: they do not count toward `--fail-on`, the verdicts or the error, warning and info counts, and get no GitHub annotation; only new findings do. A finding is matched by rule, tool or resource, `path` and platforms (a baseline for `--target all` covers a run for `--target claude`), not by its message, so a reworded message or a changed number stays known; among several findings of one rule on one subject the message (numbers aside) decides which is which, and one more than the baseline had is new. SRV-020 (the protocol era note) is never known. JSON lists every finding with `baselined: true` or `false` and `summary.baselined`; SARIF sets `baselineState` to `unchanged` or `new`; text and markdown list only the new findings and one line `N known finding(s) from baseline, not listed: <rule IDs>` (not with `--quiet`). The score still counts every finding. A missing file or a file that is not a JSON report of mcp-review-check is a usage error (exit 2). |
 | `--local`, `--no-local` | detected | Force [local mode](#local-mode) on or off, whatever the host; `--no-local` also makes a `--stdio` run strict. Not both. |
 | `--active` | off | Runs the RT rules by calling read-only tools: the first 50 that qualify, at most 3 calls each. Also lists the tools on up to three fresh connections whose `clientInfo.name` is `mcp-review-check`, `claude-ai` and `Anthropic` (RT-012). |
 | `--active-auth` | off | Probes DCR, `/authorize` and `/token`. **Creates a DCR client** on your authorization server. |
@@ -185,7 +185,7 @@ A failed connect names its cause instead of `fetch failed`: the hostname does no
 
 **Redaction before the rules.** The rules read what the server sent with only the strong values masked: `--bearer`, `--header` values, `--env` values under a secret-looking name (`API_KEY=…`), URL credentials (a URL username only when it looks like a token) and stdio arguments after a secret-looking flag. Other `--env` values and their parts (`--env FORMAT=text`, the user and password in `--env DATABASE_URL=postgres://postgres:postgres@db/app`) are masked in the finished report and every other output only, unless a part looks like a token (a known format, or 16 or more characters with letters and digits), so a plain word there changes no finding, severity or exit code. Protocol and schema words (`object`, `string`, `title`, `type`, `properties`, `text`, `image`, `json`, `html` and the like) are never treated as secrets. Give a secret under a secret-looking name, so that it is masked before any cut (see [SECURITY.md](SECURITY.md)).
 
-**Input caps.** Before the pattern rules run, metadata strings over 16 KB and UI resources over 2 MB are truncated and the report lists what was cut (JSON `limits.truncated`); names, URIs, regex patterns and other schema syntax are kept up to 1 MB, so they are compared whole. At most 50 UI resources are read per run, and the report says when more were listed. SDK error bodies are capped at 64 KB. To bound memory on a hostile server, an HTTP response body is read up to 64 MiB (per event on an SSE stream), each listing (`tools/list` and the others) up to 64 MiB over all its pages and at most 100 pages, and a stdio message up to 64 MiB (a larger one is named as the cause of the errors that follow); of a stdio server's stdout lines that are not JSON-RPC, the first 50 are kept, with the total count.
+**Input caps.** Before the pattern rules run, metadata strings over 16 KB and UI resources over 2 MB are truncated and the report lists what was cut (JSON `limits.truncated`); names, URIs, regex patterns and other schema syntax are kept up to 1 MB, so they are compared whole. The `--active` calls' arguments, JSON-RPC and transport errors and the JSON-RPC errors observed during the run are capped at 16 KB per string too. At most 50 UI resources are read per run, and the report says when more were listed. SDK error bodies are capped at 64 KB. To bound memory on a hostile server, an HTTP response body is read up to 64 MiB (per event on an SSE stream), each listing (`tools/list` and the others) up to 64 MiB over all its pages and at most 100 pages, and a stdio message up to 64 MiB (a larger one is named as the cause of the errors that follow); of a stdio server's stdout lines that are not JSON-RPC, the first 50 are kept, with the total count.
 
 **Server text in reports.** Text and markdown reports show control, bidi and zero-width characters from the server (ESC, CR, LF, U+202E, …) as `\u{..}`, so a server name, tool name or message cannot recolour the terminal, add a hyperlink, reorder text or start a GitHub workflow command line. Markdown reports also escape markdown syntax in server text (see [SECURITY.md](SECURITY.md)). JSON and SARIF keep the text as sent.
 
@@ -234,7 +234,7 @@ Stdio servers and HTTP targets on a host without a dot (`localhost`, a container
 
 ### GitHub Actions
 
-When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. To run the check as a workflow step with a SARIF upload, use [the GitHub Action](#ci-recipes) (`uses: alisaosipova/mcp-review-check@v0.2.0`). There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
+When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. To run the check as a workflow step with a SARIF upload, use [the GitHub Action](#ci-recipes) (`uses: alisaosipova/mcp-review-check@v0.3.0`). There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
 
 The markdown report (and so the job summary) has an Evidence column with the text a rule matched, and a `rerun: npx mcp-review-check …` line with the options of the run, secrets redacted, to reproduce it locally (`--quiet` and `--checklist` are left out: they change only the text report). On Windows the line quotes arguments with double quotes, for cmd.exe (an argument that holds both `"` and one of `& | < > ^`, such as `--stdio "node s.js --filter \"a|b\""`, can split in cmd.exe, which ignores the backslash before `"`: check such a line before you run it; in PowerShell, quote again an argument that contains `"`, `$` or a backtick: PowerShell reads `\"` and `$` inside double quotes its own way; not yet tried on a real Windows machine); elsewhere with single quotes, for `sh`.
 
@@ -274,7 +274,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci && npm run build
-      - run: npx -y mcp-review-check@0.2 --target claude --stdio -- node dist/server.js
+      - run: npx -y mcp-review-check@0.3 --target claude --stdio -- node dist/server.js
 ```
 
 **A preview deployment URL** — check each successful deployment (for example, a preview per pull request) through the [`deployment_status`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#deployment_status) event:
@@ -290,7 +290,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: npx -y mcp-review-check@0.2 "$PREVIEW_URL/mcp" --target claude
+      - run: npx -y mcp-review-check@0.3 "$PREVIEW_URL/mcp" --target claude
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
           MCP_REVIEW_CHECK_TOKEN: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
@@ -301,11 +301,11 @@ jobs:
 **Fail only on new findings** — keep a JSON report of the accepted state in the repository and pass it with `--baseline`: known findings stay in the report but no longer fail the job, a new finding does. Write the file once with `--save-baseline` (`--fail-on never` so the first run passes), commit it, and refresh it the same way when you accept new findings:
 
 ```bash
-npx mcp-review-check@0.2 --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
+npx mcp-review-check@0.3 --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
 ```
 
 ```yaml
-      - run: npx -y mcp-review-check@0.2 --target claude --baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
+      - run: npx -y mcp-review-check@0.3 --target claude --baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
 ```
 
 `--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline.
@@ -317,7 +317,7 @@ mcp-review-check:
   image: node:22
   script:
     - npm ci && npm run build
-    - npx -y mcp-review-check@0.2 --target claude --format junit --output mcp-review-check.xml --stdio -- node dist/server.js
+    - npx -y mcp-review-check@0.3 --target claude --format junit --output mcp-review-check.xml --stdio -- node dist/server.js
   artifacts:
     when: always
     reports:
@@ -329,13 +329,13 @@ On GitHub Actions, [dorny/test-reporter](https://github.com/dorny/test-reporter)
 **Fail when the token stops working** — without a valid token the tool checks are skipped and the run can still pass (the job gets a `::warning`). With a token in CI, add `--fail-on-incomplete` so that a missing, expired or rejected token fails the job (exit 3):
 
 ```yaml
-      - run: npx -y mcp-review-check@0.2 "$MCP_URL" --target claude --fail-on-incomplete
+      - run: npx -y mcp-review-check@0.3 "$MCP_URL" --target claude --fail-on-incomplete
         env:
           MCP_URL: https://mcp.example.com/mcp
           MCP_REVIEW_CHECK_TOKEN: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
 ```
 
-A run cut off by `--max-duration` exits 4, so a step can tell a slow server from an unreachable one (exit 3): for example, `npx -y mcp-review-check@0.2 "$MCP_URL" --max-duration 120000 || [ $? -eq 4 ]` lets a slow run pass the step and still fails on every other non-zero code.
+A run cut off by `--max-duration` exits 4, so a step can tell a slow server from an unreachable one (exit 3): for example, `npx -y mcp-review-check@0.3 "$MCP_URL" --max-duration 120000 || [ $? -eq 4 ]` lets a slow run pass the step and still fails on every other non-zero code.
 
 **The GitHub Action** — the same check as a step, with annotations, the job summary and a SARIF upload to code scanning:
 
@@ -355,7 +355,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci && npm run build
-      - uses: alisaosipova/mcp-review-check@v0.2.0
+      - uses: alisaosipova/mcp-review-check@v0.3.0
         with:
           stdio: node dist/server.js
           platform: claude
@@ -364,7 +364,7 @@ jobs:
 For a deployed server, give `target` instead of `stdio` and pass the token as a secret:
 
 ```yaml
-      - uses: alisaosipova/mcp-review-check@v0.2.0
+      - uses: alisaosipova/mcp-review-check@v0.3.0
         with:
           target: https://staging.example.com/mcp
           bearer: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
@@ -380,13 +380,35 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
 | `fail-on-spec` | `false` | Also fail on MCP spec findings. |
 | `active` | `false` | `--active`: calls the tools annotated `readOnlyHint: true`. |
 | `bearer` | | Token, passed only as `MCP_REVIEW_CHECK_TOKEN`, never on the command line. Empty keeps one set in the job's `env`. |
-| `version` | `0.2` | npm version or range of mcp-review-check to run. |
+| `version` | `0.3` | npm version or range of mcp-review-check to run; 0.3 or newer (the outputs read the report written with `--json-output`). |
 | `sarif-file` | `mcp-review-check.sarif` | Where the SARIF report is written. |
 | `upload-sarif` | `true` | Upload it with `github/codeql-action/upload-sarif` (needs `security-events: write`), also when the check fails. Set `false` on pull requests from forks, which cannot write code scanning results. |
 | `extra-args` | | More options, split on whitespace (no quoting), for example `--timeout 60000 --ignore TOOL-013`. |
 | `cli-path` | | Run `node <path>` (a built `dist/cli.js`) instead of the npm package. |
 
-Outputs: `exit-code` (see [Exit codes](#exit-codes); the step fails with the same code) and `sarif-file` (empty when no report was written). The action needs Node 20.19 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v0.2.0` or a commit SHA.
+| Output | Value |
+|---|---|
+| `exit-code` | The CLI's exit code (see [Exit codes](#exit-codes)); the step fails with the same code. |
+| `sarif-file` | Path of the SARIF report, empty when none was written. |
+| `report-json` | Path of the JSON report (the `--format json` document) in the runner's temp directory, empty when none was written. |
+| `score` | Score 0–100, empty for a partial check. |
+| `verdict` | `PASS`, `FAIL` (threshold reached, or the server could not be checked) or `INCOMPLETE` (stopped by `--max-duration`), as the Result line. |
+| `verdict-claude`, `verdict-chatgpt` | Directory verdict: `BLOCKED`, `NEEDS ATTENTION`, `NO AUTOMATED BLOCKERS` or `INCOMPLETE`; empty when the platform is not checked. |
+| `errors`, `warnings` | Number of error and warning findings (with `--baseline` in `extra-args`, of the new ones only). |
+| `new-findings` | Findings of any severity that are not in the baseline (all findings without one). |
+
+Every output except `exit-code` and `sarif-file` is empty when no report was written (a usage error, exit 2). The outputs are set also when the check fails, so a later step with `if: always()` can use them:
+
+```yaml
+      - uses: alisaosipova/mcp-review-check@v0.3.0
+        id: review
+        with:
+          stdio: node dist/server.js
+      - if: always()
+        run: echo "score ${{ steps.review.outputs.score }}, ${{ steps.review.outputs.verdict }}, ${{ steps.review.outputs.new-findings }} new"
+```
+
+The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v0.3.0` or a commit SHA.
 
 ## Docker Compose
 
@@ -399,7 +421,7 @@ services:
     expose: ["8080"]
   review:
     image: node:22-slim
-    command: npx -y mcp-review-check@0.2 http://mcp:8080/mcp --target claude
+    command: npx -y mcp-review-check@0.3 http://mcp:8080/mcp --target claude
     depends_on: [mcp]
     profiles: [review]
 ```
@@ -463,7 +485,7 @@ While the version is 0.x:
 - **Rule IDs are never reused.** A retired rule's ID stays retired, so `--ignore` lists and saved reports keep their meaning.
 - **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear at any time.
 
-In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.2 <url>`.
+In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.3 <url>`.
 
 ## Limitations and disclaimer
 
