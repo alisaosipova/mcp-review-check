@@ -563,7 +563,162 @@ export const SPEC_020 = defineRule(
   },
 );
 
+/** The 2026-07-28 registry of Deprecated features (SEP-2596): new implementations SHOULD NOT adopt them. */
+const DEPRECATED = 'https://modelcontextprotocol.io/specification/2026-07-28/deprecated';
+const EXTENSIONS = 'https://modelcontextprotocol.io/docs/extensions/overview';
+const TASKS_EXT = 'https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md';
+const SERVER_INFO_KEY = 'io.modelcontextprotocol/serverInfo';
+const TASKS_KEY = 'io.modelcontextprotocol/tasks';
+const TASK_METHODS = ['tasks/get', 'tasks/update', 'tasks/cancel'];
+
+/** A server-supplied string for a message: JSON-quoted and cut, so a long or odd key stays one readable token. */
+const quote = (s: string) => JSON.stringify(s.length > 80 ? `${s.slice(0, 80)}…` : s);
+
+/**
+ * The capabilities the server announced, by where it announced them: the adopted `capabilities` (from initialize, or
+ * server/discover on a 2026-07-28-only server) and, on a dual-era server, the other result's object when it differs.
+ */
+function capabilitySources(snap: Snapshot): Array<[string, Obj]> {
+  const raw: Array<[string, unknown]> = [
+    ['initialize', isObj(snap.initializeRaw) ? snap.initializeRaw.capabilities : undefined],
+    ['server/discover', isObj(snap.discoverRaw) ? snap.discoverRaw.capabilities : undefined],
+  ];
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const out: Array<[string, Obj]> = [];
+  if (snap.capabilities) out.push([raw.find(([, c]) => same(c, snap.capabilities))?.[0] ?? 'server', snap.capabilities]);
+  for (const [label, c] of raw) if (isObj(c) && !out.some(([, o]) => same(o, c))) out.push([label, c]);
+  return out;
+}
+
+/** Collects one finding per problem; a problem both capability objects show names both ("initialize and server/discover"). */
+function perSource() {
+  const found = new Map<string, { labels: string[]; extra: Partial<RawFinding> }>();
+  return {
+    add(label: string, text: string, extra: Partial<RawFinding> = {}) {
+      const e = found.get(text);
+      if (!e) found.set(text, { labels: [label], extra });
+      else if (!e.labels.includes(label)) e.labels.push(label);
+    },
+    list: (): RawFinding[] => [...found].map(([text, { labels, extra }]) => ({ ...extra, message: `${labels.join(' and ')}: ${text}` })),
+  };
+}
+
+/** Server-initiated requests the server asked for in 2026-07-28 input_required results (MRTR) and in active tool-call results. */
+function inputRequests(snap: Snapshot): Array<{ where: string; request: Obj }> {
+  const out: Array<{ where: string; request: Obj }> = [];
+  const take = (where: string, result: unknown) => {
+    if (!isObj(result) || !isObj(result.inputRequests)) return;
+    for (const r of Object.values(result.inputRequests)) if (isObj(r)) out.push({ where, request: r });
+  };
+  for (const { method, result } of snap.transport.modernResults ?? []) take(`${method} result`, result);
+  for (const c of snap.active?.calls ?? []) take(`tools/call ${c.tool} result`, c.result);
+  return out;
+}
+
+const DEPRECATED_CAPS: Array<[string, string]> = [
+  ['logging', 'Logging is deprecated in 2026-07-28 (SEP-2577); log to stderr on stdio or use OpenTelemetry'],
+  ['sampling', 'Sampling is deprecated in 2026-07-28 (SEP-2577) and is a client capability, not a server one'],
+  ['roots', 'Roots is deprecated in 2026-07-28 (SEP-2577) and is a client capability, not a server one'],
+];
+const DEPRECATED_REQUESTS: Record<string, string> = {
+  'sampling/createMessage': 'Sampling (deprecated in 2026-07-28, SEP-2577; integrate with an LLM provider API instead)',
+  'roots/list': 'Roots (deprecated in 2026-07-28, SEP-2577; take directories or files as tool parameters instead)',
+};
+
+export const SPEC_021 = defineRule(
+  {
+    id: 'SPEC-021', title: 'Deprecated protocol features in use', severity: { spec: 'info' }, needs: [],
+    rationale: 'Deprecated features stay in the specification for at least twelve months, but new implementations should not adopt them and existing ones should migrate before removal.',
+    fix: 'Follow the migration path in the deprecated features registry: drop the logging capability (stderr or OpenTelemetry), take roots as tool parameters, call an LLM API instead of sampling, omit includeContext or use "none", and serve Streamable HTTP instead of HTTP+SSE.',
+    sources: [DEPRECATED, 'https://modelcontextprotocol.io/specification/2026-07-28/changelog#deprecated'],
+  },
+  (snap) => {
+    // The registry says new implementations SHOULD NOT adopt a Deprecated feature (no MUST NOT), so every finding is info.
+    const caps = perSource();
+    for (const [label, c] of capabilitySources(snap)) {
+      for (const [key, text] of DEPRECATED_CAPS) if (c[key] !== undefined) caps.add(label, `capabilities.${key} is declared; ${text}`);
+    }
+    const out = caps.list();
+    // SRV-003 reports what an SSE-only server means for the directories; this is the protocol's deprecation of it.
+    if (snap.transport.kind === 'sse') {
+      out.push({ message: 'served only over the HTTP+SSE transport, deprecated since 2025-03-26 (SEP-2596); migrate to Streamable HTTP' });
+    }
+    const seen = new Set<string>();
+    const add = (m: string) => { if (!seen.has(m)) { seen.add(m); out.push({ message: m }); } };
+    for (const { where, request } of inputRequests(snap)) {
+      const method = isStr(request.method) ? request.method : '';
+      if (DEPRECATED_REQUESTS[method]) add(`${where} asks the client for ${method}: ${DEPRECATED_REQUESTS[method]}`);
+      const ctx = isObj(request.params) ? request.params.includeContext : undefined;
+      if (method === 'sampling/createMessage' && (ctx === 'thisServer' || ctx === 'allServers')) {
+        add(`${where}: sampling/createMessage uses includeContext "${ctx}", deprecated (SEP-2596); omit it or use "none"`);
+      }
+    }
+    return out;
+  },
+);
+
+export const SPEC_022 = defineRule(
+  {
+    id: 'SPEC-022', title: '2026-07-28 results identify the server', severity: { spec: 'info' }, needs: ['modern'],
+    rationale: 'Without initialize, a 2026-07-28 client learns which server software answered only from _meta["io.modelcontextprotocol/serverInfo"], which servers should put on every result.',
+    fix: 'Add _meta["io.modelcontextprotocol/serverInfo"]: { name, version } to every 2026-07-28 result.',
+    sources: [SCHEMA_TS, 'https://modelcontextprotocol.io/specification/2026-07-28/changelog#major-changes'],
+  },
+  (snap) => {
+    // Results to our 2026-07-28 requests only: a legacy initialize carries serverInfo in its body (SRV-013).
+    const results = [...(snap.transport.modernResults ?? [])];
+    if (isObj(snap.discoverRaw) && !results.some((r) => r.method === 'server/discover')) results.unshift({ method: 'server/discover', result: snap.discoverRaw });
+    const missing = new Set<string>();
+    const malformed = new Set<string>();
+    for (const { method, result } of results) {
+      if (!isObj(result)) continue;
+      const si = metaOf(result)[SERVER_INFO_KEY];
+      if (si === undefined) missing.add(method);
+      else if (!(isObj(si) && isStr(si.name) && isStr(si.version))) malformed.add(method);
+    }
+    const out: RawFinding[] = [];
+    if (missing.size) out.push({ message: `${[...missing].join(', ')} result${missing.size > 1 ? 's lack' : ' lacks'} _meta["${SERVER_INFO_KEY}"]` });
+    if (malformed.size) out.push({ message: `_meta["${SERVER_INFO_KEY}"] on ${[...malformed].join(', ')} is not an object with string name and version` });
+    return out;
+  },
+);
+
+export const SPEC_023 = defineRule(
+  {
+    id: 'SPEC-023', title: 'capabilities.extensions well-formed', severity: { spec: 'error' }, needs: [],
+    rationale: 'Clients look extensions up by identifier: capabilities.extensions maps "{vendor-prefix}/{name}" identifiers, which must follow the _meta key rules with a mandatory prefix, to settings objects.',
+    fix: 'Declare extensions as an object such as { "io.modelcontextprotocol/ui": {} }, keyed by prefixed identifiers (your own reverse-DNS prefix for third-party extensions), each with an object of settings ({} for none).',
+    sources: [SCHEMA_TS, EXTENSIONS, TASKS_EXT],
+  },
+  (snap) => {
+    const issues = perSource();
+    const answered = new Set((snap.transport.modernResults ?? []).map((r) => r.method));
+    for (const [label, caps] of capabilitySources(snap)) {
+      const ext = caps.extensions;
+      if (ext === undefined) continue;
+      if (!isObj(ext)) { issues.add(label, `capabilities.extensions is ${ext === null ? 'null' : Array.isArray(ext) ? 'an array' : typeof ext}, not an object`); continue; }
+      for (const [key, value] of Object.entries(ext)) {
+        const problem = key.includes('/') ? metaKeyProblem(key) : 'no vendor prefix';
+        if (problem === 'reserved prefix' && !key.startsWith(OFFICIAL_META_PREFIX)) {
+          // Well-formed, but in a namespace reserved for MCP: SPEC-018's level for the same _meta rule, a warning.
+          issues.add(label, `extension identifier ${quote(key)} uses a prefix reserved for MCP`, { severity: 'warning' });
+        } else if (problem && problem !== 'reserved prefix') {
+          issues.add(label, `extension identifier ${quote(key)} is not a "{vendor-prefix}/{name}" _meta key (${problem})`);
+        }
+        if (!isObj(value)) issues.add(label, `settings of extension ${quote(key)} are ${value === null ? 'null' : Array.isArray(value) ? 'an array' : typeof value}, not an object ({} for no settings)`);
+        if (key === TASKS_KEY) {
+          // The tasks extension defines tasks/get, tasks/update and tasks/cancel; the run does not call them, so the declaration is unverified.
+          const unseen = TASK_METHODS.filter((m) => !answered.has(m));
+          if (unseen.length) issues.add(label, `${TASKS_KEY} declared; ${unseen.join(', ')} not probed (declared, not verified)`, { severity: 'info' });
+        }
+      }
+    }
+    return issues.list();
+  },
+);
+
 export const specRules = [
   SPEC_001, SPEC_002, SPEC_003, SPEC_004, SPEC_005, SPEC_006, SPEC_007, SPEC_008, SPEC_009, SPEC_010,
   SPEC_011, SPEC_012, SPEC_013, SPEC_014, SPEC_015, SPEC_016, SPEC_017, SPEC_018, SPEC_019, SPEC_020,
+  SPEC_021, SPEC_022, SPEC_023,
 ];

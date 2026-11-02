@@ -89,6 +89,27 @@ const cases: Record<string, Case> = {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.exchanges = [exchange({ status: 200, contentType: 'text/event-stream', headers: {} })]; } }),
     neg: snap({ url: URL_OK, set: (s) => { s.transport.exchanges = [exchange({ status: 200, contentType: 'text/event-stream', headers: { 'x-accel-buffering': 'no' } })]; } }),
   },
+  // Near miss: completions and resources.subscribe are not deprecated features.
+  'SPEC-021': {
+    pos: snap({ set: (s) => { s.capabilities = { tools: {}, logging: {} }; s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: s.capabilities, serverInfo: s.serverInfo }; } }),
+    neg: snap({ set: (s) => { s.capabilities = { tools: {}, completions: {}, resources: { subscribe: true } }; s.initializeRaw = { protocolVersion: '2025-11-25', capabilities: s.capabilities, serverInfo: s.serverInfo }; } }),
+    severity: 'info', match: /capabilities\.logging is declared; Logging is deprecated in 2026-07-28 \(SEP-2577\)/,
+  },
+  'SPEC-022': {
+    pos: modern((s) => { s.transport.modernResults = [{ method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs: 1, cacheScope: 'public' } }]; }),
+    neg: modern((s) => {
+      const meta = { 'io.modelcontextprotocol/serverInfo': { name: 'acme-notes', version: '' } };
+      s.discoverRaw = { ...(s.discoverRaw as object), _meta: meta };
+      s.transport.modernResults = [{ method: 'server/discover', result: s.discoverRaw }, { method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs: 1, cacheScope: 'public', _meta: meta } }];
+    }),
+    severity: 'info', match: /tools\/list.*lack _meta\["io\.modelcontextprotocol\/serverInfo"\]/,
+  },
+  // Near miss: an official extension the core spec does not list, with settings, and a third-party one.
+  'SPEC-023': {
+    pos: snap({ set: (s) => { s.capabilities = { tools: {}, extensions: { tasks: {} } }; } }),
+    neg: snap({ set: (s) => { s.capabilities = { tools: {}, extensions: { 'io.modelcontextprotocol/skills': { directoryRead: true }, 'com.acme/audit': {} } }; } }),
+    severity: 'error', match: /extension identifier "tasks" is not a "\{vendor-prefix\}\/\{name\}" _meta key \(no vendor prefix\)/,
+  },
 };
 
 describe('SPEC rules', () => {
