@@ -128,6 +128,8 @@ const cases: Record<string, Case> = {
     pos: one(tool({ securitySchemes: [{ type: 'basic' }] })),
     neg: one(tool({ securitySchemes: [{ type: 'oauth2', scopes: ['notes.read'] }] })), severity: 'error',
   },
+  // the MCP specification allows '.', the Claude and OpenAI APIs do not
+  'TOOL-033': { pos: one(tool({ name: 'notes.search' })), neg: one(tool({ name: 'notes_search-v2' })), severity: 'error', match: /"\."/ },
 };
 
 describe('TOOL rules', () => {

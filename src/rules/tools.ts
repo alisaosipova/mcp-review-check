@@ -12,6 +12,10 @@ const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
 const CLAUDE_REVIEW = 'https://claude.com/docs/connectors/building/review-criteria';
 const OAI_REF = 'https://developers.openai.com/plugins/reference';
+// Verified 2026-11-01: `name` "Must match the regex ^[a-zA-Z0-9_-]{1,128}$" (Claude API, user-defined tools).
+const CLAUDE_DEFINE_TOOLS = 'https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools';
+// Verified 2026-11-01: function `name` "Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64."
+const OAI_FN_REF = 'https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create';
 
 /** Run `fn` per tool and tag findings with the tool name. */
 export function perTool(snap: Snapshot, fn: (t: Obj, name: string) => RawFinding[] | RawFinding | undefined): RawFinding[] {
@@ -42,12 +46,35 @@ export const TOOL_001 = defineRule(
 
 export const TOOL_002 = defineRule(
   {
-    id: 'TOOL-002', title: 'Tool name at most 64 characters', severity: { claude: 'error' }, needs: ['tools'],
-    rationale: 'Claude rejects tool names longer than 64 characters.',
+    id: 'TOOL-002', title: 'Tool name at most 64 characters', severity: { claude: 'error', chatgpt: 'error' }, needs: ['tools'],
+    rationale: 'The Claude directory policy caps MCP tool names at 64 characters; the OpenAI API rejects function names longer than 64 characters.',
     fix: 'Shorten the tool name to 64 characters or fewer.',
-    sources: [CLAUDE_POLICY],
+    sources: [CLAUDE_POLICY, OAI_FN_REF],
   },
   (snap) => perTool(snap, (_t, name) => ([...name].length > 64 ? { message: `name is ${[...name].length} characters (> 64)` } : undefined)),
+);
+
+/** The characters both vendor APIs accept in a tool (function) name. */
+const API_NAME_CHAR = /[A-Za-z0-9_-]/;
+
+export const TOOL_033 = defineRule(
+  {
+    id: 'TOOL-033', title: 'Tool name matches the vendor API pattern', severity: { claude: 'error', chatgpt: 'error' }, needs: ['tools'],
+    rationale: 'The Claude API accepts tool names matching ^[a-zA-Z0-9_-]{1,128}$ and the OpenAI API function names matching a-z, A-Z, 0-9, _ and - up to 64 characters; '
+      + 'a name with any other character (the `.` the MCP specification allows, spaces, `/`, non-ASCII letters) is rejected.',
+    fix: 'Rename using only ASCII letters, digits, `_` and `-` (for example `notes_search` instead of `notes.search`).',
+    sources: [CLAUDE_DEFINE_TOOLS, OAI_FN_REF],
+  },
+  // Length over 64 is TOOL-002's finding (it binds on both platforms first); this rule reports the character set.
+  (snap) => perTool(snap, (t, name) => {
+    if (typeof t.name !== 'string') return undefined; // TOOL-001
+    const limit = 'allowed: A-Z a-z 0-9 _ - (Claude API ^[a-zA-Z0-9_-]{1,128}$, OpenAI API 1-64 characters)';
+    if (name.length === 0) return { message: `tool name is empty; ${limit}` };
+    const bad = [...new Set([...name].filter((c) => !API_NAME_CHAR.test(c)))];
+    if (!bad.length) return undefined;
+    const shown = bad.slice(0, 10).map((c) => JSON.stringify(c)).join(' ') + (bad.length > 10 ? ` and ${bad.length - 10} more` : '');
+    return { message: `name contains ${shown}; ${limit}` };
+  }),
 );
 
 export const TOOL_003 = defineRule(
@@ -551,5 +578,6 @@ export const TOOL_032 = defineRule(
 export const toolRules = [
   TOOL_001, TOOL_002, TOOL_003, TOOL_004, TOOL_005, TOOL_006, TOOL_007, TOOL_008, TOOL_009,
   TOOL_023, TOOL_024, TOOL_025, TOOL_026, TOOL_027, TOOL_028, TOOL_029, TOOL_030, TOOL_031, TOOL_032,
+  TOOL_033,
 ];
 

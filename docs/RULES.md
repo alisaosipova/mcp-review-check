@@ -48,7 +48,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | SPEC-019 | SSE responses disable proxy buffering | spec: info | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http) |
 | SPEC-020 | List methods for declared capabilities succeed | spec: error, claude: error, chatgpt: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#listing-tools) |
 | TOOL-001 | Tool name characters and length | spec: warning | [link](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) |
-| TOOL-002 | Tool name at most 64 characters | claude: error | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
+| TOOL-002 | Tool name at most 64 characters | claude: error, chatgpt: error | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | TOOL-003 | Tool names unique | chatgpt: error, spec: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | TOOL-004 | Promotional or comparative tool name | chatgpt: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
 | TOOL-005 | Opaque tool name | chatgpt: info | [link](https://developers.openai.com/plugins/plugin-guidelines) |
@@ -79,6 +79,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | TOOL-030 | openai/fileParams file-object schema | chatgpt: error | [link](https://developers.openai.com/plugins/reference) |
 | TOOL-031 | openai/profile marker contract | chatgpt: error | [link](https://developers.openai.com/plugins/build/auth) |
 | TOOL-032 | Per-tool securitySchemes | chatgpt: info | [link](https://developers.openai.com/plugins/build/auth) |
+| TOOL-033 | Tool name matches the vendor API pattern | claude: error, chatgpt: error | [link](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools) |
 | INJ-001 | Hidden or invisible characters | claude: error, chatgpt: error | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | INJ-002 | Mixed-script words (homoglyphs) | claude: warning, chatgpt: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | INJ-003 | Markup hidden from humans, or pseudo-system tags | claude: warning, chatgpt: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
