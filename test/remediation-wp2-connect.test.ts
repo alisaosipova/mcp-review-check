@@ -236,9 +236,9 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
   }, 60000);
 
   it('a message over the stdio buffer names the overflow on the failed read', async () => {
-    const snap = await stdio(['bigui', '70'], 120000); // under full-suite load the pipe needs more than the 20 s default before the overflow shows
+    const snap = await stdio(['bigui', '70'], 170000); // the SDK read buffer re-concatenates on every 64 KB chunk, so 70 MB takes ~40 s on a loaded 14-core box and longer on a 2-core CI runner
     expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
-  }, 180000); // 70 MB over a pipe takes over a minute when the whole suite runs in parallel
+  }, 300000); // see the timeout above; CI failed this test with the 20 s request timeout
 
   it('the SDK stdio transport still has the private state GroupStdioTransport uses', () => {
     expect(sdkStdioShape(new StdioClientTransport({ command: 'node', stderr: 'pipe' }))).toBe(true);
