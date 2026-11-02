@@ -66,7 +66,8 @@ describe('README and docs', () => {
     const rows = cmp!.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Tool ') && !l.startsWith('| mcp-review-check '));
     expect(rows.length).toBeGreaterThanOrEqual(3);
     for (const row of rows) expect(row, row.slice(0, 40)).toMatch(/\]\(https:\/\/[^)]+\)/);
-    expect(README).not.toMatch(/upload-sarif|codeql-action/);
+    // The CLI never uploads SARIF; only the GitHub Action documented under "CI recipes" (action.yml, 0.2.0) does.
+    expect(README.replace(section('CI recipes') ?? '', '')).not.toMatch(/upload-sarif|codeql-action/);
   });
 
   it('every --help option is in README and vice versa', async () => {
