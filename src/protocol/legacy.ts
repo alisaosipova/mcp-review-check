@@ -4,6 +4,8 @@ import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
 import type { JsonRpcObservation } from '../snapshot.js';
 import { isObj } from '../rules/util/access.js';
+import type { ByteBudget } from '../limits.js';
+import { BUDGET_ERROR } from './trace.js';
 
 export const LooseResult = z.looseObject({});
 
@@ -37,8 +39,10 @@ export const LIST_BYTE_BUDGET = 64 * 1024 * 1024;
  * Follow nextCursor up to `maxPages` (both eras). A listing fails, keeping what it read, on a repeated cursor, a
  * nextCursor that is not a string, entries that are not objects (a host's schema check rejects such a result, so it
  * cannot list either) and past LIST_BYTE_BUDGET bytes, so a hostile server cannot fill the memory page by page.
+ * With the run's `budget` (F146): no page is asked for once it is spent, and a page fetched while it ran out (its read
+ * cut, so no result) ends the listing with that reason.
  */
-export async function paginate(fetchPage: (cursor: string | undefined) => Promise<ListPage>, method: string, key: string, maxPages = 100): Promise<Listing> {
+export async function paginate(fetchPage: (cursor: string | undefined) => Promise<ListPage>, method: string, key: string, maxPages = 100, budget?: ByteBudget): Promise<Listing> {
   const items: Record<string, unknown>[] = [];
   const pages: unknown[] = [];
   const seen = new Set<string>();
@@ -51,8 +55,9 @@ export async function paginate(fetchPage: (cursor: string | undefined) => Promis
     return e ? { items, pages, error: e } : { items, pages };
   };
   for (let i = 0; i < maxPages; i++) {
+    if (budget?.exhausted) return done(BUDGET_ERROR);
     const page = await fetchPage(cursor);
-    if (!page.result) return done(page.error ?? `${method} returned no result`);
+    if (!page.result) return done(budget?.exhausted ? BUDGET_ERROR : page.error ?? `${method} returned no result`);
     bytes += page.bytes;
     if (bytes > LIST_BYTE_BUDGET) return done(`listing exceeded ${LIST_BYTE_BUDGET} bytes`);
     pages.push(page.result);
@@ -69,8 +74,9 @@ export async function paginate(fetchPage: (cursor: string | undefined) => Promis
   return done(`more than ${maxPages} pages`);
 }
 
-/** A list method through the SDK client; a page's size is measured as its JSON text. */
-export async function listAll(client: Client, method: string, key: string, timeoutMs: number, maxPages = 100): Promise<Listing> {
+/** A list method through the SDK client; a page's size is measured as its JSON text. The SDK's transport charges the
+ *  pages to the run's `budget` as it reads them (capBody, the stdio reader); here a spent budget ends the listing. */
+export async function listAll(client: Client, method: string, key: string, timeoutMs: number, maxPages = 100, budget?: ByteBudget): Promise<Listing> {
   return paginate(async (cursor) => {
     try {
       const result = await client.request({ method, params: cursor ? { cursor } : {} } as never, LooseResult, { timeout: timeoutMs });
@@ -78,5 +84,5 @@ export async function listAll(client: Client, method: string, key: string, timeo
     } catch (e) {
       return { error: (e as Error).message, bytes: 0 };
     }
-  }, method, key, maxPages);
+  }, method, key, maxPages, budget);
 }

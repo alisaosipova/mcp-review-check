@@ -20,6 +20,44 @@ export const TOOL_LIST_MAX_BYTES = 64 * 1024;
 /** UI resources read per run (resources/read for every ui:// URI the tools and resources list). */
 export const UI_READS_CAP = 50;
 
+/** Bytes of server data one run may read and keep, over every response and connection (F146): HTTP bodies, the SDK's
+ *  HTTP responses and its stdio messages. Past it the read that crossed it stops, nothing more is read, and the rules
+ *  run on what the snapshot has (limits.budgetExhausted). */
+export const SNAPSHOT_BUDGET = 64 * 1024 * 1024;
+
+/** The run's byte budget: every reader charges what it keeps; `exhausted` is set once, by the read that crossed it. */
+export interface ByteBudget {
+  readonly bytes: number;
+  used: number;
+  /** Set by the first charge past the budget: how many bytes of that read were over it. */
+  exhausted?: { overBytes: number };
+  /** Called once, when the budget runs out (connect.ts stops the run there). */
+  onExhausted?: () => void;
+}
+
+export function createBudget(bytes = SNAPSHOT_BUDGET): ByteBudget {
+  return { bytes, used: 0 };
+}
+
+/** Bytes left in `b` (Infinity without a budget). */
+export function budgetLeft(b: ByteBudget | undefined): number {
+  return b ? Math.max(0, b.bytes - b.used) : Infinity;
+}
+
+/**
+ * Charge `n` bytes to `b`: true while they fit. The charge that does not fit takes the rest of the budget, records the
+ * bytes over it and calls onExhausted once; every later charge fails. Without a budget everything fits.
+ */
+export function charge(b: ByteBudget | undefined, n: number): boolean {
+  if (!b) return true;
+  if (b.exhausted) return n <= 0;
+  if (b.used + n <= b.bytes) { b.used += n; return true; }
+  b.exhausted = { overBytes: Math.max(1, b.used + n - b.bytes) };
+  b.used = b.bytes;
+  b.onExhausted?.();
+  return false;
+}
+
 /** Keys whose string values identify something or are schema syntax rather than prose. */
 const ID_KEYS = new Set([
   'name', 'uri', 'uriTemplate', 'resourceUri', 'ui/resourceUri', 'outputTemplate', 'openai/outputTemplate',
@@ -147,11 +185,14 @@ export function limitsNotice(snap: Snapshot): string | undefined {
   const parts: string[] = [];
   const t = snap.limits?.truncated ?? [];
   if (t.length) {
-    const size = (x: (typeof t)[number]) => (x.unit === 'items' ? `${x.length} items, cap ${x.cap}` : `${x.length} chars, cap ${kb(x.cap)}`);
+    const size = (x: (typeof t)[number]) => (x.unit === 'items' ? `${x.length} items, cap ${x.cap}`
+      : x.unit === 'bytes' ? `${x.length} bytes, cap ${x.cap >= 1024 ? kb(x.cap) : `${x.cap} bytes`}` : `${x.length} chars, cap ${kb(x.cap)}`);
     const shown = t.slice(0, 3).map((x) => `${x.where} (${size(x)})`).join(', ');
     parts.push(`${t.length} oversized input${t.length === 1 ? '' : 's'} truncated before pattern checks: ${shown}${t.length > 3 ? ', …' : ''}`);
   }
   const s = snap.limits?.stopped;
   if (s) parts.push(`stopped by --max-duration ${s.maxDurationMs} ms during ${s.phase}; later checks did not run`);
+  const b = snap.limits?.budgetExhausted;
+  if (b) parts.push(`snapshot budget of ${kb(b.bytes)} exhausted during ${b.phase} (${b.overBytes} bytes over); later reads were skipped`);
   return parts.length ? `${parts.join('. ')}.` : undefined;
 }

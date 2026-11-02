@@ -5,6 +5,7 @@ import { isObj } from '../rules/util/access.js';
 import { VERSION } from '../version.js';
 import { CLIENT_CAPABILITIES } from './clientCaps.js';
 import { paginate, type Listing } from './legacy.js';
+import type { ByteBudget } from '../limits.js';
 
 export const MODERN_VERSION = '2026-07-28';
 export const CLIENT_INFO = { name: 'mcp-review-check', version: VERSION };
@@ -33,6 +34,8 @@ export interface ModernRequestOptions {
    * without answering costs at most 10 s.
    */
   fullBody?: boolean;
+  /** Keep the parsed body on the exchange (a wire probe the rules read through rpcView); default: the tracer's choice. */
+  keepJson?: boolean;
 }
 
 const NAME_PARAM: Record<string, 'name' | 'uri'> = {
@@ -87,10 +90,12 @@ export class ModernClient {
     if (mh !== null) headers['mcp-method'] = mh;
     const nh = opts.nameHeader === undefined ? mcpNameOf(method, params) : opts.nameHeader;
     if (nh !== null && nh !== undefined) headers['mcp-name'] = nh;
-    const { exchange, bodyBytes } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
+    // The parsed body comes back once (F036): the result goes to the caller and to `results`, not onto the exchange.
+    const { exchange, bodyBytes, json } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
       method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: opts.fullBody ?? true,
+      ...(opts.keepJson !== undefined ? { keepJson: opts.keepJson } : {}),
     });
-    const msgs = Array.isArray(exchange.json) ? exchange.json.filter(isObj) : isObj(exchange.json) ? [exchange.json] : [];
+    const msgs = Array.isArray(json) ? json.filter(isObj) : isObj(json) ? [json] : [];
     const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];
     const res: ModernResponse = { exchange, bytes: bodyBytes };
     if (isObj(msg)) {
@@ -106,12 +111,13 @@ export class ModernClient {
     return res;
   }
 
-  /** Follow nextCursor up to `maxPages` (see paginate: repeated or non-string cursors, non-object entries, the byte budget). */
-  async listAll(method: string, key: string, maxPages = 100): Promise<Listing> {
+  /** Follow nextCursor up to `maxPages` (see paginate: repeated or non-string cursors, non-object entries, the byte
+   *  budgets: the listing's and, with `budget`, the run's). */
+  async listAll(method: string, key: string, maxPages = 100, budget?: ByteBudget): Promise<Listing> {
     return paginate(async (cursor) => {
       const r = await this.request(method, cursor ? { cursor } : {});
       if (r.result) return { result: r.result, bytes: r.bytes ?? 0 };
       return { error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}`), bytes: 0 };
-    }, method, key, maxPages);
+    }, method, key, maxPages, budget);
   }
 }

@@ -52,12 +52,13 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
 
   if (modern) {
     // Only the status and the error object matter: read the body under the probes' 256 KB / 10 s cap (F025).
-    p.badVersionModern = (await modern.request('server/discover', {}, { version: '1900-01-01', label: 'badVersion (modern)', fullBody: false })).exchange;
-    p.unknownMethodModern = (await modern.request(UNKNOWN_METHOD, {}, { label: 'unknownMethod (modern)', fullBody: false })).exchange;
-    if (hasResources) p.resourceMissingModern = (await modern.request('resources/read', { uri: MISSING_RESOURCE }, { label: 'resourceMissing (modern)', fullBody: false })).exchange;
-    p.headerMismatchNone = (await modern.request('tools/list', {}, { methodHeader: null, label: 'headerMismatch (none)', fullBody: false })).exchange;
-    p.headerMismatchWrong = (await modern.request('tools/list', {}, { methodHeader: 'prompts/list', label: 'headerMismatch (wrong)', fullBody: false })).exchange;
-    if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false })).exchange;
+    // keepJson: SPEC rules read these probes through rpcView (src/rules/util/obs.ts), which parses exchange.json (F036).
+    p.badVersionModern = (await modern.request('server/discover', {}, { version: '1900-01-01', label: 'badVersion (modern)', fullBody: false, keepJson: true })).exchange;
+    p.unknownMethodModern = (await modern.request(UNKNOWN_METHOD, {}, { label: 'unknownMethod (modern)', fullBody: false, keepJson: true })).exchange;
+    if (hasResources) p.resourceMissingModern = (await modern.request('resources/read', { uri: MISSING_RESOURCE }, { label: 'resourceMissing (modern)', fullBody: false, keepJson: true })).exchange;
+    p.headerMismatchNone = (await modern.request('tools/list', {}, { methodHeader: null, label: 'headerMismatch (none)', fullBody: false, keepJson: true })).exchange;
+    p.headerMismatchWrong = (await modern.request('tools/list', {}, { methodHeader: 'prompts/list', label: 'headerMismatch (wrong)', fullBody: false, keepJson: true })).exchange;
+    if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false, keepJson: true })).exchange;
   }
 
   if (http) {
@@ -79,7 +80,7 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     if (snap.transport.kind === 'streamable-http' && !modernOnly) {
       p.badVersion = (await tracer.request('badVersion', url, {
         method: 'POST', headers: { ...authHeaders, ...JSON_HEADERS, ...session, 'mcp-protocol-version': '1900-01-01' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 9001, method: 'tools/list', params: {} }), timeoutMs,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 9001, method: 'tools/list', params: {} }), timeoutMs, keepJson: true,
       })).exchange;
     }
     if (modernOnly) {

@@ -7,12 +7,12 @@ import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontex
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { emptySnapshot, PHASES, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
-import { capSnapshot, ERROR_BODY_CAP, UI_READS_CAP } from './limits.js';
+import { capSnapshot, charge, createBudget, ERROR_BODY_CAP, SNAPSHOT_BUDGET, UI_READS_CAP, type ByteBudget } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
 import { ModernClient, MODERN_VERSION } from './protocol/modern.js';
 import { RecordingTransport } from './protocol/recording.js';
-import { createRedactor, createTracer, FULL_READ_CAP, scrub, type Redactor, type Tracer } from './protocol/trace.js';
+import { BUDGET_ERROR, createRedactor, createTracer, FULL_READ_CAP, scrub, summarizeJsonRpc, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, sameHostRedirect, tlsCheckWithRetry, type Deps } from './probe/network.js';
@@ -43,6 +43,8 @@ export interface BuildOptions {
   maxDurationMs?: number;
   /** --local (true) or --no-local (false); unset: detected from the host. */
   local?: boolean;
+  /** Bytes of server data the run may read (default SNAPSHOT_BUDGET); not a CLI option, tests lower it. */
+  snapshotBudget?: number;
 }
 
 /** The redactor for these options; before the rules only strong values, `all` adds --env values under a plain name. */
@@ -79,8 +81,11 @@ interface Progress {
   close?: () => Promise<void>;
   /** Every stdio server process still running (main and fresh connections), ended at the deadline and after every run. */
   children?: Set<ChildProcess>;
-  /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight. */
+  /** Aborted at the deadline or when the byte budget runs out: the tracer then sends no more HTTP requests and cancels
+   *  its probes in flight. */
   abort: AbortController;
+  /** The run's byte budget (F146), charged by the tracer, the SDK's HTTP responses and the stdio reader. */
+  budget?: ByteBudget;
   /** What the run has observed so far that it otherwise stores only at its end (modern results, observed errors).
    *  The wire probes and the active calls need none: they publish each finished probe or call into the live snapshot
    *  (runWireProbes' `out`, runActive's `into`), which stoppedSnapshot copies. */
@@ -189,8 +194,9 @@ function adoptDiscover(snap: Snapshot, raw: Record<string, unknown>): void {
   snap.protocolVersion = Array.isArray(raw.supportedVersions) && isStr(raw.supportedVersions[0]) ? raw.supportedVersions.find((v) => v === '2026-07-28') ?? raw.supportedVersions[0] : '2026-07-28';
 }
 
-const legacyLister = (client: Client, timeoutMs: number): Lister => (m, k) => listAll(client, m, k, timeoutMs);
-const legacyReader = (client: Client, timeoutMs: number): Reader => async (uri) => {
+const legacyLister = (client: Client, timeoutMs: number, budget?: ByteBudget): Lister => (m, k) => listAll(client, m, k, timeoutMs, 100, budget);
+const legacyReader = (client: Client, timeoutMs: number, budget?: ByteBudget): Reader => async (uri) => {
+  if (budget?.exhausted) return { ok: false, error: BUDGET_ERROR }; // nothing more is read (F146)
   try {
     return { ok: true, raw: await client.request({ method: 'resources/read', params: { uri } } as never, LooseResult, { timeout: timeoutMs }) };
   } catch (e) {
@@ -230,7 +236,9 @@ const CREDENTIAL_HEADER = /^(authorization|proxy-authorization|cookie)$|api[-_]?
 
 function modernErrorBody(tracer: Tracer): boolean {
   const last = [...tracer.exchanges].reverse().find((e) => e.label === 'sdk initialize');
-  const err = isObj(last?.json) && isObj(last!.json.error) ? last!.json.error : undefined;
+  // The SDK traffic keeps no parsed body (F036): its JSON-RPC summary has the error code.
+  const msgs = last?.jsonRpc ?? (isObj(last?.json) ? summarizeJsonRpc(last!.json) : undefined);
+  const err = msgs?.length === 1 ? msgs[0].error : undefined;
   return !!err && MODERN_CODES.includes(Number(err.code));
 }
 
@@ -305,7 +313,8 @@ async function connectSse(url: URL, headers: Record<string, string>, tracer: Tra
 /**
  * The JSON-RPC errors the run's own requests got (and the SDK connection's), plus every successful response whose id
  * is not the request's (`result: true`, no code): a real client cannot match such a result to its request (SPEC-016).
- * A message with a `method` is a request or notification from the server, not a response.
+ * A message with a `method` is a request or notification from the server, not a response. Read from each exchange's
+ * JSON-RPC summary (`jsonRpc`, F036), or its parsed body where an exchange carries only that.
  */
 export function collectErrors(tracer: Pick<Tracer, 'exchanges'> | undefined, rec: Pick<RecordingTransport, 'errors'> | undefined): ObservedError[] {
   const out: ObservedError[] = [...(rec?.errors ?? [])];
@@ -313,12 +322,10 @@ export function collectErrors(tracer: Pick<Tracer, 'exchanges'> | undefined, rec
     if (e.label.startsWith('sdk ') || !isObj(e.requestJson) || e.requestJson.jsonrpc !== '2.0') continue;
     const req = e.requestJson;
     const modern = e.requestHeaders['mcp-protocol-version'] === MODERN_VERSION;
-    const msgs = Array.isArray(e.json) ? e.json : [e.json];
-    for (const m of msgs) {
-      if (!isObj(m)) continue;
-      if (isObj(m.error)) {
+    for (const m of e.jsonRpc ?? summarizeJsonRpc(e.json) ?? []) {
+      if (m.error) {
         out.push({ source: e.label, requestId: req.id, responseId: m.id, code: m.error.code, message: m.error.message, modern });
-      } else if ('result' in m && !('method' in m) && req.id !== undefined && m.id !== req.id) {
+      } else if (m.result && !m.method && req.id !== undefined && m.id !== req.id) {
         out.push({ source: e.label, requestId: req.id, responseId: m.id, modern, result: true, ...(isStr(req.method) ? { method: req.method } : {}) });
       }
     }
@@ -335,7 +342,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   const timeoutMs = opts.timeoutMs ?? 30000;
   const connectTimeout = Math.min(timeoutMs, 15000);
   const headers = { ...(opts.headers ?? {}) };
-  const tracer = createTracer(redactorFor(opts), deps.now, progress?.abort.signal);
+  // The parsed bodies stay on the exchanges only where the rules read them (keepJson on the probes, F036).
+  const tracer = createTracer(redactorFor(opts), deps.now, progress?.abort.signal, { keepJson: false, budget: progress?.budget });
+  const budget = progress?.budget;
   if (progress) progress.tracer = tracer;
   const authHeaders: Record<string, string> = { ...headers };
   if (opts.bearer) authHeaders.authorization = `Bearer ${opts.bearer}`;
@@ -361,7 +370,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
 
   // 2. era detection
   const modern = new ModernClient(target, tracer, authHeaders, timeoutMs);
-  const disc = await modern.request('server/discover', {}, { label: 'discover', timeoutMs: connectTimeout });
+  const disc = await modern.request('server/discover', {}, { label: 'discover', timeoutMs: connectTimeout, keepJson: true }); // a probe (SPEC-019)
   snap.transport.probes.discover = disc.exchange;
   const discOk = disc.exchange.status === 200 && !!disc.result && Array.isArray(disc.result.supportedVersions);
   const discSignal = disc.exchange.status === 400 && MODERN_CODES.includes(Number(disc.error?.code));
@@ -434,8 +443,8 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   }
 
   if (connected && !authFailed) {
-    const lister: Lister = conn.ok ? legacyLister(conn.client!, timeoutMs) : (m, k) => modern.listAll(m, k);
-    const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs) : modernReader(modern);
+    const lister: Lister = conn.ok ? legacyLister(conn.client!, timeoutMs, budget) : (m, k) => modern.listAll(m, k, 100, budget);
+    const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs, budget) : modernReader(modern);
     checkpoint(progress, 'listing');
     await listEverything(snap, lister);
     await tracer.flush();
@@ -456,7 +465,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
       snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
       http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion }, out: snap.transport.probes,
     });
-    const fresh = (variant: ClientVariant = {}) => freshTools(conn.ok ? url : target, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant);
+    const fresh = (variant: ClientVariant = {}) => freshTools(conn.ok ? url : target, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant, budget);
     if (!snap.listMeta.tools?.error) {
       checkpoint(progress, 'tools re-list');
       const relist = await lister('tools/list', 'tools');
@@ -492,16 +501,17 @@ function linksUi(snap: Snapshot): boolean {
 }
 
 /** tools/list on a new connection, optionally with another clientInfo.name or without the UI extension. */
-async function freshTools(url: URL, headers: Record<string, string>, tracer: Tracer, connectTimeout: number, timeoutMs: number, kind: 'streamable-http' | 'sse' | undefined, variant: ClientVariant = {}): Promise<Record<string, unknown>[] | undefined> {
+async function freshTools(url: URL, headers: Record<string, string>, tracer: Tracer, connectTimeout: number, timeoutMs: number, kind: 'streamable-http' | 'sse' | undefined, variant: ClientVariant = {}, budget?: ByteBudget): Promise<Record<string, unknown>[] | undefined> {
+  if (budget?.exhausted) return undefined;
   if (!kind) {
     const fresh = new ModernClient(url, tracer, headers, timeoutMs, variant.capabilities);
-    const r = await fresh.listAll('tools/list', 'tools');
+    const r = await fresh.listAll('tools/list', 'tools', 100, budget);
     return r.error ? undefined : r.items;
   }
   const conn = kind === 'sse' ? await connectSse(url, headers, tracer, connectTimeout, variant) : await connectLegacyHttp(url, headers, tracer, connectTimeout, variant, false);
   if (!conn.ok) return undefined;
   try {
-    const r = await listAll(conn.client!, 'tools/list', 'tools', timeoutMs);
+    const r = await listAll(conn.client!, 'tools/list', 'tools', timeoutMs, 100, budget);
     return r.error ? undefined : r.items;
   } finally {
     await endSession(conn, tracer);
@@ -570,8 +580,9 @@ function stdioObservation(nonJson: NonJsonStdout | undefined, stderrTail: string
 
 /** Collect the non-JSON-RPC lines of a stdio server's stdout. Lines are split as bytes and decoded afterwards (the SDK
  *  reads the same stream as Buffers, and a chunk can end inside a UTF-8 character); chunks are joined once per line,
- *  a non-JSON line keeps only its head, and a line over STDIO_MAX_MESSAGE is dropped (the SDK fails on it). */
-export function stdoutTap(r: Redactor): { out: NonJsonStdout; push(chunk: Buffer): void } {
+ *  a non-JSON line keeps only its head, and a line over STDIO_MAX_MESSAGE is dropped (the SDK fails on it).
+ *  `onMessage`: the size of each JSON-RPC message line, which the SDK parses and the run keeps (the byte budget, F146). */
+export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { out: NonJsonStdout; push(chunk: Buffer): void } {
   const out: NonJsonStdout = { lines: [], total: 0 };
   let parts: Buffer[] = [];
   let size = 0;
@@ -580,7 +591,8 @@ export function stdoutTap(r: Redactor): { out: NonJsonStdout; push(chunk: Buffer
   let mode: 'line' | 'json' | 'head' | 'drop' = 'line';
   const add = (raw: Buffer) => {
     const line = raw.toString('utf8').replace(/\r$/, '');
-    if (!line.trim() || isJsonRpcLine(line)) return;
+    if (!line.trim()) return;
+    if (isJsonRpcLine(line)) { onMessage?.(raw.length); return; }
     out.total++;
     if (out.lines.length < NON_JSON_KEPT) {
       const masked = scrub(line, r); // masked before the cut
@@ -637,7 +649,9 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   // Masked before the 4096-character tail and the 200-character summary lines cut it.
   // Decoded as a stream, so an echo split inside a UTF-8 character between two chunks is still one string to mask.
   (inner.stderr as NodeJS.ReadableStream | null)?.setEncoding('utf8').on('data', (c: string) => { stderrTail = scrub(stderrTail + c, r).slice(-4096); });
-  const stdout = stdoutTap(r);
+  // Every message line of every connection to the server counts against the run's byte budget (F146); a line the SDK
+  // drops (over STDIO_MAX_MESSAGE) is not kept and not counted.
+  const stdout = stdoutTap(r, (n) => { charge(progress?.budget, n); });
   const nonJson = stdout.out;
   const tap = () => {
     const proc = (inner as unknown as { _process?: ChildProcess })._process;
@@ -708,17 +722,19 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   }
   snap.era = 'legacy';
   adoptInitialize(snap, conn.rec.initializeRaw);
-  const lister = legacyLister(conn.client, timeoutMs);
+  const budget = progress?.budget;
+  const lister = legacyLister(conn.client, timeoutMs, budget);
   checkpoint(progress, 'listing');
   await listEverything(snap, lister);
   checkpoint(progress, 'UI resource reads');
-  await readUiResources(snap, legacyReader(conn.client, timeoutMs), deps.now);
+  await readUiResources(snap, legacyReader(conn.client, timeoutMs, budget), deps.now);
   checkpoint(progress, 'wire probes');
   await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client, out: snap.transport.probes });
   const fresh = async (variant: ClientVariant = {}) => {
+    if (budget?.exhausted) return undefined;
     try {
       const c = await connectStdio(t, connectTimeout, redactorFor(opts), variant, progress);
-      try { const r = await listAll(c.client, 'tools/list', 'tools', timeoutMs); return r.error ? undefined : r.items; }
+      try { const r = await listAll(c.client, 'tools/list', 'tools', timeoutMs, 100, budget); return r.error ? undefined : r.items; }
       finally { await c.client.close().catch(() => {}); }
     } catch { return undefined; }
   };
@@ -759,11 +775,11 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-  const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController() };
+  const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController(), budget: createBudget(opts.snapshotBudget ?? SNAPSHOT_BUDGET) };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   let result: BuildResult;
   try {
-    result = opts.maxDurationMs ? await withDeadline(run, snap, opts.maxDurationMs, progress) : await run;
+    result = await withStops(run, snap, progress, opts.maxDurationMs);
   } catch (e) {
     await progress.close?.(); // the check threw after the handshake (a TypeError on odd server data): its client is still open
     throw e;
@@ -777,20 +793,32 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   return { ...result, snap: masked };
 }
 
-/** Resolve with whatever was observed when --max-duration runs out; the rest of the run is abandoned. */
-async function withDeadline(run: Promise<BuildResult>, snap: Snapshot, ms: number, progress: Progress): Promise<BuildResult> {
+/** Why a run stopped early: the --max-duration deadline, or the snapshot byte budget ran out (F146). */
+type StopCause = { kind: 'deadline'; ms: number } | { kind: 'budget'; budget: ByteBudget };
+
+/**
+ * Resolve with whatever was observed when --max-duration runs out or the byte budget is spent; the rest of the run is
+ * abandoned. Without either the run's own result.
+ */
+async function withStops(run: Promise<BuildResult>, snap: Snapshot, progress: Progress, ms?: number): Promise<BuildResult> {
   let timer: NodeJS.Timeout | undefined;
   let ending: Promise<void> | undefined;
+  let fire: (cause: StopCause) => void = () => {};
   const stop = new Promise<BuildResult>((resolve) => {
-    timer = setTimeout(() => {
+    fire = (cause) => {
+      if (progress.stopped) return;
       progress.stopped = true;
       progress.abort.abort();
       void progress.close?.();
-      const stopped = { snap: stoppedSnapshot(snap, ms, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() };
+      const stopped = { snap: stoppedSnapshot(snap, cause, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() };
       ending = endChildren(progress.children);
       void ending.then(() => resolve(stopped));
-    }, ms);
+    };
   });
+  if (ms) timer = setTimeout(() => fire({ kind: 'deadline', ms }), ms);
+  // At once, from inside the read that spent the budget (it has stopped at it): the copy holds what was read before.
+  const budget = progress.budget;
+  if (budget) budget.onExhausted = () => fire({ kind: 'budget', budget });
   run.catch(() => {}); // a Stopped checkpoint (or a closed client) after the deadline is expected
   try {
     // Past the deadline the run is abandoned however it settles ('Not connected' calls are no finished run).
@@ -891,7 +919,7 @@ class GroupStdioTransport extends StdioClientTransport {
 }
 
 /** A detached copy of the partial snapshot (the abandoned run may still assign fields) marked as stopped. */
-function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapshot {
+function stoppedSnapshot(live: Snapshot, cause: StopCause, progress: Progress): Snapshot {
   const snap: Snapshot = {
     ...live, tools: [...live.tools], resources: [...live.resources], resourceTemplates: [...live.resourceTemplates], prompts: [...live.prompts],
     listMeta: { ...live.listMeta }, resourceReads: { ...live.resourceReads }, coverage: { ...live.coverage },
@@ -908,12 +936,14 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
     snap.transport.observedErrors ??= seen.observedErrors;
     snap.transport.modernResults ??= seen.modernResults;
   }
+  const at = PHASES.indexOf(progress.phase as (typeof PHASES)[number]);
+  const unfinished = at < 0 ? [progress.phase] : PHASES.slice(at);
+  if (cause.kind === 'budget') return budgetStopped(snap, live, cause.budget, progress, unfinished);
+  const ms = cause.ms;
   // Every check had run: the deadline only cut short the wait for connections to close.
   if (progress.phase === CLOSING) return snap;
   // The phase cut short and every later one in the run's order did not finish: the engine does not let a rule that
   // reads their data pass on it.
-  const at = PHASES.indexOf(progress.phase as (typeof PHASES)[number]);
-  const unfinished = at < 0 ? [progress.phase] : PHASES.slice(at);
   snap.limits = {
     truncated: [...(live.limits?.truncated ?? [])],
     stopped: { maxDurationMs: ms, phase: progress.phase, completed: [...(progress.completed ?? [])], unfinished: [...unfinished] },
@@ -930,3 +960,33 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
   return snap;
 }
 
+
+/**
+ * The snapshot of a run whose byte budget ran out (F146), copied as for a --max-duration stop: the read that crossed
+ * the budget stopped at it, nothing more was read, and the rules run on what was observed. `limits.truncated` records
+ * the cut and `limits.budgetExhausted` the phases that did not finish; the coverage is partial unless every check ran.
+ */
+function budgetStopped(snap: Snapshot, live: Snapshot, budget: ByteBudget, progress: Progress, unfinished: string[]): Snapshot {
+  const overBytes = budget.exhausted?.overBytes ?? 1;
+  const truncated: NonNullable<Snapshot['limits']>['truncated'] = [
+    ...(live.limits?.truncated ?? []),
+    { where: `snapshot budget (${overBytes} bytes over)`, length: budget.bytes + overBytes, cap: budget.bytes, unit: 'bytes' },
+  ];
+  // Every check had run (a late message while the connections closed): only the cut is recorded.
+  if (progress.phase === CLOSING) {
+    snap.limits = { truncated };
+    return snap;
+  }
+  snap.limits = {
+    truncated,
+    budgetExhausted: { bytes: budget.bytes, overBytes, phase: progress.phase, completed: [...(progress.completed ?? [])], unfinished: [...unfinished] },
+  };
+  const why = `${BUDGET_ERROR} (${budget.bytes} bytes) during ${progress.phase}`;
+  if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {
+    snap.fatal = `no handshake within the snapshot budget (${budget.bytes} bytes)`;
+    snap.coverage = { toolLevel: 'connect-failed', reason: why };
+  } else if (snap.coverage.toolLevel === 'ok') {
+    snap.coverage = { toolLevel: 'stopped', reason: why };
+  }
+  return snap;
+}

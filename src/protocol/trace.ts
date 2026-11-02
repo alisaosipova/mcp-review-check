@@ -1,5 +1,7 @@
 // Tracing fetch wrapper: records every HTTP exchange (redacted) for the rules.
-import type { HttpExchange } from '../snapshot.js';
+import { createHash } from 'node:crypto';
+import type { HttpExchange, JsonRpcSummary } from '../snapshot.js';
+import { budgetLeft, charge, type ByteBudget } from '../limits.js';
 import { displayUrl } from '../rules/util/net.js';
 
 export const REDACTED = '«redacted»';
@@ -133,6 +135,8 @@ export interface BodyRead {
   done: boolean;
   /** Bytes read, kept or not. */
   bytes: number;
+  /** The snapshot byte budget ran out during this read: `text` holds what fitted, and reading stopped there. */
+  budgetExhausted: boolean;
 }
 
 /**
@@ -140,8 +144,8 @@ export interface BodyRead {
  * (`rpcId` set), stop as soon as the matching response event arrives: some servers keep the stream open.
  * `drainTo`: past `cap`, keep reading (without keeping the bytes) up to this many, to see when the response ends.
  */
-async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap): Promise<BodyRead> {
-  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false, bytes: 0 };
+async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap, budget?: ByteBudget): Promise<BodyRead> {
+  const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false, bytes: 0, budgetExhausted: false };
   if (!res.body) { out.done = true; return out; }
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -155,7 +159,17 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
       const r = await Promise.race([reader.read(), timer]);
       if (r === 'timeout') { out.timedOut = true; break; }
       if (r.done) { out.done = true; break; }
-      if (!out.truncated) chunks.push(r.value);
+      if (!out.truncated) {
+        // The kept bytes count against the run's budget (F146): the chunk that crosses it is cut there, and the read ends.
+        const left = budgetLeft(budget);
+        if (!charge(budget, r.value.byteLength)) {
+          if (left > 0) chunks.push(r.value.subarray(0, left));
+          size += r.value.byteLength;
+          out.budgetExhausted = true;
+          break;
+        }
+        chunks.push(r.value);
+      }
       size += r.value.byteLength;
       if (watch?.(decoder.decode(r.value, { stream: true }))) { out.stoppedAtResponse = true; break; }
       if (size >= cap) out.truncated = true;
@@ -177,12 +191,16 @@ function lastEventEnd(chunk: Uint8Array): number {
 
 const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
 
+/** The error a request or an SDK response fails with once the snapshot byte budget is spent (F146). */
+export const BUDGET_ERROR = 'snapshot budget exhausted';
+
 /**
  * The response handed to the SDK, whose body errors once it passes `cap` bytes (on an SSE stream: within one event),
  * so a hostile server cannot make the SDK buffer and parse an unbounded answer. The SDK reports the error as a failed
- * request. `url` and `redirected` are kept (the SSE client reads them).
+ * request. `url` and `redirected` are kept (the SSE client reads them). With `budget`, every chunk the SDK gets counts
+ * against the run's byte budget, and the body errors once that runs out (F146).
  */
-export function capBody(res: Response, cap: number): Response {
+export function capBody(res: Response, cap: number, budget?: ByteBudget): Response {
   if (!res.body || NULL_BODY_STATUS.has(res.status)) return res;
   const perEvent = /text\/event-stream/i.test(res.headers.get('content-type') ?? '');
   let size = 0;
@@ -191,6 +209,7 @@ export function capBody(res: Response, cap: number): Response {
       size += chunk.byteLength;
       if (perEvent) { const end = lastEventEnd(chunk); if (end >= 0) size = chunk.byteLength - end; }
       if (size > cap) ctrl.error(new Error(`response body exceeded ${cap} bytes`));
+      else if (!charge(budget, chunk.byteLength)) ctrl.error(new Error(BUDGET_ERROR));
       else ctrl.enqueue(chunk);
     },
   }));
@@ -234,6 +253,32 @@ export function snippetOf(text: string, r: Redactor): string {
   }
 }
 
+/** The JSON-RPC responses (with a result or an error) in a parsed body, without the results: what collectErrors and
+ *  the handshake checks read once the body itself is not kept (F036). */
+export function summarizeJsonRpc(json: unknown): JsonRpcSummary[] | undefined {
+  const out: JsonRpcSummary[] = [];
+  for (const m of Array.isArray(json) ? json : [json]) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) continue;
+    const o = m as Record<string, unknown>;
+    const err = o.error !== null && typeof o.error === 'object' && !Array.isArray(o.error) ? (o.error as Record<string, unknown>) : undefined;
+    if (!err && !('result' in o)) continue;
+    const s: JsonRpcSummary = {};
+    if ('id' in o) s.id = o.id;
+    if ('result' in o) s.result = true;
+    if ('method' in o) s.method = true;
+    if (err) s.error = { code: err.code, message: err.message };
+    out.push(s);
+  }
+  return out.length ? out : undefined;
+}
+
+/** SHA-256 of the kept body text; over the masked text when a known secret value occurs in it, so the digest of a
+ *  body that is little more than the secret cannot confirm a guess. */
+function bodyDigest(text: string, r: Redactor): string {
+  const masked = [...r.values].some((v) => text.includes(v)) ? scrub(text, r) : text;
+  return createHash('sha256').update(masked, 'utf8').digest('hex');
+}
+
 function errorInfo(err: unknown): HttpExchange['error'] {
   const e = err as Error & { code?: string | number; cause?: { code?: string } };
   return { name: e?.name ?? 'Error', code: e?.code, causeCode: e?.cause?.code, message: String(e?.message ?? err) };
@@ -250,13 +295,30 @@ export interface Tracer {
    * `fullBody`: a JSON-RPC call whose result is needed. The body is read up to FULL_READ_CAP within the request's
    * own timeoutMs (probes use a 256 KB cap and at most 10 s), and truncation is reported as `exchange.error`.
    */
-  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number }>;
+  /**
+   * `keepJson`: keep the parsed body on `exchange.json` (default: the tracer's `keepJson`). The parsed body is returned
+   * as `json` either way, once: the caller stores what it needs (F036).
+   */
+  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean; keepJson?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number; json?: unknown }>;
   flush(): Promise<void>;
   now(): number;
 }
 
-/** `stop` (the --max-duration deadline): once it aborts, nothing more is sent and probes in flight are cancelled. */
-export function createTracer(redactor: Redactor, now: () => number = () => performance.now(), stop?: AbortSignal): Tracer {
+export interface TracerOptions {
+  /** Keep every parsed body on its exchange (`exchange.json`). Default true, as before 0.4.0; buildSnapshot passes
+   *  false and keeps it only where the rules read it (F036). */
+  keepJson?: boolean;
+  /** The run's byte budget (F146): the bodies read here and the responses handed to the SDK count against it. */
+  budget?: ByteBudget;
+}
+
+/**
+ * `stop` (the --max-duration deadline or the spent byte budget): once it aborts, nothing more is sent and probes in
+ * flight are cancelled.
+ */
+export function createTracer(redactor: Redactor, now: () => number = () => performance.now(), stop?: AbortSignal, opts: TracerOptions = {}): Tracer {
+  const keepByDefault = opts.keepJson ?? true;
+  const budget = opts.budget;
   const exchanges: HttpExchange[] = [];
   const timings: Record<string, number[]> = {};
   const pending: Promise<unknown>[] = [];
@@ -284,17 +346,27 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
    * a handshake or listing latency. `lowerBound`: a real call whose answer did not come within the read's own timeout
    * counts with the time waited.
    */
-  const sample = (ex: HttpExchange, b: BodyRead, lowerBound: boolean) => {
+  const sample = (ex: HttpExchange, b: BodyRead, json: unknown, lowerBound: boolean) => {
     const { method, id } = (ex.requestJson ?? {}) as { method?: unknown; id?: unknown };
     if (typeof method !== 'string' || id === undefined || ex.bodyMs === undefined) return;
     if (ex.status === undefined || ex.status < 200 || ex.status > 299) return;
-    const answered = (b.stoppedAtResponse || b.done) && (hasResultFor(ex.json, id) || (b.done && b.truncated));
+    const answered = (b.stoppedAtResponse || b.done) && (hasResultFor(json, id) || (b.done && b.truncated));
     if (answered || (lowerBound && b.timedOut)) (timings[method] ??= []).push(ex.bodyMs);
   };
 
-  const finishBody = (ex: HttpExchange, text: string) => {
-    ex.bodySnippet = snippetOf(text, redactor);
-    ex.json = parseBody(text, ex.contentType, ex.requestJson);
+  /**
+   * The exchange keeps the masked snippet, the size, a digest and a summary of the JSON-RPC responses; the parsed body
+   * goes back to the caller once and stays on the exchange only with `keep` (F036).
+   */
+  const finishBody = (ex: HttpExchange, b: BodyRead, keep: boolean): unknown => {
+    ex.bodySnippet = snippetOf(b.text, redactor);
+    ex.bodyBytes = b.bytes;
+    ex.bodySha256 = bodyDigest(b.text, redactor);
+    const json = parseBody(b.text, ex.contentType, ex.requestJson);
+    const rpc = summarizeJsonRpc(json);
+    if (rpc) ex.jsonRpc = rpc;
+    if (keep) ex.json = json;
+    return json;
   };
 
   const sdkFetch: FetchLike = async (url, init) => {
@@ -305,6 +377,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     try {
       // Past the deadline the SDK sends nothing (a fetch with an aborted signal rejects before it connects); a request
       // already in flight is left to its client (the deadline closes the main one).
+      if (budget?.exhausted) throw new Error(BUDGET_ERROR);
       const res = await fetch(url, stop?.aborted ? { ...init, signal: stop } : init);
       finishHeaders(ex, res, started);
       const isStream = ex.method === 'GET' && /event-stream/i.test(ex.contentType ?? '');
@@ -315,11 +388,11 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
         // Past READ_CAP the copy is still read (not kept) to see when the response ends, for the latency sample.
         pending.push(readBody(clone, BODY_TIMEOUT_MS, READ_CAP, rpcId, rpcId === undefined ? READ_CAP : FULL_READ_CAP).then((b) => {
           ex.bodyMs = now() - started;
-          finishBody(ex, b.text);
-          sample(ex, b, true);
+          sample(ex, b, finishBody(ex, b, keepByDefault), true);
         }));
       }
-      return capBody(res, FULL_READ_CAP); // after the clone: the copy for the record is read on its own
+      // After the clone: the copy for the record is read on its own and not charged (the SDK's copy is).
+      return capBody(res, FULL_READ_CAP, budget);
     } catch (err) {
       ex.durationMs = now() - started;
       ex.error = errorInfo(err);
@@ -336,11 +409,18 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     const timeout = setTimeout(() => ctrl.abort(), timeoutMs); // not AbortSignal.timeout: the timeout checks expect an AbortError
     const signal = stop ? AbortSignal.any([ctrl.signal, stop]) : ctrl.signal;
     // Tracer-only options are not passed to fetch.
-    const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, ...fetchInit } = init;
+    const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, keepJson, ...fetchInit } = init;
+    // The byte budget is spent: nothing more is read, so nothing more is sent (F146).
+    if (budget?.exhausted) {
+      clearTimeout(timeout);
+      ex.error = { name: 'SnapshotBudget', message: `${BUDGET_ERROR}: request not sent` };
+      return { exchange: ex };
+    }
     try {
       const res = await fetch(url, { redirect: 'manual', ...fetchInit, signal });
       finishHeaders(ex, res, started);
       let bodyBytes: number | undefined;
+      let json: unknown;
       if (abortAfterHeaders) {
         res.body?.cancel().catch(() => {});
         ctrl.abort();
@@ -348,16 +428,17 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       } else {
         const rpcId = (ex.requestJson as { id?: unknown } | undefined)?.id;
         const body = fullBody
-          ? await readBody(res, Math.max(0, timeoutMs - (now() - started)), FULL_READ_CAP, rpcId)
-          : await readBody(res, Math.min(timeoutMs, BODY_TIMEOUT_MS), READ_CAP, rpcId);
+          ? await readBody(res, Math.max(0, timeoutMs - (now() - started)), FULL_READ_CAP, rpcId, FULL_READ_CAP, budget)
+          : await readBody(res, Math.min(timeoutMs, BODY_TIMEOUT_MS), READ_CAP, rpcId, READ_CAP, budget);
         ex.bodyMs = now() - started;
-        finishBody(ex, body.text);
-        sample(ex, body, false);
+        json = finishBody(ex, body, keepJson ?? keepByDefault);
+        sample(ex, body, json, false);
         bodyBytes = body.bytes;
-        if (fullBody && body.truncated) ex.error = { name: 'BodyTruncated', message: `response body exceeded ${FULL_READ_CAP} bytes and was truncated` };
-        else if (fullBody && (body.timedOut || signal.aborted) && ex.json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
+        if (body.budgetExhausted) ex.error = { name: 'SnapshotBudget', message: `${BUDGET_ERROR}: response body cut after ${Buffer.byteLength(body.text)} bytes` };
+        else if (fullBody && body.truncated) ex.error = { name: 'BodyTruncated', message: `response body exceeded ${FULL_READ_CAP} bytes and was truncated` };
+        else if (fullBody && (body.timedOut || signal.aborted) && json === undefined) ex.error = { name: 'BodyTimeout', message: `response body not complete after ${timeoutMs} ms` };
       }
-      return { exchange: ex, response: res, bodyBytes };
+      return { exchange: ex, response: res, bodyBytes, json };
     } catch (err) {
       ex.durationMs = now() - started;
       ex.error = errorInfo(err);

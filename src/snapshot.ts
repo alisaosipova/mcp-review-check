@@ -15,12 +15,34 @@ export interface HttpExchange {
   headers?: Record<string, string>;
   contentType?: string;
   bodySnippet?: string; // <= 4 KB
+  /**
+   * The parsed body. Since 0.4.0 (F036) kept only on the exchanges the rules read it from: the wire probes in
+   * `transport.probes` (rpcView), the auth probe's requests (PRM, AS metadata, DCR, token) and, for a direct
+   * createTracer user, every exchange unless `keepJson: false`. The run's other exchanges (the SDK traffic, listings,
+   * UI reads, active calls) carry `jsonRpc`, `bodyBytes` and `bodySha256` instead; their results are in the snapshot
+   * fields built from them (tools, listMeta.rawPages, resourceReads, modernResults, active.calls).
+   */
   json?: unknown;
+  /** Bytes of the body read (kept or not). */
+  bodyBytes?: number;
+  /** SHA-256 (hex) of the body text as kept (the read cap's prefix); over the masked text when a known secret occurs in it. */
+  bodySha256?: string;
+  /** The JSON-RPC responses in the body (one, or each of a batch or SSE stream), without their results (F036). */
+  jsonRpc?: JsonRpcSummary[];
   /** Time to headers (latency rules use this). */
   durationMs: number;
   /** Time until the body was read (or reading stopped at the matching SSE response). */
   bodyMs?: number;
   error?: { name: string; code?: string | number; causeCode?: string; message: string };
+}
+
+/** One JSON-RPC response of a body: its id, whether it carried a result, its error's code and message, and whether it
+ *  also had a `method` (then it is a server request or notification, not a response). */
+export interface JsonRpcSummary {
+  id?: unknown;
+  result?: true;
+  method?: true;
+  error?: { code?: unknown; message?: unknown };
 }
 
 /** A JSON-RPC exchange observed through the SDK client (stdio, SSE, or legacy HTTP). */
@@ -110,14 +132,20 @@ export type Phase = (typeof PHASES)[number];
 
 /** Input caps applied before the regex rules and the --max-duration stop. */
 export interface Limits {
-  /** `unit` items: `length` counts things (UI resources) rather than characters. */
-  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' }>;
+  /** `unit` items: `length` counts things (UI resources) rather than characters; bytes: the snapshot budget. */
+  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' | 'bytes' }>;
   /**
    * `phase`: the phase the deadline cut short. `completed`: the phases that ran to their end before it, in order.
    * `unfinished`: the phase cut short and every later one: their data is partial or missing, so a rule that reads it
    * reports what it found but cannot pass (the engine skips it with "stopped by --max-duration" when it finds nothing).
    */
   stopped?: { maxDurationMs: number; phase: string; completed?: string[]; unfinished?: string[] };
+  /**
+   * The snapshot byte budget (SNAPSHOT_BUDGET) ran out (F146): the read that crossed it stopped at the budget, nothing
+   * more was read, and the run went on to the rules with what it had. `bytes`: the budget; `overBytes`: what arrived
+   * past it in the read that crossed it (at least 1). `phase`, `completed`, `unfinished` as for `stopped`.
+   */
+  budgetExhausted?: { bytes: number; overBytes: number; phase: string; completed: string[]; unfinished: string[] };
 }
 
 export interface AsObservation {

@@ -16,6 +16,7 @@ export interface AuthProbeInput {
   activeAuth: boolean;
 }
 
+/** The metadata GETs keep their parsed body (keepJson): the PRM and AS observations are that same object (F036). */
 const isJsonObject = (e: HttpExchange) => e.status === 200 && isObj(e.json);
 /** Longest wait for one metadata GET: these documents are small and static. A lower --timeout lowers it. */
 export const METADATA_TIMEOUT_MS = 10000;
@@ -49,7 +50,7 @@ export function asDiscoveryUrls(issuer: string): string[] {
 }
 
 async function get(tracer: Tracer, label: string, url: string, timeoutMs: number): Promise<HttpExchange> {
-  return (await tracer.request(label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs })).exchange;
+  return (await tracer.request(label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs, keepJson: true })).exchange;
 }
 
 const metadataTimeout = (timeoutMs: number) => Math.min(timeoutMs, METADATA_TIMEOUT_MS);
@@ -61,7 +62,7 @@ const metadataTimeout = (timeoutMs: number) => Math.min(timeoutMs, METADATA_TIME
 async function getRetried(input: AuthProbeInput, budget: { retries: number }, label: string, url: string): Promise<HttpExchange[]> {
   const timeoutMs = metadataTimeout(input.timeoutMs);
   if (budget.retries <= 0) return [await get(input.tracer, label, url, timeoutMs)];
-  const tries = await requestWithRetry(input.tracer, label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs }, input.deps.sleep);
+  const tries = await requestWithRetry(input.tracer, label, url, { method: 'GET', headers: { accept: 'application/json' }, timeoutMs, keepJson: true }, input.deps.sleep);
   budget.retries -= tries.length - 1;
   return tries;
 }
@@ -174,7 +175,7 @@ function pkce() {
 async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown>, timeoutMs: number, timings: Record<string, number[]>): Promise<NonNullable<AuthProbe['active']>> {
   const out: NonNullable<AuthProbe['active']> = {};
   if (isStr(meta.registration_endpoint)) {
-    const { exchange } = await tracer.request('auth dcr', meta.registration_endpoint, {
+    const { exchange, json } = await tracer.request('auth dcr', meta.registration_endpoint, {
       method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, timeoutMs,
       body: JSON.stringify({
         client_name: 'mcp-review-check', redirect_uris: CALLBACKS, token_endpoint_auth_method: 'none',
@@ -183,7 +184,7 @@ async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown
     });
     out.dcr = exchange;
     timings['registration'] = [exchange.durationMs];
-    if (isObj(exchange.json) && isStr(exchange.json.client_id)) out.clientId = exchange.json.client_id;
+    if (isObj(json) && isStr(json.client_id)) out.clientId = json.client_id;
   }
   const clientId = out.clientId ?? 'mcp-review-check';
   if (isStr(meta.authorization_endpoint)) {
@@ -206,7 +207,8 @@ async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown
     const form = (params: Record<string, string>) => new URLSearchParams(params).toString();
     const post = async (label: string, body: string) =>
       (await tracer.request(label, meta.token_endpoint as string, {
-        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body, timeoutMs,
+        // keepJson: AUTH-021 reads the token error body (src/rules/auth.ts), F036.
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body, timeoutMs, keepJson: true,
       })).exchange;
     const code = await post('auth token code', form({
       grant_type: 'authorization_code', code: 'mcp-review-check-bogus-code', redirect_uri: CALLBACKS[0], client_id: clientId, code_verifier: pkce().verifier, resource: url.href,
