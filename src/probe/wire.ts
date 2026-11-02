@@ -86,7 +86,8 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
       p.delete = (await tracer.request('delete', url, { method: 'DELETE', headers: { ...authHeaders }, timeoutMs })).exchange;
     }
     const originMode = snap.transport.kind === 'sse' ? 'sse' : modernOnly ? 'discover' : 'initialize';
-    Object.assign(p, await originProbes(tracer, url, authHeaders, originMode, timeoutMs, ctx.sleep));
+    // Into `p` probe by probe: a stop between two Origin probes keeps the ones already made.
+    await originProbes(tracer, url, authHeaders, originMode, timeoutMs, ctx.sleep, p);
     p.challenge = await challengeProbe(tracer, url, timeoutMs, ctx.sleep);
   }
   return p;

@@ -2,7 +2,7 @@
 import { promises as dns } from 'node:dns';
 import { isIP } from 'node:net';
 import tls from 'node:tls';
-import type { DnsResult, HttpExchange } from '../snapshot.js';
+import type { DnsResult, HttpExchange, ProbeObservation } from '../snapshot.js';
 import type { Tracer } from '../protocol/trace.js';
 import { CLIENT_CAPABILITIES } from '../protocol/clientCaps.js';
 import { isTransient, isTransientCode, timedOut } from '../rules/util/obs.js';
@@ -155,11 +155,19 @@ export function sameHostRedirect(url: URL, ex: HttpExchange | undefined): URL | 
 /** What the Origin probes send: initialize, server/discover (modern-only), or the legacy HTTP+SSE stream GET. */
 export type OriginProbeMode = 'initialize' | 'discover' | 'sse';
 
+/** The four Origin probes, in the order they are sent. */
+export type OriginProbeName = 'originNone' | 'originClaude' | 'originChatgpt' | 'originEvil';
+
 /**
  * initialize (server/discover for modern-only) with different Origin headers. On a legacy HTTP+SSE endpoint, where a POST
  * means nothing, the same Origins open the event stream with a GET that is cut after the headers.
+ * Each probe lands in `out` as soon as it finishes (and `out` is returned), so a --max-duration stop between two of them
+ * keeps the ones already made. Default: a new object.
  */
-export async function originProbes(tracer: Tracer, url: URL, headers: Record<string, string>, mode: OriginProbeMode, timeoutMs: number, wait?: (ms: number) => Promise<void>) {
+export async function originProbes(
+  tracer: Tracer, url: URL, headers: Record<string, string>, mode: OriginProbeMode, timeoutMs: number, wait?: (ms: number) => Promise<void>,
+  out: Partial<Record<OriginProbeName, ProbeObservation>> = {},
+): Promise<Partial<Record<OriginProbeName, ProbeObservation>>> {
   const init = (origin?: string): Parameters<Tracer['request']>[2] => {
     const o: Record<string, string> = origin ? { origin } : {};
     if (mode === 'sse') return { method: 'GET', headers: { ...headers, accept: 'text/event-stream', ...o }, abortAfterHeaders: true, timeoutMs };
@@ -169,17 +177,16 @@ export async function originProbes(tracer: Tracer, url: URL, headers: Record<str
     const extra: Record<string, string> = mode === 'discover' ? { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' } : {};
     return { method: 'POST', headers: { ...headers, ...JSON_HEADERS, ...extra, ...o }, body: JSON.stringify(body), timeoutMs };
   };
-  const send = async (label: string, origin?: string) => {
+  const send = async (name: OriginProbeName, label: string, origin?: string) => {
     const ex = await requestRetried(tracer, label, url, init(origin), wait);
+    out[name] = ex; // published before the session close: the probe itself is done
     if (mode === 'initialize') await closeProbeSession(tracer, url, ex, headers, timeoutMs);
-    return ex;
   };
-  return {
-    originNone: await send('origin (none)'),
-    originClaude: await send('origin claude.ai', 'https://claude.ai'),
-    originChatgpt: await send('origin chatgpt.com', 'https://chatgpt.com'),
-    originEvil: await send('origin evil', 'https://evil.mcp-review-check.invalid'),
-  };
+  await send('originNone', 'origin (none)');
+  await send('originClaude', 'origin claude.ai', 'https://claude.ai');
+  await send('originChatgpt', 'origin chatgpt.com', 'https://chatgpt.com');
+  await send('originEvil', 'origin evil', 'https://evil.mcp-review-check.invalid');
+  return out;
 }
 
 export async function challengeProbe(tracer: Tracer, url: URL, timeoutMs: number, wait?: (ms: number) => Promise<void>): Promise<HttpExchange> {
