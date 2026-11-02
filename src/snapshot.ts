@@ -1,4 +1,5 @@
 // Snapshot and observation types (§4.2). Rules are pure functions over a Snapshot.
+import type { Listing } from './listing/types.js';
 
 export type Platform = 'claude' | 'chatgpt' | 'spec';
 export type Severity = 'error' | 'warning' | 'info';
@@ -224,6 +225,8 @@ export interface Snapshot {
   connectDiagnosis?: ConnectDiagnosis;
   limits?: Limits;
   env?: { nodeExtraCaCerts?: boolean };
+  /** --plugin-dir / --openai-manifest inputs (src/listing); absent without them, and the LST rules are skipped. */
+  listing?: Listing;
   options: { target: TargetOpt; active: boolean; activeAuth: boolean; authenticated?: boolean };
 }
 
