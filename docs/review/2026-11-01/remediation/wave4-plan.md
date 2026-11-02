@@ -15,7 +15,7 @@ Decisions below are the defaults taken for each open question; the maintainer ca
 | F150 | Stay CLI-only. Add `exports` that exposes only `./package.json`, so deep imports of `dist/*` are not an accidental public API. Keep `bin`; drop `main`. | README already states "no programmatic API yet". |
 | F153 | Leave the 0.1.0 section as is. | Released sections are immutable. |
 | F148 | 0.1.0 **is** published on npm (`npm view mcp-review-check version` → 0.1.0 on 2026-11-01). Reword README line about "before its first npm release" to keep only the offline case. | Verified. |
-| Catalog date | Keep `CATALOG_DATE` 2026-10-22: no new source documents were read; rule changes come from code fixes. | Date means "sources as of". |
+| Catalog date | `CATALOG_DATE` was already moved to 2026-11-01 by WP10 (commit cae2189) because severities changed; wave 4 keeps that date (the new rules' sources were verified on it). | Date means "sources as of" and the header should change with the severities. |
 | F081 | Keep the global `seen` set in `walkSchema`. | Per-stack dedup duplicates findings and risks exponential walks. |
 | F077 part 1 | Keep the `url` token in TOOL-015. | Drops true positives otherwise. |
 | F131 | Keep one annotation per finding; the step-summary size guard is enough. | Documented contract; tests rely on it. |

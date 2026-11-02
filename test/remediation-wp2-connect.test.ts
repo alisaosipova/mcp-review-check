@@ -226,7 +226,7 @@ describe('a server that exits after initialize (C001)', () => {
 });
 
 describe('large stdio messages (R047) and the SDK stdio transport shape (F017)', () => {
-  const stdio = (args: string[]) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs: 20000 }).then((r) => r.snap);
+  const stdio = (args: string[], timeoutMs = 20000) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs }).then((r) => r.snap);
 
   it('an 11 MB UI resource is read over stdio, as over HTTP (the SDK default buffer is 10 MB)', async () => {
     const snap = await stdio(['bigui', '11']);
@@ -236,7 +236,7 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
   }, 60000);
 
   it('a message over the stdio buffer names the overflow on the failed read', async () => {
-    const snap = await stdio(['bigui', '70']);
+    const snap = await stdio(['bigui', '70'], 120000); // under full-suite load the pipe needs more than the 20 s default before the overflow shows
     expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
   }, 180000); // 70 MB over a pipe takes over a minute when the whole suite runs in parallel
 

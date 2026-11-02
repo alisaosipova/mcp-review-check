@@ -12,9 +12,9 @@ const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
 const CLAUDE_REVIEW = 'https://claude.com/docs/connectors/building/review-criteria';
 const OAI_REF = 'https://developers.openai.com/plugins/reference';
-// Verified 2026-11-01: `name` "Must match the regex ^[a-zA-Z0-9_-]{1,128}$" (Claude API, user-defined tools).
+// Verified on the catalog date (see CATALOG_DATE): `name` "Must match the regex ^[a-zA-Z0-9_-]{1,128}$" (Claude API, user-defined tools).
 const CLAUDE_DEFINE_TOOLS = 'https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools';
-// Verified 2026-11-01: function `name` "Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64."
+// Verified on the catalog date (see CATALOG_DATE): function `name` "Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64."
 const OAI_FN_REF = 'https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create';
 
 /** Run `fn` per tool and tag findings with the tool name. */
