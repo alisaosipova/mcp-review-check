@@ -6,7 +6,7 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Rule catalog dated 2026-10-22. Several rules report more than before (see **Severity raised**), so this ships as a minor release.
+Rule catalog dated 2026-11-01 (public sources as of 2026-10-22). Three rules are new (see **Rules added**), several rules report more than before (see **Severity raised**) and exit code 4 changes the exit-code contract (see **Changed**), so this ships as a minor release, 0.2.0.
 
 ### Added
 
@@ -16,6 +16,17 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - JSON reports gain `summary.rootCauses` (the basis of `summary.score`) and, for stdio targets, `server.argv` (each argument whole).
 - README and `SECURITY.md` list every request `--active` sends (at most 50 tools, and three fresh connections named `mcp-review-check`, `claude-ai` and `Anthropic`), the session `DELETE`s, the read limits, and the exit codes for a signal (128+N) and for an internal error (3).
 - `npm run test:coverage` reports the test coverage of `src/`.
+- `--fail-on-incomplete` makes a partial check exit 3 (the server requires auth and no token was given, the token was rejected, or `tools/list` failed), so a CI job whose token is missing or expired no longer passes; without it the exit code follows `--fail-on` as before.
+- In GitHub Actions a partial check prints one `::warning` titled `mcp-review-check` that names the reason and says that tool-level checks were skipped, with or without `--fail-on-incomplete`.
+- `--baseline <report.json>` treats the findings of an earlier `--format json` report as known, matched by rule, tool or resource, path and platforms rather than by wording, so only new findings count toward `--fail-on`, the verdicts, the finding counts and the annotations (JSON marks each finding `baselined` and adds `summary.baselined`, SARIF sets `baselineState` to `new` or `unchanged`, text and markdown list only new findings plus one line with the known count, and a file that is missing or not a JSON report of mcp-review-check is a usage error, exit 2).
+- A GitHub Action, `uses: alisaosipova/mcp-review-check@v0.2.0`, runs the check on a URL (`target`) or a stdio command (`stdio`), prints the findings as annotations and the report in the job summary, and writes a SARIF report that it uploads to code scanning even when the check fails (inputs `platform`, `fail-on`, `fail-on-spec`, `active`, `bearer` passed only as `MCP_REVIEW_CHECK_TOKEN`, `version`, `sarif-file`, `upload-sarif`, `extra-args`, `cli-path`; outputs `exit-code` and `sarif-file`).
+- In a JSON report of a run stopped by `--max-duration`, `limits.stopped` lists the phases that ran to their end (`completed`) and the phase cut short with every later one (`unfinished`).
+
+#### Rules added
+
+- TOOL-033 (claude, chatgpt: error): a tool name that is empty or has a character outside `A-Z a-z 0-9 _ -` (for example the `.` the MCP specification allows, a space or `/`) is rejected by the Claude API and the OpenAI API, and the message lists the offending characters.
+- TOOL-034 (claude, chatgpt: info): one finding per server with more than 40 tools or more than 64 KiB of `tools/list` JSON (linter-defined budget), because every definition costs context tokens on each turn and tool selection gets less accurate with many tools.
+- TOOL-035 (spec: info): input and output schemas, nested ones included, are checked for `required` names not declared in `properties` (unless the schema admits extra keys or composes properties), keys one edit from a JSON Schema keyword (`propeties`, `requried`, `additionalProperty`) and `format` values outside JSON Schema 2020-12 and the OpenAPI format registry, all of which validators silently ignore.
 
 #### Severity raised
 
@@ -41,9 +52,14 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - RT-002 also reports a success answer to the `--active` call made without the required arguments.
 - RT-010 finds credentials in plain-text and code-fenced results, not only in parsed JSON, and recognizes the token formats report redaction knows (Stripe, GitLab, Slack, Google, npm and Hugging Face keys besides JWT, `sk-`, `ghp_` and `AKIA`).
 - RT-011 also scans the string values of `structuredContent` and the text of embedded resources, and says where it found the injection.
+- TOOL-002 (tool name at most 64 characters) applies to ChatGPT too, as an error, because the OpenAI API rejects longer function names.
+- SPEC-016 warns about a successful response whose id is not the request's ("result answers another request id"), for example a wire probe answered under id 999, while a listing of a declared capability answered that way stays SPEC-020's finding alone.
 
 ### Changed
 
+- **Exit code 4** (was 3) when `--max-duration` stops the check after the handshake, so CI can tell a slow server from an unreachable one; this changes the exit-code contract, and exit 3 still means could not connect or complete a handshake (also when the deadline ran out before it) or an internal error.
+- A run stopped by `--max-duration` keeps the wire probes and `--active` tool calls that had finished, and a rule that found nothing in data of a phase the stop cut short is listed as skipped ("stopped by --max-duration") instead of passing.
+- The package is CLI-only: `package.json` has no `main` any more and its `exports` map exposes only `./package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail, while the `mcp-review-check` bin is unchanged.
 - `--bearer` and `--header` with `--stdio` are usage errors (exit 2), and `$MCP_REVIEW_CHECK_TOKEN` is ignored for stdio targets, so an exported CI token no longer marks a stdio run as authenticated and turns RT-009 off.
 - More usage errors (exit 2) instead of a failed connect or a merged header: `--header "Authorization: …"` together with `--bearer`, a header name given twice in any case or one that is not an HTTP token, a `--cwd` that is not an existing directory, an empty `--output`, `--active-auth` with `--stdio`, and a `--timeout` or `--max-duration` that is not a whole number of milliseconds (`0x10`, `1e2`, `1.5`).
 - `--target`, `--format` and `--fail-on` accept values in any case, as `--ignore` and `explain` already did.
@@ -62,9 +78,13 @@ Rule catalog dated 2026-10-22. Several rules report more than before (see **Seve
 - SRV-018 counts every non-JSON-RPC stdout line (not only the first 50 kept) and says "non-JSON-RPC line(s)".
 - SRV-009 reports one finding per exchange and each bot-challenge signal once, so one Cloudflare challenge page gives one warning instead of three.
 - `--help` lists the exit codes one per line, including exit 3 for an internal error and 128+N when ended by a signal.
+- The release workflow fails when the published version has no npm provenance attestation on the registry.
+- `npm audit` no longer runs on pull requests: it runs on pushes to `main` and weekly (`.github/workflows/audit.yml`).
+- `npm run test:coverage` fails below the coverage thresholds (statements 88 %, branches 82 %, functions 89 %, lines 92 %) and reports coverage even when a test fails, while `npm test` does not check coverage.
 
 ### Fixed
 
+- The README note on running from a checkout no longer says the package is unpublished; it covers only a machine without registry access.
 - `node dist/cli` without the `.js` extension runs the CLI; it exited 0 without checking anything.
 - After SIGINT or SIGTERM, a run that still finishes during the shutdown grace period writes no report; it overwrote `--output` with a report that looked complete.
 - `--stdio "<command>"` together with `-- <command> [args...]` says "not both" instead of "expected a single <url>".
