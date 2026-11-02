@@ -25,6 +25,9 @@ export interface WireContext {
     sessionId?: string;
     protocolVersion?: string;
   };
+  /** Where each probe lands as soon as it finishes (and the return value): a --max-duration stop keeps the finished
+   *  probes. Default: a new object. */
+  out?: Probes;
 }
 
 type Probes = Partial<Record<WireProbeName, ProbeObservation>>;
@@ -36,7 +39,7 @@ export function sdkSessionGet(exchanges: readonly HttpExchange[], sessionId: str
 
 export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   const { snap, timeoutMs, client, modern, http } = ctx;
-  const p: Probes = {};
+  const p: Probes = ctx.out ?? {};
   const hasTools = snap.capabilities?.tools !== undefined || snap.tools.length > 0;
   const hasResources = snap.capabilities?.resources !== undefined;
   const modernOnly = snap.era === 'modern';

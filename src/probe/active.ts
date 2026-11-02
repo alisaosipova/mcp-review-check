@@ -147,6 +147,9 @@ export interface ActiveContext {
   modern?: ModernClient;
   /** Opens a fresh legacy client with the given clientInfo.name and lists tool names. */
   listWithClientName?: (name: string) => Promise<string[] | undefined>;
+  /** Filled as the run goes (each call when it finishes, the clientInfo variants at the end) and returned: a
+   *  --max-duration stop keeps the calls already made. */
+  into?: NonNullable<Snapshot['active']>;
 }
 
 async function call(ctx: ActiveContext, tool: string, kind: ActiveCall['kind'], args: unknown): Promise<ActiveCall> {
@@ -181,7 +184,8 @@ export function callableTools(tools: readonly Obj[]): Obj[] {
 }
 
 export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapshot['active']>> {
-  const calls: ActiveCall[] = [];
+  const result: NonNullable<Snapshot['active']> = ctx.into ?? { calls: [] };
+  const calls: ActiveCall[] = result.calls;
   const tools = callableTools(ctx.snap.tools).slice(0, MAX_TOOLS);
   for (const t of tools) {
     const name = toolName(t);
@@ -198,7 +202,6 @@ export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapsho
       if (wrong !== undefined) calls.push(await call(ctx, name, 'invalid-type', { ...(isObj(args) ? args : {}), [first]: wrong }));
     }
   }
-  const result: NonNullable<Snapshot['active']> = { calls };
   if (ctx.listWithClientName) {
     const variants: Record<string, string[]> = {};
     for (const n of ['mcp-review-check', 'claude-ai', 'Anthropic']) {

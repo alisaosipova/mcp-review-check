@@ -102,11 +102,22 @@ export interface ConnectDiagnosis {
   hint?: string;
 }
 
+/** The phases of a run in order (connect.ts); a run skips the ones it does not need (no auth probe on a public server). */
+export const PHASES = [
+  'connect', 'auth probe', 'listing', 'UI resource reads', 'wire probes', 'tools re-list', 'text-only tools/list', 'active tool calls',
+] as const;
+export type Phase = (typeof PHASES)[number];
+
 /** Input caps applied before the regex rules and the --max-duration stop. */
 export interface Limits {
   /** `unit` items: `length` counts things (UI resources) rather than characters. */
   truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' }>;
-  stopped?: { maxDurationMs: number; phase: string };
+  /**
+   * `phase`: the phase the deadline cut short. `completed`: the phases that ran to their end before it, in order.
+   * `unfinished`: the phase cut short and every later one: their data is partial or missing, so a rule that reads it
+   * reports what it found but cannot pass (the engine skips it with "stopped by --max-duration" when it finds nothing).
+   */
+  stopped?: { maxDurationMs: number; phase: string; completed?: string[]; unfinished?: string[] };
 }
 
 export interface AsObservation {

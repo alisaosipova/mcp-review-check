@@ -1,14 +1,20 @@
 // Regression tests for the W4C-connect remediation (review 2026-11-01, wave 4): a result that answers another request
-// id reaches SPEC-016 (F024, R010).
+// id reaches SPEC-016 (F024, R010), and a run stopped by --max-duration keeps its finished wire probes and active calls
+// and does not let rules pass on unfinished phases (R003).
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSnapshot, collectErrors } from '../src/connect.js';
-import { runRules } from '../src/rules/engine.js';
+import { TEXT_CAP } from '../src/limits.js';
+import { STOPPED_REASON, runRules, unfinishedPhases } from '../src/rules/engine.js';
 import { RULES } from '../src/rules/index.js';
-import { SPEC_016, SPEC_020 } from '../src/rules/spec.js';
-import type { HttpExchange } from '../src/snapshot.js';
+import { SPEC_009, SPEC_016, SPEC_020 } from '../src/rules/spec.js';
+import { RT_002 } from '../src/rules/runtime.js';
+import { PHASES, type HttpExchange, type Snapshot } from '../src/snapshot.js';
 import { snap as snapOf, tool } from './helpers.js';
+
+const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
 
 type Handler = (req: IncomingMessage, body: string, res: ServerResponse) => void;
 const servers: Array<() => Promise<void>> = [];
@@ -113,5 +119,112 @@ describe('a result that answers another request id reaches SPEC-016 (F024, R010)
     } });
     expect(SPEC_020.check(s)).toEqual([]);
     expect(SPEC_016.check(s).map((f) => f.message)).toEqual(['modern prompts/list: result answers another request id (response id 999, request id 3)']);
+  });
+});
+
+/**
+ * A 2025-11-25 Streamable HTTP server (JSON responses, no session) with two read-only tools: `fast_lookup` answers at
+ * once (with a 20 KB text, over TEXT_CAP), accepting even calls without its required argument; `slow_lookup` never answers.
+ */
+function slowActiveServer(): Handler {
+  const tools = [
+    tool({ name: 'fast_lookup' }),
+    tool({ name: 'slow_lookup', inputSchema: { type: 'object', properties: {} } }),
+  ];
+  return (req, body, res) => {
+    if (req.method !== 'POST') { res.writeHead(405, { allow: 'POST' }); res.end(); return; }
+    const m = parse(body);
+    if (m.id === undefined) { res.writeHead(202); res.end(); return; }
+    if (m.method === 'server/discover') return json(res, 400, { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'Method not found' } });
+    if (m.method === 'initialize') return json(res, 200, { jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'slow', version: '1.0.0' } } });
+    if (m.method === 'tools/list') return json(res, 200, { jsonrpc: '2.0', id: m.id, result: { tools } });
+    if (m.method === 'tools/call' && m.params?.name === 'fast_lookup') return json(res, 200, { jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: 'n'.repeat(20 * 1024) }] } });
+    if (m.method === 'tools/call' && m.params?.name === 'slow_lookup') return; // never answered
+    return json(res, 200, { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'Method not found' } });
+  };
+}
+
+describe('a run stopped by --max-duration keeps what it collected (R003)', () => {
+  it('during active tool calls: the finished calls are kept (capped), their findings reported, the other RT rules skipped', async () => {
+    const url = await serve(slowActiveServer());
+    const { snap } = await buildSnapshot({ target: { kind: 'http', url }, timeoutMs: 20000, active: true, maxDurationMs: 4000 });
+    expect(snap.limits?.stopped).toMatchObject({ maxDurationMs: 4000, phase: 'active tool calls', unfinished: ['active tool calls'] });
+    expect(snap.limits?.stopped?.completed).toEqual(expect.arrayContaining(['connect', 'listing', 'UI resource reads', 'wire probes', 'tools re-list', 'text-only tools/list']));
+    expect(snap.coverage.toolLevel).toBe('stopped');
+    // fast_lookup: synthetic, invalid-missing and invalid-type; slow_lookup's call was in flight.
+    expect(snap.active?.calls.map((c) => `${c.tool} ${c.kind}`)).toEqual(['fast_lookup synthetic', 'fast_lookup invalid-missing', 'fast_lookup invalid-type']);
+    expect(snap.transport.probes.unknownTool).toBeDefined();
+    // F146: the kept call results go through the input caps.
+    expect(snap.limits?.truncated).toContainEqual({ where: 'tools/call fast_lookup result', length: 20 * 1024, cap: TEXT_CAP });
+    const r = runRules(snap, RULES);
+    expect(r.findings.filter((f) => f.ruleId === 'RT-002').map((f) => f.message).sort()).toEqual([
+      'call without the required arguments returned a success result', 'wrong-type argument returned a success result',
+    ]);
+    expect(r.skipped).toContainEqual({ ruleId: 'RT-005', reason: STOPPED_REASON });
+    expect(r.skipped.some((s) => s.ruleId === 'RT-002')).toBe(false);
+  }, 30000);
+
+  it('during wire probes: the finished probes are kept, and the rules reading the unfinished ones are skipped, not passed', async () => {
+    const { snap } = await buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, 'callhang'] }, timeoutMs: 20000, maxDurationMs: 2000 });
+    expect(snap.limits?.stopped).toMatchObject({ phase: 'wire probes', completed: ['connect', 'listing', 'UI resource reads'] });
+    expect(snap.limits?.stopped?.unfinished).toEqual(PHASES.slice(PHASES.indexOf('wire probes')));
+    expect(snap.transport.probes.unknownMethod).toBeDefined();
+    expect(snap.transport.probes.unknownTool).toBeUndefined();
+    const r = runRules(snap, RULES);
+    expect(r.skipped).toContainEqual({ ruleId: 'SPEC-009', reason: STOPPED_REASON });
+    // The observed errors are partial too: SPEC-016 finds nothing wrong in them, which is no pass.
+    expect(r.skipped).toContainEqual({ ruleId: 'SPEC-016', reason: STOPPED_REASON });
+    // Rules over the finished listing still run.
+    expect(r.skipped.some((s) => s.ruleId === 'TOOL-001')).toBe(false);
+  }, 30000);
+});
+
+describe('the engine on a stopped snapshot (R003)', () => {
+  const stopped = (phase: string, unfinished?: string[], set?: (s: Snapshot) => void) => snapOf({
+    tools: [tool()],
+    set: (s) => {
+      s.listMeta.tools = { pages: 1, rawPages: [] };
+      s.coverage = { toolLevel: 'stopped', reason: `stopped by --max-duration (1000 ms) during ${phase}` };
+      s.limits = { truncated: [], stopped: { maxDurationMs: 1000, phase, ...(unfinished ? { unfinished } : {}) } };
+      set?.(s);
+    },
+  });
+
+  it('a rule reading a probe that never ran is skipped; one that found something in a finished probe reports it', () => {
+    expect(runRules(stopped('wire probes'), [SPEC_009]).skipped).toEqual([{ ruleId: 'SPEC-009', reason: STOPPED_REASON }]);
+    const found = runRules(stopped('wire probes', undefined, (s) => {
+      s.transport.probes.unknownTool = { kind: 'jsonrpc', label: 'unknownTool', result: { content: [] }, durationMs: 1 };
+    }), [SPEC_009]);
+    expect(found.skipped).toEqual([]);
+    expect(found.rulesRun).toBe(1);
+    expect(found.findings.map((f) => f.ruleId)).toEqual(['SPEC-009']);
+  });
+
+  it('a probe phase that finished before the stop is judged as usual', () => {
+    const r = runRules(stopped('active tool calls'), [SPEC_009]);
+    expect(r.skipped).toEqual([]);
+    expect(r.rulesRun).toBe(1);
+  });
+
+  it('an older snapshot without `unfinished` gets the stop phase and every later one', () => {
+    expect([...(unfinishedPhases(stopped('tools re-list')) ?? [])]).toEqual(['tools re-list', 'text-only tools/list', 'active tool calls', 'whole run']);
+    expect(unfinishedPhases(snapOf())).toBeUndefined();
+  });
+
+  it('partial active calls: the RT rules run on them instead of all being skipped for the stopped coverage', () => {
+    const s = stopped('active tool calls', ['active tool calls'], (x) => {
+      x.options.active = true;
+      x.active = { calls: [{ tool: 'search_notes', kind: 'invalid-missing', args: {}, result: { content: [{ type: 'text', text: 'ok' }] }, durationMs: 5 }] };
+    });
+    const r = runRules(s, [RT_002]);
+    expect(r.findings.map((f) => f.message)).toEqual(['call without the required arguments returned a success result']);
+    s.active!.calls = [];
+    expect(runRules(s, [RT_002]).skipped).toEqual([{ ruleId: 'RT-002', reason: STOPPED_REASON }]);
+  });
+
+  it('a run that was not stopped is unchanged: the rule passes and counts as run', () => {
+    const r = runRules(snapOf({ tools: [tool()], set: (s) => { s.listMeta.tools = { pages: 1, rawPages: [] }; } }), [SPEC_009, SPEC_016]);
+    expect(r.skipped).toEqual([]);
+    expect(r.rulesRun).toBe(2);
   });
 });

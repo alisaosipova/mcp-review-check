@@ -5,7 +5,7 @@ import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotoc
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { emptySnapshot, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
+import { emptySnapshot, PHASES, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
 import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, ERROR_BODY_CAP, UI_READS_CAP } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
@@ -69,6 +69,8 @@ export function urlBasicAuth(raw: string): string | undefined {
 /** Where a run is; --max-duration reports the phase and stops at the next checkpoint. */
 interface Progress {
   phase: string;
+  /** The phases that ran to their end, in order (a phase is done when the run moves on to the next one). */
+  completed?: string[];
   stopped?: boolean;
   tracer?: Tracer;
   stderrTail?: () => string;
@@ -79,7 +81,9 @@ interface Progress {
   children?: Set<ChildProcess>;
   /** Aborted at the deadline: the tracer then sends no more HTTP requests and cancels its probes in flight. */
   abort: AbortController;
-  /** What the run has observed so far that it otherwise stores only at its end (modern results, observed errors). */
+  /** What the run has observed so far that it otherwise stores only at its end (modern results, observed errors).
+   *  The wire probes and the active calls need none: they publish each finished probe or call into the live snapshot
+   *  (runWireProbes' `out`, runActive's `into`), which stoppedSnapshot copies. */
   collect?: () => Partial<Snapshot['transport']>;
 }
 
@@ -88,15 +92,21 @@ class Stopped extends Error {}
 /** The phase after the last check: closing connections and waiting for servers to exit. */
 const CLOSING = 'closing';
 
+/** Move on to `phase`: the one before it ran to its end (a checkpoint repeated within a phase moves nowhere). */
+function advance(p: Progress, phase: string): void {
+  if (p.phase !== phase) (p.completed ??= []).push(p.phase);
+  p.phase = phase;
+}
+
 function checkpoint(p: Progress | undefined, phase: string): void {
   if (!p) return;
   if (p.stopped) throw new Stopped(phase);
-  p.phase = phase;
+  advance(p, phase);
 }
 
 /** Every check has run; a deadline from here on finds a complete snapshot. */
 function closing(p: Progress | undefined): void {
-  if (p && !p.stopped) p.phase = CLOSING;
+  if (p && !p.stopped) advance(p, CLOSING);
 }
 
 export interface BuildResult {
@@ -441,13 +451,11 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     await readUiResources(snap, reader, deps.now);
     const useModern = snap.era === 'modern' || snap.era === 'dual';
     checkpoint(progress, 'wire probes');
-    snap.transport.probes = {
-      ...snap.transport.probes,
-      ...(await runWireProbes({
-        snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
-        http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion },
-      })),
-    };
+    // Each probe lands in the snapshot as it finishes (next to the discover probe), so a deadline keeps the finished ones.
+    await runWireProbes({
+      snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
+      http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion }, out: snap.transport.probes,
+    });
     const fresh = (variant: ClientVariant = {}) => freshTools(conn.ok ? url : target, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant);
     if (!snap.listMeta.tools?.error) {
       checkpoint(progress, 'tools re-list');
@@ -459,8 +467,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     }
     if (opts.active && !snap.listMeta.tools?.error) {
       checkpoint(progress, 'active tool calls');
-      snap.active = await runActive({
-        snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, modern: conn.ok ? undefined : modern,
+      // Each call lands in snap.active as it finishes, so a deadline keeps the finished ones.
+      await runActive({
+        snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, modern: conn.ok ? undefined : modern, into: snap.active = { calls: [] },
         listWithClientName: conn.ok && conn.kind === 'streamable-http' ? async (name) => (await fresh({ clientName: name }))?.map(toolName) : undefined,
       });
     }
@@ -705,7 +714,7 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   checkpoint(progress, 'UI resource reads');
   await readUiResources(snap, legacyReader(conn.client, timeoutMs), deps.now);
   checkpoint(progress, 'wire probes');
-  snap.transport.probes = await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client });
+  await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client, out: snap.transport.probes });
   const fresh = async (variant: ClientVariant = {}) => {
     try {
       const c = await connectStdio(t, connectTimeout, redactorFor(opts), variant, progress);
@@ -722,8 +731,8 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
     if (linksUi(snap)) snap.toolsWithoutUi = await fresh({ capabilities: TEXT_ONLY_CAPABILITIES });
     if (opts.active) {
       checkpoint(progress, 'active tool calls');
-      snap.active = await runActive({
-        snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client,
+      await runActive({
+        snap, toolArgs: opts.toolArgs, timeoutMs, now: deps.now, client: conn.client, into: snap.active = { calls: [] },
         listWithClientName: async (name) => (await fresh({ clientName: name }))?.map(toolName),
       });
     }
@@ -886,6 +895,8 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
   const snap: Snapshot = {
     ...live, tools: [...live.tools], resources: [...live.resources], resourceTemplates: [...live.resourceTemplates], prompts: [...live.prompts],
     listMeta: { ...live.listMeta }, resourceReads: { ...live.resourceReads }, coverage: { ...live.coverage },
+    // The calls finished so far (the abandoned run may still push more).
+    ...(live.active ? { active: { ...live.active, calls: [...live.active.calls] } } : {}),
     transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: progress.tracer ? ruleExchanges(progress.tracer) : [...live.transport.exchanges] },
   };
   if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };
@@ -899,7 +910,14 @@ function stoppedSnapshot(live: Snapshot, ms: number, progress: Progress): Snapsh
   }
   // Every check had run: the deadline only cut short the wait for connections to close.
   if (progress.phase === CLOSING) return snap;
-  snap.limits = { truncated: [...(live.limits?.truncated ?? [])], stopped: { maxDurationMs: ms, phase: progress.phase } };
+  // The phase cut short and every later one in the run's order did not finish: the engine does not let a rule that
+  // reads their data pass on it.
+  const at = PHASES.indexOf(progress.phase as (typeof PHASES)[number]);
+  const unfinished = at < 0 ? [progress.phase] : PHASES.slice(at);
+  snap.limits = {
+    truncated: [...(live.limits?.truncated ?? [])],
+    stopped: { maxDurationMs: ms, phase: progress.phase, completed: [...(progress.completed ?? [])], unfinished: [...unfinished] },
+  };
   const why = `stopped by --max-duration (${ms} ms) during ${progress.phase}`;
   if (snap.era === 'unknown' && !snap.fatal && snap.coverage.toolLevel === 'ok') {
     // As after a --timeout: what the stdio server wrote (stderr is masked as it arrives) names the cause of the hang.

@@ -1,5 +1,5 @@
 // Rule engine: needs evaluation, platform filtering, severity, ignore, sorting (§1.2, §4.2).
-import type { Platform, Severity, Snapshot, TargetOpt } from '../snapshot.js';
+import { PHASES, type Platform, type Severity, type Snapshot, type TargetOpt } from '../snapshot.js';
 import { hasUi } from './util/access.js';
 import { maxSeverity, SEVERITY_RANK, type Finding, type Need, type Rule } from './types.js';
 
@@ -49,11 +49,75 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
       return MODERN_ERAS.has(snap.era) ? undefined : `era ${snap.era} (not 2026-07-28)`;
     case 'active':
       if (!snap.options.active) return 'needs --active';
+      // Calls made before a --max-duration stop are evidence: the rule runs on them (and cannot pass, see runRules).
+      if (snap.active && snap.coverage.toolLevel === 'stopped') return undefined;
       return snap.active ? authReason(snap) : authReason(snap) ?? 'no active calls made';
     case 'active-auth':
       if (!snap.options.activeAuth) return 'needs --active-auth';
       return snap.authProbe?.active ? undefined : 'auth probe did not run';
   }
+}
+
+/** The skip reason of a rule that read data of a phase a --max-duration stop cut short and found nothing in it. */
+export const STOPPED_REASON = 'stopped by --max-duration';
+
+/** Data gathered over the whole run (from every exchange): partial whenever the run was stopped. */
+const RUN_WIDE = 'whole run';
+type Unfinished = Set<string>;
+
+/** The phases a stopped run did not finish (limits.stopped.unfinished, or for an older snapshot the stop phase and
+ *  every later one), plus RUN_WIDE; undefined for a run that was not stopped. */
+export function unfinishedPhases(snap: Snapshot): Unfinished | undefined {
+  const s = snap.limits?.stopped;
+  if (!s) return undefined;
+  const at = PHASES.indexOf(s.phase as (typeof PHASES)[number]);
+  return new Set([...(s.unfinished ?? (at < 0 ? [s.phase] : PHASES.slice(at))), RUN_WIDE]);
+}
+
+const LISTS: Record<string, string> = { tools: 'tools', resources: 'resources', resourceTemplates: 'resourceTemplates', prompts: 'prompts' };
+/** Set as a whole when their step finished: missing means not observed (yet). */
+const ATOMIC: Record<string, string> = { toolsRelist: 'tools re-list', toolsFreshConnection: 'tools re-list', toolsWithoutUi: 'text-only tools/list', authProbe: 'auth probe' };
+/** Filled step by step: partial while their phase runs. */
+const GROWING: Record<string, string> = { active: 'active tool calls' };
+const GROWING_TRANSPORT: Record<string, string> = { observedErrors: RUN_WIDE, modernResults: RUN_WIDE, tls: 'auth probe' };
+
+/**
+ * A read-only view of a stopped run's snapshot that notes in `hit` every unfinished phase whose data a rule reads:
+ * a list, probe, listing entry or UI read that is missing, an enumeration of those maps, or data that grows over a
+ * phase (active calls, observed errors, 2026-07-28 results). Only the top level, `transport` and the keyed maps are
+ * wrapped; everything below them is the snapshot's own objects. The exchange log and the latency samples are left out:
+ * the rules judge them on the requests that were made.
+ */
+function tracked(snap: Snapshot, unfinished: Unfinished, hit: Set<string>): Snapshot {
+  const note = (phase: string) => { if (unfinished.has(phase)) hit.add(phase); };
+  /** A map filled entry by entry during `phase`: a missing entry or a walk over all of them depends on it. */
+  const keyed = <T extends object>(target: T, phase: string): T => new Proxy(target, {
+    get(t, k, r) { const v = Reflect.get(t, k, r); if (typeof k === 'string' && v === undefined) note(phase); return v; },
+    has(t, k) { const v = Reflect.has(t, k); if (!v) note(phase); return v; },
+    getOwnPropertyDescriptor(t, k) { const d = Reflect.getOwnPropertyDescriptor(t, k); if (!d) note(phase); return d; },
+    ownKeys(t) { note(phase); return Reflect.ownKeys(t); },
+  });
+  const transport = new Proxy(snap.transport, {
+    get(t, k, r) {
+      const v = Reflect.get(t, k, r);
+      if (k === 'probes') return keyed(v as object, 'wire probes');
+      if (typeof k === 'string' && GROWING_TRANSPORT[k]) note(GROWING_TRANSPORT[k]);
+      return v;
+    },
+  });
+  return new Proxy(snap, {
+    get(t, k, r) {
+      const v = Reflect.get(t, k, r);
+      if (typeof k !== 'string') return v;
+      if (k === 'transport') return transport;
+      if (k === 'listMeta') return keyed(v as object, 'listing');
+      if (k === 'resourceReads') return keyed(v as object, 'UI resource reads');
+      if (LISTS[k] && !t.listMeta[LISTS[k]]) note('listing');
+      else if (ATOMIC[k] && v === undefined) note(ATOMIC[k]);
+      else if (GROWING[k]) note(GROWING[k]);
+      return v;
+    },
+  });
 }
 
 export interface EngineResult {
@@ -100,6 +164,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
   const scored: Finding[] = [];
   const skipped: EngineResult['skipped'] = [];
   let rulesRun = 0;
+  const unfinished = unfinishedPhases(snap);
 
   for (const rule of rules) {
     const rulePlatforms = Object.keys(rule.severity) as Platform[];
@@ -111,11 +176,12 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       if (applies) skipped.push({ ruleId: rule.id, reason });
       continue;
     }
-    if (applies) rulesRun++;
     let raw;
+    const hit = new Set<string>();
     try {
-      raw = rule.check(snap);
+      raw = rule.check(unfinished ? tracked(snap, unfinished, hit) : snap);
     } catch (err) {
+      if (applies) rulesRun++;
       // Also for a rule outside --target: it runs for the score, which is then short of its findings (spec is always active).
       findings.push({
         ruleId: INTERNAL.id, title: INTERNAL.title, severity: 'info', platforms: ['spec'],
@@ -123,6 +189,13 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       });
       continue;
     }
+    // After a --max-duration stop a rule that read data of an unfinished phase keeps what it found, but finding nothing
+    // there is no pass: it is skipped instead of counted as run.
+    if (hit.size && raw.length === 0) {
+      if (applies) skipped.push({ ruleId: rule.id, reason: STOPPED_REASON });
+      continue;
+    }
+    if (applies) rulesRun++;
     for (const r of raw) {
       const platforms = r.platforms ?? rulePlatforms;
       // An explicit finding severity applies to all of its platforms; otherwise each platform keeps the rule's own level.
