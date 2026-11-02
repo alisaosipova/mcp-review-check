@@ -361,7 +361,10 @@ export const AUTH_012 = defineRule(
     id: 'AUTH-012', title: 'Client registration path', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: ['auth'],
     rationale: 'Hosts register themselves via CIMD (preferred) or DCR, or use pre-registered credentials.',
     fix: 'Support Client ID Metadata Documents (client_id_metadata_document_supported: true with token auth "none") or DCR, or arrange pre-registered credentials with each host.',
-    sources: [CLAUDE_AUTH, OAI_AUTH, 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration'],
+    sources: [
+      CLAUDE_AUTH, OAI_AUTH, 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration',
+      'https://modelcontextprotocol.io/specification/2026-07-28/deprecated',
+    ],
   },
   (snap) => forEachAs(snap, (_as, m) => {
     const out: RawFinding[] = [];
@@ -384,7 +387,13 @@ export const AUTH_012 = defineRule(
     if (!cimd && !dcr) out.push({ platforms: ['chatgpt'], message: 'neither CIMD nor DCR: predefined client required; secret goes in the portal, not the manifest' });
     // Spec
     if (!cimd && !dcr) out.push({ platforms: ['spec'], message: 'neither CIMD nor DCR supported' });
-    else if (!cimd && dcr) out.push({ platforms: ['spec'], severity: 'info', message: 'DCR only: DCR deprecated in 2026-07-28; add CIMD' });
+    // 2026-07-28 deprecates DCR (deprecated features registry: new implementations should not adopt it), a SHOULD NOT: info.
+    else if (!cimd && dcr) {
+      out.push({
+        platforms: ['spec'], severity: 'info',
+        message: 'DCR only: Dynamic Client Registration is deprecated in 2026-07-28 for new servers; add CIMD (Claude uses it only with client_id_metadata_document_supported: true and "none" in token_endpoint_auth_methods_supported)',
+      });
+    }
     return out;
   }),
 );
