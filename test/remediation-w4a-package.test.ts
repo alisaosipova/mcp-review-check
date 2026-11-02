@@ -33,3 +33,10 @@ describe('CLI-only package (F150)', () => {
     });
   });
 });
+
+describe('README install note (F148)', () => {
+  it('names only the offline case, not an unpublished package', () => {
+    expect(README).not.toMatch(/before its first npm release/);
+    expect(README).toMatch(/without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout/);
+  });
+});

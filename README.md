@@ -63,7 +63,7 @@ npx mcp-review-check explain TOOL-011
 npx mcp-review-check --list-rules TOOL --format json
 ```
 
-If `npx` cannot find the package (before its first npm release, or on a machine without registry access), run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.1` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
+On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.1` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
 
