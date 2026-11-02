@@ -1,17 +1,19 @@
 // Regression tests for the W4C-connect remediation (review 2026-11-01, wave 4): a result that answers another request
-// id reaches SPEC-016 (F024, R010), and a run stopped by --max-duration keeps its finished wire probes and active calls
-// and does not let rules pass on unfinished phases (R003).
+// id reaches SPEC-016 (F024, R010), a run stopped by --max-duration keeps its finished wire probes and active calls and
+// does not let rules pass on unfinished phases (R003), the input caps cover what a stopped run keeps (F146), and the
+// snippet scrub stays on a prefix of the body (F036).
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildSnapshot, collectErrors } from '../src/connect.js';
-import { TEXT_CAP } from '../src/limits.js';
+import { capSnapshot, TEXT_CAP } from '../src/limits.js';
 import { STOPPED_REASON, runRules, unfinishedPhases } from '../src/rules/engine.js';
 import { RULES } from '../src/rules/index.js';
 import { SPEC_009, SPEC_016, SPEC_020 } from '../src/rules/spec.js';
 import { RT_002 } from '../src/rules/runtime.js';
-import { PHASES, type HttpExchange, type Snapshot } from '../src/snapshot.js';
+import { createRedactor, scrub, snippetOf } from '../src/protocol/trace.js';
+import { emptySnapshot, PHASES, type HttpExchange, type Snapshot } from '../src/snapshot.js';
 import { snap as snapOf, tool } from './helpers.js';
 
 const WP2 = fileURLToPath(new URL('./fixtures/wp2-stdio-server.mjs', import.meta.url));
@@ -226,5 +228,40 @@ describe('the engine on a stopped snapshot (R003)', () => {
     const r = runRules(snapOf({ tools: [tool()], set: (s) => { s.listMeta.tools = { pages: 1, rawPages: [] }; } }), [SPEC_009, SPEC_016]);
     expect(r.skipped).toEqual([]);
     expect(r.rulesRun).toBe(2);
+  });
+});
+
+describe('input caps on what the rules read besides the listings (F146 lite)', () => {
+  it('tool call results, 2026-07-28 results and raw list pages are cut to TEXT_CAP and each cut is recorded', () => {
+    const big = 'x'.repeat(TEXT_CAP + 100);
+    const s = emptySnapshot({ kind: 'stdio', command: 'node', args: [] }, { target: 'all', active: true, activeAuth: false });
+    s.active = { calls: [{ tool: 't', kind: 'synthetic', args: {}, result: { content: [{ type: 'text', text: big }] }, durationMs: 1 }, { tool: 's', kind: 'synthetic', args: {}, result: big, durationMs: 1 }] };
+    s.transport.modernResults = [{ method: 'tools/list', result: { note: big } }];
+    s.listMeta.tools = { pages: 1, rawPages: [{ tools: [{ name: 't', description: big }] }] };
+    const cut = capSnapshot(s);
+    expect(cut.map((c) => c.where).sort()).toEqual(['2026-07-28 results', 'tools list pages', 'tools/call s result', 'tools/call t result']);
+    expect(s.limits?.truncated).toHaveLength(4);
+    expect(((s.active.calls[0].result as any).content[0].text as string).length).toBe(TEXT_CAP);
+    expect((s.active.calls[1].result as string).length).toBe(TEXT_CAP);
+  });
+});
+
+describe('the snippet scrub covers a prefix of the body only (F036 lite)', () => {
+  it('a secret at the snippet edge is masked, and one far past it is not searched for', () => {
+    const r = createRedactor([], ['sk-live-0123456789abcdef']);
+    const edge = `${'a'.repeat(4090)}sk-live-0123456789abcdef${'b'.repeat(100)}`;
+    expect(snippetOf(edge, r)).toBe(scrub(edge, r).slice(0, 4096));
+    expect(snippetOf(edge, r)).not.toContain('sk-li');
+    // An 8 MB body: only a prefix is scrubbed (the replace never sees the whole text), the snippet is the same.
+    const huge = `${'c'.repeat(8 * 1024 * 1024)}sk-live-0123456789abcdef`;
+    const replace = vi.spyOn(String.prototype, 'replace');
+    try {
+      expect(snippetOf(huge, r)).toBe('c'.repeat(4096));
+      const scanned = replace.mock.contexts.map((c) => String(c).length);
+      expect(scanned.length).toBeGreaterThan(0);
+      expect(Math.max(...scanned)).toBeLessThan(64 * 1024);
+    } finally {
+      replace.mockRestore();
+    }
   });
 });
