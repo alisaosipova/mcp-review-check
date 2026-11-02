@@ -1,9 +1,9 @@
 name: Release
 
 # Push a tag like v0.1.0 (matching package.json) to publish to npm.
-# Publishing uses npm trusted publishing (OIDC): configure it on npmjs.com for this repository,
-# workflow file "release.yml" and environment "npm". No long-lived npm token is needed;
-# provenance is attached automatically (publishConfig.provenance is also set).
+# Publishing uses npm trusted publishing (OIDC) only: the trusted publisher is configured on npmjs.com for this
+# repository, workflow file "release.yml" and environment "npm" (0.3.0 was the first release published that way).
+# No npm token is stored or read anywhere; provenance is attached automatically (publishConfig.provenance is also set).
 # Only the publish job can mint the OIDC token and only gh-release can write to the repository; neither installs
 # dependencies, builds or runs tests: the build job does that without write permissions and hands over the tarball.
 on:
@@ -50,9 +50,6 @@ jobs:
     environment: npm
     permissions:
       id-token: write # npm trusted publishing and provenance
-    env:
-      # Secrets cannot be read in `if:`; this exposes only whether NPM_TOKEN is set, never its value.
-      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
@@ -66,19 +63,8 @@ jobs:
       # Pre-release tags (v0.2.0-rc.1) go to the "next" dist-tag.
       # Trusted publishing (OIDC): no token in the environment, so npm cannot fall back to a long-lived one.
       - name: Publish to npm (trusted publishing)
-        if: env.HAS_NPM_TOKEN != 'true'
         run: npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
-      # Only for the very first publish (a trusted publisher can be configured only once the package exists):
-      # a short-lived granular token in the NPM_TOKEN secret. Delete the secret right afterwards, so later
-      # releases take the step above.
-      - name: Publish to npm (first release, NPM_TOKEN)
-        if: env.HAS_NPM_TOKEN == 'true'
-        run: |
-          echo "::warning::Publishing with the NPM_TOKEN secret. Configure the trusted publisher on npmjs.com and delete the secret."
-          npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # Whichever step published, the registry must show a provenance attestation for this version; a publish
+      # The registry must show a provenance attestation for this version; a publish
       # that silently lost provenance (publishConfig ignored, OIDC missing) fails the release before the GitHub
       # release is created. The registry can lag behind the publish, so retry for about a minute.
       - name: Published version carries npm provenance
