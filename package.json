@@ -14,7 +14,9 @@
   "bin": {
     "mcp-review-check": "dist/cli.js"
   },
-  "main": "dist/cli.js",
+  "exports": {
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "README.md",
