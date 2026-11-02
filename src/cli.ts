@@ -41,9 +41,11 @@ Options:
   --output <file>         Write the report to a file; print a summary line to stderr.
   --sarif-location <path> Repository-relative path the SARIF results point at (default: .mcp-review-check).
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
-  --max-duration <ms>     Stop the whole check after this long and report what ran (default: no limit).
+  --max-duration <ms>     Stop the whole check after this long and report what ran, exit 4 (default: no limit).
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
+  --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed), so a
+                          job without a working token does not pass; without it the exit code follows --fail-on.
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -77,9 +79,10 @@ Exit codes:
   0       Completed, below the --fail-on threshold.
   1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec).
   2       Usage or configuration error, or --output could not be written.
-  3       Could not connect or complete a handshake; stopped by --max-duration (at any --fail-on; the Result
-          line reads INCOMPLETE after a handshake); or an internal error of mcp-review-check itself (fatal: and
-          a stack trace on stderr; please report it).
+  3       Could not connect or complete a handshake (also when --max-duration ran out before it); with
+          --fail-on-incomplete, a partial check (auth required, token rejected, tools/list failed); or an internal
+          error of mcp-review-check itself (fatal: and a stack trace on stderr; please report it).
+  4       Stopped by --max-duration after the handshake, at any --fail-on (the Result line reads INCOMPLETE).
   128+N   Ended by signal N: 130 Ctrl+C (SIGINT), 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP. A stdio server is ended first
           and no report is written.
 
@@ -87,7 +90,8 @@ The exit code counts findings at each directory's own severity for --target (all
 findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
 The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
 With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
-severity), exit 3 as one ::error with its cause, and the markdown report is appended to $GITHUB_STEP_SUMMARY when it is set.
+severity), exit 3 and 4 as one ::error with its cause, a partial check as one ::warning naming why, and the markdown
+report is appended to $GITHUB_STEP_SUMMARY when it is set.
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
 
@@ -97,6 +101,7 @@ const OPTIONS = {
   stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
   target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
   timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
+  'fail-on-incomplete': { type: 'boolean' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -377,7 +382,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail.split(/\r?\n/).map(visibleText).join('\n')}\n`;
       stderr = scrub(stderr, redactor);
     }
-    const code = snap.fatal || snap.limits?.stopped ? 3 : report.summary.failed ? 1 : 0; // a stop is exit 3 at any --fail-on
+    // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
+    // A partial check (no or a rejected token, tools/list failed) follows --fail-on unless --fail-on-incomplete.
+    const partial = snap.coverage.toolLevel !== 'ok';
+    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
     const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info · ${resultLine(report)}`;

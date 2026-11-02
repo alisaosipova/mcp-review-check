@@ -1,7 +1,7 @@
 // GitHub Actions mode: workflow-command annotations on stderr and the markdown report appended to the job
 // summary. On only when GITHUB_ACTIONS=true; there is no separate switch.
 import { appendFileSync, statSync } from 'node:fs';
-import { subjectOf } from '../rules/engine.js';
+import { authReason, subjectOf } from '../rules/engine.js';
 import { platformSeverity } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { platformLabel, type Report } from './index.js';
@@ -17,13 +17,21 @@ const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
 /**
  * One `::error` or `::warning` line per finding at its highest severity on the gated platforms (the --target
  * directories, plus spec with --fail-on-spec), as for the exit code; info and ungated findings get none.
- * Exit 3 (no connect, or a --max-duration stop) comes first as one `::error` with its cause.
+ * Exit 3 (no connect) or 4 (a --max-duration stop) comes first as one `::error` with its cause; a partial check that
+ * still finished (no or a rejected token, tools/list failed) as one `::warning`, whatever the exit code, so a green
+ * job whose tool checks were skipped is visible.
  */
 export function annotations(r: Report): string[] {
   const stop = r.snap.limits?.stopped;
   const outcome = r.snap.fatal ? `Could not connect: ${r.snap.coverage.reason ?? r.snap.fatal}`
     : stop ? `Stopped by --max-duration ${stop.maxDurationMs} ms during ${stop.phase}; the check is incomplete` : undefined;
   const out: string[] = outcome ? [`::error title=mcp-review-check::${escapeCommand(outcome)}`] : [];
+  const level = r.snap.coverage.toolLevel;
+  if (!outcome && level !== 'ok') {
+    const skipped = r.skipped.length ? ` (${r.skipped.length} rule${r.skipped.length === 1 ? '' : 's'} skipped)` : '';
+    const why = `Partial check: ${level} (${authReason(r.snap) ?? level}); tool-level checks were skipped${skipped}, so the result covers only what ran. --fail-on-incomplete fails the run on a partial check.`;
+    out.push(`::warning title=mcp-review-check::${escapeCommand(why)}`);
+  }
   for (const f of r.findings) {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))
       .reduce<Severity>((a, b) => (RANK[b] > RANK[a] ? b : a), 'info');
