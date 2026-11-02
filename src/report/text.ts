@@ -8,6 +8,7 @@ import { RULES } from '../rules/index.js';
 import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
+import { driftCount, driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, visibleText, type Report } from './index.js';
 
 export interface TextOptions {
@@ -16,6 +17,8 @@ export interface TextOptions {
   cta?: string; // ctaLine(), printed above the disclaimer
   checklist?: boolean; // the manual checklist in full
   quiet?: boolean; // findings (no info), Score, Result and the disclaimer
+  drift?: Drift; // --baseline: the "Changed tool definitions" section after the findings
+  failOnDrift?: boolean; // --fail-on-drift: the section says a change fails the run
 }
 
 const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', cyan: '\x1b[36m', bold: '\x1b[1m', dim: '\x1b[2m', reset: '\x1b[0m' };
@@ -131,6 +134,15 @@ export function renderText(r: Report, opts: TextOptions): string {
         const why = opts.verbose && RULES.find((x) => x.id === g.first.ruleId)?.rationale;
         if (why) out.push(c('dim', `      why  ${why}`));
       }
+    }
+  }
+  // With --quiet only a section with changes: the no-change and not-compared notes are not findings.
+  if (opts.drift && (!opts.quiet || driftCount(opts.drift))) {
+    const note = driftSummary(opts.drift);
+    if (note) out.push('', c('dim', note));
+    else {
+      out.push('', c('bold', driftHeading(opts.drift, opts.failOnDrift).replace(/^Changed tool definitions/, 'CHANGED TOOL DEFINITIONS')));
+      for (const l of driftLines(opts.drift)) out.push(`  ${l}`);
     }
   }
   const findingsEnd = out.length;

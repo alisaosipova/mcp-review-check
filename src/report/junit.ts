@@ -4,6 +4,7 @@
 // that did not run, lower findings, known (--baseline) and ignored ones in <system-out>. A failed connect or a
 // --max-duration stop is one <error> test case per suite, as it fails the run whatever the findings.
 import { baselineLine } from '../baseline.js';
+import { driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
 import { RULES } from '../rules/index.js';
 import { subjectOf } from '../rules/engine.js';
 import { platformSeverity, type Finding, type Platform } from '../rules/types.js';
@@ -39,7 +40,7 @@ function testcase(platform: Platform, name: string, inner: string[], flags: Omit
   return { ...flags, xml: inner.length ? `${head}>\n${inner.map((x) => `      ${x}`).join('\n')}\n    </testcase>` : `${head}/>` };
 }
 
-function suite(r: Report, p: Platform, known: Finding[]): { xml: string; tests: number; failures: number; errors: number; skipped: number } {
+function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: string; tests: number; failures: number; errors: number; skipped: number } {
   const skippedBy = new Map(r.skipped.map((s) => [s.ruleId, s.reason]));
   const mine = (list: Finding[], id: string) => list.filter((f) => f.ruleId === id && f.platforms.includes(p));
   const cases: Case[] = [];
@@ -77,22 +78,25 @@ function suite(r: Report, p: Platform, known: Finding[]): { xml: string; tests: 
   const [failures, errors, skipped] = [n('failure'), n('error'), n('skipped')];
   const verdict = p === 'spec' ? undefined : r.summary.verdicts[p]?.verdict;
   const props = [['target', targetLabel(snap)], ['score', scoreLabel(r)], ['failOn', r.failOn], ...(verdict ? [['verdict', verdict]] : []), ...(known.length ? [['baselined', String(known.filter((f) => f.platforms.includes(p)).length)]] : [])];
-  const tally = baselineLine(known.filter((f) => f.platforms.includes(p)));
+  // The drift is the same for every suite: each one's <system-out> has it, after the known-findings line.
+  const driftOut = !drift ? [] : driftSummary(drift) ? [driftSummary(drift)!] : [driftHeading(drift), ...driftLines(drift).map((l) => `  ${l}`)];
+  const tally = [baselineLine(known.filter((f) => f.platforms.includes(p))), ...driftOut].filter(Boolean);
   const xml = [
     `  <testsuite name="${xmlText(p)}" tests="${tests}" failures="${failures}" errors="${errors}" skipped="${skipped}">`,
     '    <properties>',
     ...props.map(([k, v]) => `      <property name="${xmlText(k)}" value="${xmlText(v)}"/>`),
     '    </properties>',
     ...cases.map((c) => c.xml),
-    ...(tally ? [`    <system-out>${xmlText(tally)}</system-out>`] : []),
+    ...(tally.length ? [`    <system-out>${tally.map(xmlText).join('\n')}</system-out>`] : []),
     '  </testsuite>',
   ].join('\n');
   return { xml, tests, failures, errors, skipped };
 }
 
-/** `known` (with --baseline): the baseline's findings, which `r.findings` (the new ones) leaves out; never failures. */
-export function renderJunit(r: Report, known: Finding[] = []): string {
-  const suites = r.summary.gate.platforms.map((p) => suite(r, p, known));
+/** `known` (with --baseline): the baseline's findings, which `r.findings` (the new ones) leaves out; never failures.
+ *  `drift`: the tool-definition changes, listed in each suite's <system-out> (never a failure either). */
+export function renderJunit(r: Report, known: Finding[] = [], drift?: Drift): string {
+  const suites = r.summary.gate.platforms.map((p) => suite(r, p, known, drift));
   const sum = (k: 'tests' | 'failures' | 'errors' | 'skipped') => suites.reduce((a, s) => a + s[k], 0);
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',

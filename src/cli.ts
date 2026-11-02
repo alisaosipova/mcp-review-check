@@ -26,7 +26,8 @@ import { isSafeToCall } from './probe/active.js';
 import type { Snapshot, TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
-import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, loadBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type FindingKey } from './baseline.js';
+import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
+import { compareTools, driftCount, type Drift } from './report/drift.js';
 import type { Finding } from './rules/types.js';
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
@@ -54,7 +55,11 @@ Options:
   --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed), so a
                           job without a working token does not pass; without it the exit code follows --fail-on.
   --baseline <file>       A JSON report of an earlier run (--format json): its findings are known, and only new ones
-                          count for --fail-on and the verdicts (JSON baselined, SARIF baselineState).
+                          count for --fail-on and the verdicts (JSON baselined, SARIF baselineState). Also compares
+                          the tool definitions with the baseline's fingerprints: "Changed tool definitions".
+  --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed since the baseline.
+  --diff-only             With --baseline, text and markdown: only the new findings and the tool changes (no
+                          known-findings line, no manual checklist).
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -92,7 +97,8 @@ after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: B
 
 Exit codes:
   0       Completed, below the --fail-on threshold.
-  1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec).
+  1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec), or
+          with --fail-on-drift a tool definition changed since --baseline.
   2       Usage or configuration error (also in the config file), or --output, --json-output or --save-baseline
           could not be written.
   3       Could not connect or complete a handshake (also when --max-duration ran out before it); with
@@ -118,7 +124,7 @@ const OPTIONS = {
   // No parseArgs defaults: an option left out may come from the config file; the defaults are applied after it.
   target: { type: 'string' }, format: { type: 'string' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
   timeout: { type: 'string' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string' }, 'fail-on-spec': { type: 'boolean' },
-  'fail-on-incomplete': { type: 'boolean' }, baseline: { type: 'string' }, 'save-baseline': { type: 'string' }, 'json-output': { type: 'string' },
+  'fail-on-incomplete': { type: 'boolean' }, 'fail-on-drift': { type: 'boolean' }, 'diff-only': { type: 'boolean' }, baseline: { type: 'string' }, 'save-baseline': { type: 'string' }, 'json-output': { type: 'string' },
   config: { type: 'string' }, 'no-config': { type: 'boolean' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
@@ -178,19 +184,27 @@ function parseHeader(raw: string): [string, string] {
   return [k, v];
 }
 
-/** `known` (with --baseline): the findings of the baseline report, which `r.findings` (the new ones) leaves out. */
-function render(r: Report, format: string, opts: TextOptions, rerun: string, sarifLocation: string, known?: Finding[]): string {
+/** --diff-only: text and markdown leave out the known-findings line and the manual checklist. */
+type RenderOptions = TextOptions & { diffOnly?: boolean };
+
+/** `known` (with --baseline): the findings of the baseline report, which `r.findings` (the new ones) leaves out;
+ *  `opts.drift`: the comparison of the tool definitions with the baseline's. */
+function render(r: Report, format: string, opts: RenderOptions, rerun: string, sarifLocation: string, known?: Finding[]): string {
   switch (format) {
-    case 'json': return known ? renderJsonWithBaseline(r, known) : renderJson(r);
-    case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun }, known); // --quiet and --checklist are text only
-    case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation) : renderSarif(r, sarifLocation);
-    case 'junit': return renderJunit(r, known);
-    default: return known ? addBaselineToText(renderText(r, opts), known, opts.quiet) : renderText(r, opts);
+    case 'json': return known ? renderJsonWithBaseline(r, known, opts.drift) : renderJson(r);
+    case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun, drift: opts.drift, failOnDrift: opts.failOnDrift }, known, opts.diffOnly); // --quiet and --checklist are text only
+    case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation, opts.drift) : renderSarif(r, sarifLocation);
+    case 'junit': return renderJunit(r, known, opts.drift);
+    default: {
+      if (opts.diffOnly) return renderText({ ...r, manual: [] }, opts);
+      return known ? addBaselineToText(renderText(r, opts), known, opts.quiet) : renderText(r, opts);
+    }
   }
 }
 
-/** The markdown report (also the job summary), with the known findings of --baseline as one line. */
-function markdownReport(r: Report, opts: Parameters<typeof renderMarkdown>[1], known?: Finding[]): string {
+/** The markdown report (also the job summary), with the known findings of --baseline as one line (not with --diff-only). */
+function markdownReport(r: Report, opts: Parameters<typeof renderMarkdown>[1], known?: Finding[], diffOnly = false): string {
+  if (diffOnly) return renderMarkdown({ ...r, manual: [] }, opts);
   const md = renderMarkdown(r, opts);
   return known ? addBaselineToMarkdown(md, known) : md;
 }
@@ -410,10 +424,13 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }
     // Read before connecting: a wrong --baseline is a usage error (exit 2), not a finished run that gated on everything.
-    let baseline: FindingKey[] | undefined;
+    let baseline: Baseline | undefined;
+    for (const opt of ['fail-on-drift', 'diff-only'] as const) {
+      if (values[opt] && values.baseline === undefined) throw new UsageError(`--${opt} needs --baseline <file>`);
+    }
     if (values.baseline !== undefined) {
       if (!values.baseline) throw new UsageError('--baseline needs a file path');
-      try { baseline = loadBaseline(values.baseline); } catch (e) {
+      try { baseline = readBaseline(values.baseline); } catch (e) {
         if (e instanceof BaselineError) throw new UsageError(e.message);
         throw e;
       }
@@ -450,7 +467,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     let gated = result;
     let knownRaw: Finding[] | undefined;
     if (baseline) {
-      const isKnown = knownFindings(redactDeep(result.findings, redactor), baseline);
+      const isKnown = knownFindings(redactDeep(result.findings, redactor), baseline.findings);
       knownRaw = result.findings.filter((_, i) => isKnown[i]);
       gated = { ...result, findings: result.findings.filter((_, i) => !isKnown[i]), scored: result.scored ?? result.findings };
     }
@@ -460,18 +477,24 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
     const baselined = knownRaw && redactDeep(knownRaw, redactor);
+    // Tool-definition drift: over the redacted snapshot, as the baseline's fingerprints were (its JSON report).
+    const drift: Drift | undefined = baseline && compareTools(baseline.tools, report.snap);
+    const changes = driftCount(drift);
 
     // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off.
     const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;
     const color = tty && !values['no-color'] && format === 'text' && !values.output;
     const banner = localBanner(report);
     if (banner && (format === 'json' || format === 'sarif' || format === 'junit')) stderr += `${banner}\n`; // stdout stays the document
-    const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
+    const textOpts: RenderOptions = {
+      color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist,
+      drift, failOnDrift: !!values['fail-on-drift'] && changes > 0, diffOnly: !!values['diff-only'],
+    };
     const rerun = rerunCommand(argv, redactor);
     const body = render(report, format, textOpts, rerun, sarifLocation, baselined);
     if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
       for (const a of annotations(report)) stderr += `${a}\n`;
-      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }, baselined));
+      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
@@ -483,10 +506,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
     // A partial check (no or a rejected token, tools/list failed) follows --fail-on unless --fail-on-incomplete.
     const partial = snap.coverage.toolLevel !== 'ok';
-    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed ? 1 : 0;
+    // --fail-on-drift: a tool change is exit 1 like a finding over --fail-on; drift alone never changes the code.
+    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
-    const fromBaseline = baselined ? ` · ${baselined.length} known from baseline` : '';
+    const fromBaseline = baselined ? ` · ${baselined.length} known from baseline${changes ? ` · ${plural(changes, 'tool change')}${textOpts.failOnDrift ? ' (--fail-on-drift)' : ''}` : ''}` : '';
     const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info${fromBaseline} · ${resultLine(report)}`;
     // The JSON report for --save-baseline and --json-output: the --format json document, baselined marks included,
     // rendered from the same redacted report. A file that cannot be written is exit 2, as for --output.

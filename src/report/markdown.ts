@@ -6,6 +6,7 @@ import { subjectOf } from '../rules/engine.js';
 import { RULES } from '../rules/index.js';
 import { AUTH_CONTACT } from '../rules/auth.js';
 import { localBanner, visibleFindings } from './text.js';
+import { driftHeading, driftItems, driftSummary, driftWhat, type Drift } from './drift.js';
 import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, visibleText, type Report } from './index.js';
 
 const EOL = /\r\n?|\n/g; // a lone CR ends a line too (CommonMark)
@@ -29,8 +30,9 @@ const code = (s: string | undefined, inCell = true) => {
   return s ? `${fence} ${t} ${fence}` : '';
 };
 
-/** `rerun` is the redacted command line that reproduces the report. */
-export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean; rerun?: string } = {}): string {
+/** `rerun` is the redacted command line that reproduces the report; `drift` (--baseline) adds the "Changed tool
+ *  definitions" section after the findings. */
+export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolean; rerun?: string; drift?: Drift; failOnDrift?: boolean } = {}): string {
   const snap = r.snap;
   const s = r.summary;
   const out: string[] = [];
@@ -67,6 +69,15 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
       out.push(`| ${f.ruleId} | ${platformLabel(f)} | ${text(subject)} | ${text(f.message)} | ${cell(f.fix)} | ${cell(f.docs[0])} | ${code(f.evidence)} |`);
     }
     out.push('');
+  }
+  if (opts.drift) {
+    const note = driftSummary(opts.drift);
+    if (note) out.push(`> ${text(note)}`, '');
+    else {
+      out.push(`## ${driftHeading(opts.drift, opts.failOnDrift)}`, '', '| Tool | Change |', '|---|---|');
+      for (const i of driftItems(opts.drift)) out.push(`| ${text(i.name || '(empty name)')} | ${driftWhat(i)} |`);
+      out.push('');
+    }
   }
   const why = RULES.filter((x) => visibleFindings(r.findings, opts).some((f) => f.ruleId === x.id));
   if (why.length) out.push('## Why these rules', '', ...why.map((x) => `- **${x.id}**: ${cell(x.rationale)}`), '');

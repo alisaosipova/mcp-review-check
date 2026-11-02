@@ -2,6 +2,7 @@
 import type { Finding } from '../rules/types.js';
 import { contactUrl, CTA_TEXT, DISCLAIMER } from './constants.js';
 import { authSummary, targetLabel, type Report } from './index.js';
+import { toolFingerprints } from './drift.js';
 
 const findingJson = (f: Finding) => ({
   ruleId: f.ruleId, severity: f.severity, platforms: f.platforms, severityByPlatform: f.severityByPlatform, title: f.title, message: f.message,
@@ -37,6 +38,8 @@ export function toJson(r: Report): Record<string, unknown> {
     skipped: r.skipped,
     ignored: r.ignored.map(findingJson),
     manual: r.manual.map((m) => ({ id: m.id, platforms: m.platforms, text: m.text, docs: m.docs })),
+    // One SHA-256 per tool definition (null when tools/list did not finish): --baseline compares them (drift).
+    toolFingerprints: toolFingerprints(snap),
     disclaimer: DISCLAIMER.replace(/\n/g, ' '),
     contact: contactUrl() ? { text: CTA_TEXT, url: contactUrl() } : null,
   };
