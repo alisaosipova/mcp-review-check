@@ -217,3 +217,12 @@ The four branches were rebased onto `main` and fast-forwarded without conflicts 
 ### 8.4 Verification (W4E)
 
 `npm run typecheck`, `npm run build`, `npm run readme:rules` (no drift: 147 rules, 31 manual items, catalog date 2026-11-01) and the docs sync tests `test/docs.test.ts test/catalog.test.ts test/remediation-w3c-cli-tests.test.ts test/remediation-w4d-action.test.ts test/workflows.test.ts`. The full suite was not run by W4E (another process was running it).
+
+### 8.5 Full-suite runs, the CI failure since wave 1, and the 0.2.0 release
+
+| Step | Result |
+|---|---|
+| Full suite after integrating W4A–W4D (`npx vitest run`, 14-core VM) | 1230 passed, 2 failed: `test/lifecycle.test.ts` (the TOOL-033 source comments spelled out the catalog date a second and third time in `src/`) and the 70 MB stdio overflow test in `test/remediation-wp2-connect.test.ts` (request timed out before the overflow). Both fixed in `68d0361`. |
+| Full suite with the GitHub Actions environment (`CI=true GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=… MCP_REVIEW_CHECK_SKIP_BUILD=1`) | 1232 passed, 4 skipped, 0 failed. |
+| CI on `main` | Red on every push since the wave-1 integration (`cdfd53f` … `14cce30`), on every OS and Node version, always in `npm test`. The public job pages show one failing assertion: the 70 MB stdio overflow test got `MCP error -32001: Request timed out` instead of the overflow message. The SDK read buffer re-concatenates on every 64 KB chunk, so 70 MB takes ~40 s on a loaded 14-core box and more on a 2-core runner; the test's 20 s request timeout expired first. Fixed by a 170 s request timeout and a 300 s test timeout (`52f1909`). CI run 41390270506 on `52f1909`: success. |
+| Release | `[Unreleased]` → `## [0.2.0] - 2026-11-01`, `npm version minor`, docs regenerated (`e065cb1`). Annotated tag `v0.2.0` on `52f1909` pushed after the green CI run; `release.yml` builds, tests, publishes (trusted publishing or the `NPM_TOKEN` first-release step) and verifies `dist.attestations` before creating the GitHub release. The result is recorded in the status log. |
