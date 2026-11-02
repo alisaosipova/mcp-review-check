@@ -67,8 +67,9 @@ jobs:
           npm run readme:rules
           git diff --exit-code -- docs/RULES.md README.md docs/design/spec.md || { echo "::error::docs/RULES.md, README.md or docs/design/spec.md is stale: run 'npm run build && npm run readme:rules' and commit the result"; exit 1; }
       - name: No known vulnerabilities in runtime dependencies
-        # A new advisory in a dependency is not the pull request's fault: it fails the run on main, not on a PR.
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        # A new advisory in a dependency is not the pull request's fault: pull requests skip the audit; pushes to
+        # main (and manual runs) run it here, and audit.yml runs it weekly, so an advisory shows up without a push.
+        if: github.event_name != 'pull_request'
         run: npm audit --omit=dev --audit-level=high
       - name: Pack, install the tarball and run it
         run: |

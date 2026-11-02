@@ -67,14 +67,15 @@ function steps(job: Job): string[][] {
 
 describe('GitHub workflows', () => {
   it('finds the workflows and their jobs', () => {
-    expect(FILES).toEqual(['ci.yml', 'release.yml']);
+    expect(FILES).toEqual(['audit.yml', 'ci.yml', 'release.yml']);
     expect(jobs().length).toBeGreaterThanOrEqual(3);
   });
 
   it('every uses: is pinned to a 40-hex SHA', () => {
     const uses = FILES.flatMap((f) => code(readFileSync(join(DIR, f), 'utf8')).map((l) => l.match(/^\s*(?:-\s+)?uses:\s*(\S+)/)?.[1]).filter((u): u is string => !!u).map((u) => `${f}: ${u}`));
     expect(uses.length).toBeGreaterThan(0);
-    expect(uses.filter((u) => !/@[0-9a-f]{40}$/.test(u))).toEqual([]);
+    // `./` is this repository's own action.yml at the checked-out commit (the action job in ci.yml).
+    expect(uses.filter((u) => !/@[0-9a-f]{40}$/.test(u) && u !== 'ci.yml: ./')).toEqual([]);
   });
 
   it('every job has timeout-minutes', () => {
