@@ -5,7 +5,7 @@ import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
 import { deref, walkSchema } from './util/schemaWalk.js';
 import { firstVerb, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
-import { TEXT_CAP } from '../limits.js';
+import { TEXT_CAP, TOOL_LIST_MAX_BYTES, TOOL_LIST_MAX_COUNT } from '../limits.js';
 
 const MCP_TOOLS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools';
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -575,9 +575,28 @@ export const TOOL_032 = defineRule(
   },
 );
 
+export const TOOL_034 = defineRule(
+  {
+    id: 'TOOL-034', title: 'Tool list budget', severity: { claude: 'info', chatgpt: 'info' }, needs: ['tools'],
+    rationale: `Every tool definition is sent to the model as input tokens on each turn, and tool selection degrades with many tools: Anthropic notes it once a model has more than 30-50 tools, OpenAI suggests fewer than 20 functions. Linter-defined budget: ${TOOL_LIST_MAX_COUNT} tools or ${TOOL_LIST_MAX_BYTES / 1024} KiB of tools/list JSON.`,
+    fix: 'Consolidate related operations into fewer tools (for example one tool with an `action` parameter), shorten long descriptions and schemas, or hide rarely used tools behind a separate server or a search tool.',
+    sources: ['https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool', CLAUDE_DEFINE_TOOLS, 'https://developers.openai.com/api/docs/guides/function-calling'],
+  },
+  (snap) => {
+    const count = snap.tools.length;
+    let bytes = 0;
+    try { bytes = JSON.stringify(snap.tools).length; } catch { /* not serializable: no size */ }
+    const over: string[] = [];
+    if (count > TOOL_LIST_MAX_COUNT) over.push(`${count} tools (budget ${TOOL_LIST_MAX_COUNT})`);
+    if (bytes > TOOL_LIST_MAX_BYTES) over.push(`${Math.round(bytes / 1024)} KiB of tool definitions (budget ${TOOL_LIST_MAX_BYTES / 1024} KiB, roughly ${Math.round(bytes / 4 / 1000)}k context tokens)`);
+    if (!over.length) return [];
+    return [{ message: `tool list exceeds the linter-defined budget: ${over.join(', ')}; every definition costs context tokens on each turn and many tools make selection less accurate. Consolidate related tools or hide rarely used ones.` }];
+  },
+);
+
 export const toolRules = [
   TOOL_001, TOOL_002, TOOL_003, TOOL_004, TOOL_005, TOOL_006, TOOL_007, TOOL_008, TOOL_009,
   TOOL_023, TOOL_024, TOOL_025, TOOL_026, TOOL_027, TOOL_028, TOOL_029, TOOL_030, TOOL_031, TOOL_032,
-  TOOL_033,
+  TOOL_033, TOOL_034,
 ];
 

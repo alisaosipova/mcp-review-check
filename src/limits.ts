@@ -13,6 +13,10 @@ export const ID_CAP = 1024 * 1024;
 export const HTML_CAP = 2 * 1024 * 1024;
 /** SDK error messages (they can carry a whole HTML error page) before cleanErrorMessage. */
 export const ERROR_BODY_CAP = 64 * 1024;
+/** TOOL-034, linter-defined: more tools than this in tools/list is reported as a context budget concern. */
+export const TOOL_LIST_MAX_COUNT = 40;
+/** TOOL-034, linter-defined: JSON.stringify(tools).length (UTF-16 code units, about bytes for ASCII) above this is reported. */
+export const TOOL_LIST_MAX_BYTES = 64 * 1024;
 /** UI resources read per run (resources/read for every ui:// URI the tools and resources list). */
 export const UI_READS_CAP = 50;
 

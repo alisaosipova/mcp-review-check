@@ -130,6 +130,11 @@ const cases: Record<string, Case> = {
   },
   // the MCP specification allows '.', the Claude and OpenAI APIs do not
   'TOOL-033': { pos: one(tool({ name: 'notes.search' })), neg: one(tool({ name: 'notes_search-v2' })), severity: 'error', match: /"\."/ },
+  // 40 tools is the budget, not over it
+  'TOOL-034': {
+    pos: snap({ tools: Array.from({ length: 41 }, (_, i) => tool({ name: `search_notes_${i}` })) }),
+    neg: snap({ tools: Array.from({ length: 40 }, (_, i) => tool({ name: `search_notes_${i}` })) }), severity: 'info',
+  },
 };
 
 describe('TOOL rules', () => {
