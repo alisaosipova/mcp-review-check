@@ -281,4 +281,105 @@ export const TOOL_022 = defineRule(
   }),
 );
 
-export const schemaRules = [TOOL_016, TOOL_017, TOOL_018, TOOL_019, TOOL_020, TOOL_021, TOOL_022];
+// TOOL-035 vocabularies. Keywords: JSON Schema draft-04 to 2020-12 (core, applicator, validation, meta-data,
+// format, content, unevaluated), OpenAPI 3.x schema-object extensions, and annotations common in MCP servers.
+// Fixed list on purpose: only keys one edit away from one of these are reported, never "unknown" keys in general.
+export const SCHEMA_KEYWORDS = new Set([
+  '$schema', '$id', '$ref', '$anchor', '$dynamicRef', '$dynamicAnchor', '$vocabulary', '$comment', '$defs', '$recursiveRef', '$recursiveAnchor',
+  'id', 'definitions', 'dependencies',
+  'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else', 'dependentSchemas', 'prefixItems', 'items', 'additionalItems', 'contains',
+  'properties', 'patternProperties', 'additionalProperties', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties',
+  'type', 'enum', 'const', 'multipleOf', 'maximum', 'exclusiveMaximum', 'minimum', 'exclusiveMinimum', 'maxLength', 'minLength', 'pattern',
+  'maxItems', 'minItems', 'uniqueItems', 'maxContains', 'minContains', 'maxProperties', 'minProperties', 'required', 'dependentRequired',
+  'title', 'description', 'default', 'deprecated', 'readOnly', 'writeOnly', 'examples', 'format',
+  'contentEncoding', 'contentMediaType', 'contentSchema',
+  'nullable', 'discriminator', 'xml', 'externalDocs', 'example',
+]);
+// Only keywords this long are typo targets: one edit away from `if`, `not`, `id`, `type` or `enum` is too often a real word.
+const TYPO_MIN = 5;
+
+/** Formats of JSON Schema 2020-12 (validation §7.3), earlier drafts, and the OpenAPI format registry (spec.openapis.org/registry/format). */
+export const KNOWN_FORMATS = new Set([
+  'date-time', 'date', 'time', 'duration', 'email', 'idn-email', 'hostname', 'idn-hostname', 'ipv4', 'ipv6', 'uri', 'uri-reference',
+  'iri', 'iri-reference', 'uuid', 'uri-template', 'json-pointer', 'relative-json-pointer', 'regex',
+  'host-name', 'ip-address', 'color', 'utc-millisec', 'style', 'phone',
+  'base64url', 'binary', 'byte', 'char', 'commonmark', 'date-time-local', 'decimal', 'decimal128', 'double-int', 'double', 'float', 'html',
+  'http-date', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'ipv4-cidr', 'ipv6-cidr', 'language', 'media-range',
+  'password', 'sf-binary', 'sf-boolean', 'sf-decimal', 'sf-integer', 'sf-string', 'sf-token', 'time-local', 'unixtime',
+]);
+
+/** True when the Levenshtein distance between a and b is exactly 1 (one insertion, deletion or substitution). */
+export function editDistanceOne(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+
+// Singular forms more than one edit away from the plural keyword.
+const SINGULAR: Record<string, string> = {
+  property: 'properties', additionalProperty: 'additionalProperties', patternProperty: 'patternProperties', unevaluatedProperty: 'unevaluatedProperties',
+};
+
+/** The known keyword `key` is probably a misspelling of, if any. */
+export function keywordTypo(key: string): string | undefined {
+  if (SCHEMA_KEYWORDS.has(key) || key.startsWith('x-')) return undefined;
+  if (Object.prototype.hasOwnProperty.call(SINGULAR, key)) return SINGULAR[key];
+  for (const kw of SCHEMA_KEYWORDS) if (kw.length >= TYPO_MIN && editDistanceOne(key, kw)) return kw;
+  // A swap of two adjacent letters (`requried`) is one edit in the common reading of "typo".
+  for (const kw of SCHEMA_KEYWORDS) {
+    if (kw.length < TYPO_MIN || kw.length !== key.length) continue;
+    const d = [...kw].map((c, i) => (c === key[i] ? -1 : i)).filter((i) => i >= 0);
+    if (d.length === 2 && d[1] === d[0] + 1 && kw[d[0]] === key[d[1]] && kw[d[1]] === key[d[0]]) return kw;
+  }
+  return undefined;
+}
+
+// Subschemas under these keys see properties declared by a sibling or parent, so their `required` is not checked.
+const SHARED_SCOPE = /\/(allOf|anyOf|oneOf|not|if|then|else|dependentSchemas|dependencies)(\/|$)/;
+
+export const TOOL_035 = defineRule(
+  {
+    id: 'TOOL-035', title: 'Schema lint: dangling required, keyword typos, unknown format', severity: { spec: 'info' }, needs: ['tools'],
+    rationale: 'Validators ignore unknown keywords and unknown formats, so a misspelt `propeties` or `requried` silently drops the constraint, '
+      + 'and a `required` entry naming a property that is not declared (in a schema that does not admit extra properties) is usually a typo that hosts cannot satisfy.',
+    fix: 'Fix the keyword spelling, declare the required property (or drop it from `required`), and use a format from JSON Schema 2020-12 or the OpenAPI format registry.',
+    sources: [
+      'https://json-schema.org/draft/2020-12/json-schema-validation',
+      'https://json-schema.org/draft/2020-12/json-schema-core',
+      'https://spec.openapis.org/registry/format/',
+      'https://modelcontextprotocol.io/specification/2026-07-28/basic#json-schema-usage',
+    ],
+  },
+  (snap) => perTool(snap, (t) => {
+    const out: RawFinding[] = [];
+    for (const key of ['inputSchema', 'outputSchema'] as const) {
+      walkSchema(t[key], (v) => {
+        const at = `${key}${v.path === '/' ? '' : v.path}`;
+        const n = v.node;
+        // (a) dangling required
+        if (Array.isArray(n.required) && isObj(n.properties) && !SHARED_SCOPE.test(v.path)) {
+          const open = n.additionalProperties === true || isObj(n.additionalProperties) || n.patternProperties !== undefined
+            || n.unevaluatedProperties === true || isObj(n.unevaluatedProperties)
+            || ['allOf', 'anyOf', 'oneOf', '$ref', '$dynamicRef', 'if', 'dependentSchemas', 'dependencies'].some((k) => n[k] !== undefined);
+          const props = n.properties;
+          const missing = open ? [] : n.required.filter((r): r is string => isStr(r) && !Object.prototype.hasOwnProperty.call(props, r));
+          if (missing.length) out.push({ path: at, message: `${key} requires ${missing.map((m) => `"${m}"`).join(', ')}, not declared in properties` });
+        }
+        // (b) misspelt keywords: the node's own keys are keywords (property names live inside `properties`)
+        for (const k of Object.keys(n)) {
+          const kw = keywordTypo(k);
+          if (kw) out.push({ path: at, message: `${key} has "${k}", probably a misspelling of "${kw}" (ignored by validators)` });
+        }
+        // (c) unknown format
+        if (isStr(n.format) && !KNOWN_FORMATS.has(n.format)) {
+          out.push({ path: at, message: `${key} uses format "${n.format.slice(0, 80)}", not a JSON Schema 2020-12 or OpenAPI registry format` });
+        }
+      });
+    }
+    return out;
+  }),
+);
+
+export const schemaRules = [TOOL_016, TOOL_017, TOOL_018, TOOL_019, TOOL_020, TOOL_021, TOOL_022, TOOL_035];

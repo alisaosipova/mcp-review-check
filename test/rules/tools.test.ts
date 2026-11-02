@@ -135,6 +135,11 @@ const cases: Record<string, Case> = {
     pos: snap({ tools: Array.from({ length: 41 }, (_, i) => tool({ name: `search_notes_${i}` })) }),
     neg: snap({ tools: Array.from({ length: 40 }, (_, i) => tool({ name: `search_notes_${i}` })) }), severity: 'info',
   },
+  // a property literally named "require" is not the misspelt keyword
+  'TOOL-035': {
+    pos: one(tool({ inputSchema: { type: 'object', properties: { query: prop() }, require: ['query'] } })), match: /misspelling of "required"/,
+    neg: one(tool({ inputSchema: { type: 'object', properties: { query: prop(), require: { type: 'boolean', description: 'Require a match' } }, required: ['query'] } })), severity: 'info',
+  },
 };
 
 describe('TOOL rules', () => {
