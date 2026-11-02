@@ -9,12 +9,12 @@
 > <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE -->; Node 20.19+ is required, so the Node 18 notes in §4.4 and milestone M0 are historical, and the test
 > runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
 > the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
-> and the CLI gained options such as `--max-duration`, `--quiet`, `--checklist`, `--local`, `--no-local` and `explain`.
+> and the CLI gained options such as `--max-duration`, `--fail-on-incomplete`, `--baseline`, `--quiet`, `--checklist`, `--local`, `--no-local` and `explain`.
 > See CHANGELOG.md for the full list. Many detection patterns quoted in §2 (INJ, DATA, POL, APPS, AUTH, SPEC, TOOL and RT rules)
 > were narrowed or extended after 0.1.0 to fix false positives; CHANGELOG.md names each change, and the code in
 > `src/rules/` is authoritative where this document quotes an older pattern.
 
-Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md), not here.
+Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22; the vendor tool-name and tool-budget limits behind TOOL-002, TOOL-033 and TOOL-034 were checked on 2026-11-01). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md). The behaviour changes of 0.2.0 that alter a contract described here (exit codes §3.2, stopped runs §3.3, `--baseline` §3.5, the GitHub Action §3.6, the package surface §4.1, report fields §4.2 and §5.3, TOOL-002 and TOOL-033..035 in §2.3, SPEC-016 in §2.2, and the answers to Q5–Q8 in §8) are written into this document too.
 
 `mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 20.19 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 
@@ -357,6 +357,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
   - `code` is not an integer → error.
   - Only for responses to 2026-07-28 requests (`observedError.modern`, or era `modern` when unknown): code in [-32099, -32020] but not one of -32020/-32021/-32022 → error, and -32002 or -32042 → error ("removed in 2026-07-28"). 2025-11-25 defines -32042 (URL elicitation required) and predates the range policy, so legacy responses get only the integer and id checks.
   - Response `id` differs from the request id and is not `null` → **warning**. Example: DeepWiki returns `"server-error"`.
+  - A successful response (a `result`, no `error`) whose `id` is not the request's (strict comparison: `"6"` does not echo `6`) → **warning** "`<source>`: result answers another request id (response id X, request id Y)". Such an entry (`observedError.result: true`, with the request `method`) has no `code`, so the code checks do not apply to it. When the response is to `tools/list`, `resources/list` or `prompts/list` and SPEC-020 reports that listing as failed because of the mismatch, SPEC-016 leaves it to SPEC-020, so one exchange is not reported twice.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#error-codes, https://www.jsonrpc.org/specification
 
 **SPEC-017 Icons well-formed.** Severity: spec=warning.
@@ -394,9 +395,9 @@ All TOOL rules need `tools`. The message names `tool.name`.
 - Fix: rename using only letters, digits, `_`, `-` and `.`.
 - Source: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 
-**TOOL-002 Tool name at most 64 characters.** Severity: claude=error.
-- Detect: `[...name].length > 64`.
-- Source: https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy
+**TOOL-002 Tool name at most 64 characters.** Severity: claude=error, chatgpt=error.
+- Detect: `[...name].length > 64`. The Claude cap comes from the directory policy (the Claude API itself accepts 128 characters); the OpenAI API rejects function names over 64 characters. The character set is TOOL-033.
+- Source: https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy, https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
 
 **TOOL-003 Tool names unique.** Severity: chatgpt=error, spec=warning.
 - Detect: exact duplicates across all pages → finding. Names that are equal only when compared case-insensitively → **info**.
@@ -503,7 +504,7 @@ All TOOL rules need `tools`. The message names `tool.name`.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#ref-resolution
 
 **TOOL-020 Schema complexity bounded.** Severity: spec=info.
-- Detect: depth over 10 or more than 200 subschemas *(linter-defined)*.
+- Detect, for each of `inputSchema` and `outputSchema`: depth over 10 or more than 200 subschemas *(linter-defined)*.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#composition-keyword-resource-use
 
 **TOOL-021 x-mcp-header constraints.** Severity: spec=error.
@@ -582,6 +583,22 @@ All TOOL rules need `tools`. The message names `tool.name`.
   - Present but not an array, or an entry type not in {noauth, oauth2}, or oauth2 `scopes` not a string[] → **error**.
   - An oauth2 scope that is not in PRM `scopes_supported` → **warning**.
 - Source: https://developers.openai.com/plugins/build/auth
+
+**TOOL-033 Tool name matches the vendor API pattern.** Severity: claude=error, chatgpt=error.
+- Detect: a string name that is empty or contains a character outside `[A-Za-z0-9_-]`. The message lists each offending character once (up to 10) and the limits: Claude API `^[a-zA-Z0-9_-]{1,128}$`, OpenAI API a-z, A-Z, 0-9, `_` and `-`, at most 64 characters. Length over 64 is TOOL-002; a non-string name is TOOL-001. The `.` that TOOL-001 (MCP specification) allows is an error here, because both vendor APIs reject it.
+- Source: https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools, https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
+
+**TOOL-034 Tool list budget.** Severity: claude=info, chatgpt=info.
+- Detect: `tools.length > 40` or `JSON.stringify(tools).length > 65536` *(linter-defined, `TOOL_LIST_MAX_COUNT` / `TOOL_LIST_MAX_BYTES` in `src/limits.ts`)*, measured after the input caps (16 KB per string, README "Input caps"). One finding per server. The message gives the count and size, an estimate of context tokens (chars / 4), and suggests consolidating related tools or hiding rarely used ones. Anthropic notes that tool selection degrades past 30–50 tools; OpenAI suggests fewer than 20 functions at the start of a turn. The MCP specification sets no budget, so `spec` is not a platform.
+- Source: https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool, https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools, https://developers.openai.com/api/docs/guides/function-calling
+
+**TOOL-035 Schema lint: dangling required, keyword typos, unknown format.** Severity: spec=info.
+- Scope: every node `walkSchema` visits in `inputSchema` and `outputSchema` (properties, items, combinators, `$defs`, local `$ref` targets).
+- Detect:
+  - (a) a node with its own `properties` whose `required` names a key not in `properties`. Skipped when the node admits extra keys (`additionalProperties` true or a schema, `patternProperties`, `unevaluatedProperties` true or a schema), composes properties (`allOf`, `anyOf`, `oneOf`, `$ref`, `$dynamicRef`, `if`, `dependentSchemas`, `dependencies`), or sits under `allOf/anyOf/oneOf/not/if/then/else/dependentSchemas/dependencies`.
+  - (b) a node key that is not a known keyword and is one edit (insert, delete, substitute, or adjacent swap) from a known keyword of at least 5 characters, or a singular form of a plural keyword (`property`, `additionalProperty`, `patternProperty`, `unevaluatedProperty`). Known keywords: draft-04 to 2020-12 plus OpenAPI `nullable`, `discriminator`, `xml`, `externalDocs`, `example`. Keys starting with `x-` are ignored; property names are never compared.
+  - (c) a string `format` outside JSON Schema 2020-12 §7.3, the draft-03/04 legacy names and the OpenAPI format registry.
+- Source: https://json-schema.org/draft/2020-12/json-schema-validation, https://json-schema.org/draft/2020-12/json-schema-core, https://spec.openapis.org/registry/format/, https://modelcontextprotocol.io/specification/2026-07-28/basic#json-schema-usage
 
 ### 2.4 INJ: prompt injection and model manipulation
 Scope: the `corpus(snap)` from §1.5. Every INJ finding quotes the matched snippet (up to 120 characters, with hidden characters escaped as `\u{...}`) and its location.
@@ -1133,7 +1150,10 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | When given, the full report goes to the file and a one-line summary goes to stderr. If the file cannot be written, the report goes to stdout with an error message and exit 2. |
 | `--timeout <ms>` | `30000` | Per request, at most 2^31−1−1000 ms (Node clamps larger timers to 1 ms). Connect uses `min(timeout, 15000)`, `--active` calls `min(timeout, 240000)`. 2026-07-28 JSON-RPC calls read the response body within the request's own timeout; probes cap the body at 256 KB and 10 s. The GET probe uses 5 s and the TLS check 10 s. |
+| `--max-duration <ms>` | no limit | Overall deadline for the whole check; a stop after the handshake keeps the partial results (§3.3) and exits 4 (§3.2). |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. |
+| `--fail-on-incomplete` | off | Exit 3 on a partial check (`coverage.toolLevel` `auth-required`, `token-rejected` or `list-failed`), §3.2. |
+| `--baseline <file>` | — | A JSON report of an earlier run; its findings are known and only new findings count (§3.5). |
 | `--active` | off | Enables the RT rules, which call read-only tools. |
 | `--active-auth` | off | Enables AUTH-019..021. **Creates a DCR client** on your authorization server. The CLI prints this notice. |
 | `--tool-args <file>` | — | JSON `{toolName: argsObject}` for RT calls. |
@@ -1149,13 +1169,16 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 ### 3.2 Exit codes
 | Code | Meaning |
 |---|---|
-| 0 | Completed, below the `--fail-on` threshold |
-| 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`) |
-| 2 | Usage or config error, or `--output` could not be written |
-| 3 | Fatal: could not reach the server or complete any handshake (a report is still emitted, containing the SRV-003 error), `--max-duration` stopped the check, or an unexpected internal error (`fatal:` and the stack on stderr) |
+| 0 | Completed, below the `--fail-on` threshold (with `--baseline`: no new finding reaches it) |
+| 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`); with `--baseline`, counted over new findings only |
+| 2 | Usage or config error (including a `--baseline` file that is missing or not a JSON report of mcp-review-check), or `--output` could not be written |
+| 3 | Fatal: could not reach the server or complete any handshake (a report is still emitted, containing the SRV-003 error), also when `--max-duration` ran out before the handshake; with `--fail-on-incomplete`, a partial check (`coverage.toolLevel` is `auth-required`, `token-rejected` or `list-failed`); or an unexpected internal error (`fatal:` and the stack on stderr) |
+| 4 | `--max-duration` stopped the check after the handshake (`limits.stopped` set, no fatal error), at any `--fail-on` and with or without `--fail-on-incomplete`; the Result line reads `INCOMPLETE (stopped at --max-duration during <phase>)` and JSON `summary.failed` is `true`. New in 0.2.0; 0.1.x exited 3 |
 | 128+N | Ended by signal N (130 SIGINT, 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP); no report is written |
 
-A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code follows `--fail-on`. A token the server rejects is not fatal either: the check is partial (`token-rejected`) and the exit code follows `--fail-on`. The README's [Exit codes](../../README.md#exit-codes) section is authoritative for the details. Open questions on this contract (a separate code for `--max-duration`, a non-zero code for a rejected token) are listed in §8 (Q5, Q6).
+Precedence: fatal (3) → stopped (4) → partial with `--fail-on-incomplete` (3) → gate (1) → 0.
+
+A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code follows `--fail-on`. A token the server rejects is not fatal either: the check is partial (`token-rejected`) and, without `--fail-on-incomplete`, the exit code follows `--fail-on`. In GitHub Actions a partial check always adds one `::warning` titled `mcp-review-check` naming the reason and that tool-level checks were skipped; exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause. The README's [Exit codes](../../README.md#exit-codes) section is authoritative for the details. Exit 4 and `--fail-on-incomplete` answer §8 Q5 and Q6.
 
 ### 3.3 Run flow (HTTP target)
 1. **Validate the URL.** Store `urlAsEntered` byte-for-byte for the AUTH-005 and APPS-011 comparisons. Evaluate AUTH-001 from the query string.
@@ -1186,6 +1209,8 @@ A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code
 
 stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. Capture stderr (the last 4 KB) and `onerror` parse failures for SRV-018. After that, steps 6–9 apply. The auth and network rules are skipped with the reason "stdio target".
 
+**Stopped by `--max-duration`.** The run goes through the phases `connect`, `auth probe`, `listing`, `UI resource reads`, `wire probes`, `tools re-list`, `text-only tools/list` and `active tool calls` (`PHASES` in `src/snapshot.ts`), skipping the ones it does not need. When `--max-duration` runs out, the report covers what ran. Each wire probe and each `--active` call is in the snapshot as soon as it finishes; the JSON-RPC errors and 2026-07-28 results seen so far are kept, and all of it goes through redaction and the input caps. `limits.stopped` names the phase that was cut short (`phase`), the phases that finished (`completed`) and the ones that did not (`unfinished`: the cut phase and every later one). A rule that reads data of an unfinished phase (a probe that never ran, the partial active calls, the observed errors or modern results gathered over the whole run, a listing, UI read, re-list or auth probe that did not finish) reports what it finds there. If it finds nothing, it is listed as skipped with reason `stopped by --max-duration` and is not counted as run, because finding nothing in partial data is not a pass. Rules over the request log and latency samples are judged on the requests that were made. A deadline that lands while connections are closing, after every check has run, does not mark the run as stopped. Two known gaps: the Origin probes come back from one call, so a stop inside it drops the Origin probes already made, and `clientInfoVariants` (RT-012) is published only when all variants finished.
+
 ### 3.4 Auth probe and coverage messaging
 - The probe sequence is the one in AUTH-002..016. All requests are GETs, plus one invalid-token POST. Nothing is created.
 - When the server needs auth and no valid `--bearer` was given:
@@ -1193,6 +1218,17 @@ stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. C
   - Every rule that needs tools, resources, prompts, ui or active is listed as skipped.
   - The report shows a prominent notice: **"Server requires OAuth. Auth checks ran; tool, resource and UI checks need `--bearer <token>` (obtain a token via your OAuth flow or a test account)."**
 - When `--bearer` is given but rejected (401): the same notice appears, worded as "token rejected".
+
+### 3.5 Baseline (`--baseline <report.json>`)
+`src/baseline.ts`, added in 0.2.0, so CI can adopt the linter on a server with existing findings and fail only on new ones.
+- **Input.** A report written by `--format json` (UTF-8, UTF-8 with BOM, UTF-16LE with BOM). It must be a JSON object with `tool.name === 'mcp-review-check'`, `schemaVersion` between 1 and the current one, and a `findings` array whose entries have a string `ruleId`, a string-array `platforms` and string-or-absent `tool`, `resource`, `path` and `message`. Anything else, an empty path, or a missing or unreadable file is a usage error (exit 2) before connecting; the messages never quote the file.
+- **Identity.** Rule ID + `tool` + `resource` + `path` (the basis of the SARIF `partialFingerprints`), with platforms as a covering condition: a finding is known when an unused baseline entry with the same key lists all its platforms (a baseline for `--target all` covers a run for `--target claude`, not the reverse). Each baseline entry covers one finding, so one more repeat than the baseline had is new. Among several entries on the same key, the one whose message matches after replacing every number with `#` is taken first, then any free one, so a reworded message or a changed number stays known. SRV-020 (the era note) is never baselined. Findings are matched in their redacted form, as the baseline was written.
+- **Effect.** Known findings no longer count toward `--fail-on`, the verdicts, the `errors`/`warnings`/`info` counts or the GitHub annotations. The score still counts every finding: it describes the server, not the delta.
+- **Output.** JSON lists every finding with `baselined: true|false` and adds `summary.baselined` (`schemaVersion` stays 1, the fields are additive). SARIF sets `baselineState` (`new` / `unchanged`, SARIF 2.1.0 §3.27.24) on every result and `runs[0].properties.summary.baselined`. Text lists only the new findings plus one line `N known finding(s) from baseline, not listed: <rule IDs>` (rule IDs only, at most 8; not with `--quiet`); markdown and the job summary add a `Baseline` row to the summary table; the `--output` summary line adds `· N known from baseline`.
+- Not in 0.2.0: `--save-baseline`, tool-definition drift and `--diff-only`. `--format json --output <file>` already writes a usable baseline.
+
+### 3.6 GitHub Action
+`action.yml` at the repository root (0.2.0) is a composite action, so every release tag is also an action version (`uses: alisaosipova/mcp-review-check@v0.2.0`). It runs the CLI once with `--format sarif --output <sarif-file>`; the annotations and the job summary come from the same run (§3.2, `GITHUB_ACTIONS`). Inputs: `target` or `stdio` (exactly one), `platform` (`--target`), `fail-on`, `fail-on-spec`, `active`, `bearer` (exported only as `MCP_REVIEW_CHECK_TOKEN` and masked), `version` (the npm version or range, default the current `MAJOR.MINOR`), `sarif-file`, `upload-sarif`, `extra-args` and `cli-path` (run a built `dist/cli.js` instead of the npm package). Outputs: `exit-code` and `sarif-file`. The step exits with the CLI's exit code, and the SARIF is uploaded with a SHA-pinned `github/codeql-action/upload-sarif` also when the check fails. Every input reaches the script through `env:`. The README's "CI recipes" section documents the inputs, and CONTRIBUTING.md the release coupling of the `version` default.
 
 ---
 
@@ -1223,6 +1259,9 @@ test/
   fixtures/ good-server.mjs bad-server.mjs http-bridge.ts auth-server.ts modern-server.ts snapshots/*.json
   rules/*.test.ts  e2e-stdio.test.ts  e2e-http.test.ts  auth-probe.test.ts  report.test.ts  catalog.test.ts
 ```
+Later additions include `src/baseline.ts` (§3.5), `src/limits.ts` (input caps and linter-defined thresholds) and `action.yml` (§3.6).
+
+**Package surface.** The package is CLI-only. From 0.2.0 `package.json` has no `main`, and its `exports` map exposes only `./package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail and the internal modules are not an accidental public API. The `mcp-review-check` bin (`dist/cli.js`) is the supported interface.
 
 ### 4.2 Snapshot and rule contract
 ```ts
@@ -1290,8 +1329,21 @@ interface RawFinding {
 }
 interface Rule extends RuleMeta { check(snap: Snapshot): RawFinding[] }   // pure, synchronous, no I/O
 ```
+Later additions to the snapshot (see `src/snapshot.ts`; `coverage.toolLevel` also takes `'list-failed'` and `'stopped'`):
+```ts
+interface ObservedError {                         // in transport.observedErrors
+  source: string; requestId?: unknown; responseId?: unknown; code?: unknown; message?: unknown; modern?: boolean;
+  result?: boolean;   // a successful response whose id is not the request's (no code), SPEC-016
+  method?: string;    // the request's method, on result entries
+}
+const PHASES = ['connect', 'auth probe', 'listing', 'UI resource reads', 'wire probes', 'tools re-list', 'text-only tools/list', 'active tool calls'];
+interface Limits {                                // snap.limits, also in the JSON report
+  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' }>;
+  stopped?: { maxDurationMs: number; phase: string; completed?: string[]; unfinished?: string[] };   // §3.3
+}
+```
 - The engine:
-  - evaluates `needs` and records skipped rules with their reasons
+  - evaluates `needs` and records skipped rules with their reasons; on a snapshot with `limits.stopped`, also skips a rule that read data of an unfinished phase and found nothing (§3.3)
   - catches exceptions thrown by a rule and turns them into an `INTERNAL` info finding
   - applies §1.2 platform filtering and severity
   - applies `--ignore`
@@ -1423,12 +1475,12 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
   ```
   { tool: {name, version, catalogDate}, target, startedAt, durationMs,
     server: {url|command, serverInfo, era, protocolVersion, transport, auth},
-    coverage, summary: {errors, warnings, info, score, verdicts: {claude?, chatgpt?}, failed},
-    findings: [{ruleId, severity, platforms, severityByPlatform, title, message, tool?, resource?, path?, evidence?, fix, docs: string[]}],
+    coverage, limits, summary: {errors, warnings, info, score, verdicts: {claude?, chatgpt?}, failed, baselined?},
+    findings: [{ruleId, severity, platforms, severityByPlatform, title, message, tool?, resource?, path?, evidence?, fix, docs: string[], baselined?}],
     skipped: [{ruleId, reason}], ignored: [...], manual: [{id, platforms, text, docs}],
     disclaimer, contact: {text, url} | null }
   ```
-  Findings are not collapsed.
+  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3).
 - **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
 - **sarif:** SARIF 2.1.0.
   - `tool.driver` = mcp-review-check, with `rules[]` taken from the catalog (`id`, `shortDescription`, `helpUri` = first source, `properties.platforms`).
@@ -1437,6 +1489,7 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
   - `tool.driver.informationUri` is the project repository URL (`package.json` `repository.url`), never `CONTACT_URL`.
   - The output validates against the official SARIF 2.1.0 schema (vendored in `test/fixtures/sarif-schema-2.1.0.json`).
   - Manual items are excluded.
+  - With `--baseline`, every result carries `baselineState` `new` or `unchanged` and `runs[0].properties.summary.baselined` counts the known ones (§3.5).
   - Known limitation: GitHub code scanning cannot link these results to source lines.
 
 ### 5.4 CTA constant
@@ -1529,6 +1582,10 @@ export const CTA_TEXT = 'Need help getting your connector approved?';
 - **Q3:** Should listing and manifest linting (`--listing listing.json`, `--plugin plugin.json`) turn the MAN-002/015..024 items into automated checks? This is planned for v1.1.
 - **Q4:** The score weights (12/4, cap of 3 per rule) are provisional. Revisit them after running the tool on real servers.
 - **Q5:** Should a run stopped by `--max-duration` get its own exit code (for example 4) instead of sharing 3 with "could not connect" and internal errors? CI could then tell "too slow" from "unreachable"; it changes the documented exit-code contract (§3.2), so it waits for a minor release.
+  **Decided 2026-11-01 (0.2.0):** yes. A stop after the handshake (`limits.stopped` set, no fatal error) exits 4 at any `--fail-on`, so CI can tell "too slow" (4) from "unreachable" (3). A deadline that runs out before the handshake is a connect failure and stays exit 3. The change ships in the minor release 0.2.0, as the stability policy allows for a contract change, and is listed under "Changed" in the CHANGELOG (§3.2).
 - **Q6:** Should a token the server rejects (`token-rejected`, tool checks skipped) fail the run, either always (exit 3) or behind an option such as `--fail-on-incomplete`? Today the exit code follows `--fail-on`, so a CI job with an expired token can pass with most checks skipped (a verdict without errors reads `INCOMPLETE`).
+  **Decided 2026-11-01 (0.2.0):** not by default; behind the opt-in `--fail-on-incomplete`. Without the flag the exit code keeps following `--fail-on`, so existing pipelines that check an OAuth server without a token keep their result. With it, any partial check (`auth-required`, `token-rejected`, `list-failed`) exits 3; a stop is exit 4 with or without it. Independently of the flag, the GitHub Actions output prints one `::warning` for a partial check, naming the reason and that tool-level checks were skipped, so a green job with skipped checks is visible (§3.2).
 - **Q7:** SARIF `level` maps the finding's highest severity over every platform (§5.3). Should it follow the gated platforms instead (so a spec-only error is a `note` without `--fail-on-spec`), or should an option such as `--sarif-level gated|max` choose?
+  **Decided 2026-11-01 (0.2.0):** keep the current mapping: SARIF `level` is the finding's highest severity over all platforms (§5.3), with no option. The gate is the exit code; SARIF describes the finding, and the difference is a format inconsistency, not a contract break.
 - **Q8:** Should APPS-013 count every `<a href>` in a widget as navigation that needs `redirect_domains`, not only `openExternal` / `ui/open-link`? It would add a ChatGPT warning to most widgets with links, and it is not verified that ChatGPT gates plain anchors.
+  **Decided 2026-11-01 (0.2.0):** keep APPS-013 scoped to `openExternal` / `ui/open-link`. Until it is verified that ChatGPT gates plain anchors, counting every `<a href>` would add an unsupported warning to most widgets with links.
