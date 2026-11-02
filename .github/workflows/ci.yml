@@ -82,3 +82,57 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           "$RUNNER_TEMP/smoke/node_modules/.bin/mcp-review-check" --stdio "node test/fixtures/good-server.mjs" --format json > "$RUNNER_TEMP/report.json"
           node -e "const r=require(process.argv[1]); if (r.schemaVersion!==1||r.summary.errors!==0) { console.error(r.summary); process.exit(1) }" "$RUNNER_TEMP/report.json"
+
+  action:
+    # The composite action in action.yml, on every OS (its script runs in bash, also bash 3.2 on macOS and Git Bash
+    # on Windows).
+    name: GitHub Action / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      # cli-path runs this checkout instead of the npm release, so the action is tested with the code it ships next
+      # to. No upload: a pull request from a fork cannot write code scanning results.
+      - name: A clean server passes
+        id: good
+        uses: ./
+        with:
+          stdio: node test/fixtures/good-server.mjs
+          cli-path: dist/cli.js
+          sarif-file: good.sarif
+          upload-sarif: 'false'
+      - name: A server with errors fails with exit code 1 and still writes the SARIF report
+        id: bad
+        continue-on-error: true
+        uses: ./
+        with:
+          stdio: node test/fixtures/bad-server.mjs
+          platform: claude
+          cli-path: dist/cli.js
+          sarif-file: bad.sarif
+          upload-sarif: 'false'
+      - name: Outputs follow the exit-code contract
+        shell: bash
+        env:
+          GOOD_CODE: ${{ steps.good.outputs.exit-code }}
+          GOOD_SARIF: ${{ steps.good.outputs.sarif-file }}
+          BAD_CODE: ${{ steps.bad.outputs.exit-code }}
+          BAD_SARIF: ${{ steps.bad.outputs.sarif-file }}
+          BAD_OUTCOME: ${{ steps.bad.outcome }}
+        run: |
+          echo "good: exit $GOOD_CODE, $GOOD_SARIF; bad: exit $BAD_CODE ($BAD_OUTCOME), $BAD_SARIF"
+          test "$GOOD_CODE" = 0 && test "$GOOD_SARIF" = good.sarif
+          test "$BAD_CODE" = 1 && test "$BAD_SARIF" = bad.sarif && test "$BAD_OUTCOME" = failure
+          node -e "for (const f of process.argv.slice(1)) { const s = JSON.parse(require('fs').readFileSync(f, 'utf8')); if (s.version !== '2.1.0' || !s.runs?.length) throw new Error(f + ' is not a SARIF 2.1.0 report') }" good.sarif bad.sarif

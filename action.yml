@@ -1,0 +1,126 @@
+name: mcp-review-check
+description: Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec review criteria.
+author: alisaosipova
+branding:
+  icon: check-circle
+  color: blue
+
+# One run of the CLI does everything: with GITHUB_ACTIONS=true it prints the findings as ::error/::warning
+# annotations on stderr and appends the markdown report to the job summary whatever --format is (src/cli.ts), so
+# the action runs it once with --format sarif --output <sarif-file>. Every input reaches the script through env,
+# never through ${{ }} inside the script, so no input value is parsed as shell code.
+inputs:
+  target:
+    description: URL of the MCP server to check. Required unless `stdio` is given; not both.
+    required: false
+    default: ''
+  stdio:
+    description: Command that starts a local MCP server over stdio (split by the CLI without a shell, as `--stdio "<command>"`). Required unless `target` is given.
+    required: false
+    default: ''
+  platform:
+    description: 'Directory to gate on, the CLI''s `--target`: claude, chatgpt or all (`both` is accepted as all).'
+    required: false
+    default: all
+  fail-on:
+    description: 'Exit 1 threshold, the CLI''s `--fail-on`: error, warning or never.'
+    required: false
+    default: error
+  fail-on-spec:
+    description: Also count MCP spec findings toward `fail-on` (`--fail-on-spec`).
+    required: false
+    default: 'false'
+  active:
+    description: Opt-in runtime checks (`--active`), which call the tools annotated readOnlyHint true.
+    required: false
+    default: 'false'
+  bearer:
+    description: Access token for the server. Pass a secret; it reaches the CLI only as MCP_REVIEW_CHECK_TOKEN, never on its command line. Empty keeps a MCP_REVIEW_CHECK_TOKEN set by the job.
+    required: false
+    default: ''
+  version:
+    description: npm version or range of mcp-review-check to run (bump with each release; see CONTRIBUTING.md).
+    required: false
+    default: '0.2'
+  cli-path:
+    description: Path to a built dist/cli.js to run with node instead of the npm package (for testing a checkout). Overrides `version`.
+    required: false
+    default: ''
+  sarif-file:
+    description: Where the SARIF report is written.
+    required: false
+    default: mcp-review-check.sarif
+  upload-sarif:
+    description: Upload the SARIF report to code scanning with github/codeql-action/upload-sarif (needs `security-events write`). Runs also when the check fails.
+    required: false
+    default: 'true'
+  extra-args:
+    description: More CLI options, split on whitespace (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`.
+    required: false
+    default: ''
+
+outputs:
+  exit-code:
+    description: 'Exit code of the CLI: 0 pass, 1 --fail-on threshold reached, 2 usage error, 3 could not connect, stopped by --max-duration or internal failure (0.2.0 and later: 4 stopped by --max-duration).'
+    value: ${{ steps.run.outputs.exit-code }}
+  sarif-file:
+    description: Path of the SARIF report (empty when none was written, for example on a usage error).
+    value: ${{ steps.run.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_STDIO: ${{ inputs.stdio }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_FAIL_ON_SPEC: ${{ inputs.fail-on-spec }}
+        INPUT_ACTIVE: ${{ inputs.active }}
+        INPUT_BEARER: ${{ inputs.bearer }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CLI_PATH: ${{ inputs.cli-path }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+      run: |
+        set -u
+        usage() { echo "::error title=mcp-review-check::$1"; echo "exit-code=2" >> "$GITHUB_OUTPUT"; echo "sarif-file=" >> "$GITHUB_OUTPUT"; exit 2; }
+        command -v node > /dev/null || usage "node is not on PATH: add actions/setup-node (Node 20.19 or newer) before this action"
+        if [ -n "$INPUT_TARGET" ] && [ -n "$INPUT_STDIO" ]; then usage "give either target or stdio, not both"; fi
+        if [ -z "$INPUT_TARGET" ] && [ -z "$INPUT_STDIO" ]; then usage "give target (a URL) or stdio (a command)"; fi
+        platform="$INPUT_PLATFORM"; [ "$platform" = both ] && platform=all
+        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON" --format sarif --output "$INPUT_SARIF_FILE")
+        [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
+        [ "$INPUT_ACTIVE" = true ] && args+=(--active)
+        # Split on whitespace only (read -a does no globbing or quote removal). ${x[@]+...}: under set -u, bash 3.2
+        # (macOS runners) treats an empty array as unbound.
+        if [ -n "$INPUT_EXTRA_ARGS" ]; then read -r -a extra <<< "$INPUT_EXTRA_ARGS"; args+=(${extra[@]+"${extra[@]}"}); fi
+        if [ -n "$INPUT_STDIO" ]; then args+=(--stdio "$INPUT_STDIO"); else args+=("$INPUT_TARGET"); fi
+        # The token goes through the environment only, so it is not in the process list or the rerun line.
+        if [ -n "$INPUT_BEARER" ]; then echo "::add-mask::$INPUT_BEARER"; export MCP_REVIEW_CHECK_TOKEN="$INPUT_BEARER"; fi
+        rm -f -- "$INPUT_SARIF_FILE"
+        if [ -n "$INPUT_CLI_PATH" ]; then
+          cli=(node "$INPUT_CLI_PATH")
+        else
+          # A version or range only: "npm:", "git+", a path or a URL would install another package under this name.
+          version_re='^[A-Za-z0-9.^~*+<>= -]+$'
+          [[ "$INPUT_VERSION" =~ $version_re ]] || usage "version must be an npm version or range, such as 0.2"
+          cli=(npx --yes "mcp-review-check@$INPUT_VERSION")
+        fi
+        set +e
+        "${cli[@]}" "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        if [ -f "$INPUT_SARIF_FILE" ]; then echo "sarif-file=$INPUT_SARIF_FILE" >> "$GITHUB_OUTPUT"; else echo "sarif-file=" >> "$GITHUB_OUTPUT"; fi
+        # Exit-code contract: 0 pass, 1 threshold, 2 usage, 3 could not connect / stopped / internal failure,
+        # 4 stopped by --max-duration (0.2.0 and later), 128+N signal. The step fails with the same code, so the
+        # job fails as a plain CLI step would; the upload below still runs.
+        exit "$code"
+    # always(): a failing check (exit 1) is exactly when the findings should reach code scanning.
+    - if: always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif-file != ''
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      with:
+        sarif_file: ${{ steps.run.outputs.sarif-file }}
