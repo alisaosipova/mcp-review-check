@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
 import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
@@ -41,6 +42,8 @@ Options:
   --target <t>            claude | chatgpt | all (default: all)
   --format <f>            text | json | markdown | sarif (default: text)
   --output <file>         Write the report to a file; print a summary line to stderr.
+  --json-output <file>    Also write the JSON report (as --format json prints it) to a file, whatever --format.
+  --save-baseline <file>  The same, under the baseline name: write it now, pass it to --baseline on later runs.
   --sarif-location <path> Repository-relative path the SARIF results point at (default: .mcp-review-check).
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
   --max-duration <ms>     Stop the whole check after this long and report what ran, exit 4 (default: no limit).
@@ -82,7 +85,7 @@ after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: B
 Exit codes:
   0       Completed, below the --fail-on threshold.
   1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec).
-  2       Usage or configuration error, or --output could not be written.
+  2       Usage or configuration error, or --output, --json-output or --save-baseline could not be written.
   3       Could not connect or complete a handshake (also when --max-duration ran out before it); with
           --fail-on-incomplete, a partial check (auth required, token rejected, tools/list failed); or an internal
           error of mcp-review-check itself (fatal: and a stack trace on stderr; please report it).
@@ -105,7 +108,7 @@ const OPTIONS = {
   stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
   target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
   timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
-  'fail-on-incomplete': { type: 'boolean' }, baseline: { type: 'string' },
+  'fail-on-incomplete': { type: 'boolean' }, baseline: { type: 'string' }, 'save-baseline': { type: 'string' }, 'json-output': { type: 'string' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -281,6 +284,14 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
 
     if (values.output === '') throw new UsageError('--output needs a file path');
+    // --save-baseline and --json-output: the JSON report, besides the primary output (the GitHub Action reads it).
+    const jsonOutputs = (['save-baseline', 'json-output'] as const).flatMap((opt) => {
+      const path = values[opt];
+      if (path === undefined) return [];
+      if (path === '') throw new UsageError(`--${opt} needs a file path`);
+      if (values.output !== undefined && format !== 'json' && resolve(path) === resolve(values.output)) throw new UsageError(`--${opt} and --output name the same file; --output gets the --format ${format} report`);
+      return [[`--${opt}`, path] as const];
+    });
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
     // "--ignore A,B" as many linters take it, besides --ignore A --ignore B.
@@ -420,16 +431,31 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
     const fromBaseline = baselined ? ` · ${baselined.length} known from baseline` : '';
     const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info${fromBaseline} · ${resultLine(report)}`;
+    // The JSON report for --save-baseline and --json-output: the --format json document, baselined marks included,
+    // rendered from the same redacted report. A file that cannot be written is exit 2, as for --output.
+    const jsonDoc = !jsonOutputs.length ? '' : format === 'json' ? body : render(report, 'json', textOpts, rerun, sarifLocation, baselined);
+    const written: string[] = [];
+    let writeErrors = '';
+    for (const [flag, path] of jsonOutputs) {
+      try {
+        writeFileSync(path, jsonDoc);
+        if (!written.includes(path)) written.push(path);
+      } catch (e) {
+        writeErrors += `error: cannot write ${flag} ${path}: ${(e as Error).message}\n`;
+      }
+    }
+    const jsonNote = written.length ? `JSON report written to ${written.join(', ')}` : '';
+    const finalCode = writeErrors ? 2 : code;
     if (values.output) {
       try {
         writeFileSync(values.output, body);
       } catch (e) {
         // The server was checked: print the report instead of losing it, and report the write failure as exit 2.
-        return { code: 2, stdout: body, stderr: `${stderr}error: cannot write --output ${values.output}: ${(e as Error).message}\n` };
+        return { code: 2, stdout: body, stderr: `${stderr}${writeErrors}error: cannot write --output ${values.output}: ${(e as Error).message}\n` };
       }
-      return { code, stdout: '', stderr: stderr + summaryLine + ` · report written to ${values.output}\n` };
+      return { code: finalCode, stdout: '', stderr: stderr + writeErrors + summaryLine + ` · report written to ${values.output}${jsonNote ? ` · ${jsonNote}` : ''}\n` };
     }
-    return { code, stdout: body, stderr };
+    return { code: finalCode, stdout: body, stderr: stderr + writeErrors + (jsonNote ? `mcp-review-check: ${jsonNote}\n` : '') };
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
       // parseArgs names an option without its "=value"; the rest of its message is not repeated.

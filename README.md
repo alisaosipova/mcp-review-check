@@ -76,6 +76,8 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--target claude\|chatgpt\|all` | `all` | `spec` rules always run and are reported; the exit code counts only the chosen directories (see [Exit codes](#exit-codes)). |
 | `--format text\|json\|markdown\|sarif` | `text` | |
 | `--output <file>` | stdout | Report to a file, one-line summary to stderr. If the file cannot be written, the report goes to stdout and the exit code is 2. |
+| `--json-output <file>` | | Also writes the JSON report to the file, whatever `--format`: the same document `--format json` prints (with `baselined` marks under `--baseline`), redacted the same way. For a job that wants a readable or SARIF report and a JSON file from one run. A file that cannot be written is exit 2 (the primary report is still printed or written). |
+| `--save-baseline <file>` | | The same JSON report under the baseline name: write it once, then pass the file to `--baseline` on later runs (see [CI recipes](#ci-recipes)). May be given with `--json-output`. |
 | `--sarif-location <path>` | `.mcp-review-check` | SARIF only: the repository-relative path every result points at (`artifactLocation.uri`). A path with a scheme, an absolute path or `..` is a usage error (exit 2) that does not repeat the value. The server URL or command is in `runs[0].properties.target`, redacted. Results carry `partialFingerprints` (rule, tool or resource, path), the run an `automationDetails.id` per path, and `informationUri` is the repository URL. |
 | `--timeout <ms>` | `30000` | Per request (at most 2147482647); HTTP connect uses `min(timeout, 15000)`, a stdio start the full timeout, `--active` tool calls `min(timeout, 241000)`. RT-005 reports a call that runs past Claude's documented 240 s tool timeout as an error for Claude and a warning for ChatGPT (use `--timeout 241000` to measure it); its 60 s (Claude) and 5 s (ChatGPT) thresholds are linter-defined. A call that gets no answer before a shorter `--timeout` is an RT-005 warning. The GET probe uses 5 s and the TLS check 10 s. |
 | `--max-duration <ms>` | no limit | Overall deadline for the whole check. When it runs out, the report covers what ran, says in which phase it stopped, and the verdicts read `INCOMPLETE`: after a handshake the run exits 4 at any `--fail-on` and reads `Result: INCOMPLETE (stopped at --max-duration during <phase>)`; before one it exits 3 and reads `FAIL (could not connect)`. |
@@ -105,7 +107,7 @@ Environment variables: `MCP_REVIEW_CHECK_TOKEN` is the default for `--bearer` (s
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold |
 | 1 | Completed, threshold reached for a `--target` directory (or for the spec with `--fail-on-spec`) |
-| 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID), or `--output` could not be written |
+| 2 | Usage or configuration error (an unknown option names the closest one; an unknown `--ignore` or `explain` ID), or `--output`, `--json-output` or `--save-baseline` could not be written |
 | 3 | Could not reach the server or complete any handshake, also when `--max-duration` ran out before the handshake (a report is still printed, with verdicts `INCOMPLETE` and no manual checklist); with `--fail-on-incomplete`, a partial check (`auth-required`, `token-rejected`, `list-failed`); or the linter itself failed unexpectedly (`fatal:` and a stack trace on stderr; please [report it](https://github.com/alisaosipova/mcp-review-check/issues/new?template=bug.yml)) |
 | 4 | `--max-duration` stopped the check after the handshake (whatever `--fail-on`, also with errors found before the stop): the report covers what ran. New in 0.2.0; 0.1.x exited 3 |
 | 128+N | Ended by signal N: 130 for SIGINT (Ctrl+C), 143 for SIGTERM (a CI job cancelled), 131 for SIGQUIT, 129 for SIGHUP. A stdio server is ended first, and no report is written. On Windows the exit code is set to the same 128+N |
@@ -237,15 +239,17 @@ jobs:
 
 `environment_url` is the URL your deployment tool reports for the environment ([deployment statuses](https://docs.github.com/en/rest/deployments/statuses)). A preview on a shared platform domain (`*.vercel.app`, `*.netlify.app`, ...) gets an SRV-005 info note, since the production server's domain should match your service. If previews sit behind a login wall, pass the bypass header your host documents with `--header` (header values are redacted). Drop `MCP_REVIEW_CHECK_TOKEN` if the server needs no auth. For other CI systems the same command works: the exit code is the result, and `--format json` or `--output` give a file to keep.
 
-**Fail only on new findings** — keep a JSON report of the accepted state in the repository and pass it with `--baseline`: known findings stay in the report but no longer fail the job, a new finding does. Refresh the file when you accept new findings:
+**Fail only on new findings** — keep a JSON report of the accepted state in the repository and pass it with `--baseline`: known findings stay in the report but no longer fail the job, a new finding does. Write the file once with `--save-baseline` (`--fail-on never` so the first run passes), commit it, and refresh it the same way when you accept new findings:
+
+```bash
+npx mcp-review-check@0.2 --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
+```
 
 ```yaml
       - run: npx -y mcp-review-check@0.2 --target claude --baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
 ```
 
-```bash
-npx mcp-review-check@0.2 --target claude --fail-on never --format json --output .mcp-review-check/baseline.json --stdio -- node dist/server.js
-```
+`--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline.
 
 **Fail when the token stops working** — without a valid token the tool checks are skipped and the run can still pass (the job gets a `::warning`). With a token in CI, add `--fail-on-incomplete` so that a missing, expired or rejected token fails the job (exit 3):
 
