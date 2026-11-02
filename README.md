@@ -194,7 +194,7 @@ Findings that apply to several platforms carry a severity per platform (for exam
 ### Example output
 
 ```
-mcp-review-check 0.2.0 · rules 2026-11-01 · target: all
+mcp-review-check 0.3.0 · rules 2026-11-01 · target: all
 Server  repo-wiki 0.1.0 · https://mcp.wiki.example/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth none
           2026-07-28 clients fall back to initialize. Not a defect.
