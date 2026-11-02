@@ -26,7 +26,9 @@ describe('input caps', () => {
     expect(limitsNotice(s)).toBe('3 oversized inputs truncated before pattern checks: tool big (80000 chars, cap 16 KB), instructions (16385 chars, cap 16 KB), UI resource ui://a (4194304 chars, cap 2 MB).');
   });
 
-  it('pathological descriptions no longer take seconds in the rules (80 000 characters under 2 s; API_NAMED was quadratic)', () => {
+  // A wall-clock bound: V8 coverage instrumentation slows the rules several times over, so the CI coverage job
+  // (MCP_REVIEW_CHECK_COVERAGE=1) skips it; the normal test run keeps it.
+  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('pathological descriptions no longer take seconds in the rules (80 000 characters under 2 s; API_NAMED was quadratic)', () => {
     // Free-form `sql` makes TOOL-026 look for a named API in the description; even uncapped, the rules stay linear.
     const s = snap({
       tools: Array.from({ length: 4 }, (_, i) => tool({

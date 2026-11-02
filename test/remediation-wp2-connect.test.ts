@@ -235,7 +235,9 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
     expect(JSON.stringify(snap.transport.probes.unknownMethod)).not.toContain('Not connected');
   }, 60000);
 
-  it('a message over the stdio buffer names the overflow on the failed read', async () => {
+  // 70 MB through the SDK read buffer takes minutes under V8 coverage instrumentation, so the CI coverage job
+  // (MCP_REVIEW_CHECK_COVERAGE=1) skips it; the normal test run keeps it.
+  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('a message over the stdio buffer names the overflow on the failed read', async () => {
     const snap = await stdio(['bigui', '70'], 170000); // the SDK read buffer re-concatenates on every 64 KB chunk, so 70 MB takes ~40 s on a loaded 14-core box and longer on a 2-core CI runner
     expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
   }, 300000); // see the timeout above; CI failed this test with the 20 s request timeout

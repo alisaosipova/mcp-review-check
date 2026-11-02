@@ -42,6 +42,38 @@ jobs:
         env:
           MCP_REVIEW_CHECK_SKIP_BUILD: '1'
 
+  coverage:
+    name: Coverage (Node 24 / ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      # Fails below the thresholds in vitest.config.ts (5 points under the last full measurement).
+      # MCP_REVIEW_CHECK_COVERAGE skips the two tests whose timing V8 instrumentation breaks: the 70 MB stdio overflow
+      # (test/remediation-wp2-connect.test.ts) and the wall-clock bound on the input caps (test/limits.test.ts).
+      - name: Tests with coverage
+        continue-on-error: false
+        run: npm run test:coverage
+        env:
+          MCP_REVIEW_CHECK_SKIP_BUILD: '1'
+          MCP_REVIEW_CHECK_COVERAGE: '1'
+      # The report also when the thresholds fail (reportOnFailure), to see where coverage dropped.
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: error
+          retention-days: 14
+
   package:
     name: Docs and package
     runs-on: ubuntu-latest
