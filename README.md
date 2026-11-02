@@ -63,7 +63,7 @@ npx mcp-review-check explain TOOL-011
 npx mcp-review-check --list-rules TOOL --format json
 ```
 
-On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.1` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
+On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.2` line in [CI recipes](#ci-recipes) and [Docker Compose](#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
 
@@ -173,7 +173,7 @@ Stdio servers and HTTP targets on a host without a dot (`localhost`, a container
 
 ### GitHub Actions
 
-When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
+When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. To run the check as a workflow step with a SARIF upload, use [the GitHub Action](#ci-recipes) (`uses: alisaosipova/mcp-review-check@v0.2.0`). There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
 
 The markdown report (and so the job summary) has an Evidence column with the text a rule matched, and a `rerun: npx mcp-review-check …` line with the options of the run, secrets redacted, to reproduce it locally (`--quiet` and `--checklist` are left out: they change only the text report). On Windows the line quotes arguments with double quotes, for cmd.exe (an argument that holds both `"` and one of `& | < > ^`, such as `--stdio "node s.js --filter \"a|b\""`, can split in cmd.exe, which ignores the backslash before `"`: check such a line before you run it; in PowerShell, quote again an argument that contains `"`, `$` or a backtick: PowerShell reads `\"` and `$` inside double quotes its own way; not yet tried on a real Windows machine); elsewhere with single quotes, for `sh`.
 
@@ -213,7 +213,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci && npm run build
-      - run: npx -y mcp-review-check@0.1 --target claude --stdio -- node dist/server.js
+      - run: npx -y mcp-review-check@0.2 --target claude --stdio -- node dist/server.js
 ```
 
 **A preview deployment URL** — check each successful deployment (for example, a preview per pull request) through the [`deployment_status`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#deployment_status) event:
@@ -229,7 +229,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: npx -y mcp-review-check@0.1 "$PREVIEW_URL/mcp" --target claude
+      - run: npx -y mcp-review-check@0.2 "$PREVIEW_URL/mcp" --target claude
         env:
           PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
           MCP_REVIEW_CHECK_TOKEN: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
@@ -258,6 +258,57 @@ npx mcp-review-check@0.2 --target claude --fail-on never --format json --output 
 
 A run cut off by `--max-duration` exits 4, so a step can tell a slow server from an unreachable one (exit 3): for example, `npx -y mcp-review-check@0.2 "$MCP_URL" --max-duration 120000 || [ $? -eq 4 ]` lets a slow run pass the step and still fails on every other non-zero code.
 
+**The GitHub Action** — the same check as a step, with annotations, the job summary and a SARIF upload to code scanning:
+
+```yaml
+name: mcp-review-check
+on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write # upload-sarif; drop it with upload-sarif: false
+  actions: read          # upload-sarif in a private repository
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci && npm run build
+      - uses: alisaosipova/mcp-review-check@v0.2.0
+        with:
+          stdio: node dist/server.js
+          platform: claude
+```
+
+For a deployed server, give `target` instead of `stdio` and pass the token as a secret:
+
+```yaml
+      - uses: alisaosipova/mcp-review-check@v0.2.0
+        with:
+          target: https://staging.example.com/mcp
+          bearer: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
+          fail-on: warning
+```
+
+| Input | Default | Notes |
+|---|---|---|
+| `target` | | Server URL. Give `target` or `stdio`, not both. |
+| `stdio` | | Command that starts a local server, as `--stdio "<command>"` (split without a shell). |
+| `platform` | `all` | `--target`: `claude`, `chatgpt` or `all` (`both` = `all`). |
+| `fail-on` | `error` | `error`, `warning` or `never`. |
+| `fail-on-spec` | `false` | Also fail on MCP spec findings. |
+| `active` | `false` | `--active`: calls the tools annotated `readOnlyHint: true`. |
+| `bearer` | | Token, passed only as `MCP_REVIEW_CHECK_TOKEN`, never on the command line. Empty keeps one set in the job's `env`. |
+| `version` | `0.2` | npm version or range of mcp-review-check to run. |
+| `sarif-file` | `mcp-review-check.sarif` | Where the SARIF report is written. |
+| `upload-sarif` | `true` | Upload it with `github/codeql-action/upload-sarif` (needs `security-events: write`), also when the check fails. Set `false` on pull requests from forks, which cannot write code scanning results. |
+| `extra-args` | | More options, split on whitespace (no quoting), for example `--timeout 60000 --ignore TOOL-013`. |
+| `cli-path` | | Run `node <path>` (a built `dist/cli.js`) instead of the npm package. |
+
+Outputs: `exit-code` (see [Exit codes](#exit-codes); the step fails with the same code) and `sarif-file` (empty when no report was written). The action needs Node 20.19 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v0.2.0` or a commit SHA.
+
 ## Docker Compose
 
 To check a server in a Compose stack before it has a public URL, run mcp-review-check as one more service. The service name has no dot, so the run is in [local mode](#local-mode): deploy-time checks (HTTPS, public DNS) are info.
@@ -269,7 +320,7 @@ services:
     expose: ["8080"]
   review:
     image: node:22-slim
-    command: npx -y mcp-review-check@0.1 http://mcp:8080/mcp --target claude
+    command: npx -y mcp-review-check@0.2 http://mcp:8080/mcp --target claude
     depends_on: [mcp]
     profiles: [review]
 ```
@@ -333,7 +384,7 @@ While the version is 0.x:
 - **Rule IDs are never reused.** A retired rule's ID stays retired, so `--ignore` lists and saved reports keep their meaning.
 - **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear at any time.
 
-In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.1 <url>`.
+In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.2 <url>`.
 
 ## Limitations and disclaimer
 
