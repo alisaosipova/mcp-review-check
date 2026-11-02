@@ -39,7 +39,7 @@ function cutKey(key: string, taken: Set<string>): string {
 /** Truncate every string over `cap` inside `value` (in place); identifiers (ID_KEYS values, object keys) at ID_CAP;
  * reports `where` once per object with the largest length.
  * Iterative and without a depth limit: the schema walkers go deeper than any fixed JSON depth. */
-function capStrings(value: object, cap: number, where: string, out: Truncated): void {
+export function capStrings(value: object, cap: number, where: string, out: Truncated): void {
   let longest = 0;
   let unit = cap;
   const stack: object[] = [value];
@@ -93,7 +93,14 @@ export function capSnapshot(snap: Snapshot): Truncated {
   for (const c of snap.active?.calls ?? []) {
     if (c.result !== null && typeof c.result === 'object') capStrings(c.result, TEXT_CAP, `tools/call ${c.tool.slice(0, 80)} result`, out);
     else if (isStr(c.result) && c.result.length > TEXT_CAP) { out.push({ where: `tools/call ${c.tool.slice(0, 80)} result`, length: c.result.length, cap: TEXT_CAP }); c.result = c.result.slice(0, TEXT_CAP); }
+    // The arguments sent (synthesized from the schema or given with --tool-args) and what came back instead of a
+    // result: RT-001 scans the error text with regexes, RT-005 quotes the transport error in its message.
+    c.args = capValue(c.args, TEXT_CAP, `tools/call ${c.tool.slice(0, 80)} args`, out);
+    if (c.jsonRpcError !== undefined) c.jsonRpcError = capValue(c.jsonRpcError, TEXT_CAP, `tools/call ${c.tool.slice(0, 80)} JSON-RPC error`, out);
+    if (c.transportError !== undefined) c.transportError = capValue(c.transportError, TEXT_CAP, `tools/call ${c.tool.slice(0, 80)} transport error`, out);
   }
+  // Every field of each entry (message, and a code or id of the wrong type, which SPEC-016 quotes); one record for all.
+  if (snap.transport.observedErrors) capStrings(snap.transport.observedErrors, TEXT_CAP, 'observed JSON-RPC errors', out);
   if (snap.transport.modernResults) capStrings(snap.transport.modernResults, TEXT_CAP, '2026-07-28 results', out);
   // A UI URI over ID_CAP is cut in the tool that links it: the read is filed under the same cut URI.
   for (const uri of Object.keys(snap.resourceReads)) {
@@ -119,6 +126,18 @@ export function capSnapshot(snap: Snapshot): Truncated {
   }
   if (out.length) (snap.limits ??= { truncated: [] }).truncated.push(...out);
   return out;
+}
+
+/** `value` with every string over `cap` cut: a string itself, or each string inside an object or array (in place, the
+ *  structure kept); records `where` in `out` as capStrings does. Other values come back unchanged. */
+export function capValue<T>(value: T, cap: number, where: string, out: Truncated): T {
+  if (isStr(value)) {
+    if (value.length <= cap) return value;
+    out.push({ where, length: value.length, cap });
+    return value.slice(0, cap) as T;
+  }
+  if (value !== null && typeof value === 'object') capStrings(value, cap, where, out);
+  return value;
 }
 
 const kb = (n: number) => (n >= 1024 * 1024 ? `${n / (1024 * 1024)} MB` : `${Math.round(n / 1024)} KB`);
