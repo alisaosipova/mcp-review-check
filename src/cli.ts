@@ -23,6 +23,8 @@ import { isSafeToCall } from './probe/active.js';
 import type { Snapshot, TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
+import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, loadBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type FindingKey } from './baseline.js';
+import type { Finding } from './rules/types.js';
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
 Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec.
@@ -46,6 +48,8 @@ Options:
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
   --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed), so a
                           job without a working token does not pass; without it the exit code follows --fail-on.
+  --baseline <file>       A JSON report of an earlier run (--format json): its findings are known, and only new ones
+                          count for --fail-on and the verdicts (JSON baselined, SARIF baselineState).
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -101,7 +105,7 @@ const OPTIONS = {
   stdio: { type: 'string' }, header: { type: 'string', multiple: true }, bearer: { type: 'string' },
   target: { type: 'string', default: 'all' }, format: { type: 'string', default: 'text' }, output: { type: 'string' }, 'sarif-location': { type: 'string' },
   timeout: { type: 'string', default: '30000' }, 'max-duration': { type: 'string' }, 'fail-on': { type: 'string', default: 'error' }, 'fail-on-spec': { type: 'boolean' },
-  'fail-on-incomplete': { type: 'boolean' },
+  'fail-on-incomplete': { type: 'boolean' }, baseline: { type: 'string' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
@@ -160,13 +164,20 @@ function parseHeader(raw: string): [string, string] {
   return [k, v];
 }
 
-function render(r: Report, format: string, opts: TextOptions, rerun: string, sarifLocation: string): string {
+/** `known` (with --baseline): the findings of the baseline report, which `r.findings` (the new ones) leaves out. */
+function render(r: Report, format: string, opts: TextOptions, rerun: string, sarifLocation: string, known?: Finding[]): string {
   switch (format) {
-    case 'json': return renderJson(r);
-    case 'markdown': return renderMarkdown(r, { cta: opts.cta, verbose: opts.verbose, rerun }); // --quiet and --checklist are text only
-    case 'sarif': return renderSarif(r, sarifLocation);
-    default: return renderText(r, opts);
+    case 'json': return known ? renderJsonWithBaseline(r, known) : renderJson(r);
+    case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun }, known); // --quiet and --checklist are text only
+    case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation) : renderSarif(r, sarifLocation);
+    default: return known ? addBaselineToText(renderText(r, opts), known, opts.quiet) : renderText(r, opts);
   }
+}
+
+/** The markdown report (also the job summary), with the known findings of --baseline as one line. */
+function markdownReport(r: Report, opts: Parameters<typeof renderMarkdown>[1], known?: Finding[]): string {
+  const md = renderMarkdown(r, opts);
+  return known ? addBaselineToMarkdown(md, known) : md;
 }
 
 /** The command line that reproduces the report, secrets redacted; the text-only --quiet and --checklist are left out.
@@ -330,6 +341,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       }
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }
+    // Read before connecting: a wrong --baseline is a usage error (exit 2), not a finished run that gated on everything.
+    let baseline: FindingKey[] | undefined;
+    if (values.baseline !== undefined) {
+      if (!values.baseline) throw new UsageError('--baseline needs a file path');
+      try { baseline = loadBaseline(values.baseline); } catch (e) {
+        if (e instanceof BaselineError) throw new UsageError(e.message);
+        throw e;
+      }
+    }
     if (values['active-auth']) stderr += 'Notice: --active-auth creates a DCR client on your authorization server and sends bogus /authorize and /token requests.\n';
     // Accepted for scripts that share one option set, but said: the user should not think they took effect.
     if (toolArgs && !values.active) stderr += 'warning: --tool-args has no effect without --active\n';
@@ -357,11 +377,21 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
     const result = runRules(snap, RULES, { ignore });
+    // --baseline: the known findings leave the report (the gate, the verdicts and the counts see only new ones) and are
+    // added back by each format. They are compared redacted, as the baseline report was written; the score keeps every finding.
+    let gated = result;
+    let knownRaw: Finding[] | undefined;
+    if (baseline) {
+      const isKnown = knownFindings(redactDeep(result.findings, redactor), baseline);
+      knownRaw = result.findings.filter((_, i) => isKnown[i]);
+      gated = { ...result, findings: result.findings.filter((_, i) => !isKnown[i]), scored: result.scored ?? result.findings };
+    }
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
     const ignoredIds = new Set(ignore.map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
-    const built = buildReport(snap, result, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
+    const built = buildReport(snap, gated, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
+    const baselined = knownRaw && redactDeep(knownRaw, redactor);
 
     // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off.
     const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;
@@ -370,10 +400,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (banner && (format === 'json' || format === 'sarif')) stderr += `${banner}\n`; // stdout stays the document
     const textOpts = { color, verbose: !!values.verbose, cta: ctaLine(report, env), quiet: !!values.quiet, checklist: !!values.checklist };
     const rerun = rerunCommand(argv, redactor);
-    const body = render(report, format, textOpts, rerun, sarifLocation);
+    const body = render(report, format, textOpts, rerun, sarifLocation, baselined);
     if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
       for (const a of annotations(report)) stderr += `${a}\n`;
-      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, renderMarkdown(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }));
+      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun }, baselined));
     }
     if (values.verbose) {
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
@@ -388,7 +418,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
-    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info · ${resultLine(report)}`;
+    const fromBaseline = baselined ? ` · ${baselined.length} known from baseline` : '';
+    const summaryLine = `mcp-review-check: score ${scoreLabel(report)} · ${plural(s.errors, 'error')} · ${plural(s.warnings, 'warning')} · ${s.info} info${fromBaseline} · ${resultLine(report)}`;
     if (values.output) {
       try {
         writeFileSync(values.output, body);

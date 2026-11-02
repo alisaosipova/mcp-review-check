@@ -82,6 +82,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. Each finding counts at its severity for the `--target` directories (`all` = Claude and ChatGPT). |
 | `--fail-on-spec` | off | Also count MCP spec findings toward `--fail-on`. Without it, spec-only findings are reported but never fail the run. |
 | `--fail-on-incomplete` | off | Exit 3 when the check is partial: the server requires auth and no token was given (`auth-required`), the token was rejected (`token-rejected`) or `tools/list` failed (`list-failed`). Without it a partial check exits by `--fail-on` like a complete one, so an expired token in CI can leave the job green; use it in CI with a token. A `--max-duration` stop is exit 4 with or without it. |
+| `--baseline <file>` | | A JSON report of an earlier run (`--format json --output <file>`). Findings already in it are **known**: they do not count toward `--fail-on`, the verdicts or the error, warning and info counts, and get no GitHub annotation; only new findings do. A finding is matched by rule, tool or resource, `path` and platforms (a baseline for `--target all` covers a run for `--target claude`), not by its message, so a reworded message or a changed number stays known; among several findings of one rule on one subject the message (numbers aside) decides which is which, and one more than the baseline had is new. SRV-020 (the protocol era note) is never known. JSON lists every finding with `baselined: true` or `false` and `summary.baselined`; SARIF sets `baselineState` to `unchanged` or `new`; text and markdown list only the new findings and one line `N known finding(s) from baseline, not listed: <rule IDs>` (not with `--quiet`). The score still counts every finding. A missing file or a file that is not a JSON report of mcp-review-check is a usage error (exit 2). |
 | `--local`, `--no-local` | detected | Force [local mode](#local-mode) on or off, whatever the host; `--no-local` also makes a `--stdio` run strict. Not both. |
 | `--active` | off | Runs the RT rules by calling read-only tools: the first 50 that qualify, at most 3 calls each. Also lists the tools on up to three fresh connections whose `clientInfo.name` is `mcp-review-check`, `claude-ai` and `Anthropic` (RT-012). |
 | `--active-auth` | off | Probes DCR, `/authorize` and `/token`. **Creates a DCR client** on your authorization server. |
@@ -235,6 +236,16 @@ jobs:
 ```
 
 `environment_url` is the URL your deployment tool reports for the environment ([deployment statuses](https://docs.github.com/en/rest/deployments/statuses)). A preview on a shared platform domain (`*.vercel.app`, `*.netlify.app`, ...) gets an SRV-005 info note, since the production server's domain should match your service. If previews sit behind a login wall, pass the bypass header your host documents with `--header` (header values are redacted). Drop `MCP_REVIEW_CHECK_TOKEN` if the server needs no auth. For other CI systems the same command works: the exit code is the result, and `--format json` or `--output` give a file to keep.
+
+**Fail only on new findings** — keep a JSON report of the accepted state in the repository and pass it with `--baseline`: known findings stay in the report but no longer fail the job, a new finding does. Refresh the file when you accept new findings:
+
+```yaml
+      - run: npx -y mcp-review-check@0.2 --target claude --baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
+```
+
+```bash
+npx mcp-review-check@0.2 --target claude --fail-on never --format json --output .mcp-review-check/baseline.json --stdio -- node dist/server.js
+```
 
 **Fail when the token stops working** — without a valid token the tool checks are skipped and the run can still pass (the job gets a `::warning`). With a token in CI, add `--fail-on-incomplete` so that a missing, expired or rejected token fails the job (exit 3):
 
