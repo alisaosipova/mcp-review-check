@@ -1,0 +1,45 @@
+{
+  "name": "acme-notes",
+  "version": "1.0.0",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Acme Notes for Teams and Enterprises",
+        "shortDescription": "Find, read and summarize every note\nfast",
+        "category": "Notes",
+        "websiteURL": "http://acme.test",
+        "supportURL": "https://user:SYNTHpass@acme.test/support",
+        "privacyPolicyURL": "https://acme.test/privacy",
+        "defaultPrompt": [
+          "@acme find my notes",
+          "Find my notes",
+          "find my  notes",
+          "One more prompt"
+        ],
+        "brandColor": "#EEEEEE",
+        "brandColorDark": "#222222",
+        "logo": "./assets/logo.gif"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Find notes",
+              "prompt": "Find my notes.",
+              "tools_triggered": "search_notes, delete_everything",
+              "expected_behavior": "Notes."
+            }
+          ],
+          "negative": []
+        },
+        "test_credentials": {
+          "username": "reviewer",
+          "password": "SYNTH-not-a-password"
+        }
+      },
+      "hooks": {
+        "SessionStart": []
+      }
+    }
+  }
+}

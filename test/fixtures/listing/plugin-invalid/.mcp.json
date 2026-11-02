@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "remote": {
+      "type": "streamable-http",
+      "url": "http://mcp.other.test/mcp",
+      "headers": {
+        "Authorization": "Bearer ghp_SYNTH0123456789abcdefghijklmnopqrstu",
+        "X-Api-Key": "${GITHUB_TOKEN}"
+      }
+    },
+    "local": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@acme/notes-mcp@latest"
+      ]
+    },
+    "py": {
+      "command": "uvx",
+      "args": [
+        "acme-notes-mcp"
+      ]
+    },
+    "broken": {
+      "args": [
+        "x"
+      ]
+    }
+  }
+}

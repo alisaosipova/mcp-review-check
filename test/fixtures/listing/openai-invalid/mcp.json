@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "notes": {
+      "type": "streamable-http",
+      "url": "https://mcp.other.test/mcp",
+      "headers": {
+        "Authorization": "Bearer SYNTH-token-value"
+      },
+      "auth": {
+        "type": "oauth",
+        "clientId": "acme",
+        "clientSecret": "SYNTH-client-secret"
+      }
+    },
+    "local": {
+      "command": "node",
+      "args": [
+        "server.js"
+      ]
+    }
+  }
+}

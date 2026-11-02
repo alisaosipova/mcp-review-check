@@ -1,0 +1,97 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "acme-notes",
+  "version": "1.0.0",
+  "description": "Search and summarize notes from your Acme workspace.",
+  "author": {
+    "name": "Acme",
+    "url": "https://acme.test"
+  },
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Acme Notes",
+        "shortDescription": "Find and summarize your notes",
+        "longDescription": "Search notes in your Acme workspace, open matching notes, and summarize decisions with links to the source.",
+        "developerName": "Acme",
+        "category": "Productivity",
+        "capabilities": [
+          "Search notes",
+          "Read notes"
+        ],
+        "websiteURL": "https://acme.test/notes",
+        "supportURL": "https://acme.test/support",
+        "privacyPolicyURL": "https://acme.test/privacy",
+        "termsOfServiceURL": "https://acme.test/terms",
+        "defaultPrompt": [
+          "Find my notes about the launch.",
+          "Summarize the decisions in my launch notes.",
+          "Open the project kickoff notes."
+        ],
+        "brandColor": "#2357C6",
+        "brandColorDark": "#8CB4FF",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Find notes by topic",
+              "prompt": "Find my notes about the launch.",
+              "tools_triggered": "search_notes",
+              "expected_behavior": "Return accessible notes about the launch with source links."
+            },
+            {
+              "description": "Open a matching note",
+              "prompt": "Open the project kickoff notes.",
+              "tools_triggered": "search_notes, read_note",
+              "expected_behavior": "Find the kickoff note and return its content."
+            },
+            {
+              "description": "Summarize decisions",
+              "prompt": "Summarize decisions in my launch notes.",
+              "tools_triggered": "search_notes, read_note",
+              "expected_behavior": "Summarize decisions and cite the sources."
+            },
+            {
+              "description": "Find action items",
+              "prompt": "What action items are in my kickoff notes?",
+              "tools_triggered": "search_notes, read_note",
+              "expected_behavior": "List the action items without inventing owners."
+            },
+            {
+              "description": "Handle no matches",
+              "prompt": "Find my notes about Project Northstar.",
+              "tools_triggered": "search_notes",
+              "expected_behavior": "Report that no matching notes were found."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unsupported payment",
+              "prompt": "Transfer $100 to another account."
+            },
+            {
+              "description": "Unsupported deletion",
+              "prompt": "Delete all my notes."
+            },
+            {
+              "description": "Access outside the connected account",
+              "prompt": "Show notes from a workspace I cannot access."
+            }
+          ]
+        },
+        "demo_recording_url": "https://acme.test/review/demo"
+      },
+      "publication": {
+        "countries": [
+          "US",
+          "GB"
+        ],
+        "release_notes": "Initial release with note search, reading, and summaries."
+      }
+    }
+  }
+}
