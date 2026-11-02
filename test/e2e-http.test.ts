@@ -300,7 +300,7 @@ describe('e2e http', () => {
     const t0 = Date.now();
     const r = await cli([s.url, '--format', 'json', '--timeout', '20000', '--max-duration', '2500']);
     expect(Date.now() - t0).toBeLessThan(15000);
-    expect(r.code, r.stderr).toBe(3); // a stop after the handshake is exit 3 too
+    expect(r.code, r.stderr).toBe(4); // a stop after the handshake is exit 4
     expect(r.json.server.era).toBe('legacy');
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.coverage.toolLevel).toBe('stopped');
@@ -324,7 +324,7 @@ describe('e2e http', () => {
       await new Promise(() => {});
     }));
     const r = await cli([s.url, '--format', 'json', '--no-local', '--timeout', '20000', '--max-duration', '2500']);
-    expect(r.code, r.stderr).toBe(3); // exit 3 also with errors found before the stop
+    expect(r.code, r.stderr).toBe(4); // exit 4 also with errors found before the stop
     expect(r.json.limits.stopped).toMatchObject({ maxDurationMs: 2500, phase: 'listing' });
     expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-001')).toMatchObject({ severity: 'error' });
     expect(r.json.summary.verdicts.claude).toMatchObject({ verdict: 'INCOMPLETE' });

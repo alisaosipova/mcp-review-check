@@ -67,8 +67,8 @@ async function hangAfterHandshake(): Promise<Started> {
   return s;
 }
 
-describe('a --max-duration stop after the handshake is exit 3 and INCOMPLETE', () => {
-  it('a stop after the handshake exits 3 and reads INCOMPLETE (stopped at --max-duration during listing) in text, markdown, step summary and the --output line', async () => {
+describe('a --max-duration stop after the handshake is exit 4 and INCOMPLETE', () => {
+  it('a stop after the handshake exits 4 and reads INCOMPLETE (stopped at --max-duration during listing) in text, markdown, step summary and the --output line', async () => {
     const summary = join(dir, 'summary.md');
     const out = join(dir, 'report.txt');
     const [text, md, written] = await Promise.all([
@@ -76,26 +76,26 @@ describe('a --max-duration stop after the handshake is exit 3 and INCOMPLETE', (
       cli(['--stdio', HANG, ...STOP, '--format', 'markdown'], { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary }),
       cli(['--stdio', HANG, ...STOP, '--output', out]),
     ]);
-    expect(text.code, text.stderr).toBe(3);
+    expect(text.code, text.stderr).toBe(4);
     expect(text.stdout).toContain(`Result: ${INCOMPLETE}\n`);
-    expect(md.code, md.stderr).toBe(3);
+    expect(md.code, md.stderr).toBe(4);
     expect(md.stdout).toContain(`| Result | ${INCOMPLETE} |`);
     expect(readFileSync(summary, 'utf8')).toContain(`| Result | ${INCOMPLETE} |`);
-    expect(written.code, written.stderr).toBe(3);
+    expect(written.code, written.stderr).toBe(4);
     expect(written.stderr).toMatch(new RegExp(`^mcp-review-check: score .* · ${INCOMPLETE.replace(/[()]/g, '\\$&')} · report written to `, 'm'));
     expect(readFileSync(out, 'utf8')).toContain(`Result: ${INCOMPLETE}`);
   });
 
   it('--fail-on never still exits 3 on a stop', async () => {
     const r = await cli(['--stdio', HANG, ...STOP, '--fail-on', 'never']);
-    expect(r.code, r.stderr).toBe(3);
+    expect(r.code, r.stderr).toBe(4);
     expect(r.stdout).toContain(`Result: ${INCOMPLETE}\n`);
   });
 
   it('errors found before the stop: exit 3 and the Result names them after INCOMPLETE', async () => {
     const s = await hangAfterHandshake();
     const r = await cli([s.url, '--no-local', ...STOP]);
-    expect(r.code, r.stderr).toBe(3);
+    expect(r.code, r.stderr).toBe(4);
     expect(r.stdout).toMatch(/Result: INCOMPLETE \(stopped at --max-duration during listing\) · claude: \d+ errors? \([^)]*SRV-001/);
   });
 
@@ -123,7 +123,7 @@ describe('JSON agrees with exit 3', () => {
     ]);
     expect(refused.code, refused.stderr).toBe(3);
     expect(refused.json.summary.failed).toBe(true);
-    expect(stopped.code, stopped.stderr).toBe(3);
+    expect(stopped.code, stopped.stderr).toBe(4);
     expect(stopped.json.limits.stopped).toMatchObject({ phase: 'listing' });
     expect(stopped.json.summary.failed).toBe(true);
   });
@@ -138,7 +138,7 @@ describe('exit 3 in GitHub Actions', () => {
     expect(refused.code, refused.stderr).toBe(3);
     expect(commands(refused.stderr).filter((l) => l.startsWith(OWN)), refused.stderr).toHaveLength(1);
     expect(commands(refused.stderr).filter((l) => /^::error title=mcp-review-check::Could not connect: /.test(l))).toHaveLength(1);
-    expect(stopped.code, stopped.stderr).toBe(3);
+    expect(stopped.code, stopped.stderr).toBe(4);
     expect(commands(stopped.stderr).filter((l) => l.startsWith(OWN)), stopped.stderr).toHaveLength(1);
     expect(commands(stopped.stderr).filter((l) => /::error title=mcp-review-check::Stopped by --max-duration .* during listing/.test(l))).toHaveLength(1);
   });

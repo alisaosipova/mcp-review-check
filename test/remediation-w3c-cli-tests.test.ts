@@ -24,12 +24,12 @@ describe('--verbose prints server text with control characters visible (F135)', 
 });
 
 describe('--help lists every exit code the README table has (R006, R019)', () => {
-  it('0-3, 3 for an internal error, and 128+N for a signal with the common values', async () => {
+  it('0-4, 3 for an internal error, and 128+N for a signal with the common values', async () => {
     const help = (await runCli(['--help'], {}, false)).stdout;
     const block = help.match(/^Exit codes:\n([\s\S]*?)\n\n/m)?.[1] ?? '';
     const codes = [...block.matchAll(/^ {2}(\S+)/gm)].map((m) => m[1]);
-    expect(codes).toEqual(['0', '1', '2', '3', '128+N']);
-    expect(block).toMatch(/internal error[\s\S]*fatal:[\s\S]*stack trace/);
+    expect(codes).toEqual(['0', '1', '2', '3', '4', '128+N']);
+    expect(block).toMatch(/internal\s+error[\s\S]*fatal:[\s\S]*stack trace/);
     for (const n of ['130', '143', '131', '129']) expect(block).toContain(n);
     for (const line of block.split('\n')) expect(line.length, line).toBeLessThanOrEqual(120);
   });
