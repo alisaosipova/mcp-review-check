@@ -211,7 +211,7 @@ export async function tlsCheckWithRetry(deps: Deps, hostname: string, port: numb
   // The handshake is a raw socket: it cannot go through an HTTP proxy, and a direct one would fail or hit another route.
   const proxy = proxyForUrl(new URL(`https://${hostname.includes(':') ? `[${hostname.replace(/^\[|\]$/g, '')}]` : hostname}:${port}`));
   if (proxy) {
-    const code = `not checked: the direct TLS handshake cannot go through the HTTP proxy ${proxyLabel(proxy)} (list the host in NO_PROXY to check it)`;
+    const code = `not checked: the direct TLS handshake cannot go through the proxy ${proxyLabel(proxy)} (list the host in NO_PROXY to check it)`;
     return { ok: false, code, attempts: [code], transient: true };
   }
   const codes: string[] = [];

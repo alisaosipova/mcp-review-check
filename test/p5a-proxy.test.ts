@@ -203,7 +203,7 @@ describe('proxy diagnosis units', () => {
   it('reports the raw TLS check as inconclusive behind a proxy', () => withEnv(proxied, async () => {
     const r = await tlsCheckWithRetry({ ...defaultDeps, tlsCheck: () => { throw new Error('must not connect'); } }, 'mcp.example.com', 443);
     expect(r).toMatchObject({ ok: false, transient: true });
-    expect(r.code).toMatch(/cannot go through the HTTP proxy http:\/\/proxy\.corp:3128/);
+    expect(r.code).toMatch(/cannot go through the proxy http:\/\/proxy\.corp:3128/);
     expect(JSON.stringify(r)).not.toContain(PASS);
   }));
 

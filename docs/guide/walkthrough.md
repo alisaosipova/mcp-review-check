@@ -62,7 +62,7 @@ Once the report is clean enough, freeze the state and fail only on **new** findi
 npx mcp-review-check --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
 ```
 
-Commit the file. In CI run the same command with `--baseline .mcp-review-check/baseline.json --fail-on-drift`. Ready-made recipes (GitHub Actions, the GitHub Action, GitLab CI, Docker, pre-commit) are in [CI and automation](ci.md). Pin the minor version (`mcp-review-check@0.7`) so new rules arrive when you decide to upgrade.
+Commit the file. In CI run the same command with `--baseline .mcp-review-check/baseline.json --fail-on-drift`. Ready-made recipes (GitHub Actions, the GitHub Action, GitLab CI, Docker, pre-commit) are in [CI and automation](ci.md). Pin the minor version (`mcp-review-check@1.0`) so new rules arrive when you decide to upgrade.
 
 ## 7. Manual checklist and listing files
 
