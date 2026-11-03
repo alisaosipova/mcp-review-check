@@ -350,7 +350,8 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   const exchanges: HttpExchange[] = [];
   const timings: Record<string, number[]> = {};
   const pending: Promise<unknown>[] = [];
-  const notifications: NotificationLog = { methods: {} };
+  // A null-prototype table: method names come from the server, so 'constructor' or '__proto__' must be plain keys.
+  const notifications: NotificationLog = { methods: Object.create(null) as Record<string, number> };
 
   /** Tally the notifications (messages with a method and no id) of a response body: names and counts only. */
   const noteNotifications = (ex: HttpExchange, text: string) => {
@@ -363,7 +364,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     for (const m of msgs) {
       if (!isPlainObject(m) || typeof m.method !== 'string' || 'id' in m) continue;
       const name = scrub(m.method.slice(0, 100), redactor);
-      if (name in notifications.methods || Object.keys(notifications.methods).length < NOTIFICATION_METHOD_CAP) notifications.methods[name] = (notifications.methods[name] ?? 0) + 1;
+      if (Object.hasOwn(notifications.methods, name) || Object.keys(notifications.methods).length < NOTIFICATION_METHOD_CAP) notifications.methods[name] = (notifications.methods[name] ?? 0) + 1;
       else notifications.otherMethods = (notifications.otherMethods ?? 0) + 1;
       if (m.method === 'notifications/message') {
         const log = (notifications.message ??= { total: 0, unrequested: 0, invalidLevel: 0 });
