@@ -29,3 +29,6 @@ Base: origin/main a19c972. No version bump, CHANGELOG.md untouched.
 
 ## Tests run
 `npm ci --ignore-scripts`, `npm run typecheck`, `npm run build` clean. Vitest (p5a-proxy, p5b-docs, workflows, docs, compat, diagnostics, e2e-http, redact): 8 files, 135 tests passed (6 new in p5a-proxy, 1 in p5b-docs).
+
+## Review fixes
+- Invalid proxy variable no longer blocks `--help`, `--version`, `--list-rules` and `explain` (they never use the network); other runs still exit 2. Test in p5a-proxy.

@@ -268,6 +268,15 @@ describe('SOCKS5 proxy', () => {
     expect(r.stderr).toMatch(/HTTP_PROXY: unsupported proxy scheme/);
     expect(r.stderr).not.toContain(PASS);
   });
+
+  it('a bad proxy variable does not block --version, --help, --list-rules or explain', async () => {
+    const { spawnSync } = await import('node:child_process');
+    for (const args of [['--version'], ['--help'], ['--list-rules'], ['explain', 'TOOL-011']]) {
+      const r = spawnSync(process.execPath, ['dist/cli.js', ...args], { env: { PATH: process.env.PATH, HTTPS_PROXY: 'socks4://u:' + PASS + '@h:1' }, encoding: 'utf8' });
+      expect(r.status, args.join(' ')).toBe(0);
+      expect(r.stderr).not.toContain(PASS);
+    }
+  });
 });
 
 describe('experimental warning', () => {

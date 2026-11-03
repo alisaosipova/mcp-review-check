@@ -618,8 +618,13 @@ const isMain = (() => {
 if (isMain) {
   try { installProxy(); } catch (e) {
     if (!(e instanceof ProxyConfigError)) throw e;
-    process.stderr.write(`error: ${e.message}\nRun with --help for usage.\n`);
-    process.exit(2);
+    // --help, --version, --list-rules and explain never touch the network: a bad proxy variable must not block them.
+    const args = process.argv.slice(2);
+    const offline = args.some((a) => ['--help', '-h', '--version', '-v', '--list-rules'].includes(a)) || args[0] === 'explain';
+    if (!offline) {
+      process.stderr.write(`error: ${e.message}\nRun with --help for usage.\n`);
+      process.exit(2);
+    }
   }
   // The stdio servers lead their own process group, so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
   // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
