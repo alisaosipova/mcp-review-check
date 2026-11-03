@@ -20,10 +20,11 @@ const KEYS: Record<string, Kind> = {
   local: 'boolean', noLocal: 'boolean', active: 'boolean', activeAuth: 'boolean', toolArgs: 'string',
   header: 'pairs', bearer: 'string', env: 'pairs', cwd: 'string', ignore: 'list',
   noColor: 'boolean', verbose: 'boolean', quiet: 'boolean', checklist: 'boolean',
+  failOnDrift: 'boolean', diffOnly: 'boolean', pluginDir: 'string', openaiManifest: 'string',
 };
 
 /** Keys holding a file or directory path: relative to the config file's directory, not to the working directory. */
-const PATH_KEYS = new Set(['output', 'baseline', 'saveBaseline', 'jsonOutput', 'toolArgs', 'cwd']);
+const PATH_KEYS = new Set(['output', 'baseline', 'saveBaseline', 'jsonOutput', 'toolArgs', 'cwd', 'pluginDir', 'openaiManifest']);
 
 /** The keys besides the options: the server to check. */
 const TARGET_KEYS = new Set(['url', 'stdio', 'args']);
