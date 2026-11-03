@@ -10,18 +10,18 @@
 > runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
 > the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
 > and the CLI gained options such as `--max-duration`, `--fail-on-incomplete`, `--baseline`, `--quiet`, `--checklist`, `--local`, `--no-local`, `explain`,
-> `--config`, `--json-output`, `--save-baseline` and `--format junit`.
+> `--config`, `--json-output`, `--save-baseline`, `--format junit`, `--fail-on-drift`, `--diff-only`, `--plugin-dir` and `--openai-manifest`.
 > See CHANGELOG.md for the full list. Many detection patterns quoted in §2 (INJ, DATA, POL, APPS, AUTH, SPEC, TOOL and RT rules)
 > were narrowed or extended after 0.1.0 to fix false positives; CHANGELOG.md names each change, and the code in
 > `src/rules/` is authoritative where this document quotes an older pattern.
 
-Spec version 0.1. Rule catalog date 2026-11-01 (public sources read as of 2026-10-22; the vendor tool-name and tool-budget limits behind TOOL-002, TOOL-033 and TOOL-034 were checked on 2026-11-01). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md). The behaviour changes of 0.2.0 that alter a contract described here (exit codes §3.2, stopped runs §3.3, `--baseline` §3.5, the GitHub Action §3.6, the package surface §4.1, report fields §4.2 and §5.3, TOOL-002 and TOOL-033..035 in §2.3, SPEC-016 in §2.2, and the answers to Q5–Q8 in §8) are written into this document too, and so are the additions of 0.3.0 (the options in §3.1, the baseline loop in §3.5, the action outputs in §3.6, the config file in §3.7, the input caps and stopped runs in §3.3 and §4.2, Node 22.12 in §4.4, the JUnit format in §5.3).
+Spec version 0.1. Rule catalog date 2026-11-02 (public sources read as of 2026-10-22; the vendor checklists behind LST-001..LST-026 and the 2026-07-28 specification pages behind SPEC-021..023 were re-read on 2026-11-02; the vendor tool-name and tool-budget limits behind TOOL-002, TOOL-033 and TOOL-034 were checked on 2026-11-01). Status: implemented in 0.1.0 (milestones M0–M7 done); later changes are tracked in [CHANGELOG.md](../../CHANGELOG.md). The behaviour changes of 0.2.0 that alter a contract described here (exit codes §3.2, stopped runs §3.3, `--baseline` §3.5, the GitHub Action §3.6, the package surface §4.1, report fields §4.2 and §5.3, TOOL-002 and TOOL-033..035 in §2.3, SPEC-016 in §2.2, and the answers to Q5–Q8 in §8) are written into this document too, and so are the additions of 0.3.0 (the options in §3.1, the baseline loop in §3.5, the action outputs in §3.6, the config file in §3.7, the input caps and stopped runs in §3.3 and §4.2, Node 22.12 in §4.4, the JUnit format in §5.3), and those of 0.4.0 (the drift, listing and schema options in §3.1, exit 1 for drift and the budget stop in §3.2, drift in §3.5, the config keys in §3.7, the listing inputs in §3.8, the snapshot byte budget and the exchange summary in §4.2, BASE-001 and the report schema in §5.3, SPEC-021..023 in §2.2, AUTH-012 in §2.8, LST-001..026 in §2.13, and the answers to Q1–Q4 in §8).
 
 `mcp-review-check` is a CLI that connects to an MCP server, takes a snapshot of what the server exposes, and checks it against the public review criteria of the Claude connector directory, the ChatGPT plugin directory, and the MCP specification. It runs on Node 22.12 or newer (the plan said Node 18; see §4.4), sends no telemetry, and links every rule to a public source. Checks that cannot be automated are printed as a manual checklist.
 
 Non-goals for v1:
 - Full JSON-schema conformance of every wire message. That is the job of `@modelcontextprotocol/conformance`, and the report may suggest running it.
-- Linting listing or plugin manifests. Those items appear as manual checklist entries in v1.
+- Linting listing or plugin manifests. Those items appear as manual checklist entries in v1; 0.4.0 automates part of them (§3.8, §2.13).
 - Rendering MCP Apps in a real host.
 - Any call that could change state, unless the user opts in with `--active` or `--active-auth`.
 
@@ -59,6 +59,7 @@ Each rule declares the data it needs. When the snapshot lacks that data, the eng
 | `legacy` / `modern` | detected protocol era (§4.4) |
 | `active` | `--active` was given (calls read-only tools) |
 | `active-auth` | `--active-auth` was given (DCR registration, /authorize and /token probes) |
+| `plugin-dir` / `openai-manifest` | `--plugin-dir` / `--openai-manifest` was given (0.4.0, §3.8) |
 
 ### 1.4 Local mode
 The snapshot sets `localMode = true` when the HTTP host is `localhost`, `*.localhost`, `127.0.0.0/8`, or `::1`, and for every stdio target. In local mode:
@@ -387,6 +388,27 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
 - Detect: `tools/list`, `resources/list` or `prompts/list` failed (JSON-RPC error, crash, timeout, repeated cursor, more than 100 pages) while the matching capability is declared (for tools, also when the era is `modern`) → error. `resources/templates/list` is not checked: many servers with the resources capability do not implement it.
 - When `tools/list` failed, `coverage.toolLevel` is `list-failed`, the skip reason names the error, and the report prints a notice that tool checks could not run.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/server/tools#listing-tools, https://modelcontextprotocol.io/specification/2026-07-28/server/resources#listing-resources
+
+**SPEC-021 Deprecated protocol features in use.** Severity: spec=info.
+- Detect, each as info (the deprecated features registry says new implementations SHOULD NOT adopt a Deprecated feature; there is no MUST NOT):
+  - `capabilities.logging`, `capabilities.sampling` or `capabilities.roots` in the initialize or server/discover capabilities. Sampling and roots are client capabilities, and the message says so. A dual-era server whose two capability objects both show the problem gets one finding naming both.
+  - `transport.kind === 'sse'` (HTTP+SSE only, deprecated since 2025-03-26). SRV-003 carries the directory consequence.
+  - `inputRequests` entries with `sampling/createMessage` or `roots/list` in 2026-07-28 `input_required` results or in active tool-call results, and, separately, `includeContext` `"thisServer"` / `"allServers"` in such a sampling request. Methods are looked up in a `Map`, so `constructor` is not a deprecated request.
+- Not duplicated: SRV-015 (Claude support of sampling/tasks/subscriptions).
+- Source: https://modelcontextprotocol.io/specification/2026-07-28/deprecated, https://modelcontextprotocol.io/specification/2026-07-28/changelog#deprecated (SEP-2577, SEP-2596)
+
+**SPEC-022 2026-07-28 results identify the server.** Severity: spec=info. Needs: modern.
+- Detect: an object result in `transport.modernResults` (or `discoverRaw` when no server/discover result is recorded) without `_meta["io.modelcontextprotocol/serverInfo"]` (servers SHOULD include it on every response). The finding lists the methods once. A second finding covers a value that is not an object with string `name` and `version`.
+- Source: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts (`ResultMetaObject`), the 2026-07-28 changelog (SEP-2575)
+
+**SPEC-023 capabilities.extensions well-formed.** Severity: spec=error.
+- Detect, in the initialize and server/discover capabilities:
+  - `extensions` is not an object → error.
+  - An identifier has no `/`, or has an invalid prefix label or name per the `_meta` key rules (a mandatory prefix is a MUST in schema.ts) → error.
+  - A settings value is not an object (`JSONObject`) → error.
+  - A well-formed identifier under a non-official prefix reserved for MCP (for example `dev.mcp/x`) → warning, the level SPEC-018 gives that `_meta` rule. Official `io.modelcontextprotocol/*` identifiers pass.
+  - `io.modelcontextprotocol/tasks` declared while `tasks/get`, `tasks/update` or `tasks/cancel` has no recorded result → info "declared, not verified". The run does not call them yet (a read-only `tasks/get` with a bogus `taskId` is a later connect item); the extension text does not state in one sentence that all three must be implemented, which is why this part is not an error.
+- Source: schema.ts (`ServerCapabilities.extensions`), https://modelcontextprotocol.io/docs/extensions/overview, https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md
 
 ### 2.3 TOOL: tool metadata and schemas
 All TOOL rules need `tools`. The message names `tool.name`.
@@ -936,7 +958,7 @@ Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `auth
 - Per platform:
   - Claude: CIMD is used when `cimdFlag && noneAuth`. `cimdFlag && !noneAuth` → **warning**: "CIMD ignored, falls back to DCR". Neither CIMD nor DCR → **warning**: "Claude requires Anthropic-held credentials (contact mcp-review@anthropic.com) or connection-time credentials". Pre-registered clients are a supported path the linter cannot see.
   - ChatGPT: `cimdFlag` without none or pkjwt → warning. `cimdFlag` with the auth-methods field absent → warning (RFC 8414 default client_secret_basic). Neither CIMD nor DCR → warning: "predefined client required; secret goes in the portal, not the manifest".
-  - Spec: neither → warning. DCR only → **info**: "DCR deprecated in 2026-07-28; add CIMD".
+  - Spec: neither → warning. DCR only → **info** (0.4.0 wording): "DCR only: Dynamic Client Registration is deprecated in 2026-07-28 for new servers; add CIMD (Claude uses it only with client_id_metadata_document_supported: true and "none" in token_endpoint_auth_methods_supported)". The condition (`registration_endpoint` without `client_id_metadata_document_supported: true`) and the severities are unchanged; this extends the rule and adds no new one. The deprecated features registry (https://modelcontextprotocol.io/specification/2026-07-28/deprecated) is added to the sources.
   - `client_id_metadata_document_supported` present but not a boolean → error.
 - Source: https://claude.com/docs/connectors/building/authentication, https://developers.openai.com/plugins/build/auth, https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration
 
@@ -1133,6 +1155,40 @@ These items are always printed as reminders under "Manual checklist". They are f
 - Size and timeout: two claude rules → RT-004, RT-005.
 - Rules that remain manual-only: listing, package, screenshots, test cases, privacy, refresh rotation, audience validation, insufficient-scope with a real token.
 
+### 2.13 LST: listing and plugin manifests (0.4.0)
+Platform `claude` for the plugin folder (`--plugin-dir`, LST-001..LST-015) and `chatgpt` for the package manifest (`--openai-manifest`, LST-016..LST-026). All need the corresponding input (§3.8); LST-015 and LST-026 also need `http`, LST-025 `tools`. Severity follows the vendor result: "blocks" or "rejects" with deterministic detection is an error, "held for a reviewer" a warning, and heuristics (README word count, credential-looking literals, prompt normalization, @mentions, the host match against the target) at most a warning. No rule quotes a header, env or credential value. Sources: C-PSC = https://claude.com/docs/plugins/pre-submission-checklist, C-REF = https://code.claude.com/docs/en/plugins-reference, O-SUB = https://developers.openai.com/plugins/deploy/submission, O-ERR = https://developers.openai.com/plugins/deploy/submission-errors (all read 2026-11-02; developers.openai.com/apps-sdk/deploy/submission redirects to O-SUB).
+
+| ID | Detects | Severity | Source |
+|---|---|---|---|
+| LST-001 | `.claude-plugin/plugin.json` missing or not valid JSON (info for a folder with only `skills/<name>/SKILL.md`, which passes with a note) | claude: error | C-PSC, C-REF |
+| LST-002 | `name` not lowercase letters, digits and hyphens, ≤64, starting and ending with a letter or digit; non-ASCII and reserved names (`claude`, `anthropic`, `official`, `plugin`, `mcp`, `test`) are errors, other pattern breaks warnings | claude: error / warning | C-PSC, C-REF#name |
+| LST-003 | `description`, `author` or `version` missing | claude: warning | C-PSC, C-REF |
+| LST-004 | No README (error) or fewer than 40 words outside code blocks (warning, approximate count) | claude: error / warning | C-PSC |
+| LST-005 | No LICENSE file and no `license` field | claude: error | C-PSC |
+| LST-006 | `.mcp.json` invalid or a server entry with neither `command` nor `url` | claude: error | C-PSC, https://code.claude.com/docs/en/mcp |
+| LST-007 | Remote server without `type` http, sse or ws, or a `url` that is not absolute `https://`/`wss://`, `${user_config.KEY}` or `""` | claude: error | C-PSC |
+| LST-008 | `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx`, `pipx run`, `uv run` without an exact version pin (`@latest` and ranges fail; `uv run` needs `--locked`/`--frozen`) | claude: error | C-PSC |
+| LST-009 | `.npmrc`, `bunfig.toml` or `uv.toml` that sets a registry, index or proxy next to a launcher | claude: error | C-PSC |
+| LST-010 | `.mcpb`/`.dxt` bundle instead of `command`/`url` (error when fetched from a URL) | claude: warning / error | C-PSC, C-REF#mcpservers |
+| LST-011 | Credentials in headers or env: a known token format is an error; a literal under a credential name, or `${ENV}` read from the user's machine, a warning | claude: error / warning | C-PSC, C-REF#user-configuration |
+| LST-012 | `.DS_Store`, `Thumbs.db`, `desktop.ini`, `__MACOSX` | claude: error | C-PSC |
+| LST-013 | Non-image/font files over 256 KiB, more than 512 files, binaries, symlinks (held for a reviewer) | claude: warning | C-PSC |
+| LST-014 | Directory listing fields (`icon`, `documentationUrl`, `supportUrl`, `privacyPolicyUrl`, `termsOfServiceUrl`) that are not `https://` or an image inside the plugin; missing fields are info. Automates part of MAN-002 | claude: warning / info | C-REF#directory-listing-fields, https://claude.com/docs/connectors/building/submission |
+| LST-015 | Plugin remote server URL host differs from the checked server | claude: warning | C-PSC |
+| LST-016 | Package manifest unreadable or without listing fields; a bare `mcp.json` is a warning (listing not checked). Automates MAN-015 | chatgpt: error / warning | O-SUB, O-ERR |
+| LST-017 | Listing text over the final-submission limits (displayName and shortDescription ≤30, longDescription ≤4000, developerName ≤80, capabilities ≤20 × ≤120, unknown category); missing developerName or category is info. Automates MAN-015 | chatgpt: error / info | O-ERR, O-SUB |
+| LST-018 | The four listing URLs (`websiteURL`, `supportURL`, `privacyPolicyURL`, `termsOfServiceURL`) not HTTPS, with credentials or over 1024 characters. Automates the format part of MAN-016 | chatgpt: error | O-SUB, O-ERR |
+| LST-019 | Starter prompts: more than 3, over 128 characters, multi-line, duplicates or @mentions (the last two heuristic warnings). Automates MAN-017 | chatgpt: error / warning | O-ERR, O-SUB |
+| LST-020 | `brandColor` not `#RRGGBB` or under 2:1 contrast against white, `brandColorDark` under 2:1 against #212121. Automates MAN-018 | chatgpt: error | O-ERR, O-SUB |
+| LST-021 | Icons: logo and composerIcon not `./` paths to PNG, JPEG, WebP or SVG; missing in the Agent Plugins format or a non-`./` path is a warning. Automates part of MAN-019 | chatgpt: error / warning | O-SUB, O-ERR |
+| LST-022 | Review data: not exactly 5 positive and 3 negative test cases (each with `description`, `prompt`, positive ones with `tools_triggered` and `expected_behavior`), demo recording URL, release notes; an omitted value is a warning because omission keeps the saved dashboard value. Automates MAN-020 and part of MAN-021 | chatgpt: error / warning | O-SUB, O-ERR |
+| LST-023 | `clientSecret`, `test_credentials`, `reviewer_instructions`, non-empty server headers, `apps`/`.app.json`, hooks. Automates MAN-023 | chatgpt: error | O-SUB, O-ERR |
+| LST-024 | `mcp.json` without exactly one remote MCP server with an https URL (error when it does not parse). Automates the one-server part of MAN-020 | chatgpt: warning / error | O-SUB, O-ERR |
+| LST-025 | Test cases whose `tools_triggered` (a comma-separated string) names a tool absent from the live `tools/list`. Automates part of MAN-020 | chatgpt: warning | O-SUB |
+| LST-026 | Package MCP server URL host differs from the checked server | chatgpt: warning | O-SUB |
+
+Not checked (deferred): image dimensions and size (MAN-019, MAN-024; needs image decoding), `mcpServers` paths other than `.mcp.json` and scripts that start launchers, repository-level checks (`.gitattributes` filters, archive size), translations.
+
 ---
 
 ## 3. CLI design
@@ -1157,6 +1213,10 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. |
 | `--fail-on-incomplete` | off | Exit 3 on a partial check (`coverage.toolLevel` `auth-required`, `token-rejected` or `list-failed`), §3.2. |
 | `--baseline <file>` | — | A JSON report of an earlier run; its findings are known and only new findings count (§3.5). |
+| `--fail-on-drift` | off | Exit 1 when a tool was added, removed or changed since `--baseline` (§3.5), also at `--fail-on never`; needs `--baseline`, otherwise exit 2. New in 0.4.0. |
+| `--diff-only` | off | With `--baseline`, text and markdown show only the new findings and the changed tool definitions, without the known-findings line and the manual checklist (§3.5); needs `--baseline`, otherwise exit 2. New in 0.4.0. |
+| `--plugin-dir <dir>` | — | Also lints a Claude plugin folder (LST-001..LST-015, §3.8). Needs a `<url>` or `--stdio` target. New in 0.4.0. |
+| `--openai-manifest <file>` | — | Also lints a ChatGPT plugin package manifest (LST-016..LST-026, §3.8). Needs a `<url>` or `--stdio` target. New in 0.4.0. |
 | `--active` | off | Enables the RT rules, which call read-only tools. |
 | `--active-auth` | off | Enables AUTH-019..021. **Creates a DCR client** on your authorization server. The CLI prints this notice. |
 | `--tool-args <file>` | — | JSON `{toolName: argsObject}` for RT calls. |
@@ -1174,13 +1234,15 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | Code | Meaning |
 |---|---|
 | 0 | Completed, below the `--fail-on` threshold (with `--baseline`: no new finding reaches it) |
-| 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`); with `--baseline`, counted over new findings only |
-| 2 | Usage or config error (including a `--baseline` file that is missing or not a JSON report of mcp-review-check, and a wrong config file, §3.7), or `--output`, `--json-output` or `--save-baseline` could not be written |
+| 1 | Completed, threshold reached (for a `--target` directory, or for the spec with `--fail-on-spec`); with `--baseline`, counted over new findings only; with `--fail-on-drift`, also when a tool definition was added, removed or changed since the baseline, or when the definitions could not be compared (a warning on stderr says why) |
+| 2 | Usage or config error (including a `--baseline` file that is missing, not a regular file, larger than 16 MiB or not a JSON report of mcp-review-check, `--diff-only` or `--fail-on-drift` without `--baseline`, a `--plugin-dir` or `--openai-manifest` path that is missing or of the wrong kind, and a wrong config file, §3.7), or `--output`, `--json-output` or `--save-baseline` could not be written |
 | 3 | Fatal: could not reach the server or complete any handshake (a report is still emitted, containing the SRV-003 error), also when `--max-duration` ran out before the handshake; with `--fail-on-incomplete`, a partial check (`coverage.toolLevel` is `auth-required`, `token-rejected` or `list-failed`); or an unexpected internal error (`fatal:` and the stack on stderr) |
 | 4 | `--max-duration` stopped the check after the handshake (`limits.stopped` set, no fatal error), at any `--fail-on` and with or without `--fail-on-incomplete`; the Result line reads `INCOMPLETE (stopped at --max-duration during <phase>)` and JSON `summary.failed` is `true`. New in 0.2.0; 0.1.x exited 3 |
 | 128+N | Ended by signal N (130 SIGINT, 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP); no report is written |
 
-Precedence: fatal (3) → stopped (4) → partial with `--fail-on-incomplete` (3) → gate (1) → 0.
+Precedence: fatal (3) → stopped (4) → partial with `--fail-on-incomplete` (3) → gate or `--fail-on-drift` (1) → 0.
+
+A run that spent the snapshot byte budget (§4.2) is a partial check, not a `--max-duration` stop: `limits.stopped` is unset, so the exit code is never 4; with `--fail-on-incomplete` it is 3, and otherwise it follows `--fail-on` (the verdict reads INCOMPLETE, and `summary.failed` is true only when the gate is reached).
 
 A 401 without `--bearer` is **not** fatal. The auth probe runs and the exit code follows `--fail-on`. A token the server rejects is not fatal either: the check is partial (`token-rejected`) and, without `--fail-on-incomplete`, the exit code follows `--fail-on`. In GitHub Actions a partial check always adds one `::warning` titled `mcp-review-check` naming the reason and that tool-level checks were skipped; exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause. The README's [Exit codes](../../README.md#exit-codes) section is authoritative for the details. Exit 4 and `--fail-on-incomplete` answer §8 Q5 and Q6.
 
@@ -1230,7 +1292,9 @@ stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. C
 - **Effect.** Known findings no longer count toward `--fail-on`, the verdicts, the `errors`/`warnings`/`info` counts or the GitHub annotations. The score still counts every finding: it describes the server, not the delta.
 - **Output.** JSON lists every finding with `baselined: true|false` and adds `summary.baselined` (`schemaVersion` stays 1, the fields are additive). SARIF sets `baselineState` (`new` / `unchanged`, SARIF 2.1.0 §3.27.24) on every result and `runs[0].properties.summary.baselined`. Text lists only the new findings plus one line `N known finding(s) from baseline, not listed: <rule IDs>` (rule IDs only, at most 8; not with `--quiet`); markdown and the job summary add a `Baseline` row to the summary table; the `--output` summary line adds `· N known from baseline`.
 - **Writing it.** `--save-baseline <file>` (0.3.0) writes the JSON report besides the chosen format (§3.1); the loop is a first run with `--fail-on never --save-baseline baseline.json`, then `--baseline baseline.json` on later runs. `--baseline b.json --save-baseline b.json` refreshes the file in place, since the baseline is read before connecting. `--format json --output <file>` writes the same document.
-- Not yet: tool-definition drift and `--diff-only`.
+- **Tool-definition drift (0.4.0, `src/report/drift.ts`).** The JSON report carries `toolFingerprints`, in tools/list order: `{name, sha256, fields}`. `sha256` is SHA-256 (hex) over the canonical JSON (object keys sorted by UTF-16 code unit at every depth, no whitespace, undefined members omitted) of the tool's present fields among `name, title, description, inputSchema, outputSchema, annotations, _meta`; `fields` maps each present field to the SHA-256 of its own canonical JSON. Fingerprints are computed over the redacted, input-capped snapshot, so a rotated secret that a description echoes is not a change, and a change past the 16 KB cap of one string is not seen. They are `null` when tools/list did not finish. With `--baseline`, tools are paired by name (duplicates in order), and added, removed and changed tools (with the changed fields) are reported in every format: a section after the findings in text and markdown, `baseline.toolChanges` in JSON, one `note` result per change under the synthetic rule `BASE-001` in SARIF (not in the catalog), and the suite's `<system-out>` in JUnit. If either side has no fingerprints (a 0.3 baseline, or a partial run), there is no comparison and the reason is reported (`baseline.notCompared`).
+- **Effect of drift.** Drift is informational and does not change the verdicts, `summary.failed` or the exit code. `--fail-on-drift` makes any change, or a comparison that was not possible, exit 1 (3 and 4 still win), and the section heading and the `--output` summary line say so.
+- **`--diff-only`.** Requires `--baseline`. Text and markdown (and the GitHub step summary) drop the known-findings line and the manual checklist, even with `--checklist`; JSON, SARIF and JUnit are unchanged.
 
 ### 3.6 GitHub Action
 `action.yml` at the repository root (0.2.0) is a composite action, so every release tag is also an action version (`uses: alisaosipova/mcp-review-check@v0.3.0`). It runs the CLI once with `--format sarif --output <sarif-file>` and, from 0.3.0, `--json-output` to a file under `$RUNNER_TEMP`; the annotations and the job summary come from the same run (§3.2, `GITHUB_ACTIONS`). Inputs: `target` or `stdio` (exactly one), `platform` (`--target`), `fail-on`, `fail-on-spec`, `active`, `bearer` (exported only as `MCP_REVIEW_CHECK_TOKEN` and masked), `version` (the npm version or range, default the current `MAJOR.MINOR`), `sarif-file`, `upload-sarif`, `extra-args` and `cli-path` (run a built `dist/cli.js` instead of the npm package). Outputs: `exit-code` and `sarif-file`, and from 0.3.0 `report-json` (the JSON report's path) and, read from that report by a separate `if: always()` step, `score` (`summary.score`, empty when it is `null`), `verdict` (`INCOMPLETE` when `limits.stopped` is set, else `FAIL` when `summary.failed`, else `PASS`, as the Result line), `verdict-claude` and `verdict-chatgpt` (`summary.verdicts.<platform>.verdict`, empty when the platform is not a target), `errors` and `warnings` (`summary.errors`, `summary.warnings`, over the new findings with `--baseline`) and `new-findings` (`findings.length - (summary.baselined ?? 0)`). The step writes only integers and upper-case words, so a report value cannot inject an output line, and leaves every report output empty when no report was written (exit 2) or it does not parse. Because of `--json-output`, the `version` default is `0.3` and the action needs CLI 0.3 or newer. The step exits with the CLI's exit code, and the SARIF is uploaded with a SHA-pinned `github/codeql-action/upload-sarif` also when the check fails. Every input reaches the script through `env:`. The README's "CI recipes" section documents the inputs, and CONTRIBUTING.md the release coupling of the `version` default.
@@ -1240,15 +1304,15 @@ stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. C
 - **Discovery.** `--config <file>` names the file. Otherwise the first of `mcp-review-check.config.json` and `.mcp-review-check.json` that exists in `--cwd`, or else in the process working directory, is read. `--no-config` disables discovery, and `--config` together with `--no-config` is a usage error. A missing `--config` file is a usage error; a discovered file that does not exist is simply not read.
 - **Which commands read it.** A check only: `--help`, `--version`, `--list-rules` and `explain` return before the file is read, so a broken config file never breaks them.
 - **Format.**
-  - A JSON object (UTF-8 with or without BOM, or UTF-16LE with BOM). Keys are the camelCase long option names: `target`, `format`, `output`, `jsonOutput`, `saveBaseline`, `sarifLocation`, `timeout`, `maxDuration`, `failOn`, `failOnSpec`, `failOnIncomplete`, `baseline`, `local`, `noLocal`, `active`, `activeAuth`, `toolArgs`, `ignore`, `header`, `bearer`, `env`, `cwd`, `noColor`, `verbose`, `quiet`, `checklist`.
+  - A JSON object (UTF-8 with or without BOM, or UTF-16LE with BOM). Keys are the camelCase long option names: `target`, `format`, `output`, `jsonOutput`, `saveBaseline`, `sarifLocation`, `timeout`, `maxDuration`, `failOn`, `failOnSpec`, `failOnIncomplete`, `baseline`, `failOnDrift`, `diffOnly`, `pluginDir`, `openaiManifest`, `local`, `noLocal`, `active`, `activeAuth`, `toolArgs`, `ignore`, `header`, `bearer`, `env`, `cwd`, `noColor`, `verbose`, `quiet`, `checklist`.
   - The server is `url`, or `stdio`: a string split like `--stdio "<command>"`, or `stdio` + `args` (or a `stdio` array), kept verbatim like `--stdio -- …`.
-  - Switches take booleans (`false` counts as absent). `timeout`/`maxDuration` take a number or a string. `ignore` takes a string or an array. `header` and `env` take an array of `"Name: value"` / `"K=V"` strings or an object.
+  - Switches (`failOnDrift` and `diffOnly` included) take booleans (`false` counts as absent). `timeout`/`maxDuration` take a number or a string. `ignore` takes a string or an array. `header` and `env` take an array of `"Name: value"` / `"K=V"` strings or an object.
 - **Precedence.**
   - Each value becomes the string or list the flag would give and then goes through the flag's validation.
   - A flag on the command line overrides the key, and a list flag (`--ignore`, `--header`, `--env`) replaces the file's list instead of adding to it.
   - The file's server is used only when the command line names neither a `<url>` nor `--stdio`.
   - parseArgs has no defaults for `target`, `format`, `timeout` and `fail-on`; the defaults are applied after the merge, so an option absent from the command line can be told from its default.
-- **Relative paths.** `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs` and `cwd` are resolved relative to the config file's directory, as tsconfig and eslint do. `sarifLocation` stays repository-relative.
+- **Relative paths.** `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs`, `cwd`, `pluginDir` and `openaiManifest` are resolved relative to the config file's directory, as tsconfig and eslint do. `sarifLocation` stays repository-relative.
 - **Validation.** Errors (exit 2) name the file and the key and never a value:
   - an unknown key, with "did you mean" for a kebab-case spelling (`fail-on` → `failOn`);
   - a wrong type, a non-object, invalid JSON (the parser's message is not shown, since it quotes the file) or a missing `--config` file;
@@ -1256,6 +1320,14 @@ stdio flow: `StdioClientTransport({command, args, env, cwd, stderr: 'pipe'})`. C
 
   A value rejected by the flag's validation reuses the flag's message plus `(from <file>: key "<key>")`.
 - **Secrets.** `header` and `bearer` keys are accepted with one stderr warning that names the keys and recommends `$MCP_REVIEW_CHECK_TOKEN`. File values are redacted like the flags (§4.5), since they become the same values. The markdown `rerun:` line is built from the real command line, so file values never appear in it.
+
+### 3.8 Listing inputs (`--plugin-dir`, `--openai-manifest`)
+`src/listing/` and `src/rules/listing.ts`, added in 0.4.0 (the answer to Q3). The two options are checked before connecting (the path exists and is the right kind, a regular file for the manifest; otherwise exit 2 naming the flag, never the path) and read after the handshake. The result is stored as `snap.listing` before the rules run. Both need a `<url>` or `--stdio` target (a listing-only run is not implemented), and a path in the config file is relative to the file.
+- **Inputs.** `--plugin-dir <dir>` is a Claude plugin folder (the folder containing `.claude-plugin/plugin.json`): the loader reads `plugin.json`, `.mcp.json`, README*, LICENSE*, package-manager configs and the file list. `--openai-manifest <file>` is a ChatGPT plugin package manifest (`plugin.json` with `extensions.com.openai`, or a Codex `.codex-plugin/plugin.json`); the companion `mcp.json` or `.mcp.json` is read from the package root, since OpenAI keeps the listing in plugin.json and only the MCP configuration in mcp.json. A bare `mcp.json` is accepted, and LST-016 then warns that the listing was not checked.
+- **Bounds.** No link is followed (`lstat`, then `O_NOFOLLOW`; every read opens `O_NONBLOCK` and checks the descriptor, so a FIFO cannot hang the run), `.git` is skipped, JSON over 1 MiB is not parsed, README and configs are read up to 256 KiB, at most 10,000 entries and depth 32, and parsed strings over TEXT_CAP are cut and listed in `limits.truncated`. Read and parse problems are recorded in `snap.listing.errors` with a relative path and an error code (a JSON syntax error gives line and column, never a window of the file) and printed as `warning:` lines on stderr; they are never thrown.
+- **Rules.** The LST rules (§2.13) need `plugin-dir` or `openai-manifest` and are skipped with "needs --plugin-dir" / "needs --openai-manifest" otherwise. Without the options nothing changes.
+- **Manual checklist.** With the input given, fully automated MAN items are dropped (`--openai-manifest`: MAN-015, 017, 018, 020, 023) and partly automated ones keep only their manual rest plus "(the rest is checked by LST-0xx)" (MAN-016, 019 and 021; MAN-002 with `--plugin-dir`). MAN-022 and MAN-024 stay manual: they need image decoding or a live UI.
+- **Redaction.** The report redactor does not know values from the plugin files, so no rule quotes a header, env, `clientSecret`, `test_credentials` or `reviewer_instructions` value. URLs go through `displayUrl`.
 
 ---
 
@@ -1301,7 +1373,8 @@ interface HttpExchange {
   requestHeaders: Record<string, string>;        // redacted
   status?: number; headers?: Record<string, string>; contentType?: string;
   bodySnippet?: string;                            // ≤ 4 KB
-  json?: unknown; durationMs: number;
+  json?: unknown; durationMs: number;               // json: only the exchanges the rules read (see Exchanges)
+  bodyBytes?: number; bodySha256?: string; jsonRpc?: JsonRpcSummary[]; jsonParsed?: boolean; oauthError?: string;
   error?: { name: string; code?: string | number; causeCode?: string; message: string };
 }
 
@@ -1316,6 +1389,7 @@ interface Snapshot {
   tools: Record<string, unknown>[]; resources: Record<string, unknown>[];
   resourceTemplates: Record<string, unknown>[]; prompts: Record<string, unknown>[];
   listMeta: Record<string, { pages: number; rawPages: unknown[]; error?: string }>;
+  listing?: Listing;                               // --plugin-dir / --openai-manifest (§3.8)
   toolsRelist?: string[]; toolsFreshConnection?: string[];
   resourceReads: Record<string, { ok: boolean; raw?: unknown; error?: unknown; durationMs: number }>;
   transport: {
@@ -1347,7 +1421,7 @@ interface Snapshot {
 interface RuleMeta {
   id: string; title: string;
   severity: Partial<Record<Platform, Severity>>;   // keys = platforms
-  needs: Array<'tools'|'resources'|'prompts'|'ui'|'http'|'stdio'|'auth'|'legacy'|'modern'|'active'|'active-auth'>;
+  needs: Array<'tools'|'resources'|'prompts'|'ui'|'http'|'stdio'|'auth'|'legacy'|'modern'|'active'|'active-auth'|'plugin-dir'|'openai-manifest'>;
   rationale: string; fix: string; sources: string[];
 }
 interface RawFinding {
@@ -1365,11 +1439,16 @@ interface ObservedError {                         // in transport.observedErrors
 }
 const PHASES = ['connect', 'auth probe', 'listing', 'UI resource reads', 'wire probes', 'tools re-list', 'text-only tools/list', 'active tool calls'];
 interface Limits {                                // snap.limits, also in the JSON report
-  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' }>;
+  truncated: Array<{ where: string; length: number; cap: number; unit?: 'items' | 'bytes' }>;
+  budgetExhausted?: { bytes: number; overBytes: number; phase: string; completed: string[]; unfinished: string[] };   // snapshot byte budget
   stopped?: { maxDurationMs: number; phase: string; completed?: string[]; unfinished?: string[] };   // §3.3
 }
 ```
-**Input caps** (`capSnapshot` in `src/limits.ts`, after redaction, also on a stopped snapshot). TEXT_CAP (16 KB) applies to the listed tool, prompt, resource and resource-template metadata, `serverInfo`, `instructions`, the raw list pages, the text-only `tools/list`, the `--active` call results, and the 2026-07-28 results. From 0.3.0 it also applies to the `--active` call arguments (synthesized or from `--tool-args`; the structure is kept and only long strings are cut), the calls' JSON-RPC errors (`message` and `data`) and transport errors, and every field of the observed JSON-RPC errors. Identifier keys (`name`, `uri`, `pattern`, …) inside these get ID_CAP (1 MB). Each cut adds one entry `{ where, length, cap }` to `limits.truncated` per object, with the longest string it cut: `tools/call <tool> args`, `tools/call <tool> JSON-RPC error`, `tools/call <tool> transport error`, and `observed JSON-RPC errors` (one entry for the whole list). The rules that read error text match on its start (RT-001's stack-trace and generic-phrase checks) or quote a prefix (RT-005, SPEC-016), so the cut does not change their results. A global byte budget for the whole run is not implemented: full strings stay in memory until `capSnapshot`.
+**Input caps** (`capSnapshot` in `src/limits.ts`, after redaction, also on a stopped snapshot). TEXT_CAP (16 KB) applies to the listed tool, prompt, resource and resource-template metadata, `serverInfo`, `instructions`, the raw list pages, the text-only `tools/list`, the `--active` call results, and the 2026-07-28 results. From 0.3.0 it also applies to the `--active` call arguments (synthesized or from `--tool-args`; the structure is kept and only long strings are cut), the calls' JSON-RPC errors (`message` and `data`) and transport errors, and every field of the observed JSON-RPC errors. Identifier keys (`name`, `uri`, `pattern`, …) inside these get ID_CAP (1 MB). Each cut adds one entry `{ where, length, cap }` to `limits.truncated` per object, with the longest string it cut: `tools/call <tool> args`, `tools/call <tool> JSON-RPC error`, `tools/call <tool> transport error`, and `observed JSON-RPC errors` (one entry for the whole list). The rules that read error text match on its start (RT-001's stack-trace and generic-phrase checks) or quote a prefix (RT-005, SPEC-016), so the cut does not change their results. 
+
+**Snapshot byte budget** (0.4.0, `SNAPSHOT_BUDGET` = 64 MiB in `src/limits.ts`). A run reads at most the budget of server data, counted where it is kept: the bodies the tracer reads (the probes and the 2026-07-28 requests), the responses handed to the SDK over HTTP, and the JSON-RPC message lines of every stdio connection (a line over the 64 MB stdio buffer is dropped by the SDK and not counted). The read that crosses the budget stops at it; from then on no request is sent and no listing page is asked for. The run stops as on a `--max-duration` deadline (abort, close, copy the snapshot): `limits.truncated` records `snapshot budget (N bytes over)` with `unit: "bytes"` and `limits.budgetExhausted` records `{bytes, overBytes, phase, completed, unfinished}`. The coverage is `stopped` with reason `snapshot budget exhausted (during <phase>)`, or `connect-failed` with a fatal error if no handshake had completed. The engine treats `limits.budgetExhausted.unfinished` like `limits.stopped.unfinished`: a rule that reads data of an unfinished phase and finds nothing is skipped with reason `snapshot budget exhausted` (`--max-duration` keeps `stopped by --max-duration`), and findings made on partial data are kept. The verdict is INCOMPLETE and the Result line reads `INCOMPLETE (snapshot budget exhausted (during <phase>))`. It is a partial check, not a stop: `summary.failed` follows the `--fail-on` gate and the exit code is never 4 (§3.2). JUnit adds an `incomplete` suite property and a `<system-out>` line (not an `<error>`), and the GitHub `::warning` names the budget and the bytes.
+
+**Exchanges** (0.4.0). An HTTP exchange records the request, the status, the headers, a masked 4 KB snippet, `bodyBytes`, `bodySha256` (over the masked text when a known secret occurs in it) and `jsonRpc`: one entry per JSON-RPC response with its `id`, flags for a result or a method, `error` (`code`, `message`, and `data` up to 4096 characters of JSON), `resultInfo` (`isError`, length of `contents`) and, for the discover probe, `resultValue` (the same object as `discoverRaw`). `jsonParsed` is true when the body was a JSON object or array, and `oauthError` is the string `error` member of such an object (up to 200 characters). The tracer returns the parsed body once and keeps it on `exchange.json` only for the exchanges whose bodies the rules read (the wire probes, the discover call, the auth probe's metadata and token requests); after the run `dropExchangeBodies` removes `json` from the wire probes and the token requests, so no exchange holds a separate full parsed body (the PRM and AS metadata exchanges share the object with `authProbe.prm.json` and `as[].json`). Every other result lives once in the snapshot field built from it. The JSON report does not contain exchanges.
 
 - The engine:
   - evaluates `needs` and records skipped rules with their reasons; on a snapshot with `limits.stopped`, also skips a rule that read data of an unfinished phase and found nothing (§3.3)
@@ -1379,7 +1458,7 @@ interface Limits {                                // snap.limits, also in the JS
   - sorts the findings
 - All I/O lives in `connect.ts` and `probe/*`. Rules are pure functions over the snapshot. This makes them unit-testable from JSON snapshots.
 - `catalog.test.ts` asserts:
-  - IDs are unique and match `/^(SRV|SPEC|TOOL|INJ|DATA|POL|APPS|AUTH|RT|MAN)-\d{3}$/`
+  - IDs are unique and match `/^(SRV|SPEC|TOOL|INJ|DATA|POL|APPS|AUTH|RT|LST|MAN)-\d{3}$/`
   - every rule has at least one source URL and at least one platform
   - IDs match a frozen list, so a removed ID is never reused
 
@@ -1502,15 +1581,16 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
 ### 5.3 Other formats
 - **json:**
   ```
-  { tool: {name, version, catalogDate}, target, startedAt, durationMs,
+  { schemaVersion, $schema, tool: {name, version, catalogDate}, target, startedAt, durationMs,
     server: {url|command, serverInfo, era, protocolVersion, transport, auth},
-    coverage, limits, summary: {errors, warnings, info, score, verdicts: {claude?, chatgpt?}, failed, baselined?},
+    coverage, limits, toolFingerprints: [{name, sha256, fields}] | null, baseline?: {toolChanges: {added, removed, changed: [{name, fields}]} | null, notCompared?}, summary: {errors, warnings, info, score, verdicts: {claude?, chatgpt?}, failed, baselined?},
     findings: [{ruleId, severity, platforms, severityByPlatform, title, message, tool?, resource?, path?, evidence?, fix, docs: string[], baselined?}],
     skipped: [{ruleId, reason}], ignored: [...], manual: [{id, platforms, text, docs}],
     disclaimer, contact: {text, url} | null }
   ```
-  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3). `--json-output` and `--save-baseline` (0.3.0) write this document besides any `--format`.
-- **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
+  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3). `--json-output` and `--save-baseline` (0.3.0) write this document besides any `--format`. From 0.4.0 `toolFingerprints` is always present (§3.5), `baseline` only with `--baseline`, and `$schema` is the second key.
+  **Report schema.** `schema/report.schema.json` (JSON Schema draft 2020-12, shipped in the npm package through `files`) describes `schemaVersion` 1. Its `$id` is the raw GitHub URL of the file at the release tag that last changed it (`JSON_SCHEMA_URL` in `src/report/json.ts`), and the report repeats it in `$schema`; the URL answers 404 until that tag is pushed. Objects are closed (`additionalProperties: false`; the server's own `serverInfo` stays open), and a test validates the fixture reports with ajv (already a runtime dependency, `ajv/dist/2020.js`), so it fails when the report gains a field the schema lacks.
+- **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then, with `--baseline`, `## Changed tool definitions (N since baseline)` (a Tool | Change table, or a `>` note when not compared), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
 - **sarif:** SARIF 2.1.0.
   - `tool.driver` = mcp-review-check, with `rules[]` taken from the catalog (`id`, `shortDescription`, `helpUri` = first source, `properties.platforms`).
   - Level mapping: error→`error`, warning→`warning`, info→`note`.
@@ -1518,7 +1598,7 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
   - `tool.driver.informationUri` is the project repository URL (`package.json` `repository.url`), never `CONTACT_URL`.
   - The output validates against the official SARIF 2.1.0 schema (vendored in `test/fixtures/sarif-schema-2.1.0.json`).
   - Manual items are excluded.
-  - With `--baseline`, every result carries `baselineState` `new` or `unchanged` and `runs[0].properties.summary.baselined` counts the known ones (§3.5).
+  - With `--baseline`, every result carries `baselineState` `new` or `unchanged` and `runs[0].properties.summary.baselined` counts the known ones (§3.5). Each changed tool definition adds one `note` result of the synthetic rule `BASE-001` "Tool definition changed since baseline" (`baselineState: new`, `properties.change` and `fields`, a partial fingerprint per change); its rule entry is added to the driver only when there is a change, and `runs[0].properties.baseline` holds the JSON drift object.
   - Known limitation: GitHub code scanning cannot link these results to source lines.
 - **junit** (0.3.0, `src/report/junit.ts`): JUnit XML for CI test views (GitLab `reports: junit`, Jenkins, `dorny/test-reporter`).
   - Structure: a `<testsuites name="mcp-review-check">` root with `tests`, `failures`, `errors`, `skipped` (the sums of its suites) and `time` (the run duration in seconds). It holds one `<testsuite>` per gated platform (`summary.gate.platforms`: the `--target` directories, plus `spec` with `--fail-on-spec`) with the same counts and `<properties>`: target, score, failOn, the verdict (not on the `spec` suite) and, with known findings, baselined.
@@ -1616,9 +1696,13 @@ export const CTA_TEXT = 'Need help getting your connector approved?';
 
 ## 8. Open questions
 - **Q1:** Does ChatGPT read `_meta.ui.domain` ahead of `openai/widgetDomain` when both are present? This decides whether one server can satisfy both hosts' domain rules (§2.11 C1). Until confirmed, APPS-012 prefers `openai/widgetDomain`.
+  **Decided 2026-11-02 (0.4.0):** keep. APPS-012 prefers `openai/widgetDomain`; revisit if OpenAI documents the precedence.
 - **Q2:** Should SRV-004's "no A record" be checked against public DNS (DoH) instead of the system resolver? v1 uses the system resolver and says so in the message.
+  **Decided 2026-11-02 (0.4.0):** keep the system resolver; the message says so.
 - **Q3:** Should listing and manifest linting (`--listing listing.json`, `--plugin plugin.json`) turn the MAN-002/015..024 items into automated checks? This is planned for v1.1.
+  **Decided 2026-11-02 (0.4.0):** yes, this release. `--plugin-dir` and `--openai-manifest` (not `--listing`/`--plugin`) feed LST-001..LST-026 (§2.13, §3.8), which automate MAN-015, 017, 018, 020 and 023 fully and MAN-002, 016, 019 and 021 in part. The OpenAI listing fields live in plugin.json, not in mcp.json. MAN-022 and MAN-024 stay manual.
 - **Q4:** The score weights (12/4, cap of 3 per rule) are provisional. Revisit them after running the tool on real servers.
+  **Decided 2026-11-02 (0.4.0):** keep the provisional weights; the seven frozen real-server snapshots show no anomaly.
 - **Q5:** Should a run stopped by `--max-duration` get its own exit code (for example 4) instead of sharing 3 with "could not connect" and internal errors? CI could then tell "too slow" from "unreachable"; it changes the documented exit-code contract (§3.2), so it waits for a minor release.
   **Decided 2026-11-01 (0.2.0):** yes. A stop after the handshake (`limits.stopped` set, no fatal error) exits 4 at any `--fail-on`, so CI can tell "too slow" (4) from "unreachable" (3). A deadline that runs out before the handshake is a connect failure and stays exit 3. The change ships in the minor release 0.2.0, as the stability policy allows for a contract change, and is listed under "Changed" in the CHANGELOG (§3.2).
 - **Q6:** Should a token the server rejects (`token-rejected`, tool checks skipped) fail the run, either always (exit 3) or behind an option such as `--fail-on-incomplete`? Today the exit code follows `--fail-on`, so a CI job with an expired token can pass with most checks skipped (a verdict without errors reads `INCOMPLETE`).
