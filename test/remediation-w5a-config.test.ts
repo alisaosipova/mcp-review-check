@@ -79,9 +79,10 @@ describe('loadConfig: camelCase keys turned into the values the flags give', () 
 });
 
 describe('the CLI reads the config file', () => {
-  it('discovers it in --cwd: the server, --format and --fail-on come from the file', async () => {
-    file('mcp-review-check.config.json', { ...badServer, format: 'json', failOn: 'never', target: 'claude' });
-    const r = await run(['--cwd', dir]);
+  // 1.0.1 (review A01-01): a discovered file sets options only; the server comes from the command line or --config.
+  it('discovers it in --cwd: --format, --fail-on and --target come from the file', async () => {
+    file('mcp-review-check.config.json', { format: 'json', failOn: 'never', target: 'claude' });
+    const r = await run(['--cwd', dir, '--stdio', '--', process.execPath, BAD]);
     expect(r.code, r.stderr).toBe(0);
     const doc = JSON.parse(r.stdout);
     expect(doc.target).toBe('claude');
@@ -96,10 +97,10 @@ describe('the CLI reads the config file', () => {
   });
 
   it('a list given on the command line replaces the file list', async () => {
-    file('mcp-review-check.config.json', { ...badServer, format: 'json', failOn: 'never', ignore: ['TOOL-002'] });
-    const fromFile = JSON.parse((await run(['--cwd', dir])).stdout);
+    file('mcp-review-check.config.json', { format: 'json', failOn: 'never', ignore: ['TOOL-002'] });
+    const fromFile = JSON.parse((await run(['--cwd', dir, '--stdio', '--', process.execPath, BAD])).stdout);
     expect(fromFile.ignored.map((f: any) => f.ruleId)).toContain('TOOL-002');
-    const flag = JSON.parse((await run(['--cwd', dir, '--ignore', 'TOOL-006'])).stdout);
+    const flag = JSON.parse((await run(['--cwd', dir, '--ignore', 'TOOL-006', '--stdio', '--', process.execPath, BAD])).stdout);
     expect(flag.ignored.map((f: any) => f.ruleId)).not.toContain('TOOL-002');
     expect(flag.ignored.map((f: any) => f.ruleId)).toContain('TOOL-006');
   });
@@ -133,8 +134,8 @@ describe('the CLI reads the config file', () => {
   });
 
   it('a value the flag would reject is the flag error, with the file and the key and without the value', async () => {
-    const p = file('mcp-review-check.config.json', { ...badServer, failOn: SECRET });
-    const r = await run(['--cwd', dir]);
+    const p = file('mcp-review-check.config.json', { failOn: SECRET });
+    const r = await run(['--cwd', dir, '--stdio', '--', process.execPath, BAD]);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain(`error: --fail-on must be error, warning or never (from ${p}: key "failOn")`);
     expect(r.stderr).not.toContain(SECRET);
@@ -145,17 +146,17 @@ describe('the CLI reads the config file', () => {
   });
 
   it('bearer in the file warns without the value; with a stdio server it is the --bearer usage error, named', async () => {
-    file('mcp-review-check.config.json', { ...badServer, bearer: SECRET });
-    const r = await run(['--cwd', dir]);
+    file('c.json', { ...badServer, bearer: SECRET });
+    const r = await run(['--config', join(dir, 'c.json')]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toMatch(/warning: config file .* holds bearer values: .*\$MCP_REVIEW_CHECK_TOKEN/);
+    expect(r.stderr).toMatch(/warning: --config .* holds bearer values: .*\$MCP_REVIEW_CHECK_TOKEN/);
     expect(r.stderr).toMatch(/--bearer and --header apply only to <url> \(from .*: key "bearer"/);
     expect(r.stderr).not.toContain(SECRET);
   });
 
   it('env values from the file are redacted in the report and the --json-output file like --env values', async () => {
-    file('mcp-review-check.config.json', { stdio: process.execPath, args: [LEAKY], env: { API_TOKEN: SECRET }, format: 'json', failOn: 'never', jsonOutput: 'r.json' });
-    const r = await run(['--cwd', dir]);
+    file('c.json', { stdio: process.execPath, args: [LEAKY], env: { API_TOKEN: SECRET }, format: 'json', failOn: 'never', jsonOutput: 'r.json' });
+    const r = await run(['--config', join(dir, 'c.json')]);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain('leaky'); // the server ran and its echo reached the report
     expect(r.stdout + r.stderr).not.toContain(SECRET);

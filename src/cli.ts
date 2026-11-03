@@ -87,6 +87,8 @@ Options:
   --config <file>         Read options from a JSON file (keys: long option names in camelCase, such as failOn).
   --no-config             Do not look for mcp-review-check.config.json or .mcp-review-check.json in --cwd or the
                           working directory (read when --config is not given). Command-line options override the file.
+                          A found file only sets options: its url, stdio, args, output, jsonOutput, saveBaseline, cwd,
+                          env, header, bearer, active and activeAuth keys are ignored with a warning; use --config.
   -h, --help              Show this help.
   -v, --version           Show the version.
 
@@ -102,7 +104,7 @@ Examples:
 --stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash is literal (Windows paths work),
 also inside double quotes, except before a ": there, as on Windows, \\\\" is one \\ and ends the quote, \\" a literal ".
 The "-- <command> [args...]" form passes arguments verbatim, with options before --.
-The config file may also name the server: {"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}.
+A --config file may also name the server: {"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}.
 Its paths are relative to the file; a list option given on the command line (--ignore, --header, --env) replaces
 the file's list. Secrets belong in $MCP_REVIEW_CHECK_TOKEN, not in the file (header and bearer keys get a warning).
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
@@ -338,11 +340,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         merged[opt] = v;
         fromConfig[opt] = cfg.keys[opt];
       }
+      // Only an explicit --config names the server (loadConfig drops it from a discovered file, with a warning).
       if (!positionals.length && values.stdio === undefined && !command) {
         if (cfg.url !== undefined) { positionals = [cfg.url]; fromConfig.url = 'url'; }
         if (cfg.stdio !== undefined) { values.stdio = cfg.stdio; fromConfig.stdio = 'stdio'; }
         if (cfg.command) { command = cfg.command; fromConfig.stdio = 'stdio'; }
       }
+      // One line names the file applied, and the key the server came from, so a file's effect is never silent.
+      const server = fromConfig.url ? ' (the server from its key "url")' : fromConfig.stdio ? ' (the server from its key "stdio")' : '';
+      stderr += `${visibleText(`mcp-review-check: options from ${cfg.given ? '--config' : 'config file'} ${cfg.file}${server}`)}\n`;
     }
     format = (values.format ?? 'text').toLowerCase();
     values.target ??= 'all';

@@ -30,6 +30,11 @@ const PATH_KEYS = new Set(['output', 'baseline', 'saveBaseline', 'jsonOutput', '
 /** The keys besides the options: the server to check. */
 const TARGET_KEYS = new Set(['url', 'stdio', 'args']);
 
+/** Keys a DISCOVERED config file (found in the directory, no --config) may not set: the server to start or connect to,
+ *  the files written, and what goes to the server or its process (credentials, environment, working directory, active
+ *  calls). A checkout of someone else's plugin can hold such a file; only an explicit --config keeps full power. */
+export const DISCOVERED_FORBIDDEN = ['url', 'stdio', 'args', 'output', 'jsonOutput', 'saveBaseline', 'cwd', 'env', 'header', 'bearer', 'activeAuth', 'active'] as const;
+
 export interface LoadedConfig {
   /** The file as found or given. */
   file: string;
@@ -41,8 +46,12 @@ export interface LoadedConfig {
   url?: string;
   stdio?: string;
   command?: string[];
-  /** Warnings for stderr (secrets in the file). */
+  /** Warnings for stderr (secrets in the file, keys a discovered file may not set). */
   warnings: string[];
+  /** True for --config, false for a discovered file. */
+  given: boolean;
+  /** The keys of a discovered file that were ignored (DISCOVERED_FORBIDDEN), in file order. */
+  ignoredKeys: string[];
 }
 
 /** failOn → fail-on. */
@@ -87,7 +96,7 @@ export function loadConfig(file: string, given: boolean): LoadedConfig {
   }
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) throw new ConfigError(`${where} must contain a JSON object of options, such as {"failOn": "warning"}`);
   const base = dirname(resolve(file));
-  const out: LoadedConfig = { file, options: {}, keys: {}, warnings: [] };
+  const out: LoadedConfig = { file, options: {}, keys: {}, warnings: [], given, ignoredKeys: [] };
   const wrong = (key: string, what: string) => new ConfigError(`${where}: key ${shownKey(key)} must be ${what} (the value is not shown)`);
   const d = doc as Record<string, unknown>;
 
@@ -147,6 +156,20 @@ export function loadConfig(file: string, given: boolean): LoadedConfig {
   const secrets = ['header', 'bearer'].filter((k) => k in out.keys || Object.hasOwn(d, k));
   if (secrets.length) {
     out.warnings.push(`warning: ${where} holds ${secrets.join(' and ')} values: a secret in a config file is easily committed; give the token with $MCP_REVIEW_CHECK_TOKEN instead\n`);
+  }
+  if (!given) {
+    // Validated above like any key (a typo is still exit 2), then dropped: a discovered file only sets options.
+    out.ignoredKeys = Object.keys(d).filter((k) => (DISCOVERED_FORBIDDEN as readonly string[]).includes(k));
+    for (const k of out.ignoredKeys) {
+      if (TARGET_KEYS.has(k)) continue;
+      const opt = optionName(k);
+      delete out.options[opt];
+      delete out.keys[opt];
+    }
+    if (out.ignoredKeys.some((k) => TARGET_KEYS.has(k))) { delete out.url; delete out.stdio; delete out.command; }
+    if (out.ignoredKeys.length) {
+      out.warnings.push(`warning: ${where} was found in the directory, not given with --config, so its keys ${out.ignoredKeys.map((k) => `"${k}"`).join(', ')} are ignored (a found file may not name the server, output files, cwd, env, header, bearer, active or activeAuth); pass --config ${file} to use them\n`);
+    }
   }
   return out;
 }
