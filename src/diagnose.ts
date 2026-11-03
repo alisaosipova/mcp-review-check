@@ -68,6 +68,13 @@ export function describeCause(url: URL, cause: { code?: string; message?: string
     case 'EADDRNOTAVAIL': // kind stays 'other': JSON coverage.diagnosis.kind does not change
       return { kind: 'other', code, summary: `no route to ${hostPort} (${code})`, hint: 'check the address, VPN and firewall; on macOS 15+ allow Local Network access for your terminal app (System Settings > Privacy & Security > Local Network)' };
   }
+  if (isTlsCode(code) && proxy) {
+    // Through a proxy the certificate is often the TLS-inspecting proxy's own, not the server's.
+    return {
+      kind: 'tls', code, summary: `TLS certificate presented for ${host} through the proxy ${proxyLabel(proxy)} is not trusted (${code})`,
+      hint: "a TLS-inspecting proxy presents its own certificate: add its CA with NODE_EXTRA_CA_CERTS=/path/to/ca.pem; otherwise the server's certificate is at fault (serve one from a public CA with the full chain)",
+    };
+  }
   if (isTlsCode(code)) {
     return {
       kind: 'tls', code, summary: `TLS certificate of ${host} is not trusted (${code})`,
