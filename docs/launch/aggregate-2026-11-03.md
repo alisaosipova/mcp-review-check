@@ -1,6 +1,6 @@
 # Aggregate: mcp-review-check on 7 captured public MCP servers
 
-DRAFT for review. Generated 2026-11-03 from the working tree on branch `feat/user-value` (package.json version 0.7.0; latest local git tag v0.7.0, created 2026-11-03 06:55 -0500 on HEAD `888e14f`; npm latest 0.5.0 per the task brief, not re-checked here). No network call was made: every number below comes from the captured fixtures and the command named next to it.
+DRAFT for review. Generated 2026-11-03 from the working tree on branch `feat/user-value` (package.json version 0.7.0; latest local git tag v0.7.0, created 2026-11-03 06:55 -0500 on HEAD `888e14f`; npm latest 0.7.0 with provenance, checked 2026-11-04 with npm dist-tag ls). No network call was made: every number below comes from the captured fixtures and the command named next to it.
 
 ## Method
 

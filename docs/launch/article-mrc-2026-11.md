@@ -136,8 +136,7 @@ It is read-only by default: it calls no tool unless you pass `--active`, and the
 a test-account token in `MCP_REVIEW_CHECK_TOKEN` for the tool checks; without it the verdict is `INCOMPLETE`, never
 a pass.
 
-(Draft note: the `npx` lines assume 0.7.x is on npm. The aggregate file records npm latest as 0.5.0, not
-re-checked. Verify before publishing.)
+(Draft note: npm latest is 0.7.0 as of 2026-11-04, so the `npx` lines resolve to it.)
 
 ## Put it in CI
 
