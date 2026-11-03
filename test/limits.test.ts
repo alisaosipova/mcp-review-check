@@ -28,7 +28,7 @@ describe('input caps', () => {
 
   // A wall-clock bound: V8 coverage instrumentation slows the rules several times over, so the CI coverage job
   // (MCP_REVIEW_CHECK_COVERAGE=1) skips it; the normal test run keeps it.
-  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('pathological descriptions no longer take seconds in the rules (80 000 characters under 2 s; API_NAMED was quadratic)', () => {
+  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('pathological descriptions no longer take seconds in the rules (80 000 characters under 5 s; API_NAMED was quadratic)', () => {
     // Free-form `sql` makes TOOL-026 look for a named API in the description; even uncapped, the rules stay linear.
     const s = snap({
       tools: Array.from({ length: 4 }, (_, i) => tool({
@@ -38,7 +38,8 @@ describe('input caps', () => {
     });
     const t0 = performance.now();
     runRules(s, RULES);
-    expect(performance.now() - t0).toBeLessThan(2000);
+    // ~0.7 s alone; the bound leaves room for full-suite load (3.2 s seen) while a quadratic rule still takes tens of seconds.
+    expect(performance.now() - t0).toBeLessThan(5000);
   }, 120000);
 
   it('a 2 MB description at schema depth 40 is cut and reported like one at the top', async () => {

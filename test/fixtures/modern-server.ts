@@ -69,7 +69,9 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     const named = msg.method === 'tools/call' ? msg.params?.name : msg.method === 'resources/read' ? msg.params?.uri : undefined;
     if (named !== undefined && req.headers['mcp-name'] !== named) return err(400, -32020, `the body carries ${String(named)} but the required Mcp-Name header is absent or different`);
     const cache = (scope = 'public') => (opts.bad ? { resultType: 'complete', cacheScope: scope } : { resultType: 'complete', ttlMs: 60000, cacheScope: scope });
-    const ok = (result: Record<string, unknown>) => send(200, { jsonrpc: '2.0', id, result });
+    // A conforming 2026-07-28 server identifies itself in every result (SPEC-022); opts.bad leaves it out.
+    const SERVER_INFO = { 'io.modelcontextprotocol/serverInfo': { name: 'acme-docs', title: 'Acme Docs', version: '2.0.0' } };
+    const ok = (result: Record<string, unknown>) => send(200, { jsonrpc: '2.0', id, result: opts.bad ? result : { ...result, _meta: { ...SERVER_INFO, ...(result._meta as object | undefined) } } });
     switch (msg.method) {
       case 'server/discover':
         return ok({
