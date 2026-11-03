@@ -174,6 +174,13 @@ As of 2026-10-23; each statement links to the tool's own documentation, checked 
 | [Snyk Agent Scan](https://github.com/snyk/agent-scan), formerly [`mcp-scan`](https://pypi.org/project/mcp-scan/) | Discovers the agents, MCP servers and skills [installed on a machine](https://github.com/snyk/agent-scan#readme) and scans them for prompt injection and other threats; needs a Snyk API token | Auditing the MCP servers you use |
 | mcp-review-check | Checks one server against the public review criteria of the Claude and ChatGPT directories and the MCP spec, with a source link per rule and a manual checklist; no account | Getting your own server ready for a directory submission |
 
+## Related
+
+[LureKit](https://github.com/alisaosipova/lurekit), by the same author, is a security benchmark for deployed
+coding-agent setups (agent, model, permission mode, settings, MCP servers, hooks, skills): it replays scenarios
+derived from public disclosures with inert fixtures. mcp-review-check checks the server you publish, LureKit checks
+the agent setup you run.
+
 ## FAQ
 
 **Does a clean report mean the directory will accept my server?** No. Reviews include manual testing and policy judgment, and the rules reflect the public criteria as of the catalog date (see [Limitations and disclaimer](#limitations-and-disclaimer)). The manual checklist lists what the tool cannot check.

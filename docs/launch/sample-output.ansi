@@ -1,0 +1,42 @@
+[1mmcp-review-check 0.7.0 | rules 2026-11-02 | target: all[0m
+Server  <server> 1.0.0 | stdio:node docs/launch/replay-fixture.mjs <fixture>
+Transport stdio | era legacy (2025-11-25) | auth n/a
+Checked 5 tools | 0 resources | 0 prompts | 0 UI resources | 78 rules run | 101 skipped (36 stdio target; 15 no UI resources; 15 needs --plugin-dir; ...)
+[2mLocal target: deploy-time checks are informational; --no-local for strict checks.[0m
+
+[31mERRORS (5)[0m
+  [31mx[0m TOOL-006 [claude] 5 tools: no title: get_regional_availability, list_regions, read_documentation, +2 more
+[2m      fix  Add `title` (top level, or in `annotations.title`).[0m
+[2m      docs https://claude.com/docs/connectors/building/review-criteria[0m
+
+[33mWARNINGS (1)[0m
+  [33m![0m TOOL-015 [chatgpt] read_documentation: openWorldHint: false but free-form "url" parameter reaches arbitrary targets
+[2m      fix  Set openWorldHint: true, or constrain the target with an enum or pattern.[0m
+[2m      docs https://developers.openai.com/plugins/plugin-guidelines[0m
+
+[36mINFO (7)[0m
+  [36mi[0m SRV-002 [chatgpt] server: ChatGPT apps connect only to a public HTTPS Streamable HTTP endpoint; a local stdio server cannot be submitted.
+  [36mi[0m SRV-002 [claude] server: Directory no longer accepts local MCPB servers; distribute via a plugin.
+  [36mi[0m TOOL-008 [claude] read_documentation: description is 2118 characters; it may be mixing purposes
+  [36mi[0m TOOL-008 [claude] search_documentation: description is 1059 characters; it may be mixing purposes
+  [36mi[0m TOOL-018 [spec] list_regions: tool takes no parameters but does not set additionalProperties: false
+  [36mi[0m TOOL-027 [claude] list_regions: collection tool without pagination or limit parameters
+  [36mi[0m TOOL-028 [claude] server: 3 read tool(s) without a field-selection option: search_documentation, list_regions, get_regional_availability
+
+[1mFIX SNIPPETS (add to each tool definition; check the guessed hint values)[0m
+  read_documentation: {"title":"Read documentation"}
+  search_documentation: {"title":"Search documentation"}
+  list_regions: {"title":"List regions"}
+  get_regional_availability: {"title":"Get regional availability"}
+  retrieve_skill: {"title":"Retrieve skill"}
+
+[2m22 manual items: --checklist to show[0m
+
+Score 84/100 | 2 root causes | 5 errors | 1 warnings | 7 info
+Claude: BLOCKED (5 errors) | ChatGPT: NEEDS ATTENTION (1 warning) | Result: [31mFAIL[0m (--fail-on error) | claude: 5 errors (TOOL-006)
+
+Need help getting your connector approved? 20horizon93@gmail.com
+
+Passing these automated checks does not guarantee approval. Directory reviews include manual
+testing and policy judgment, and requirements change. Rules reflect public docs as of 2026-11-02.
+mcp-review-check is independent and not affiliated with Anthropic or OpenAI.

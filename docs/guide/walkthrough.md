@@ -94,3 +94,5 @@ The `LST-*` rules check the manifest, README, LICENSE, `.mcp.json` pins and test
 - [ ] Nothing in the tool descriptions steers the model away from other tools or asks for data the tool does not need (the INJ and DATA rules).
 
 A clean report does not guarantee approval: reviews include manual testing and policy judgment, and the rules reflect the public criteria as of the catalog date ([Limitations](../../README.md#limitations-and-disclaimer)). Submit through the directory's own form; keep the saved JSON report as a record of what you checked.
+
+After you ship, keep the baseline job from step 6 running so a changed tool definition fails the build. mcp-review-check checks the server you publish, LureKit checks the agent setup you run: if you also run coding agents with MCP servers, see [LureKit](https://github.com/alisaosipova/lurekit).
