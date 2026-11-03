@@ -53,8 +53,9 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
-      // Exit 3 (no connect, or a --max-duration stop) is a failed run whatever the gate says.
-      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped || !!snap.limits?.budgetExhausted, gate: g,
+      // Exit 3 (no connect) and exit 4 (a --max-duration stop) are failed runs whatever the gate says. An exhausted snapshot
+      // budget is a partial check like a missing token: `failed` follows the --fail-on gate (--fail-on-incomplete is the CLI's).
+      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
     },
   };
 }
@@ -132,7 +133,7 @@ export function resultLine(r: Report, fail = (x: string) => x, causes = false): 
   const stop = r.snap.limits?.stopped;
   if (stop) return [`${fail('INCOMPLETE')} (stopped at --max-duration during ${stop.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const budget = r.snap.limits?.budgetExhausted;
-  if (budget) return [`${fail('INCOMPLETE')} (snapshot budget exhausted during ${budget.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
+  if (budget) return [`${fail('INCOMPLETE')} (snapshot budget exhausted (during ${budget.phase}))`, r.summary.failed ? r.summary.gate.reason : null, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const s = r.summary;
   const head = `${s.failed ? fail('FAIL') : 'PASS'} (--fail-on ${r.failOn}${s.gate.platforms.includes('spec') ? ', --fail-on-spec' : ''})`;
   const why = authReason(r.snap);

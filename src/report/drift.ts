@@ -82,7 +82,10 @@ export function incompleteTools(snap: Snapshot): string | undefined {
   if (snap.fatal) return 'the run did not connect';
   if (snap.listMeta.tools?.error) return 'tools/list failed';
   const level = snap.coverage.toolLevel;
-  if (level === 'stopped') return snap.limits?.stopped?.completed?.includes('listing') ? undefined : 'the run stopped before tools/list finished';
+  if (level === 'stopped') {
+    const done = (snap.limits?.stopped ?? snap.limits?.budgetExhausted)?.completed?.includes('listing');
+    return done ? undefined : snap.limits?.budgetExhausted ? 'the snapshot budget ran out before tools/list finished' : 'the run stopped before tools/list finished';
+  }
   return level === 'ok' ? undefined : `the check is partial (${level})`;
 }
 

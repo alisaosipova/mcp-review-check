@@ -534,7 +534,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       stderr = scrub(stderr, redactor);
     }
     // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
-    // A partial check (no or a rejected token, tools/list failed) follows --fail-on unless --fail-on-incomplete.
+    // A partial check (no or a rejected token, tools/list failed, an exhausted snapshot byte budget) follows --fail-on unless --fail-on-incomplete.
     const partial = snap.coverage.toolLevel !== 'ok';
     // --fail-on-drift: a tool change is exit 1 like a finding over --fail-on; drift alone never changes the code.
     const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift ? 1 : 0;

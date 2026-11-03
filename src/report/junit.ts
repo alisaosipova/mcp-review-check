@@ -77,10 +77,11 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
   const tests = cases.length;
   const [failures, errors, skipped] = [n('failure'), n('error'), n('skipped')];
   const verdict = p === 'spec' ? undefined : r.summary.verdicts[p]?.verdict;
-  const props = [['target', targetLabel(snap)], ['score', scoreLabel(r)], ['failOn', r.failOn], ...(verdict ? [['verdict', verdict]] : []), ...(known.length ? [['baselined', String(known.filter((f) => f.platforms.includes(p)).length)]] : [])];
+  const budget = snap.limits?.budgetExhausted;
+  const props = [['target', targetLabel(snap)], ['score', scoreLabel(r)], ['failOn', r.failOn], ...(verdict ? [['verdict', verdict]] : []), ...(budget ? [['incomplete', `snapshot budget exhausted (during ${budget.phase})`]] : []), ...(known.length ? [['baselined', String(known.filter((f) => f.platforms.includes(p)).length)]] : [])];
   // The drift is the same for every suite: each one's <system-out> has it, after the known-findings line.
   const driftOut = !drift ? [] : driftSummary(drift) ? [driftSummary(drift)!] : [driftHeading(drift), ...driftLines(drift).map((l) => `  ${l}`)];
-  const tally = [baselineLine(known.filter((f) => f.platforms.includes(p))), ...driftOut].filter(Boolean);
+  const tally = [...(budget ? [`incomplete: snapshot budget exhausted (during ${budget.phase}) after ${budget.bytes} bytes; later checks did not run`] : []), baselineLine(known.filter((f) => f.platforms.includes(p))), ...driftOut].filter(Boolean);
   const xml = [
     `  <testsuite name="${xmlText(p)}" tests="${tests}" failures="${failures}" errors="${errors}" skipped="${skipped}">`,
     '    <properties>',

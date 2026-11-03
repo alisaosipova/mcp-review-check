@@ -29,7 +29,9 @@ export function annotations(r: Report): string[] {
   const level = r.snap.coverage.toolLevel;
   if (!outcome && level !== 'ok') {
     const skipped = r.skipped.length ? ` (${r.skipped.length} rule${r.skipped.length === 1 ? '' : 's'} skipped)` : '';
-    const why = `Partial check: ${level} (${authReason(r.snap) ?? level}); tool-level checks were skipped${skipped}, so the result covers only what ran. --fail-on-incomplete fails the run on a partial check.`;
+    const budget = r.snap.limits?.budgetExhausted;
+    const cause = budget ? `snapshot budget exhausted during ${budget.phase}, after ${budget.bytes} bytes` : authReason(r.snap) ?? level;
+    const why = `Partial check: ${level} (${cause}); tool-level checks were skipped${skipped}, so the result covers only what ran. --fail-on-incomplete fails the run on a partial check.`;
     out.push(`::warning title=mcp-review-check::${escapeCommand(why)}`);
   }
   for (const f of r.findings) {

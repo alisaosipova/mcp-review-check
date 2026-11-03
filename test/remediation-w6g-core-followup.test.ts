@@ -53,13 +53,13 @@ describe('the engine on a snapshot whose byte budget ran out (F146)', () => {
 });
 
 describe('the report on a budget stop (F146)', () => {
-  it('the verdict is INCOMPLETE, summary.failed is true and the result line names the budget and the phase', () => {
+  it('the verdict is INCOMPLETE, summary.failed follows the gate (false at never) and the result line names the budget and the phase', () => {
     const s = budgetStopped('listing');
     const r = buildReport(s, runRules(s, []), [], 'never', new Date('2026-11-03T10:00:00Z'), 1);
-    expect(r.summary.failed).toBe(true);
+    expect(r.summary.failed).toBe(false);
     expect(r.summary.score).toBeNull();
     expect(Object.values(r.summary.verdicts).every((v) => v!.verdict === 'INCOMPLETE')).toBe(true);
-    expect(resultLine(r)).toBe('INCOMPLETE (snapshot budget exhausted during listing)');
+    expect(resultLine(r)).toBe('INCOMPLETE (snapshot budget exhausted (during listing))');
   });
 
   it('a snapshot that was not stopped is unchanged', () => {
