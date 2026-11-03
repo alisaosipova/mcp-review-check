@@ -57,7 +57,9 @@ export function readBaseline(file: string): Baseline {
   if (typeof d.schemaVersion !== 'number' || d.schemaVersion < 1 || d.schemaVersion > JSON_SCHEMA_VERSION) throw notReport(`schemaVersion is not 1 to ${JSON_SCHEMA_VERSION}`);
   if (!Array.isArray(d.findings)) throw notReport('no findings array');
   let tools: ToolFingerprint[] | null | undefined;
-  if (d.toolFingerprints === null) tools = null;
+  // A listing-only report of 1.0.0 recorded toolFingerprints [] although no server was checked: that is no tool list.
+  const listingOnly = (d.server as { listingOnly?: unknown } | undefined)?.listingOnly === true;
+  if (d.toolFingerprints === null || listingOnly) tools = null;
   else if (d.toolFingerprints !== undefined) {
     if (!Array.isArray(d.toolFingerprints)) throw notReport('toolFingerprints is not an array');
     tools = d.toolFingerprints.map((t: unknown, i): ToolFingerprint => {
@@ -93,25 +95,42 @@ const wording = (m: string | undefined) => (m ?? '').replace(/\d+(\.\d+)?/g, '#'
  * with the same subject need two baseline entries, so a repeat that appears is new; between them, the entry with the
  * same wording (numbers aside) is taken first, so the finding that appeared is the new one, and a reworded message
  * still matches a free entry. `findings` should be redacted as the baseline report was, so that a subject with a
- * secret in it compares equal. SRV-020 (the protocol era, an info note text and markdown show in their header) is never known.
+ * secret in it compares equal; `alt`, when given, is a second form of the same findings tried for those still new. SRV-020 (the protocol era, an info note text and markdown show in their header) is never known.
  */
-export function knownFindings(findings: FindingKey[], baseline: FindingKey[]): boolean[] {
-  const pool = new Map<string, FindingKey[]>();
+export function knownFindings(findings: FindingKey[], baseline: FindingKey[], alt?: FindingKey[]): boolean[] {
+  // Per subject: the entries, a used mark each and the first unused index, so matching stays near-linear for many
+  // findings on one subject (no array copies, no splice).
+  const pool = new Map<string, { list: FindingKey[]; words: string[]; used: boolean[]; first: number }>();
   for (const b of baseline) {
     const k = subjectKey(b);
-    pool.set(k, [...(pool.get(k) ?? []), b]);
+    const e = pool.get(k);
+    if (e) { e.list.push(b); e.words.push(wording(b.message)); e.used.push(false); }
+    else pool.set(k, { list: [b], words: [wording(b.message)], used: [false], first: 0 });
   }
   const known = findings.map(() => false);
-  const take = (sameWording: boolean) => findings.forEach((f, n) => {
+  const take = (sameWording: boolean, list = findings) => list.forEach((f, n) => {
     if (known[n] || f.ruleId === 'SRV-020') return;
-    const list = pool.get(subjectKey(f)) ?? [];
-    const i = list.findIndex((b) => f.platforms.every((p) => b.platforms.includes(p)) && (!sameWording || wording(b.message) === wording(f.message)));
+    const e = pool.get(subjectKey(f));
+    if (!e) return;
+    const w = sameWording ? wording(f.message) : '';
+    let i = -1;
+    for (let j = e.first; j < e.list.length; j++) {
+      if (e.used[j]) continue;
+      if (f.platforms.every((p) => e.list[j].platforms.includes(p)) && (!sameWording || e.words[j] === w)) { i = j; break; }
+    }
     if (i < 0) return;
-    list.splice(i, 1);
+    e.used[i] = true;
+    while (e.first < e.list.length && e.used[e.first]) e.first++;
     known[n] = true;
   });
   take(true);
   take(false);
+  // `alt`: the same findings in another redaction (the CLI passes them as the rules wrote them, without the run's
+  // --env values redacted); a finding the first form left new may still take a free entry in that form (A01-05).
+  if (alt && alt.length === findings.length) {
+    take(true, alt);
+    take(false, alt);
+  }
   return known;
 }
 

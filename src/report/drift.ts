@@ -34,6 +34,8 @@ export interface ToolChanges {
 export interface Drift {
   toolChanges: ToolChanges | null;
   notCompared?: string;
+  /** Which side made the comparison impossible: the baseline (re-save it) or this run (fix the run first). */
+  notComparedBy?: 'baseline' | 'run';
   /** The number of tools of this run that were compared (for the "no change" line). */
   tools: number;
 }
@@ -79,6 +81,8 @@ export function toolFingerprint(t: Record<string, unknown>): ToolFingerprint {
 
 /** Why this run's tools/list is not the server's whole tool list, or undefined when it is. */
 export function incompleteTools(snap: Snapshot): string | undefined {
+  // A listing-only run lists no tools: [] would read as "a server with no tools" (every baseline tool removed).
+  if (snap.target.kind === 'listing') return 'no server was checked (a listing-only run)';
   if (snap.fatal) return 'the run did not connect';
   if (snap.listMeta.tools?.error) return 'tools/list failed';
   const level = snap.coverage.toolLevel;
@@ -89,10 +93,30 @@ export function incompleteTools(snap: Snapshot): string | undefined {
   return level === 'ok' ? undefined : `the check is partial (${level})`;
 }
 
-/** The fingerprints of the snapshot's tools, in tools/list order, or null when tools/list did not finish. Computed over
- *  the snapshot as the report holds it: secrets redacted and strings over the input cap cut (see limits.truncated). */
-export function toolFingerprints(snap: Snapshot): ToolFingerprint[] | null {
+/** Fingerprints set by pinFingerprints for a (redacted) report snapshot. */
+const pinned = new WeakMap<Snapshot, ToolFingerprint[] | null>();
+
+/** The fingerprints of the snapshot as it is, ignoring a pin. */
+function ownFingerprints(snap: Snapshot): ToolFingerprint[] | null {
   return incompleteTools(snap) ? null : snap.tools.map(toolFingerprint);
+}
+
+/**
+ * Sets the fingerprints of the report's snapshot `report` from `rules`, the snapshot the rules saw (strong secrets
+ * scrubbed, strings over the input cap cut, but no run-specific --env values redacted), so that a non-secret --env
+ * value echoed in a tool does not make the digest depend on the command line (A01-05). The names stay the report's
+ * (redacted), as the JSON report and the drift lines print them.
+ */
+export function pinFingerprints(report: Snapshot, rules: Snapshot): void {
+  const raw = ownFingerprints(rules);
+  const shown = ownFingerprints(report);
+  pinned.set(report, raw && shown && raw.length === shown.length ? raw.map((f, i) => ({ ...f, name: shown[i].name })) : shown);
+}
+
+/** The fingerprints of the snapshot's tools, in tools/list order, or null when tools/list did not finish (or no server
+ *  was checked). Computed over the snapshot the rules saw when the CLI pinned them, else over `snap` as it is. */
+export function toolFingerprints(snap: Snapshot): ToolFingerprint[] | null {
+  return pinned.has(snap) ? pinned.get(snap)! : ownFingerprints(snap);
 }
 
 /** The fields whose digest differs, or that one side has and the other not, in TOOL_FIELDS order. */
@@ -107,22 +131,31 @@ function changedFields(a: ToolFingerprint, b: ToolFingerprint): ToolField[] {
  */
 export function compareTools(baseline: ToolFingerprint[] | null | undefined, snap: Snapshot): Drift {
   const now = toolFingerprints(snap);
-  if (baseline === undefined) return { toolChanges: null, notCompared: 'tool fingerprints were not recorded in the baseline (a report of mcp-review-check 0.3 or older); write it again with --save-baseline', tools: 0 };
-  if (baseline === null) return { toolChanges: null, notCompared: 'the baseline run did not list every tool, so it recorded no tool fingerprints', tools: 0 };
-  if (now === null) return { toolChanges: null, notCompared: `this run did not list every tool: ${incompleteTools(snap)}`, tools: 0 };
-  const byName = (list: ToolFingerprint[]) => {
-    const m = new Map<string, ToolFingerprint[]>();
-    for (const t of list) m.set(t.name, [...(m.get(t.name) ?? []), t]);
-    return m;
-  };
-  const before = byName(baseline);
-  const changes: ToolChanges = { added: [], removed: [], changed: [] };
-  for (const t of now) {
-    const old = before.get(t.name)?.shift();
-    if (!old) changes.added.push(t.name);
-    else if (old.sha256 !== t.sha256) changes.changed.push({ name: t.name, fields: changedFields(old, t) });
+  if (baseline === undefined) return { toolChanges: null, notCompared: 'tool fingerprints were not recorded in the baseline (a report of mcp-review-check 0.3 or older); write it again with --save-baseline', notComparedBy: 'baseline', tools: 0 };
+  if (baseline === null) return { toolChanges: null, notCompared: 'the baseline run did not list every tool, so it recorded no tool fingerprints', notComparedBy: 'baseline', tools: 0 };
+  if (now === null) return { toolChanges: null, notCompared: `this run did not list every tool: ${incompleteTools(snap)}`, notComparedBy: 'run', tools: 0 };
+  // A baseline written by 1.0.0 hashed the report's snapshot (run-specific --env values redacted): a tool whose digest
+  // matches that form is unchanged too, so a pinned run never reports a change 1.0.0 would not have.
+  const alt = pinned.has(snap) ? ownFingerprints(snap) : null;
+  // Tools with one name pair in tools/list order: a queue per name with a read index (no shift, no copies).
+  const before = new Map<string, { list: ToolFingerprint[]; next: number }>();
+  for (const t of baseline) {
+    const q = before.get(t.name);
+    if (q) q.list.push(t);
+    else before.set(t.name, { list: [t], next: 0 });
   }
-  for (const rest of before.values()) for (const t of rest) changes.removed.push(t.name);
+  const changes: ToolChanges = { added: [], removed: [], changed: [] };
+  now.forEach((t, i) => {
+    const q = before.get(t.name);
+    const old = q && q.next < q.list.length ? q.list[q.next++] : undefined;
+    const other = alt?.[i];
+    if (!old) changes.added.push(t.name);
+    else if (old.sha256 !== t.sha256 && old.sha256 !== other?.sha256) {
+      const fields = changedFields(old, t).filter((f) => !other || old.fields[f] !== other.fields[f]);
+      changes.changed.push({ name: t.name, fields: fields.length ? fields : changedFields(old, t) });
+    }
+  });
+  for (const q of before.values()) for (let k = q.next; k < q.list.length; k++) changes.removed.push(q.list[k].name);
   return { toolChanges: changes, tools: now.length };
 }
 
