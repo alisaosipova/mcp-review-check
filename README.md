@@ -100,7 +100,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: alisaosipova/mcp-review-check@v0.7.0
+      - uses: alisaosipova/mcp-review-check@v1.0.0
         with:
           target: https://staging.example.com/mcp     # or stdio: node dist/server.js
           platform: claude
