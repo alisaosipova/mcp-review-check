@@ -313,16 +313,17 @@ export const SPEC_013 = defineRule(
   },
   (snap) => {
     const out: RawFinding[] = [];
-    const scopes: Record<string, Set<unknown>> = {};
+    const scopes = new Map<string, Set<unknown>>();
     const seen = new Set<string>();
     const add = (m: string) => { if (!seen.has(m)) { seen.add(m); out.push({ message: m }); } };
     for (const { method, result } of snap.transport.modernResults ?? []) {
       if (!CACHEABLE.has(method) || !isObj(result) || result.resultType !== 'complete') continue;
       if (typeof result.ttlMs !== 'number' || !Number.isFinite(result.ttlMs) || result.ttlMs < 0) add(`${method}: ttlMs is not a finite number >= 0`);
       if (result.cacheScope !== 'public' && result.cacheScope !== 'private') add(`${method}: cacheScope is not "public" or "private"`);
-      (scopes[method] ??= new Set()).add(result.cacheScope);
+      if (!scopes.has(method)) scopes.set(method, new Set());
+      scopes.get(method)!.add(result.cacheScope);
     }
-    for (const [method, set] of Object.entries(scopes)) {
+    for (const [method, set] of scopes) {
       if (method !== 'resources/read' && method !== 'server/discover' && set.size > 1) add(`${method}: cacheScope differs between pages`);
     }
     return out;
@@ -620,10 +621,11 @@ const DEPRECATED_CAPS: Array<[string, string]> = [
   ['sampling', 'Sampling is deprecated in 2026-07-28 (SEP-2577) and is a client capability, not a server one'],
   ['roots', 'Roots is deprecated in 2026-07-28 (SEP-2577) and is a client capability, not a server one'],
 ];
-const DEPRECATED_REQUESTS: Record<string, string> = {
-  'sampling/createMessage': 'Sampling (deprecated in 2026-07-28, SEP-2577; integrate with an LLM provider API instead)',
-  'roots/list': 'Roots (deprecated in 2026-07-28, SEP-2577; take directories or files as tool parameters instead)',
-};
+// A Map: the method name is server-controlled, and a plain object would answer "constructor" or "toString".
+const DEPRECATED_REQUESTS = new Map<string, string>([
+  ['sampling/createMessage', 'Sampling (deprecated in 2026-07-28, SEP-2577; integrate with an LLM provider API instead)'],
+  ['roots/list', 'Roots (deprecated in 2026-07-28, SEP-2577; take directories or files as tool parameters instead)'],
+]);
 
 export const SPEC_021 = defineRule(
   {
@@ -647,7 +649,8 @@ export const SPEC_021 = defineRule(
     const add = (m: string) => { if (!seen.has(m)) { seen.add(m); out.push({ message: m }); } };
     for (const { where, request } of inputRequests(snap)) {
       const method = isStr(request.method) ? request.method : '';
-      if (DEPRECATED_REQUESTS[method]) add(`${where} asks the client for ${method}: ${DEPRECATED_REQUESTS[method]}`);
+      const deprecated = DEPRECATED_REQUESTS.get(method);
+      if (deprecated) add(`${where} asks the client for ${method}: ${deprecated}`);
       const ctx = isObj(request.params) ? request.params.includeContext : undefined;
       if (method === 'sampling/createMessage' && (ctx === 'thisServer' || ctx === 'allServers')) {
         add(`${where}: sampling/createMessage uses includeContext "${ctx}", deprecated (SEP-2596); omit it or use "none"`);
