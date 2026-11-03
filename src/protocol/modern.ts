@@ -7,6 +7,10 @@ import { CLIENT_CAPABILITIES } from './clientCaps.js';
 import { paginate, type Listing } from './legacy.js';
 import type { ByteBudget } from '../limits.js';
 
+/** A listing request answered without a JSON-RPC response: a 2xx says what was missing, rather than a bare "HTTP 200". */
+const noResponse = (status: number | undefined, method: string) =>
+  status !== undefined && status >= 200 && status < 300 ? `HTTP ${status} without a JSON-RPC response to ${method}` : `HTTP ${status}`;
+
 export const MODERN_VERSION = '2026-07-28';
 export const CLIENT_INFO = { name: 'mcp-review-check', version: VERSION };
 
@@ -101,7 +105,11 @@ export class ModernClient {
       ...(opts.abortAfterHeaders ? { abortAfterHeaders: true } : {}),
     });
     const msgs = Array.isArray(json) ? json.filter(isObj) : isObj(json) ? [json] : [];
-    const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];
+    // The response first: a server-to-client request in the same body may carry the same id (it has a method, no result);
+    // a body of notifications alone holds no response (no id to mismatch).
+    const isResp = (m: Record<string, unknown>) => 'result' in m || 'error' in m;
+    const msg = msgs.find((m) => m.id === id && isResp(m)) ?? msgs.find((m) => idMatches(m.id, id) && isResp(m))
+      ?? msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs.find(isResp);
     const res: ModernResponse = { exchange, bytes: bodyBytes };
     if (isObj(msg)) {
       // An error with id null (the request could not be read) answers any request; anything else must echo the id.
@@ -122,7 +130,7 @@ export class ModernClient {
     return paginate(async (cursor) => {
       const r = await this.request(method, cursor ? { cursor } : {});
       if (r.result) return { result: r.result, bytes: r.bytes ?? 0 };
-      return { error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? `HTTP ${r.exchange.status}`), bytes: 0 };
+      return { error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? noResponse(r.exchange.status, method)), bytes: 0 };
     }, method, key, maxPages, budget);
   }
 }

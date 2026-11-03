@@ -230,7 +230,9 @@ function parseBody(text: string, contentType: string | undefined, requestJson: u
     const id = (requestJson as { id?: unknown } | undefined)?.id;
     const idOf = (m: unknown) => (m as { id?: unknown } | null)?.id;
     if (id === undefined) return msgs[0];
-    return msgs.find((m) => idOf(m) === id) ?? msgs.find((m) => idMatches(idOf(m), id)) ?? msgs[0];
+    // The response first: a server-to-client request (ping, sampling, elicitation) on the stream may carry the same id.
+    return msgs.find((m) => idOf(m) === id && isResponseTo(m, id)) ?? msgs.find((m) => isResponseTo(m, id))
+      ?? msgs.find((m) => idOf(m) === id) ?? msgs.find((m) => idMatches(idOf(m), id)) ?? msgs[0];
   }
   const t = text.trim();
   if (!t || !(t.startsWith('{') || t.startsWith('['))) return undefined;
