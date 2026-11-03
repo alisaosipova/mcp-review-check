@@ -475,7 +475,8 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
       finishHeaders(ex, res, started);
       let bodyBytes: number | undefined;
       let json: unknown;
-      if (abortAfterHeaders) {
+      // A JSON answer is not a stream: read it (capped) so callers can see a JSON-RPC error; only streams are cut after the headers.
+      if (abortAfterHeaders && !/^application\/json\b/i.test(res.headers.get('content-type') ?? '')) {
         res.body?.cancel().catch(() => {});
         ctrl.abort();
         ex.bodySnippet = '';

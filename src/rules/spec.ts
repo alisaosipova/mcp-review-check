@@ -121,7 +121,8 @@ export const SPEC_005 = defineRule(
     // 2026-07-28 removed the GET stream: long-lived notifications are the response to a subscriptions/listen POST,
     // which the run opens (headers only) when the server declares listChanged or resource subscriptions.
     const listen = probeExchange(snap, 'subscriptionsListen');
-    if (listen?.status !== undefined && listen.status >= 200 && listen.status < 300 && mediaType(listen.contentType) !== 'text/event-stream') {
+    // A JSON-RPC error answer means the method is unimplemented, not that a stream was expected.
+    if (listen?.status !== undefined && !probeRpc(snap, 'subscriptionsListen')?.error && listen.status >= 200 && listen.status < 300 && mediaType(listen.contentType) !== 'text/event-stream') {
       out.push({ message: `subscriptions/listen got ${listen.status}${listen.contentType ? ` (${listen.contentType})` : ''}; its response is a text/event-stream that stays open` });
     }
     const ex = probeExchange(snap, 'get');

@@ -81,7 +81,7 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     }
     // subscriptions/listen is the 2026-07-28 replacement for the GET stream: open it, read the status line and headers, close.
     if (declares(snap, listens)) {
-      p.subscriptionsListen = (await modern.request('subscriptions/listen', { notifications: { toolsListChanged: true } }, { label: 'subscriptions/listen', abortAfterHeaders: true, timeoutMs: 5000 })).exchange;
+      p.subscriptionsListen = (await modern.request('subscriptions/listen', { notifications: { toolsListChanged: true } }, { label: 'subscriptions/listen', abortAfterHeaders: true, fullBody: false, keepJson: true, timeoutMs: 5000 })).exchange;
     }
     if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false, keepJson: true })).exchange;
   }

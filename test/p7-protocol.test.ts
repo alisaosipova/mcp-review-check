@@ -48,6 +48,13 @@ describe('subscriptions/listen probe (SPEC-005)', () => {
   });
 });
 
+describe('subscriptions/listen JSON-RPC error with HTTP 200', () => {
+  it('is not reported as a non-stream response', async () => {
+    const { spec } = await run({ listen: 'rpcerror' });
+    expect(spec('SPEC-005')).toEqual([]);
+  });
+});
+
 describe('logging notifications (SPEC-024)', () => {
   it('undeclared logging and unrequested messages are errors', async () => {
     const { spec } = await run({ logging: { declared: false } });

@@ -13,7 +13,7 @@ export interface ModernOptions {
   /** Declare io.modelcontextprotocol/tasks: 'ok' answers tasks/get for an unknown taskId with -32602, 'missing' leaves the method unimplemented (-32601). */
   tasks?: 'ok' | 'missing';
   /** Declare tools.listChanged and answer subscriptions/listen with an open SSE stream ('sse') or a JSON body ('json'). */
-  listen?: 'sse' | 'json';
+  listen?: 'sse' | 'json' | 'rpcerror';
   /** tools/list streams a notifications/message before its result. `declared`: the server declares logging; `level`: the notification's level (default 'info'; null leaves it out). */
   logging?: { declared: boolean; level?: string | null };
 }
@@ -91,6 +91,7 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
         });
       case 'subscriptions/listen': {
         if (!opts.listen) return err(404, -32601, 'Method not found: subscriptions/listen');
+        if (opts.listen === 'rpcerror') return err(200, -32601, 'Method not found: subscriptions/listen');
         if (opts.listen === 'json') return ok({ resultType: 'complete' });
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/subscriptions/acknowledged', params: { _meta: { 'io.modelcontextprotocol/subscriptionId': id }, notifications: { toolsListChanged: true } } })}\n\n`);

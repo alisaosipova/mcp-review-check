@@ -46,3 +46,8 @@ New requests, all to the MCP endpoint of a 2026-07-28 (modern or dual) server, n
 **SPEC-005 addition.** If the `subscriptionsListen` probe got 2xx and the content type is not `text/event-stream`: warning. Source: .../basic/patterns/subscriptions
 
 **SPEC-023 addition.** `tasksGet` probe: -32601 -> error; result -> warning; other -> info; -32602 -> verified.
+
+## Review fixes
+
+- SPEC-005 listen check no longer warns when subscriptions/listen answered with a JSON-RPC error (e.g. -32601 over HTTP 200); it is skipped when the probe has an error. Test added in test/p7-protocol.test.ts with a `listen: 'rpcerror'` fixture mode.
+- To see the error body, src/protocol/trace.ts now reads (capped) application/json answers even with abortAfterHeaders; streams are still cut after the headers. Probe passes keepJson. Tests run: p7-protocol, e2e-http (43 tests pass); typecheck and build pass.
