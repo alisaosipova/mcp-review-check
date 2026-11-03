@@ -55,13 +55,14 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       info: f.filter((x) => x.severity === 'info').length,
       // Exit 3 (no connect) and exit 4 (a --max-duration stop) are failed runs whatever the gate says. An exhausted snapshot
       // budget is a partial check like a missing token: `failed` follows the --fail-on gate (--fail-on-incomplete is the CLI's).
-      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
+      score: complete && snap.target.kind !== 'listing' ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
     },
   };
 }
 
 /** The target for display: secret query values and URL userinfo are redacted. */
 export function targetLabel(snap: Snapshot): string {
+  if (snap.target.kind === 'listing') return 'listing-only (no server checked)';
   return snap.target.kind === 'http' ? displayUrl(snap.target.urlAsEntered) : `stdio:${[snap.target.command, ...snap.target.args].join(' ')}`;
 }
 
@@ -120,6 +121,7 @@ export function eraLine(snap: Snapshot): string {
 
 /** "87/100", or "n/a (partial check: auth-required)" when tool-level checks did not run. */
 export function scoreLabel(r: Report): string {
+  if (r.snap.target.kind === 'listing') return 'n/a (listing-only)';
   return r.summary.score === null ? `n/a (partial check: ${r.snap.coverage.toolLevel})` : `${r.summary.score}/100`;
 }
 

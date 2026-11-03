@@ -31,6 +31,7 @@
         "url": { "type": "string", "description": "HTTP target, secret query values and userinfo redacted." },
         "command": { "type": "string", "description": "stdio target, for display (arguments joined with spaces)." },
         "argv": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Since 0.3: stdio target, each argument whole." },
+        "listingOnly": { "const": true, "description": "Since 0.6: a listing-only run (--plugin-dir / --openai-manifest without a server): no url, command or argv; nothing was connected." },
         "serverInfo": { "type": ["object", "null"], "description": "initialize serverInfo as the server sent it (secrets redacted)." },
         "era": { "enum": ["modern", "legacy", "dual", "sse-legacy", "unknown"] },
         "protocolVersion": { "type": ["string", "null"] },

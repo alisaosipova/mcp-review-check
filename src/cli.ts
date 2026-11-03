@@ -24,11 +24,11 @@ import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import { displayUrl, REDACTED_MARK } from './rules/util/net.js';
 import { isSafeToCall } from './probe/active.js';
-import type { Snapshot, TargetOpt } from './snapshot.js';
+import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
-import { attachListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
+import { attachListing, describeListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { compareTools, driftCount, type Drift } from './report/drift.js';
 import { inputFileProblem, readInputFile } from './input-file.js';
 import type { Finding } from './rules/types.js';
@@ -66,11 +66,11 @@ Options:
   --diff-only             With --baseline, text and markdown: only the new findings and the tool changes (no
                           known-findings line, no manual checklist).
   --plugin-dir <dir>      Also lint a Claude plugin folder (.claude-plugin/plugin.json, .mcp.json, README, LICENSE) against
-                          the plugin directory checklist (LST rules). Needs a <url> or --stdio target.
+                          the plugin directory checklist (LST rules). Alone (no <url> or --stdio) it checks the files only: a listing-only run.
   --openai-manifest <file>
                           Also lint a ChatGPT plugin package manifest (plugin.json with extensions.com.openai, or
                           .codex-plugin/plugin.json; its mcp.json is read from the package root) (LST rules).
-                          Needs a <url> or --stdio target.
+                          Alone (no <url> or --stdio) it checks the files only: a listing-only run.
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -351,7 +351,14 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
 
     if (positionals.length > 1) throw new UsageError('expected a single <url>');
     const isStdio = values.stdio !== undefined || command !== undefined;
-    if ((positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>"');
+    // --plugin-dir / --openai-manifest alone: a listing-only run that checks the files and connects to nothing.
+    const listingOnly = positionals.length === 0 && !isStdio && (values['plugin-dir'] !== undefined || values['openai-manifest'] !== undefined);
+    if (!listingOnly && (positionals.length === 1) === isStdio) throw new UsageError('give exactly one of <url> or --stdio "<command>" (or only --plugin-dir / --openai-manifest for a listing-only run)');
+    if (listingOnly) {
+      for (const [opt, on] of [['--bearer', values.bearer !== undefined], ['--header', !!values.header?.length], ['--env', !!values.env?.length], ['--cwd', values.cwd !== undefined], ['--active', !!values.active], ['--active-auth', !!values['active-auth']], ['--tool-args', !!values['tool-args']]] as const) {
+        if (on) throw new UsageError(`${opt} needs a <url> or --stdio target; a listing-only run connects to nothing`);
+      }
+    }
     const target = values.target!.toLowerCase() as TargetOpt;
     if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
     if (!['text', 'json', 'markdown', 'sarif', 'junit'].includes(format)) throw new UsageError('--format must be text, json, markdown, sarif or junit');
@@ -399,9 +406,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const bearer = isStdio || authHeader ? values.bearer : values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN ?? undefined;
     if (bearer !== undefined && /[\r\n]/.test(bearer)) throw new UsageError('--bearer must not contain CR or LF');
 
-    let spec: TargetSpec;
+    let spec: TargetSpec = { kind: 'http', url: 'http://listing.invalid/' }; // placeholder: a listing-only run never connects
     const typedEnv: Record<string, string> = {}; // --env names as typed: they decide a value's redaction tier
-    if (isStdio) {
+    if (listingOnly) {
+      // nothing to resolve
+    } else if (isStdio) {
       let parts: string[];
       if (command) parts = command;
       else try { parts = tokenizeCommand(values.stdio!); } catch (e) { throw new UsageError(`--stdio: ${(e as Error).message}`); }
@@ -482,7 +491,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const t0 = performance.now();
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
-    const { snap, stderrTail, tracer } = await buildSnapshot(opts);
+    const { snap, stderrTail, tracer } = listingOnly
+      ? { snap: emptySnapshot({ kind: 'listing' }, { target, active: false, activeAuth: false }), stderrTail: undefined, tracer: undefined }
+      : await buildSnapshot(opts);
     if (interrupted?.aborted) {
       const n = typeof interrupted.reason === 'number' ? interrupted.reason : 2;
       return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
@@ -534,6 +545,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {
+      if (snap.listing) stderr += `[listing]\n${visibleText(JSON.stringify(describeListing(snap.listing), null, 2))}\n`;
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
       // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135).
       for (const e of tracer?.exchanges ?? []) stderr += visibleText(`[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})`) + '\n';

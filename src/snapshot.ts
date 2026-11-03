@@ -191,7 +191,9 @@ export interface ActiveCall {
 }
 
 export interface Snapshot {
-  target: { kind: 'http'; urlAsEntered: string; url: URL } | { kind: 'stdio'; command: string; args: string[] };
+  target: { kind: 'http'; urlAsEntered: string; url: URL } | { kind: 'stdio'; command: string; args: string[] }
+    /** Listing-only run (--plugin-dir / --openai-manifest without a server): nothing is connected. */
+    | { kind: 'listing' };
   localMode: boolean;
   era: Era;
   protocolVersion?: string;

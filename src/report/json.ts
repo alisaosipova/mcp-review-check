@@ -26,7 +26,7 @@ export function toJson(r: Report): Record<string, unknown> {
     durationMs: Math.round(r.durationMs),
     server: {
       // command is for display; argv keeps each argument whole ("a b" stays one argument).
-      ...(snap.target.kind === 'http' ? { url: targetLabel(snap) } : { command: [snap.target.command, ...snap.target.args].join(' '), argv: [snap.target.command, ...snap.target.args] }),
+      ...(snap.target.kind === 'listing' ? { listingOnly: true } : snap.target.kind === 'http' ? { url: targetLabel(snap) } : { command: [snap.target.command, ...snap.target.args].join(' '), argv: [snap.target.command, ...snap.target.args] }),
       serverInfo: snap.serverInfo ?? null,
       era: snap.era,
       protocolVersion: snap.protocolVersion ?? null,

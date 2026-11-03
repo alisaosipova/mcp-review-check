@@ -26,9 +26,13 @@ export function authReason(snap: Snapshot): string | undefined {
   return undefined;
 }
 
+/** The skip reason of every rule that needs a server in a listing-only run. */
+export const LISTING_ONLY_REASON = 'no server target (listing-only run)';
+
 /** Returns undefined when the need is met, otherwise the skip reason. */
 export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
   const isHttp = snap.target.kind === 'http';
+  if (snap.target.kind === 'listing' && need !== 'plugin-dir' && need !== 'openai-manifest') return LISTING_ONLY_REASON;
   switch (need) {
     case 'tools':
     case 'resources':
@@ -177,7 +181,9 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     // A rule outside --target still runs for the score, but is reported as skipped and lists no findings.
     const applies = rulePlatforms.some((p) => active.includes(p));
     if (!applies) skipped.push({ ruleId: rule.id, reason: `not applicable to --target ${snap.options.target}` });
-    const reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);
+    let reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);
+    // A rule without a listing need reads the server: nothing to judge in a listing-only run.
+    if (!reason && snap.target.kind === 'listing' && !rule.needs.some((n) => n === 'plugin-dir' || n === 'openai-manifest')) reason = LISTING_ONLY_REASON;
     if (reason) {
       if (applies) skipped.push({ ruleId: rule.id, reason });
       continue;

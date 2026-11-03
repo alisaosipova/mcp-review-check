@@ -108,10 +108,10 @@ export function renderText(r: Report, opts: TextOptions): string {
   const out: string[] = [];
   out.push(c('bold', `${r.tool.name} ${r.tool.version} · rules ${r.tool.catalogDate} · target: ${snap.options.target}`));
   out.push(t(`Server  ${serverName(snap)} · ${targetLabel(snap)}`));
-  out.push(t(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`));
+  if (snap.target.kind !== 'listing') out.push(t(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`));
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(c('dim', `          ${rev}`));
-  out.push(t(`Checked ${counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`));
+  out.push(t(`Checked ${snap.target.kind === 'listing' ? 'listing-only: no server' : counts(snap)} · ${r.rulesRun} rules run · ${skippedSummary(r.skipped)}`));
   const local = localBanner(r);
   if (local) out.push(c('dim', local));
   if (snap.coverage.toolLevel === 'auth-required') out.push('', c('yellow', AUTH_NOTICE));

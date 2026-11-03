@@ -48,10 +48,10 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
   if (local) out.push(`> ${local}`, '');
   out.push('| Item | Value |', '|---|---|');
   out.push(`| Target | ${text(targetLabel(snap))} |`);
-  out.push(`| Transport | ${snap.transport.kind} · era ${text(eraLine(snap))} · auth ${cell(authSummary(snap))} |`);
+  if (snap.target.kind !== 'listing') out.push(`| Transport | ${snap.transport.kind} · era ${text(eraLine(snap))} · auth ${cell(authSummary(snap))} |`);
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(`| Revision | ${text(rev)} |`);
-  out.push(`| Checked | ${counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);
+  out.push(`| Checked | ${snap.target.kind === 'listing' ? 'listing-only: no server' : counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);
   const rc = r.rootCauses;
   out.push(`| Score | ${scoreLabel(r)} · ${rc.errors + rc.warnings} root cause${rc.errors + rc.warnings === 1 ? '' : 's'} |`);
   out.push(`| Findings | ${s.errors} errors · ${s.warnings} warnings · ${s.info} info |`);

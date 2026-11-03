@@ -74,11 +74,11 @@ describe('usage errors', () => {
     expect(r.stderr).toContain('--openai-manifest must be a file, not a directory');
   });
 
-  it('an empty value, and no target, are usage errors', async () => {
+  it('an empty value is a usage error; a listing without a target is a listing-only run (0.6)', async () => {
     expect((await run([...stdio, '--plugin-dir='])).code).toBe(2);
     const r = await run(['--plugin-dir', join(FIX, 'plugin-valid')]);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toMatch(/exactly one of <url> or --stdio/);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/listing-only/);
   });
 });
 
