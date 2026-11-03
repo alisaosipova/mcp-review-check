@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const git = (args: string[]) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+const git = (args: string[], input?: string) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024 });
 
-/** `git check-attr <attr>` for each file, as a map file -> value (`lf`, `set`, `unset`, `unspecified`). */
+/** `git check-attr <attr>` for each file, as a map file -> value (`lf`, `set`, `unset`, `unspecified`).
+ *  The paths go on stdin: the repository has thousands of files, more than a Windows command line holds (ENAMETOOLONG). */
 function checkAttr(attr: string, files: string[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const line of git(['check-attr', attr, '--', ...files]).split('\n')) {
+  for (const line of git(['check-attr', '--stdin', attr], files.join('\n') + '\n').split('\n')) {
     const m = line.match(/^(.*): [^:]+: (.*)$/);
     if (m) out[m[1]] = m[2];
   }
