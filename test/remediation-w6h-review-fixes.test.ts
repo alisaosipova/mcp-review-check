@@ -199,3 +199,18 @@ describe.skipIf(process.platform === 'win32')('item 5: file inputs must be regul
     expect(() => readInputFile(f, 3)).toThrow(expect.objectContaining({ code: 'E2BIG' }));
   });
 });
+
+describe('--tool-args through the input-file reader (wave 6 follow-up)', () => {
+  it.skipIf(process.platform === 'win32')('a FIFO given to --tool-args is a usage error, not a hang', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { execFileSync, spawnSync } = await import('node:child_process');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'w6h-toolargs-'));
+    const fifo = join(dir, 'args.fifo');
+    execFileSync('mkfifo', [fifo]);
+    const r = spawnSync(process.execPath, ['dist/cli.js', '--no-config', '--active', '--tool-args', fifo, '--stdio', 'node test/fixtures/good-server.mjs'], { encoding: 'utf8', timeout: 20000 });
+    expect(r.status, r.stderr).toBe(2);
+    expect(r.stderr).toContain('cannot read --tool-args: it is not a regular file');
+  });
+});

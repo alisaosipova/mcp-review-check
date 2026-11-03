@@ -429,7 +429,7 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
 | `fail-on-spec` | `false` | Also fail on MCP spec findings. |
 | `active` | `false` | `--active`: calls the tools annotated `readOnlyHint: true`. |
 | `bearer` | | Token, passed only as `MCP_REVIEW_CHECK_TOKEN`, never on the command line. Empty keeps one set in the job's `env`. |
-| `version` | `0.3` | npm version or range of mcp-review-check to run; 0.3 or newer (the outputs read the report written with `--json-output`). |
+| `version` | `0.4` | npm version or range of mcp-review-check to run; 0.3 or newer (the outputs read the report written with `--json-output`). |
 | `sarif-file` | `mcp-review-check.sarif` | Where the SARIF report is written. |
 | `upload-sarif` | `true` | Upload it with `github/codeql-action/upload-sarif` (needs `security-events: write`), also when the check fails. Set `false` on pull requests from forks, which cannot write code scanning results. |
 | `extra-args` | | More options, split on whitespace (no quoting), for example `--timeout 60000 --ignore TOOL-013`. |

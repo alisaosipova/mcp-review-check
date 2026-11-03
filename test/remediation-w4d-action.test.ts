@@ -150,7 +150,10 @@ describe('workflows (F145, F159)', () => {
   it('release.yml checks that the published version carries provenance, after both publish steps', () => {
     const release = read('.github/workflows/release.yml');
     const verify = release.indexOf('- name: Published version carries npm provenance');
-    expect(verify).toBeGreaterThan(release.indexOf('- name: Publish to npm (first release, NPM_TOKEN)'));
+    // 0.4.0 removed the NPM_TOKEN first-release step: publishing goes only through trusted publishing.
+    expect(release).not.toContain('NPM_TOKEN');
+    expect(verify).toBeGreaterThan(release.indexOf('- name: Publish to npm (trusted publishing)'));
+    expect(release.indexOf('- name: Publish to npm (trusted publishing)')).toBeGreaterThan(-1);
     expect(verify).toBeLessThan(release.indexOf('\n  gh-release:'));
     expect(release.slice(verify)).toMatch(/npm view "mcp-review-check@\$version" --json/);
     expect(release.slice(verify)).toMatch(/dist\?\.attestations/);

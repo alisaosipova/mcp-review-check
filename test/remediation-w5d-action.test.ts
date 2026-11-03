@@ -67,7 +67,7 @@ describe('action.yml outputs (wave 5)', () => {
 
   it('defaults version to the minor that has --json-output: package.json MAJOR.MINOR, or the next minor before the bump', () => {
     const def = /^ {2}version:\n(?: {4}.*\n)*? {4}default: '(.*)'$/m.exec(ACTION)?.[1];
-    expect(def).toBe('0.3');
+    expect(def).toBe('0.4');
     const [major, minor] = PKG.version.split('.').map(Number);
     expect([`${major}.${minor}`, `${major}.${minor! + 1}`]).toContain(def);
   });

@@ -29,6 +29,7 @@ import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
 import { attachListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { compareTools, driftCount, type Drift } from './report/drift.js';
+import { inputFileProblem, readInputFile } from './input-file.js';
 import type { Finding } from './rules/types.js';
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
@@ -241,7 +242,7 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
 
 /** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE with its BOM. */
 function readToolArgs(file: string): Record<string, unknown> {
-  const raw = readFileSync(file);
+  const raw = readInputFile(file); // regular file, non-blocking open, 16 MiB cap: a FIFO cannot hang the run
   return JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
 }
 
@@ -431,7 +432,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values['tool-args']) {
       try { toolArgs = readToolArgs(values['tool-args']); } catch (e) {
         // A JSON syntax error message quotes the file (which may hold credentials): name the problem only.
-        throw new UsageError(`cannot read --tool-args: ${e instanceof SyntaxError ? 'not valid JSON' : (e as Error).message}`);
+        throw new UsageError(`cannot read --tool-args: ${e instanceof SyntaxError ? 'not valid JSON' : inputFileProblem(e)}`);
       }
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }

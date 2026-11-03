@@ -42,7 +42,7 @@ inputs:
   version:
     description: npm version or range of mcp-review-check to run, 0.3 or newer (the outputs need --json-output; bump with each release, see CONTRIBUTING.md).
     required: false
-    default: '0.3'
+    default: '0.4'
   cli-path:
     description: Path to a built dist/cli.js to run with node instead of the npm package (for testing a checkout). Overrides `version`.
     required: false
