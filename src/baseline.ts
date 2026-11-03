@@ -3,7 +3,7 @@
 // module adds the known ones to each format (JSON `baselined`, SARIF `baselineState`, one line in text and markdown),
 // and the tool-definition drift against the baseline's `toolFingerprints` (JSON `baseline`, SARIF BASE-001 results).
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { inputFileProblem, readInputFile } from './input-file.js';
 import { sortFindings } from './rules/engine.js';
 import type { Finding } from './rules/types.js';
 import { JSON_SCHEMA_VERSION, toJson } from './report/json.js';
@@ -40,9 +40,8 @@ const HEX64 = /^[0-9a-f]{64}$/;
 /** loadBaseline, with the tool fingerprints of the report. */
 export function readBaseline(file: string): Baseline {
   let raw: Buffer;
-  try { raw = readFileSync(file); } catch (e) {
-    const code = (e as { code?: string }).code;
-    throw new BaselineError(`cannot read --baseline: ${code === 'ENOENT' ? 'no such file' : code === 'EISDIR' ? 'it is a directory' : (code ?? 'read failed')}`);
+  try { raw = readInputFile(file); } catch (e) {
+    throw new BaselineError(`cannot read --baseline: ${inputFileProblem(e)}`);
   }
   let doc: unknown;
   try {

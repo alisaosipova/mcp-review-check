@@ -2,7 +2,8 @@
 // directory. A JSON object whose keys are the long option names in camelCase (failOn for --fail-on); the CLI turns
 // each value into the string or list the flag would give, so the file goes through the same validation as the flags,
 // and a flag on the command line overrides the file's key. Errors name the file and the key, never a value.
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
+import { inputFileProblem, readInputFile } from './input-file.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 /** The files looked for, in this order, when --config is not given (and --no-config is not). */
@@ -74,9 +75,8 @@ const isStrMap = (v: unknown): v is Record<string, string> => typeof v === 'obje
 export function loadConfig(file: string, given: boolean): LoadedConfig {
   const where = given ? `--config ${file}` : `config file ${file}`;
   let raw: Buffer;
-  try { raw = readFileSync(file); } catch (e) {
-    const code = (e as { code?: string }).code;
-    throw new ConfigError(`cannot read ${where}: ${code === 'ENOENT' ? 'no such file' : code === 'EISDIR' ? 'it is a directory' : (code ?? 'read failed')}`);
+  try { raw = readInputFile(file); } catch (e) {
+    throw new ConfigError(`cannot read ${where}: ${inputFileProblem(e)}`);
   }
   let doc: unknown;
   try {
