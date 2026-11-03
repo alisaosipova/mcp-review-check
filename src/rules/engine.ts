@@ -22,7 +22,7 @@ export function authReason(snap: Snapshot): string | undefined {
   if (snap.coverage.toolLevel === 'token-rejected') return 'token rejected (401)';
   if (snap.coverage.toolLevel === 'connect-failed') return 'could not connect';
   if (snap.coverage.toolLevel === 'list-failed') return snap.coverage.reason ?? 'tools/list failed';
-  if (snap.coverage.toolLevel === 'stopped') return 'stopped by --max-duration';
+  if (snap.coverage.toolLevel === 'stopped') return snap.limits?.budgetExhausted ? BUDGET_REASON : STOPPED_REASON;
   return undefined;
 }
 
@@ -50,7 +50,7 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
     case 'active':
       if (!snap.options.active) return 'needs --active';
       // Calls made before a --max-duration stop are evidence: the rule runs on them (and cannot pass, see runRules).
-      if (snap.active && snap.coverage.toolLevel === 'stopped') return undefined;
+      if (snap.active && snap.coverage.toolLevel === 'stopped') return undefined; // also after a budget stop
       return snap.active ? authReason(snap) : authReason(snap) ?? 'no active calls made';
     case 'active-auth':
       if (!snap.options.activeAuth) return 'needs --active-auth';
@@ -64,15 +64,17 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
 
 /** The skip reason of a rule that read data of a phase a --max-duration stop cut short and found nothing in it. */
 export const STOPPED_REASON = 'stopped by --max-duration';
+/** The same for a run whose snapshot byte budget ran out (limits.budgetExhausted, F146). */
+export const BUDGET_REASON = 'snapshot budget exhausted';
 
 /** Data gathered over the whole run (from every exchange): partial whenever the run was stopped. */
 const RUN_WIDE = 'whole run';
 type Unfinished = Set<string>;
 
-/** The phases a stopped run did not finish (limits.stopped.unfinished, or for an older snapshot the stop phase and
+/** The phases a stopped run (--max-duration, or the snapshot budget) did not finish (limits.stopped.unfinished, or for an older snapshot the stop phase and
  *  every later one), plus RUN_WIDE; undefined for a run that was not stopped. */
 export function unfinishedPhases(snap: Snapshot): Unfinished | undefined {
-  const s = snap.limits?.stopped;
+  const s = snap.limits?.stopped ?? snap.limits?.budgetExhausted;
   if (!s) return undefined;
   const at = PHASES.indexOf(s.phase as (typeof PHASES)[number]);
   return new Set([...(s.unfinished ?? (at < 0 ? [s.phase] : PHASES.slice(at))), RUN_WIDE]);
@@ -196,7 +198,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     // After a --max-duration stop a rule that read data of an unfinished phase keeps what it found, but finding nothing
     // there is no pass: it is skipped instead of counted as run.
     if (hit.size && raw.length === 0) {
-      if (applies) skipped.push({ ruleId: rule.id, reason: STOPPED_REASON });
+      if (applies) skipped.push({ ruleId: rule.id, reason: snap.limits?.budgetExhausted ? BUDGET_REASON : STOPPED_REASON });
       continue;
     }
     if (applies) rulesRun++;

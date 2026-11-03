@@ -43,8 +43,8 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   const { failed, ...g } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
   const complete = snap.coverage.toolLevel === 'ok';
   const verdicts: Report['summary']['verdicts'] = {};
-  // A failed connect (exit 3) checked nothing, a --max-duration stop not everything: INCOMPLETE whatever the findings say.
-  for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal || !!snap.limits?.stopped);
+  // A failed connect (exit 3) checked nothing, a --max-duration stop or an exhausted snapshot budget not everything: INCOMPLETE whatever the findings say.
+  for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal || !!snap.limits?.stopped || !!snap.limits?.budgetExhausted);
   return {
     tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
     startedAt: startedAt.toISOString(), durationMs, snap,
@@ -54,7 +54,7 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
       // Exit 3 (no connect, or a --max-duration stop) is a failed run whatever the gate says.
-      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
+      score: complete ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped || !!snap.limits?.budgetExhausted, gate: g,
     },
   };
 }
@@ -131,6 +131,8 @@ export function resultLine(r: Report, fail = (x: string) => x, causes = false): 
   // A stop after the handshake (exit 3): the phase, then the findings that reached the threshold before it.
   const stop = r.snap.limits?.stopped;
   if (stop) return [`${fail('INCOMPLETE')} (stopped at --max-duration during ${stop.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
+  const budget = r.snap.limits?.budgetExhausted;
+  if (budget) return [`${fail('INCOMPLETE')} (snapshot budget exhausted during ${budget.phase})`, r.summary.gate.reason, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const s = r.summary;
   const head = `${s.failed ? fail('FAIL') : 'PASS'} (--fail-on ${r.failOn}${s.gate.platforms.includes('spec') ? ', --fail-on-spec' : ''})`;
   const why = authReason(r.snap);
