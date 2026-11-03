@@ -76,6 +76,9 @@ const O = (edit: (o: OpenAiListing & Obj, i: Obj, ext: Obj) => void = () => {}, 
 const man = (p: PluginListing & Obj) => p.manifest!.json as Obj;
 const servers = (p: { mcp?: { json?: unknown } }) => (p.mcp!.json as Obj).mcpServers;
 
+const IMG = (key: string, over: Obj = {}) => ({ source: 'openai' as const, key, ref: `./assets/${key}.png`, bytes: 1000, format: 'png' as const, width: 256, height: 256, ...over });
+const WITH_IMAGES = (images: Obj[]) => O((o) => { (o as Obj).images = images; });
+
 const cases: Record<string, Case> = {
   'LST-001': { pos: P((p) => { delete p.manifest; }), neg: P(), severity: 'error' },
   // a kebab-case name that merely contains "claude" as a word is not reserved here
@@ -131,6 +134,8 @@ const cases: Record<string, Case> = {
     neg: O((_, __, ext) => { ext.review.test_cases.positive[0].tools_triggered = ['search_notes', 'read_note']; }), severity: 'warning', match: /delete_everything/,
   },
   'LST-026': { pos: O(() => {}, 'https://staging.acme.test/mcp'), neg: O(), severity: 'warning' },
+  'LST-027': { pos: WITH_IMAGES([IMG('logo', { width: 256, height: 128 })]), neg: WITH_IMAGES([IMG('logo'), IMG('composerIcon', { width: 48, height: 48 })]), severity: 'error', match: /square.*MAN-019/ },
+  'LST-028': { pos: WITH_IMAGES([IMG('screenshots[0]', { width: 700, height: 500 })]), neg: WITH_IMAGES([IMG('screenshots[0]', { width: 706, height: 500 })]), severity: 'error', match: /706 px wide.*MAN-024/ },
 };
 
 describe('LST rules', () => {

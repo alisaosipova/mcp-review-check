@@ -4,7 +4,8 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { capStrings, TEXT_CAP } from '../limits.js';
-import type { Listing, ListingEntry, ListingError, ListingJson, ListingText, OpenAiFormat, OpenAiListing, PluginListing } from './types.js';
+import { examineImage, IMAGE_COUNT_CAP } from './image.js';
+import type { Listing, ListingImage, ListingEntry, ListingError, ListingJson, ListingText, OpenAiFormat, OpenAiListing, PluginListing } from './types.js';
 
 /** A manifest or MCP configuration larger than this is not parsed (the directory's own per-file limit is 5 MiB,
  *  and anything a reviewer reads is far smaller). */
@@ -194,6 +195,19 @@ export function openAiFormat(json: unknown): OpenAiFormat {
   return 'unknown';
 }
 
+const IMAGE_KEYS = ['logo', 'logoDark', 'composerIcon', 'composerIconDark'];
+
+/** The icons and screenshots of the listing object, examined (at most IMAGE_COUNT_CAP). */
+function openAiImages(root: string, json: unknown, format: OpenAiFormat): ListingImage[] {
+  if (!isObj(json)) return [];
+  const ext = isObj(json.extensions) ? json.extensions['com.openai'] : undefined;
+  const iface = format === 'codex' ? json.interface : isObj(ext) ? ext.interface : undefined;
+  if (!isObj(iface)) return [];
+  const refs: Array<[string, unknown]> = IMAGE_KEYS.filter((k) => iface[k] !== undefined).map((k) => [k, iface[k]]);
+  if (Array.isArray(iface.screenshots)) iface.screenshots.forEach((s, n) => refs.push([`screenshots[${n}]`, s]));
+  return refs.slice(0, IMAGE_COUNT_CAP).map(([k, v]) => examineImage(root, 'openai', k, v));
+}
+
 /** Read a ChatGPT plugin package manifest (plugin.json with extensions.com.openai, or `.codex-plugin/plugin.json`),
  *  or a bare mcp.json; the companion mcp.json / .mcp.json and the root's entries come from the package root. */
 export function loadOpenAiManifest(path: string): Listing {
@@ -215,7 +229,8 @@ export function loadOpenAiManifest(path: string): Listing {
     }
   }
   const { files } = walk(root, 1, LISTING_FILES_CAP, 'openai', listing.errors);
-  const openai: OpenAiListing = { manifest, format, ...(mcp ? { mcp } : {}), files };
+  const images = format === 'codex' || format === 'agent-plugins' ? openAiImages(root, manifest.json, format) : undefined;
+  const openai: OpenAiListing = { manifest, format, ...(mcp ? { mcp } : {}), files, ...(images ? { images } : {}) };
   listing.openai = openai;
   return listing;
 }

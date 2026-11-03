@@ -183,6 +183,8 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | LST-024 | ChatGPT package: one remote MCP server with an https URL | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
 | LST-025 | ChatGPT test cases trigger tools the server lists | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
 | LST-026 | ChatGPT package MCP server URL matches the checked server | chatgpt: warning | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-027 | ChatGPT icons: square, 48-4096 px, at most 5 MiB (read from the image files) | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission) |
+| LST-028 | ChatGPT screenshots: PNG or JPEG, 706 px wide, 400-860 px tall (read from the image files) | chatgpt: error | [link](https://developers.openai.com/plugins/deploy/submission-errors) |
 
 **Manual checklist** (printed as reminders; never scored):
 

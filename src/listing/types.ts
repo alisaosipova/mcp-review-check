@@ -53,6 +53,28 @@ export interface OpenAiListing {
   mcp?: ListingJson;
   /** The package root's own entries (one level). */
   files: ListingEntry[];
+  /** Icons and screenshots the listing names, with their sizes (additive; absent for a bare mcp.json). */
+  images?: ListingImage[];
+}
+
+export type ImageFormat = 'png' | 'jpeg' | 'webp' | 'svg';
+
+/** An icon or screenshot named in the package manifest, examined by its header (src/listing/image.ts). */
+export interface ListingImage {
+  source: 'openai';
+  /** The manifest key: logo, logoDark, composerIcon, composerIconDark or screenshots[n]. */
+  key: string;
+  /** The value as written in the manifest. */
+  ref: string;
+  bytes?: number;
+  format?: ImageFormat;
+  width?: number;
+  height?: number;
+  /** Why no size is known: not-a-path, outside (not a ./ path inside the package), link, not-file, missing, too-large,
+   *  unreadable (detail: error code), unknown-format (no PNG/JPEG/WebP/SVG signature), no-dimensions (SVG without
+   *  numeric width/height/viewBox, or a header the reader could not parse). */
+  problem?: 'not-a-path' | 'outside' | 'link' | 'not-file' | 'missing' | 'too-large' | 'unreadable' | 'unknown-format' | 'no-dimensions';
+  detail?: string;
 }
 
 export interface ListingError {

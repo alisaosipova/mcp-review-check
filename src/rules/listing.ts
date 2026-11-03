@@ -3,7 +3,7 @@
 // Each message names the manual checklist item it automates, where there is one. Values that may be credentials
 // (headers, env, clientSecret) are never quoted: the report redactor does not know them.
 import type { Snapshot } from '../snapshot.js';
-import type { ListingEntry, OpenAiListing, PluginListing } from '../listing/types.js';
+import type { ListingEntry, ListingImage, OpenAiListing, PluginListing } from '../listing/types.js';
 import { defineRule, type RawFinding } from './types.js';
 import { hostOf, isObj, isStr, listPreview, toolNames, type Obj } from './util/access.js';
 import { displayUrl, isKnownToken, isSecretName } from './util/net.js';
@@ -829,9 +829,100 @@ export const LST_026 = defineRule(
   (snap) => hostMismatch(snap, openAiServers(oai(snap))),
 );
 
+// ---------------------------------------------------------------- image sizes (listing.openai.images, src/listing/image.ts)
+
+const PROBLEM_TEXT: Record<NonNullable<ListingImage['problem']>, string> = {
+  'not-a-path': 'is not a file path',
+  outside: 'is not a ./ path inside the package, so it was not read',
+  link: 'is a symbolic link, so it was not read',
+  'not-file': 'is not a regular file',
+  missing: 'does not exist in the package',
+  'too-large': 'is over the 64 MiB read cap and was not opened',
+  unreadable: 'could not be read',
+  'unknown-format': 'is not a PNG, JPEG, WebP or SVG image (no matching file signature)',
+  'no-dimensions': 'has no readable width and height',
+};
+const MIB = 1024 * 1024;
+
+function imagesOf(o: OpenAiListing, pick: (key: string) => boolean): ListingImage[] {
+  return (o.images ?? []).filter((im) => pick(im.key));
+}
+
+/** Findings for a file that could not be measured; undefined when it has a size. SVG without a size is only info
+ *  (it scales); any other recognised file whose header could not be parsed is a warning (our reader, not a vendor rule). */
+function unmeasured(at: string, im: ListingImage, id: string): RawFinding | undefined {
+  if (!im.problem) return undefined;
+  const label = `${at}.${im.key} ${q(im.ref)}`;
+  const detail = im.problem === 'unreadable' && im.detail ? ` (${im.detail})` : '';
+  const text = `${label} ${PROBLEM_TEXT[im.problem]}${detail}${man(id)}`;
+  if (im.problem === 'no-dimensions') {
+    return im.format === 'svg'
+      ? { severity: 'info', message: `${label} has no numeric width/height or viewBox; its size cannot be checked${man(id)}` }
+      : { severity: 'warning', message: `${label} is a ${im.format} file whose size could not be read from its header; check it by hand${man(id)}` };
+  }
+  return { message: text };
+}
+
+export const LST_027 = defineRule(
+  {
+    id: 'LST-027', title: 'ChatGPT icons: square, 48-4096 px, at most 5 MiB (read from the image files)', severity: { chatgpt: 'error' }, needs: ['openai-manifest'],
+    rationale: 'Icons are square, 48 to 4096 px on a side and at most 5 MiB in PNG, JPEG, WebP or SVG. The sizes are read from the file headers (SVG: width and height, else viewBox).',
+    fix: 'Replace the icon with a square image between 48 and 4096 px and under 5 MiB, in PNG, JPEG, WebP or SVG, inside the package.',
+    sources: [O_SUBMIT, O_ERRORS],
+  },
+  (snap) => {
+    const o = oai(snap);
+    const i = openAiInterface(o);
+    if (!i) return [];
+    const at = ifacePath(o);
+    const path = o.manifest.path;
+    const out: RawFinding[] = [];
+    for (const im of imagesOf(o, (k) => !k.startsWith('screenshots['))) {
+      const bad = unmeasured(at, im, 'MAN-019');
+      if (bad) { out.push({ path, ...bad }); }
+      const label = `${at}.${im.key} ${q(im.ref)}`;
+      if (im.bytes !== undefined && im.bytes > 5 * MIB) out.push({ path, message: `${label} is ${(im.bytes / MIB).toFixed(1)} MiB, over the 5 MiB limit${man('MAN-019')}` });
+      if (im.width === undefined || im.height === undefined) continue;
+      if (im.width !== im.height) out.push({ path, message: `${label} is ${im.width}x${im.height} px; icons must be square${man('MAN-019')}` });
+      if (Math.min(im.width, im.height) < 48 || Math.max(im.width, im.height) > 4096) out.push({ path, message: `${label} is ${im.width}x${im.height} px; icons must be 48 to 4096 px on a side${man('MAN-019')}` });
+    }
+    return out;
+  },
+);
+
+export const LST_028 = defineRule(
+  {
+    id: 'LST-028', title: 'ChatGPT screenshots: PNG or JPEG, 706 px wide, 400-860 px tall (read from the image files)', severity: { chatgpt: 'error' }, needs: ['openai-manifest'],
+    rationale: 'Screenshots are allowed only with a custom UI: one PNG or JPEG per starter prompt, exactly 706 px wide and 400 to 860 px tall. The sizes are read from the file headers.',
+    fix: 'Export each screenshot as a PNG or JPEG exactly 706 px wide and between 400 and 860 px tall, one per starter prompt, inside the package.',
+    sources: [O_ERRORS, O_SUBMIT],
+  },
+  (snap) => {
+    const o = oai(snap);
+    const i = openAiInterface(o);
+    if (!i) return [];
+    const at = ifacePath(o);
+    const path = o.manifest.path;
+    const out: RawFinding[] = [];
+    const shots = imagesOf(o, (k) => k.startsWith('screenshots['));
+    for (const im of shots) {
+      const label = `${at}.${im.key} ${q(im.ref)}`;
+      const bad = unmeasured(at, im, 'MAN-024');
+      if (bad) out.push({ path, ...bad });
+      if (im.format && im.format !== 'png' && im.format !== 'jpeg') out.push({ path, message: `${label} is a ${im.format} file; screenshots must be PNG or JPEG${man('MAN-024')}` });
+      if (im.width === undefined || im.height === undefined) continue;
+      if (im.width !== 706) out.push({ path, message: `${label} is ${im.width} px wide; screenshots must be exactly 706 px wide${man('MAN-024')}` });
+      if (im.height < 400 || im.height > 860) out.push({ path, message: `${label} is ${im.height} px tall; screenshots must be 400 to 860 px tall${man('MAN-024')}` });
+    }
+    const prompts = Array.isArray(i.defaultPrompt) ? i.defaultPrompt.length : undefined;
+    if (prompts !== undefined && shots.length > prompts) out.push({ path, severity: 'warning', message: `${shots.length} screenshots for ${prompts} starter prompt${prompts === 1 ? '' : 's'}; the checklist asks for one per starter prompt${man('MAN-024')}` });
+    return out;
+  },
+);
+
 export const listingRules = [
   LST_001, LST_002, LST_003, LST_004, LST_005, LST_006, LST_007, LST_008, LST_009, LST_010, LST_011, LST_012, LST_013,
-  LST_014, LST_015, LST_016, LST_017, LST_018, LST_019, LST_020, LST_021, LST_022, LST_023, LST_024, LST_025, LST_026,
+  LST_014, LST_015, LST_016, LST_017, LST_018, LST_019, LST_020, LST_021, LST_022, LST_023, LST_024, LST_025, LST_026, LST_027, LST_028,
 ];
 
 /** The manual checklist items the LST rules automate, by input: dropped, or cut to their residual manual part. */
@@ -841,8 +932,9 @@ export const LISTING_MANUAL: Record<string, { input: 'plugin' | 'openai'; rules:
   'MAN-016': { input: 'openai', rules: ['LST-018'], residual: 'websiteURL, supportURL, privacyPolicyURL, termsOfServiceURL are publicly accessible and identify the same publisher' },
   'MAN-017': { input: 'openai', rules: ['LST-019'] },
   'MAN-018': { input: 'openai', rules: ['LST-020'] },
-  'MAN-019': { input: 'openai', rules: ['LST-021'], residual: 'Icons square, 48–4096 px, ≤5 MiB' },
+  'MAN-019': { input: 'openai', rules: ['LST-021', 'LST-027'] },
   'MAN-020': { input: 'openai', rules: ['LST-022', 'LST-025'] },
   'MAN-021': { input: 'openai', rules: ['LST-022'], residual: 'Demo recording covers web, iOS and Android' },
   'MAN-023': { input: 'openai', rules: ['LST-023'] },
+  'MAN-024': { input: 'openai', rules: ['LST-028'], residual: 'Screenshots are optional and allowed only with custom UI' },
 };

@@ -42,7 +42,7 @@ describe('W6B listing fixtures', () => {
 
   it('the invalid ChatGPT package trips the ChatGPT rules, with the MAN item in the message', () => {
     const { r } = run(loadOpenAiManifest(join(FIX, 'openai-invalid', 'plugin.json')));
-    expect(ids(r)).toEqual(['LST-017', 'LST-018', 'LST-019', 'LST-020', 'LST-021', 'LST-022', 'LST-023', 'LST-024', 'LST-025', 'LST-026']);
+    expect(ids(r)).toEqual(['LST-017', 'LST-018', 'LST-019', 'LST-020', 'LST-021', 'LST-022', 'LST-023', 'LST-024', 'LST-025', 'LST-026', 'LST-027']);
     for (const f of lst(r)) expect(f.platforms).toEqual(['chatgpt']);
     for (const f of lst(r).filter((x) => x.ruleId !== 'LST-024' && x.ruleId !== 'LST-026')) expect(f.message, f.ruleId).toMatch(/\(MAN-0\d\d\)$/);
   });
@@ -119,7 +119,7 @@ describe('W6B manual checklist', () => {
     const items = byId(manual(loadOpenAiManifest(join(FIX, 'openai-valid', 'plugin.json'))));
     for (const id of ['MAN-015', 'MAN-017', 'MAN-018', 'MAN-020', 'MAN-023']) expect(items[id], id).toBeUndefined();
     expect(items['MAN-016']).toMatch(/publicly accessible.*checked by LST-018/);
-    expect(items['MAN-019']).toMatch(/square.*checked by LST-021/);
+    expect(items['MAN-019']).toBeUndefined(); // 0.6: LST-027 reads the image sizes
     expect(items['MAN-021']).toMatch(/web, iOS and Android.*checked by LST-022/);
     expect(items['MAN-022']).toBe(MANUAL_ITEMS.find((m) => m.id === 'MAN-022')!.text);
     expect(items['MAN-002']).toBe(MANUAL_ITEMS.find((m) => m.id === 'MAN-002')!.text);
