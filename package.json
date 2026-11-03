@@ -1,6 +1,6 @@
 {
   "name": "mcp-review-check",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec review criteria.",
   "homepage": "https://github.com/alisaosipova/mcp-review-check#readme",
   "bugs": {
