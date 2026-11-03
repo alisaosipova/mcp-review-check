@@ -1,0 +1,8 @@
+- id: mcp-review-check
+  name: mcp-review-check
+  description: Lint an MCP server against the Claude and ChatGPT directory criteria and the MCP spec
+  entry: mcp-review-check
+  language: node
+  pass_filenames: false
+  always_run: false
+  files: '(^|/)(mcp-review-check\.config\.json|\.mcp-review-check\.json|plugin\.json|\.mcp\.json|mcp\.json)$'
