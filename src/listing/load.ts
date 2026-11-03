@@ -43,14 +43,17 @@ export function mergeListings(...parts: Array<Listing | undefined>): Listing {
 }
 
 /** Up to `cap` bytes of a regular file (never through a link); undefined with an error recorded otherwise. */
-function readCapped(abs: string, rel: string, cap: number, source: ListingError['source'], errors: ListingError[]): { text: string; truncated: boolean; size: number } | undefined {
+function readCapped(abs: string, rel: string, cap: number, source: ListingError['source'], errors: ListingError[], strict = false): { text: string; truncated: boolean; size: number } | undefined {
   let fd: number | undefined;
   try {
     const st = lstatSync(abs);
     if (st.isSymbolicLink()) { errors.push({ source, path: rel, message: 'is a symbolic link (not followed)' }); return undefined; }
     if (!st.isFile()) { errors.push({ source, path: rel, message: 'is not a regular file' }); return undefined; }
-    fd = openSync(abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const size = fstatSync(fd).size;
+    // O_NONBLOCK: a FIFO swapped in after the lstat cannot stall the open; the descriptor is checked again.
+    fd = openSync(abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const fst = fstatSync(fd);
+    if (!fst.isFile()) { errors.push({ source, path: rel, message: 'is not a regular file' }); return undefined; }
+    const size = fst.size;
     const buf = Buffer.alloc(Math.min(size, cap));
     let off = 0;
     while (off < buf.length) {
@@ -58,7 +61,10 @@ function readCapped(abs: string, rel: string, cap: number, source: ListingError[
       if (n === 0) break;
       off += n;
     }
-    return { text: buf.subarray(0, off).toString('utf8').replace(/^\uFEFF/, ''), truncated: size > cap, size };
+    const bytes = buf.subarray(0, off);
+    // Invalid UTF-8 would decode to U+FFFD and could slip into a message or a rule: refuse it, naming no content.
+    if (strict) { try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { errors.push({ source, path: rel, message: 'is not valid UTF-8' }); return undefined; } }
+    return { text: bytes.toString('utf8').replace(/^\uFEFF/, ''), truncated: size > cap, size };
   } catch (err) {
     errors.push({ source, path: rel, message: `could not be read (${codeOf(err)})` });
     return undefined;
@@ -72,10 +78,21 @@ function exists(abs: string): boolean {
   try { lstatSync(abs); return true; } catch { return false; }
 }
 
+/** " (line L, column C)" from the position a JSON SyntaxError reports, or "" when it reports none; never its message. */
+export function jsonErrorPosition(err: unknown, text: string): string {
+  const m = /\bposition (\d+)/.exec(err instanceof Error ? err.message : '');
+  if (!m) return '';
+  const at = Math.min(Number(m[1]), text.length);
+  let line = 1;
+  let last = -1;
+  for (let i = text.indexOf('\n'); i >= 0 && i < at; i = text.indexOf('\n', i + 1)) { line++; last = i; }
+  return ` (line ${line}, column ${at - last})`;
+}
+
 /** Parse a JSON file; strings over TEXT_CAP are cut (recorded in `listing.truncated`). Undefined when it does not exist. */
 function readJson(abs: string, rel: string, source: ListingError['source'], listing: Listing): ListingJson | undefined {
   if (!exists(abs)) return undefined;
-  const r = readCapped(abs, rel, LISTING_JSON_CAP, source, listing.errors);
+  const r = readCapped(abs, rel, LISTING_JSON_CAP, source, listing.errors, true);
   if (!r) return { path: rel, error: listing.errors[listing.errors.length - 1]?.message ?? 'could not be read' };
   if (r.truncated) {
     const error = `is ${r.size} bytes, over the ${LISTING_JSON_CAP / 1024 / 1024} MiB read cap; not parsed`;
@@ -87,8 +104,8 @@ function readJson(abs: string, rel: string, source: ListingError['source'], list
     if (json !== null && typeof json === 'object') capStrings(json, TEXT_CAP, rel, listing.truncated);
     return { path: rel, json };
   } catch (err) {
-    // SyntaxError messages quote a bit of the input, not a path: kept short.
-    const error = `is not valid JSON: ${(err as Error).message.slice(0, 200)}`;
+    // A SyntaxError message quotes a window of the input (which may hold a token): only the position is kept.
+    const error = `is not valid JSON${jsonErrorPosition(err, r.text)}`;
     listing.errors.push({ source, path: rel, message: error });
     return { path: rel, error };
   }
