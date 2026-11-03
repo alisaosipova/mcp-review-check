@@ -4,7 +4,16 @@ Lint an MCP server against the public review criteria of the **Claude connector 
 
 Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account). Stdio servers, OAuth and CI: see [Usage](#usage), [Token recipe](#token-recipe) and [CI recipes](docs/guide/ci.md#ci-recipes).
 
+<!-- The image path is relative, so it renders on GitHub only: npm does not ship docs/ (package.json "files"), and the npm page renders images from absolute URLs only. For npm use https://raw.githubusercontent.com/alisaosipova/mcp-review-check/main/docs/assets/sample-output.svg instead. -->
+<p align="center">
+  <img src="docs/assets/sample-output.svg" alt="mcp-review-check report: errors, warnings and info with fixes, copy-paste fix snippets, a score and a per-directory verdict (Claude: BLOCKED, ChatGPT: NEEDS ATTENTION, Result: FAIL)" width="900">
+</p>
+
+<sub>A real run on a captured public listing, replayed offline; server and tool names redacted. Text version: [Example output](#example-output).</sub>
+
 `mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->179<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
+
+4 of 7 public MCP servers we captured (2026-10-22) miss a directory requirement on tool titles or annotations, or widget metadata ([method and caveats](https://github.com/alisaosipova/mcp-review-check/blob/main/docs/launch/aggregate-2026-11-03.md)).
 
 - Requires Node 22.12 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
@@ -84,6 +93,42 @@ npx mcp-review-check --list-rules TOOL --format json
 On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.7` line in [CI recipes](docs/guide/ci.md#ci-recipes) and [Docker Compose](docs/guide/ci.md#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
+
+## GitHub Action
+
+```yaml
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: alisaosipova/mcp-review-check@v0.7.0
+        with:
+          target: https://staging.example.com/mcp     # or stdio: node dist/server.js
+          platform: claude
+          bearer: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
+```
+
+Annotations, the job summary and a SARIF upload to code scanning (needs `security-events: write`). Every input and
+output, with defaults: [CI and automation](docs/guide/ci.md#ci-recipes).
+
+There is no moving `v0` ref: pin a full release tag (as above) or a commit SHA.
+
+### Badge: "no automated blockers"
+
+How to set up a badge for your own server's README (this repository has no live badge). It shows the verdict of the
+last run on your default branch, written by your workflow to a gist and served by a shields.io endpoint:
+
+1. Create a public gist with one file, `mcp-review-check.json`.
+2. Store a token that can write gists as the secret `BADGE_GIST_TOKEN` and the gist id as the variable `BADGE_GIST_ID`.
+3. Give the Action step `id: review` and add the badge step from [docs/launch/badge.md](docs/launch/badge.md#mechanism) after it. It
+   maps `verdict-claude` to "no automated blockers" (green), "needs attention", "blockers found" or "incomplete", and
+   runs on pushes and schedules only, never on pull requests.
+
+```markdown
+[![mcp-review-check](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2FUSER%2FGIST_ID%2Fraw%2Fmcp-review-check.json)](https://github.com/OWNER/REPO/actions/workflows/mcp-review-check.yml)
+```
+
+Replace `USER`, `GIST_ID`, `OWNER`, `REPO` and the workflow file name. "No automated blockers" covers only what the
+automated rules detect: it does not mean a directory will accept the server.
 
 ## Exit codes
 
