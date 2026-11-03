@@ -9,10 +9,13 @@ import { CATALOG_DATE } from '../src/rules/index.js';
 
 const path = (p: string) => new URL(`../${p}`, import.meta.url);
 const README = readFileSync(path('README.md'), 'utf8');
+// The detailed reference moved to docs/guide/ (0.5.0); the README keeps the overview, quick start and links.
+const guide = (name: string) => readFileSync(path(`docs/guide/${name}.md`), 'utf8');
+const GUIDE = { options: guide('options-and-config'), ci: guide('ci'), privacy: guide('privacy-and-requests'), auth: guide('auth') };
 
 /** The body of the README section whose `##`/`###` heading starts with `title` (case-insensitive), up to the next heading. */
-function section(title: string): string | undefined {
-  const parts = README.split(/^(?=#{2,3} )/m);
+function section(title: string, text = README): string | undefined {
+  const parts = text.split(/^(?=#{2,3} )/m);
   return parts.find((p) => p.replace(/^#+ /, '').toLowerCase().startsWith(title.toLowerCase()));
 }
 
@@ -47,13 +50,13 @@ describe('README and docs', () => {
     expect(recipe, 'README section "Token recipe"').toBeDefined();
     expect(recipe).toContain('MCP_REVIEW_CHECK_TOKEN');
     expect(recipe).toMatch(/`resource`/);
-    expect(section('Privacy'), 'README section "Privacy"').toMatch(/telemetry/i);
+    expect(section('Privacy', GUIDE.privacy), 'guide section "Privacy"').toMatch(/telemetry/i);
     expect(section('FAQ'), 'README section "FAQ"').toMatch(/\*\*.+\?\*\*/);
-    const ci = section('CI recipes');
+    const ci = section('CI recipes', GUIDE.ci);
     expect(ci, 'README section "CI recipes"').toBeDefined();
     expect(ci).toMatch(/--stdio -- /);
     expect(ci).toMatch(/deployment_status[\s\S]*environment_url/);
-    const compose = section('Docker Compose');
+    const compose = section('Docker Compose', GUIDE.ci);
     expect(compose, 'README section "Docker Compose"').toBeDefined();
     expect(compose).toMatch(/^services:$/m);
     expect(compose).toContain('docker compose run');
@@ -67,7 +70,7 @@ describe('README and docs', () => {
     expect(rows.length).toBeGreaterThanOrEqual(3);
     for (const row of rows) expect(row, row.slice(0, 40)).toMatch(/\]\(https:\/\/[^)]+\)/);
     // The CLI never uploads SARIF; only the GitHub Action documented under "CI recipes" (action.yml, 0.2.0) does.
-    expect(README.replace(section('CI recipes') ?? '', '')).not.toMatch(/upload-sarif|codeql-action/);
+    expect(README.replace(section('CI recipes', GUIDE.ci) ?? '', '')).not.toMatch(/upload-sarif|codeql-action/);
   });
 
   it('every --help option is in README and vice versa', async () => {
@@ -76,7 +79,7 @@ describe('README and docs', () => {
     // Options: the first option on each line (`-h, --help` → --help); Usage: --stdio and anything else spelled there.
     const fromHelp = new Set([...block('Options').split('\n').flatMap((l) => optionNames(l.match(/^\s+(?:-\w, )?(--[a-z][a-z-]*)/)?.[1] ?? '')),
       ...optionNames(block('Usage'))]);
-    const table = section('Options')?.split('\n').filter((l) => l.startsWith('| `')) ?? [];
+    const table = section('Options', GUIDE.options)?.split('\n').filter((l) => l.startsWith('| `')) ?? [];
     const fromReadme = new Set(table.flatMap((l) => optionNames(l.split('|')[1])));
     expect(fromHelp.size).toBeGreaterThan(10);
     expect([...fromReadme].sort()).toEqual([...fromHelp].sort());
@@ -85,8 +88,8 @@ describe('README and docs', () => {
 
 describe('README: the stdio server environment', () => {
   it('README names the variables a stdio server inherits and says to pass the rest with --env', () => {
-    expect(README).toMatch(/HOME, LOGNAME, PATH, SHELL, TERM, USER/);
-    expect(README).toMatch(/APPDATA, .*USERPROFILE/);
-    expect(README).toMatch(/TMPDIR[^\n]*--env|--env[^\n]*TMPDIR/);
+    expect(GUIDE.options).toMatch(/HOME, LOGNAME, PATH, SHELL, TERM, USER/);
+    expect(GUIDE.options).toMatch(/APPDATA, .*USERPROFILE/);
+    expect(GUIDE.options).toMatch(/TMPDIR[^\n]*--env|--env[^\n]*TMPDIR/);
   });
 });
