@@ -45,6 +45,8 @@ export interface BuildOptions {
   local?: boolean;
   /** Bytes of server data the run may read (default SNAPSHOT_BUDGET); not a CLI option, tests lower it. */
   snapshotBudget?: number;
+  /** Called once when tools/list times out after a successful initialize (the CLI can say so on stderr); the text holds no server data. */
+  onStall?: (message: string) => void;
 }
 
 /** The redactor for these options; before the rules only strong values, `all` adds --env values under a plain name. */
@@ -141,15 +143,41 @@ const NETWORK_ERROR = /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UN
 /** The request got no answer from the server (the SDK's closed connection or timeout, or a network error). */
 const TRANSPORT_ERROR = new RegExp(`Connection closed|Not connected|Request timed out|timed out after|${NETWORK_ERROR.source}`, 'i');
 
-async function listEverything(snap: Snapshot, list: Lister): Promise<void> {
+/** The SDK's own request timeout (McpError RequestTimeout): the request got no answer within its wait. */
+const TIMED_OUT = /^MCP error -32001: Request timed out\b/;
+/** The wait for each later request once the server has stopped answering (at most --timeout). */
+export const STALLED_TIMEOUT_MS = 2000;
+const stalledTimeout = (timeoutMs: number) => Math.min(timeoutMs, STALLED_TIMEOUT_MS);
+
+interface StallPlan { list: Lister; timeoutMs: number; onStall?: (message: string) => void }
+
+/** The server answered initialize but tools/list timed out: later requests get a short wait instead of the full --timeout. */
+export function stalled(snap: Snapshot): boolean {
+  return TIMED_OUT.test(snap.listMeta.tools?.error ?? '');
+}
+
+/**
+ * The listings, tools/list first. When tools/list times out, the server has stopped answering after initialize: each
+ * later listing waits at most STALLED_TIMEOUT_MS through `short` (when given) instead of the full --timeout, and one that
+ * gets no answer in that time is not recorded as a failure (the short wait is ours, not the server's), so a run
+ * reports nothing it would not have reported with the full wait. `onStall` hears about it once.
+ */
+async function listEverything(snap: Snapshot, list: Lister, short?: StallPlan): Promise<void> {
   const caps = snap.capabilities ?? {};
   const plan: Array<[string, string, string, keyof Pick<Snapshot, 'tools' | 'resources' | 'resourceTemplates' | 'prompts'>]> = [['tools/list', 'tools', 'tools', 'tools']];
   if (caps.resources !== undefined) plan.push(['resources/list', 'resources', 'resources', 'resources'], ['resources/templates/list', 'resourceTemplates', 'resourceTemplates', 'resourceTemplates']);
   if (caps.prompts !== undefined) plan.push(['prompts/list', 'prompts', 'prompts', 'prompts']);
+  const unanswered: string[] = [];
   for (const [method, key, metaKey, field] of plan) {
-    let r = await list(method, key);
+    const quick = method !== 'tools/list' && short && stalled(snap);
+    const ls = quick ? short.list : list;
+    let r = await ls(method, key);
     // A dropped connection is the network's fault, not the server's: retry once before SPEC-020 can report it.
-    if (r.error && NETWORK_ERROR.test(r.error)) r = await list(method, key);
+    if (r.error && NETWORK_ERROR.test(r.error)) r = await ls(method, key);
+    if (method === 'tools/list' && short?.onStall && TIMED_OUT.test(r.error ?? '')) {
+      short.onStall(`tools/list got no answer within --timeout; the server answered initialize, then stopped answering: each later request waits at most ${short.timeoutMs} ms`);
+    }
+    if (quick && r.error && TIMED_OUT.test(r.error)) { unanswered.push(method); continue; }
     snap[field] = r.items;
     snap.listMeta[metaKey] = { pages: r.pages.length, rawPages: r.pages, error: r.error };
   }
@@ -159,7 +187,8 @@ async function listEverything(snap: Snapshot, list: Lister): Promise<void> {
   // "no tools" (only a JSON-RPC error such as -32601 does).
   const toolsErr = snap.listMeta.tools?.error;
   if (toolsErr && (caps.tools !== undefined || snap.era === 'modern' || TRANSPORT_ERROR.test(toolsErr)) && snap.coverage.toolLevel === 'ok') {
-    snap.coverage = { toolLevel: 'list-failed', reason: `tools/list failed: ${toolsErr}` };
+    const skipped = unanswered.length ? `; the server stopped answering after initialize: ${unanswered.join(', ')} got no answer within ${short!.timeoutMs} ms either` : '';
+    snap.coverage = { toolLevel: 'list-failed', reason: `tools/list failed: ${toolsErr}${skipped}` };
   }
 }
 
@@ -447,7 +476,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     const lister: Lister = conn.ok ? legacyLister(conn.client!, timeoutMs, budget) : (m, k) => modern.listAll(m, k, 100, budget);
     const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs, budget) : modernReader(modern);
     checkpoint(progress, 'listing');
-    await listEverything(snap, lister);
+    await listEverything(snap, lister, conn.ok ? { list: legacyLister(conn.client!, stalledTimeout(timeoutMs), budget), timeoutMs: stalledTimeout(timeoutMs), onStall: opts.onStall } : undefined);
     await tracer.flush();
     // initialize (or server/discover) can be public while the methods behind it need a token: a 401 on tools/list
     // asks for auth as much as one on initialize, and the wire probes would only collect more 401s.
@@ -726,11 +755,13 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   const budget = progress?.budget;
   const lister = legacyLister(conn.client, timeoutMs, budget);
   checkpoint(progress, 'listing');
-  await listEverything(snap, lister);
+  await listEverything(snap, lister, { list: legacyLister(conn.client, stalledTimeout(timeoutMs), budget), timeoutMs: stalledTimeout(timeoutMs), onStall: opts.onStall });
+  // A server that stopped answering after initialize: the probes wait briefly (a probe without an answer is no finding).
+  const probeTimeout = stalled(snap) ? stalledTimeout(timeoutMs) : timeoutMs;
   checkpoint(progress, 'UI resource reads');
-  await readUiResources(snap, legacyReader(conn.client, timeoutMs, budget), deps.now);
+  await readUiResources(snap, legacyReader(conn.client, timeoutMs, budget), deps.now); // a read cut short could fail a UI rule
   checkpoint(progress, 'wire probes');
-  await runWireProbes({ snap, timeoutMs, now: deps.now, client: conn.client, out: snap.transport.probes });
+  await runWireProbes({ snap, timeoutMs: probeTimeout, now: deps.now, client: conn.client, out: snap.transport.probes });
   const fresh = async (variant: ClientVariant = {}) => {
     if (budget?.exhausted) return undefined;
     try {
