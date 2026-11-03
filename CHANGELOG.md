@@ -8,6 +8,25 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 Nothing yet.
 
+## [0.6.0] - 2026-11-03
+
+Rule catalog dated 2026-11-02. Two rules are new (see **Rules added**), so this is a minor release.
+
+### Added
+
+- Listing-only runs: `--plugin-dir` and `--openai-manifest` (or the config keys `pluginDir` and `openaiManifest`) work without a `<url>` or `--stdio` target and check only the files, before deploy. Rules that need a server are skipped with "no server target (listing-only run)", the reports say listing-only, and the JSON report has `server.listingOnly` and a null score.
+- `--verbose` prints the parsed listing on stderr, with header, env and credential values removed.
+
+#### Rules added
+
+- LST-027 checks the icons named in a ChatGPT manifest: square, 48 to 4096 px, at most 5 MiB, read from the PNG, JPEG, WebP or SVG header without fetching anything (automates MAN-019).
+- LST-028 checks the screenshots named in a ChatGPT manifest: PNG or JPEG, 706 px wide, 400 to 860 px tall (automates part of MAN-024).
+
+### Changed
+
+- With `--openai-manifest` the manual checklist drops MAN-019 and shortens MAN-024.
+- `--plugin-dir` or `--openai-manifest` without a server target is no longer a usage error; options that need a server (`--bearer`, `--header`, `--env`, `--cwd`, `--active`, `--active-auth`, `--tool-args`) are usage errors in a listing-only run.
+
 ## [0.5.0] - 2026-11-03
 
 Rule catalog dated 2026-11-02. No rule changes; a minor release for corporate proxy support, the user guide and new ways to run the check.
@@ -389,7 +408,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.2.0...v0.3.0

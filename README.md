@@ -4,7 +4,7 @@ Lint an MCP server against the public review criteria of the **Claude connector 
 
 Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account). Stdio servers, OAuth and CI: see [Usage](#usage), [Token recipe](#token-recipe) and [CI recipes](docs/guide/ci.md#ci-recipes).
 
-`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->176<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
+`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->178<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
 
 - Requires Node 22.12 or newer; no telemetry.
 - Read-only by default. It never calls your tools unless you pass `--active`, and then only tools annotated `readOnlyHint: true`.
@@ -81,7 +81,7 @@ npx mcp-review-check explain TOOL-011
 npx mcp-review-check --list-rules TOOL --format json
 ```
 
-On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.5` line in [CI recipes](docs/guide/ci.md#ci-recipes) and [Docker Compose](docs/guide/ci.md#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
+On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@0.6` line in [CI recipes](docs/guide/ci.md#ci-recipes) and [Docker Compose](docs/guide/ci.md#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
 
@@ -111,7 +111,7 @@ How to get the token, and what "Server rejected the token (401)" means: [Authent
 ## Example output
 
 ```
-mcp-review-check 0.5.0 · rules 2026-11-02 · target: all
+mcp-review-check 0.6.0 · rules 2026-11-02 · target: all
 Server  repo-wiki 0.1.0 · https://mcp.wiki.example/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth none
           2026-07-28 clients fall back to initialize. Not a defect.
@@ -201,7 +201,7 @@ While the version is 0.x:
 - **Rule IDs are never reused.** A retired rule's ID stays retired, so `--ignore` lists and saved reports keep their meaning.
 - **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear at any time.
 
-In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.5 <url>`.
+In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.6 <url>`.
 
 ## Limitations and disclaimer
 

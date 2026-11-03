@@ -5,7 +5,7 @@
 > [README](../../README.md), [docs/RULES.md](../RULES.md), `mcp-review-check --help` and `mcp-review-check explain <RULE-ID>`;
 > the catalog in `src/rules/` is authoritative for rule IDs, severities and sources.
 >
-> Known differences: the catalog has <!-- RULE_COUNT -->176<!-- /RULE_COUNT --> automated rules (APPS-019 added) and <!-- MANUAL_COUNT -->31<!-- /MANUAL_COUNT --> manual checklist items, dated
+> Known differences: the catalog has <!-- RULE_COUNT -->178<!-- /RULE_COUNT --> automated rules (APPS-019 added) and <!-- MANUAL_COUNT -->31<!-- /MANUAL_COUNT --> manual checklist items, dated
 > <!-- CATALOG_DATE -->2026-11-02<!-- /CATALOG_DATE -->; Node 22.12+ is required, so the Node 18 notes in §4.4 and milestone M0 are historical, and the test
 > runner is vitest 4. The exit code counts only the `--target` directories (spec findings only with `--fail-on-spec`),
 > the score counts root causes (`scoreVersion` 2), several severities changed (for example TOOL-007, SRV-001, SRV-008),
@@ -1533,7 +1533,7 @@ The original Node 18 plan:
 
 ### 5.1 Text (default)
 ```
-mcp-review-check 0.5.0 · rules 2026-11-02 · target: all
+mcp-review-check 0.6.0 · rules 2026-11-02 · target: all
 Server  Acme Docs 1.4.2 · https://mcp.acme.com/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth OAuth (CIMD, S256)
 Checked 12 tools · 3 resources · 1 prompt · 2 UI resources · 104 rules run · 18 skipped (need --active)
