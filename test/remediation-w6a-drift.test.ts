@@ -209,7 +209,7 @@ describe('--baseline end to end: the Changed tool definitions section', () => {
     expect(readFileSync(at('r.txt'), 'utf8') + readFileSync(base, 'utf8')).not.toContain(SECRET);
   });
 
-  it('a 0.3 baseline without fingerprints is accepted: the section says so and nothing fails on drift', async () => {
+  it('a 0.3 baseline without fingerprints is accepted: the section says so and --fail-on-drift exits 1 with a warning (W6H)', async () => {
     const base = at('base.json');
     await run(['--fail-on', 'never', '--save-baseline', base, ...server('a')]);
     const old = JSON.parse(readFileSync(base, 'utf8'));
@@ -220,7 +220,8 @@ describe('--baseline end to end: the Changed tool definitions section', () => {
       run(['--fail-on', 'never', '--fail-on-drift', '--baseline', base, ...server('b')]),
       run(['--format', 'json', '--fail-on', 'never', '--baseline', base, ...server('b')]),
     ]);
-    expect(text.code, text.stderr).toBe(0);
+    expect(text.code, text.stderr).toBe(1);
+    expect(text.stderr).toMatch(/--fail-on-drift: tool definitions not compared/);
     expect(text.stdout).toMatch(/^Tool definitions not compared: tool fingerprints were not recorded in the baseline/m);
     expect(JSON.parse(json.stdout).baseline).toEqual({ toolChanges: null, notCompared: expect.stringMatching(/not recorded/) });
   });

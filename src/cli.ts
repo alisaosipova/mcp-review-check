@@ -58,7 +58,9 @@ Options:
   --baseline <file>       A JSON report of an earlier run (--format json): its findings are known, and only new ones
                           count for --fail-on and the verdicts (JSON baselined, SARIF baselineState). Also compares
                           the tool definitions with the baseline's fingerprints: "Changed tool definitions".
-  --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed since the baseline.
+  --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed since the baseline, or
+                          when the tools could not be compared (no fingerprints in the baseline, tools/list failed
+                          or partial): a warning on stderr says why.
   --diff-only             With --baseline, text and markdown: only the new findings and the tool changes (no
                           known-findings line, no manual checklist).
   --plugin-dir <dir>      Also lint a Claude plugin folder (.claude-plugin/plugin.json, .mcp.json, README, LICENSE) against
@@ -441,7 +443,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (path === '') throw new UsageError(`--${opt} needs a ${kind} path`);
       const st = statSync(path, { throwIfNoEntry: false });
       if (!st) throw new UsageError(`--${opt}: no such ${kind} (the path is not shown)`);
-      if (kind === 'directory' ? !st.isDirectory() : !st.isFile()) throw new UsageError(`--${opt} must be a ${kind}, not a ${kind === 'directory' ? 'file' : 'directory'}`);
+      if (kind === 'directory' ? !st.isDirectory() : !st.isFile()) throw new UsageError(`--${opt} must be a ${kind}, not ${st.isDirectory() ? 'a directory' : st.isFile() ? 'a file' : 'a pipe, device or other special file'}`);
     }
     // Read before connecting: a wrong --baseline is a usage error (exit 2), not a finished run that gated on everything.
     let baseline: Baseline | undefined;
@@ -537,7 +539,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // A partial check (no or a rejected token, tools/list failed, an exhausted snapshot byte budget) follows --fail-on unless --fail-on-incomplete.
     const partial = snap.coverage.toolLevel !== 'ok';
     // --fail-on-drift: a tool change is exit 1 like a finding over --fail-on; drift alone never changes the code.
-    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift ? 1 : 0;
+    // A comparison that could not be made (a baseline without fingerprints, a partial tools/list) must not pass a
+    // --fail-on-drift gate silently: exit 1 with a warning, unless 3 or 4 already says more.
+    const notCompared = values['fail-on-drift'] ? drift?.notCompared : undefined;
+    if (notCompared) stderr += `--fail-on-drift: tool definitions not compared (${notCompared.replace(/;? ?write it again with --save-baseline$/, '')}); re-save the baseline with --save-baseline\n`;
+    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
     const fromBaseline = baselined ? ` · ${baselined.length} known from baseline${changes ? ` · ${plural(changes, 'tool change')}${textOpts.failOnDrift ? ' (--fail-on-drift)' : ''}` : ''}` : '';
