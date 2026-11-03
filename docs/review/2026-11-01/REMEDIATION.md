@@ -50,6 +50,7 @@ Items are grouped into packages with **disjoint file ownership**, so packages ca
 | 2026-11-02 | 0.2.0 published to npm from the maintainer's machine with a granular token (`npm pack` of the `v0.2.0` tree, `npm publish --provenance=false`): `dist-tags.latest = 0.2.0`, `npx mcp-review-check@0.2.0 --version` → `0.2.0`. **No provenance attestation on 0.2.0** (npm cannot generate one outside CI; 0.1.0 has one). The GitHub release for `v0.2.0` was not created (the `gh-release` job depends on the `publish` job). Maintainer follow-ups: configure the trusted publisher and delete/refresh the `NPM_TOKEN` secret so 0.2.1+ publish from `release.yml` with provenance again; create the `v0.2.0` GitHub release by hand (or re-run the failed jobs after fixing the secret: `npm publish` of an existing version fails, so only do that for the next tag). |
 | 2026-11-02 | Wave 5 (0.3.0, see §9): decisions in `remediation/wave5-plan.md`; three code packages (W5A-cli, W5C-connect, W5D-ci) rebased and fast-forwarded on `main` without conflicts (12 commits, `ce31cd9`…`b396353`); docs step W5E (CHANGELOG `[Unreleased]`, spec.md §3.1–3.7, §4.2, §4.4, §5.3, README action outputs and `@0.3` / `@v0.3.0` pins, this §9). Release 0.3.0 prepared, not yet tagged. |
 | 2026-11-02 | 0.3.0 released through `release.yml` (run 41399447695) on tag `v0.3.0` = `ad687d7`: build job green (full suite on the runner), **Publish to npm (trusted publishing)** succeeded, the `NPM_TOKEN` step was skipped (secret deleted), provenance verified: `npm view mcp-review-check@0.3.0 dist.attestations` lists the attestation, `dist-tags.latest = 0.3.0`, GitHub release `v0.3.0` created. The first CI run of the release commit (`3158452`) failed on macOS only, in the no-node-on-PATH sub-check of the action report-step test; limited to non-macOS in `ad687d7`. The `NPM_TOKEN` fallback step in `release.yml` can now be removed in the next release. |
+| 2026-11-02 | Wave 6 (0.4.0, see §10): decisions in `remediation/wave6-plan.md`; W6A to W6D (Opus), W6F, W6G and the review (Sonnet), W6H review fixes, docs step W6E (CHANGELOG, spec.md, README, CONTRIBUTING, this file). Q1 to Q4 in spec §8 decided. |
 
 ## 5. Wave 1 results
 
@@ -281,3 +282,69 @@ The three branches were rebased onto `main` and fast-forwarded without conflicts
 ### 9.4 Verification (W5E)
 
 `npm run typecheck`, `npm run build`, `npm run readme:rules` (no drift: 147 rules, 31 manual items, catalog date 2026-11-01) and `npx vitest run test/docs.test.ts test/catalog.test.ts test/lifecycle.test.ts test/remediation-w3c-cli-tests.test.ts test/remediation-w4d-action.test.ts test/remediation-w5d-action.test.ts test/workflows.test.ts` (7 files, 49 passed, none skipped). The full suite was not run by W5E (another process was running it).
+
+## 10. Wave 6 (0.4.0)
+
+After 0.3.0 shipped through trusted publishing and a manual end-to-end check of the published package (good, bad, leaky and hanging fixtures, the baseline loop, JUnit, a config file, exit codes 0/1/3/4), the maintainer asked for the next feature set. The plan and the default decisions are in [remediation/wave6-plan.md](remediation/wave6-plan.md); in short:
+
+| Item | Decision |
+|---|---|
+| Tool-definition drift | `--save-baseline` stores a SHA-256 fingerprint per tool; `--baseline` reports added, removed and changed tools in every format (SARIF: synthetic `BASE-001` notes); informational, `--fail-on-drift` exits 1, `--diff-only` prints only the new. |
+| Report JSON Schema | `schema/report.schema.json` (draft 2020-12) ships in the package; `$schema` in the JSON report; a test validates the fixture reports; no new dependency. |
+| Manifest linting (Q3) | `--plugin-dir` and `--openai-manifest`, new category LST (26 rules) automating MAN items, cross-checks against the live server. |
+| SPEC rules for 2026-07-28 | SPEC-021 (deprecated features, info), SPEC-022 (serverInfo in `_meta`, info), SPEC-023 (`capabilities.extensions`, error for the deterministic parts); AUTH-012 message extended for DCR/CIMD instead of a new rule. |
+| F036 full | Exchanges keep a snippet, size, digest and JSON-RPC summary; the parsed body is returned to the caller and kept only where rules read it. |
+| F146 full | One 64 MiB byte budget per snapshot; exhausting it stops reading and records `limits.truncated` / `limits.budgetExhausted`. |
+| Coverage in CI | A `coverage` job (Linux, Node 24); two timing tests skipped under `MCP_REVIEW_CHECK_COVERAGE=1`; thresholds re-measured. |
+| `release.yml` | The `NPM_TOKEN` step is removed; trusted publishing only. |
+| Q1, Q2, Q4 | Keep (APPS-012 prefers `openai/widgetDomain`, system resolver, provisional score weights). Q3: yes. Recorded in spec §8 as "Decided 2026-11-02 (0.4.0)". |
+
+### 10.1 Results per package
+
+W6A to W6D were implemented by a workflow on Opus before the session ended; W6F and W6G (follow-ups) and the review ran on Sonnet; W6H applied the review fixes.
+
+| Package | Done | Deferred |
+|---|---|---|
+| W6A-cli ([report](remediation/W6A-cli-report.md)) | `src/report/drift.ts`, `toolFingerprints`, drift sections in text, markdown, JSON, SARIF (`BASE-001`) and JUnit, `--fail-on-drift`, `--diff-only`, `schema/report.schema.json` with a validating test, README sections | Config keys `failOnDrift`/`diffOnly` (done by W6F), fingerprints over the uncapped definitions, a drift suffix in the Result line |
+| W6B-listing ([report](remediation/W6B-listing-report.md)) | Loaders in `src/listing/`, LST-001..LST-026, manual checklist filtering, two new needs, fixtures and tests | Image metadata (MAN-019, MAN-024), following `mcpServers` paths, repository-level checks, translations |
+| W6C-spec-rules ([report](remediation/W6C-spec-rules-report.md)) | SPEC-021..023, AUTH-012 message; only one frozen real-server snapshot changed (mslearn, +1 SPEC-021 info) | A read-only `tasks/get` probe, `subscriptions/listen` in SPEC-005, logging notifications |
+| W6D-core-ci ([report](remediation/W6D-core-ci-report.md)) | F036 full, F146 full, coverage job and thresholds (statements 88, branches 83, functions 89, lines 92), `release.yml` cleanup | The engine, report and rule readers of the new fields (done by W6G) |
+| W6F-cli-wiring ([report](remediation/W6F-cli-wiring-report.md)) | `--plugin-dir` and `--openai-manifest` in `src/cli.ts`, the four config keys, README | A listing-only run without a target, a `--verbose` dump of the listing |
+| W6G-core-followup ([report](remediation/W6G-core-followup-report.md)) | Budget stop in the engine ("snapshot budget exhausted") and the report (INCOMPLETE), `rpcView` and AUTH-021 read the exchange summary, `dropExchangeBodies` | `keepJson` flags in `src/probe/*`, JUnit/GitHub/drift handling of a budget stop (done by W6H) |
+| W6H-review-fixes ([report](remediation/W6H-review-fixes-report.md)) | The five review fixes below | `--tool-args` is still read with a plain `readFileSync` |
+| W6E-docs | This commit series: CHANGELOG, spec.md (§2.2, §2.8, new §2.13 and §3.8, §3.1, §3.2, §3.5, §3.7, §4.2, §5.3, §8), README pins `@0.4` / `@v0.4.0`, CONTRIBUTING trusted-publishing paragraph, `CATALOG_DATE` 2026-11-02, `action.yml` default `0.4`, this section | none |
+
+### 10.2 Integration
+
+The 19 commits of W6A to W6D and the 9 of W6F and W6G were rebased onto `main` and fast-forwarded; there was one conflict, on the catalog id-range line in `test/catalog.test.ts` (W6B edited the LST range and W6C the SPEC range). The maintainer's rule removed the `Co-Authored-By` trailers from the unpushed commits. Before the first push GitHub push protection blocked two Stripe-shaped fixtures; they were rewritten (token-shaped test strings now contain `SYNTH` and are assembled at runtime). Two tests had to follow the new behaviour: the modern fixture server now sends `_meta["io.modelcontextprotocol/serverInfo"]` (otherwise SPEC-022 added an info finding to the "clean SPEC results" e2e tests), and the wall-clock bound of the rules test was widened to 5 s.
+
+### 10.3 Review findings and their resolution
+
+The review of the integrated tree found five issues, fixed by W6H (commits `31e4eaa`, `15215f4`, `98705ad`, `88989d0`, `f74c7a0`; tests in `test/remediation-w6h-review-fixes.test.ts`) and one docs item:
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| SPEC-021 looked up server-controlled method names in a plain object (`constructor` matched) | medium | `Map` lookup; the SPEC-020 `scopes` table too; no other server-keyed table found in `src/rules/spec.ts`, `src/rules/listing.ts`, `src/listing/` |
+| A budget stop was treated as a `--max-duration` stop in places (`summary.failed` true at `--fail-on never`, JUnit, GitHub, drift) | medium | Partial check: `summary.failed` follows the `--fail-on` gate, never exit 4, JUnit property and `::warning`, drift compares when `listing` completed |
+| A JSON syntax error in a listing file quoted a window of the file | medium | Line and column only; non-UTF-8 input is "not valid UTF-8" |
+| `--fail-on-drift` passed silently when the tools could not be compared | low | Exit 1 with a stderr warning |
+| `--baseline`, `--config` and `--openai-manifest` could hang on a FIFO or read an unbounded file | low | `src/input-file.ts` (regular file, 16 MiB, `O_NONBLOCK`); the listing reader re-checks the descriptor |
+| The `NPM_TOKEN` text in CONTRIBUTING.md and CHANGELOG | docs | Removed from CONTRIBUTING.md (this series); the 0.3.0 CHANGELOG line is released history and stays |
+
+### 10.4 Still open after wave 6
+
+| Item | Source | Reason |
+|---|---|---|
+| `tasks/get` probe so SPEC-023 can verify the tasks methods | W6C | Needs `src/probe/**` or `src/connect.ts` |
+| `subscriptions/listen` in SPEC-005; logging notifications observed | W6C | Feature; the snapshot records no server notifications |
+| Listing-only run without a server target; `--verbose` listing dump | W6F | Needs a snapshot built without a connection |
+| Image metadata (MAN-019, MAN-024), `mcpServers` paths other than `.mcp.json`, repository-level checks, translations | W6B | Features |
+| Fingerprints over uncapped definitions; a drift suffix in the Result line | W6A | Needs `src/connect.ts`/`src/limits.ts`; decision on the verdict wording |
+| `keepJson` flags in `src/probe/*` (bodies are dropped after the run instead) | W6G | Cleanup |
+| `--tool-args` read with a plain `readFileSync` | W6H | Same FIFO exposure as the other inputs |
+| `$id` of the report schema answers 404 until tag `v0.4.0` is pushed | W6A | Resolves with the release |
+| `--oauth`, `v0` moving action tag, macOS/Windows action job | earlier waves | Unchanged from §9.3 |
+
+### 10.5 Verification (W6E)
+
+`npm run typecheck`, `npm run build`, `npm run readme:rules` (no drift: 176 rules, 31 manual items, catalog date 2026-11-02) and the docs tests listed in the task of this step.
