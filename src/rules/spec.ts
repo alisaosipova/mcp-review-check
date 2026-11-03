@@ -5,6 +5,8 @@ import { isObj, isStr, isStrArray, metaOf, toolName, type Obj } from './util/acc
 import { allExchanges, probeExchange, probeRpc, type RpcView } from './util/obs.js';
 
 const LIFECYCLE_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle';
+const SUBSCRIPTIONS = 'https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions';
+const LOGGING_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/logging';
 const TRANSPORT_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/transports';
 const SHTTP = 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http';
 const SCHEMA_TS = 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts';
@@ -111,17 +113,24 @@ export const SPEC_005 = defineRule(
   {
     id: 'SPEC-005', title: 'GET on the MCP endpoint', severity: { spec: 'warning' }, needs: ['http'],
     rationale: 'GET must open an SSE stream or return 405.',
-    fix: 'Return 405 Method Not Allowed for GET if you do not offer a server-initiated stream.',
-    sources: [TRANSPORT_2025],
+    fix: 'Return 405 Method Not Allowed for GET if you do not offer a server-initiated stream. On 2026-07-28 answer subscriptions/listen with a text/event-stream response.',
+    sources: [TRANSPORT_2025, SUBSCRIPTIONS, 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
   },
   (snap) => {
+    const out: RawFinding[] = [];
+    // 2026-07-28 removed the GET stream: long-lived notifications are the response to a subscriptions/listen POST,
+    // which the run opens (headers only) when the server declares listChanged or resource subscriptions.
+    const listen = probeExchange(snap, 'subscriptionsListen');
+    if (listen?.status !== undefined && listen.status >= 200 && listen.status < 300 && mediaType(listen.contentType) !== 'text/event-stream') {
+      out.push({ message: `subscriptions/listen got ${listen.status}${listen.contentType ? ` (${listen.contentType})` : ''}; its response is a text/event-stream that stays open` });
+    }
     const ex = probeExchange(snap, 'get');
-    if (!ex?.status || ex.status === 401 || snap.transport.kind === 'sse') return [];
+    if (!ex?.status || ex.status === 401 || snap.transport.kind === 'sse') return out;
     const sse = ex.status === 200 && mediaType(ex.contentType) === 'text/event-stream';
     // A modern-only server's GET is SPEC-015's check (sessions and streams belong to earlier revisions).
-    if (isModernOnly(snap)) return [];
-    if (sse || ex.status === 405 || (ex.status === 400 && !snap.transport.sessionId)) return [];
-    return [{ message: `GET returned ${ex.status}${ex.contentType ? ` (${ex.contentType})` : ''}; expected 200 text/event-stream or 405` }];
+    if (isModernOnly(snap)) return out;
+    if (sse || ex.status === 405 || (ex.status === 400 && !snap.transport.sessionId)) return out;
+    return [...out, { message: `GET returned ${ex.status}${ex.contentType ? ` (${ex.contentType})` : ''}; expected 200 text/event-stream or 405` }];
   },
 );
 
@@ -711,7 +720,16 @@ export const SPEC_023 = defineRule(
         if (!isObj(value)) issues.add(label, `settings of extension ${quote(key)} are ${value === null ? 'null' : Array.isArray(value) ? 'an array' : typeof value}, not an object ({} for no settings)`);
         if (key === TASKS_KEY) {
           // The tasks extension defines tasks/get, tasks/update and tasks/cancel; the run does not call them, so the declaration is unverified.
-          const unseen = TASK_METHODS.filter((m) => !answered.has(m));
+          const probe = probeRpc(snap, 'tasksGet');
+          const code = probe?.error?.code;
+          if (probe && (code === -32601 || (probe.status === 404 && code === undefined))) {
+            issues.add(label, `${TASKS_KEY} declared but tasks/get is not implemented: a random taskId got ${probe.status ?? ''} ${code === -32601 ? 'method not found (-32601)' : 'no JSON-RPC error'}; the extension requires -32602 for an unknown taskId`.replace('  ', ' '));
+          } else if (probe?.result !== undefined && probe.status !== undefined && probe.status < 300) {
+            issues.add(label, 'tasks/get answered a random, non-existent taskId with a result; the extension requires -32602 (Invalid params)', { severity: 'warning' });
+          } else if (probe && code !== -32602) {
+            issues.add(label, `tasks/get for a random taskId got ${probe.status ?? 'no status'} / code ${String(code)}, not -32602; not verified`, { severity: 'info' });
+          }
+          const unseen = TASK_METHODS.filter((m) => !answered.has(m) && !(m === 'tasks/get' && probe));
           if (unseen.length) issues.add(label, `${TASKS_KEY} declared; ${unseen.join(', ')} not probed (declared, not verified)`, { severity: 'info' });
         }
       }
@@ -720,8 +738,26 @@ export const SPEC_023 = defineRule(
   },
 );
 
+export const SPEC_024 = defineRule(
+  {
+    id: 'SPEC-024', title: 'Logging notifications valid', severity: { spec: 'error' }, needs: ['http'],
+    rationale: 'On 2026-07-28 a server must not send notifications/message to a request without io.modelcontextprotocol/logLevel, must declare the logging capability when it emits log messages, and each message carries a level.',
+    fix: 'Send notifications/message only on the response stream of a request that set io.modelcontextprotocol/logLevel, declare capabilities.logging, and give every message a level from the RFC 5424 list (debug to emergency). Logging is deprecated in 2026-07-28: prefer stderr or OpenTelemetry.',
+    sources: [LOGGING_2026, 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
+  },
+  (snap) => {
+    const log = snap.transport.notifications?.message;
+    if (!log) return [];
+    const out: RawFinding[] = [];
+    if (log.unrequested) out.push({ message: `${log.unrequested} notifications/message sent on 2026-07-28 requests without io.modelcontextprotocol/logLevel (the server MUST NOT)` });
+    if (!capabilitySources(snap).some(([, c]) => c.logging !== undefined)) out.push({ message: `${log.total} notifications/message received but the server does not declare the logging capability (it MUST)` });
+    if (log.invalidLevel) out.push({ message: `${log.invalidLevel} notifications/message without a valid level (debug, info, notice, warning, error, critical, alert, emergency)`, severity: 'warning' });
+    return out;
+  },
+);
+
 export const specRules = [
   SPEC_001, SPEC_002, SPEC_003, SPEC_004, SPEC_005, SPEC_006, SPEC_007, SPEC_008, SPEC_009, SPEC_010,
   SPEC_011, SPEC_012, SPEC_013, SPEC_014, SPEC_015, SPEC_016, SPEC_017, SPEC_018, SPEC_019, SPEC_020,
-  SPEC_021, SPEC_022, SPEC_023,
+  SPEC_021, SPEC_022, SPEC_023, SPEC_024,
 ];

@@ -50,6 +50,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | SPEC-021 | Deprecated protocol features in use | spec: info | [link](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) |
 | SPEC-022 | 2026-07-28 results identify the server | spec: info | [link](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts) |
 | SPEC-023 | capabilities.extensions well-formed | spec: error | [link](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts) |
+| SPEC-024 | Logging notifications valid | spec: error | [link](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/logging) |
 | TOOL-001 | Tool name characters and length | spec: warning | [link](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) |
 | TOOL-002 | Tool name at most 64 characters | claude: error, chatgpt: error | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | TOOL-003 | Tool names unique | chatgpt: error, spec: warning | [link](https://developers.openai.com/plugins/plugin-guidelines) |
