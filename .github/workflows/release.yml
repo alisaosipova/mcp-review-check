@@ -46,7 +46,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: npm
     permissions:
       id-token: write # npm trusted publishing and provenance
@@ -66,18 +66,19 @@ jobs:
         run: npm publish ./mcp-review-check-*.tgz $([[ "$GITHUB_REF_NAME" == *-* ]] && echo "--tag next")
       # The registry must show a provenance attestation for this version; a publish
       # that silently lost provenance (publishConfig ignored, OIDC missing) fails the release before the GitHub
-      # release is created. The registry can lag behind the publish, so retry for about a minute.
+      # release is created. The registry can take several minutes to serve a new version (0.4.0 took over a minute),
+      # so retry for up to 10 minutes.
       - name: Published version carries npm provenance
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for attempt in 1 2 3 4 5 6 7; do
+          for attempt in $(seq 1 30); do
             if npm view "mcp-review-check@$version" --json > view.json 2> view.err &&
                node -e "const d=require('./view.json'); const v=Array.isArray(d)?d[d.length-1]:d; process.exit(v?.dist?.attestations ? 0 : 1)"; then
               echo "mcp-review-check@$version has provenance: $(node -p "JSON.stringify((d=>Array.isArray(d)?d[d.length-1]:d)(require('./view.json')).dist.attestations)")"
               exit 0
             fi
             echo "attempt $attempt: no dist.attestations for mcp-review-check@$version yet"
-            sleep 10
+            sleep 20
           done
           cat view.err
           echo "::error::mcp-review-check@$version has no dist.attestations on the registry: it was published without provenance"
