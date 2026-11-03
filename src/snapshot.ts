@@ -84,7 +84,19 @@ export type WireProbeName =
   | 'originClaude'
   | 'originChatgpt'
   | 'originEvil'
-  | 'challenge';
+  | 'challenge'
+  | 'tasksGet'
+  | 'subscriptionsListen';
+
+/** Server notifications seen in the bodies this run read (HTTP only): method names with counts, capped, redacted. */
+export interface NotificationLog {
+  methods: Record<string, number>;
+  /** Notifications of methods beyond the cap of distinct names. */
+  otherMethods?: number;
+  /** notifications/message: how many, how many answered a 2026-07-28 request that carried no
+   *  io.modelcontextprotocol/logLevel (the spec says the server MUST NOT), and how many lacked a valid level. */
+  message?: { total: number; unrequested: number; invalidLevel: number };
+}
 
 export type ProbeObservation = HttpExchange | JsonRpcObservation;
 
@@ -226,6 +238,7 @@ export interface Snapshot {
     stdio?: { nonJsonStdout: string[]; nonJsonTotal?: number; stderrTail: string };
     modernResults?: Array<{ method: string; result: unknown }>;
     observedErrors?: ObservedError[];
+    notifications?: NotificationLog;
   };
   authProbe?: AuthProbe;
   active?: { calls: ActiveCall[]; clientInfoVariants?: Record<string, string[]> };

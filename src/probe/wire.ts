@@ -1,13 +1,16 @@
 // Side-effect-free protocol probes (§4.3).
+import { randomUUID } from 'node:crypto';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { HttpExchange, ProbeObservation, Snapshot, WireProbeName } from '../snapshot.js';
 import type { ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
 import type { Tracer } from '../protocol/trace.js';
+import { CLIENT_CAPABILITIES } from '../protocol/clientCaps.js';
 import { challengeProbe, JSON_HEADERS, originProbes, sameHostRedirect } from './network.js';
 
 export const UNKNOWN_METHOD = 'mcp-review-check/nonexistent';
 export const UNKNOWN_TOOL = 'mcp_review_check_nonexistent_tool';
+export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
 export const MISSING_RESOURCE = 'mcp-review-check://does-not-exist';
 
 export interface WireContext {
@@ -37,6 +40,17 @@ export function sdkSessionGet(exchanges: readonly HttpExchange[], sessionId: str
   return exchanges.find((e) => e.label === 'sdk GET' && e.method === 'GET' && e.status !== undefined && e.requestHeaders['mcp-session-id'] === sessionId);
 }
 
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** True when the initialize or the server/discover capabilities satisfy `test`. */
+function declares(snap: Snapshot, test: (caps: Obj) => boolean): boolean {
+  const sources = [snap.capabilities, isObj(snap.discoverRaw) ? snap.discoverRaw.capabilities : undefined];
+  return sources.some((c) => isObj(c) && test(c));
+}
+/** A capability that makes subscriptions/listen worth opening: list_changed or resource subscriptions. */
+const listens = (c: Obj) => ['tools', 'prompts', 'resources'].some((k) => isObj(c[k]) && (c[k] as Obj).listChanged === true) || (isObj(c.resources) && c.resources.subscribe === true);
+
 export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   const { snap, timeoutMs, client, modern, http } = ctx;
   const p: Probes = ctx.out ?? {};
@@ -58,6 +72,17 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     if (hasResources) p.resourceMissingModern = (await modern.request('resources/read', { uri: MISSING_RESOURCE }, { label: 'resourceMissing (modern)', fullBody: false, keepJson: true })).exchange;
     p.headerMismatchNone = (await modern.request('tools/list', {}, { methodHeader: null, label: 'headerMismatch (none)', fullBody: false, keepJson: true })).exchange;
     p.headerMismatchWrong = (await modern.request('tools/list', {}, { methodHeader: 'prompts/list', label: 'headerMismatch (wrong)', fullBody: false, keepJson: true })).exchange;
+    // Read-only tasks probe: tasks/get with a random taskId that cannot exist changes nothing on the server. The client
+    // declares the tasks extension for it, since a server answers a non-declaring client with -32021 (missing capability).
+    if (declares(snap, (c) => isObj(c.extensions) && c.extensions[TASKS_EXTENSION] !== undefined)) {
+      const caps = { ...CLIENT_CAPABILITIES, extensions: { ...CLIENT_CAPABILITIES.extensions, [TASKS_EXTENSION]: {} } };
+      const taskId = `mcp-review-check-${randomUUID()}`;
+      p.tasksGet = (await modern.request('tasks/get', { taskId }, { label: 'tasks/get (nonexistent)', fullBody: false, keepJson: true, capabilities: caps })).exchange;
+    }
+    // subscriptions/listen is the 2026-07-28 replacement for the GET stream: open it, read the status line and headers, close.
+    if (declares(snap, listens)) {
+      p.subscriptionsListen = (await modern.request('subscriptions/listen', { notifications: { toolsListChanged: true } }, { label: 'subscriptions/listen', abortAfterHeaders: true, timeoutMs: 5000 })).exchange;
+    }
     if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false, keepJson: true })).exchange;
   }
 

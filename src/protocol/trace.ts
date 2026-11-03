@@ -1,6 +1,6 @@
 // Tracing fetch wrapper: records every HTTP exchange (redacted) for the rules.
 import { createHash } from 'node:crypto';
-import type { HttpExchange, JsonRpcSummary } from '../snapshot.js';
+import type { HttpExchange, JsonRpcSummary, NotificationLog } from '../snapshot.js';
 import { budgetLeft, charge, type ByteBudget } from '../limits.js';
 import { displayUrl } from '../rules/util/net.js';
 
@@ -304,6 +304,10 @@ function errorInfo(err: unknown): HttpExchange['error'] {
   return { name: e?.name ?? 'Error', code: e?.code, causeCode: e?.cause?.code, message: String(e?.message ?? err) };
 }
 
+/** RFC 5424 levels of MCP logging (https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/logging). */
+export const LOG_LEVELS = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'];
+const NOTIFICATION_METHOD_CAP = 20;
+
 export interface Tracer {
   exchanges: HttpExchange[];
   timings: Record<string, number[]>;
@@ -320,6 +324,8 @@ export interface Tracer {
    * as `json` either way, once: the caller stores what it needs (F036).
    */
   request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean; keepJson?: boolean; keepResult?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number; json?: unknown }>;
+  /** Server notifications seen in the bodies read so far (method names and counts, capped, redacted). */
+  notifications: NotificationLog;
   flush(): Promise<void>;
   now(): number;
 }
@@ -342,6 +348,30 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   const exchanges: HttpExchange[] = [];
   const timings: Record<string, number[]> = {};
   const pending: Promise<unknown>[] = [];
+  const notifications: NotificationLog = { methods: {} };
+
+  /** Tally the notifications (messages with a method and no id) of a response body: names and counts only. */
+  const noteNotifications = (ex: HttpExchange, text: string) => {
+    let msgs: unknown[] = [];
+    if (/event-stream/i.test(ex.contentType ?? '')) msgs = parseSseMessages(text);
+    else { try { const j = JSON.parse(text.trim()); msgs = Array.isArray(j) ? j : [j]; } catch { /* not JSON */ } }
+    const req = (ex.requestJson ?? {}) as { params?: { _meta?: Record<string, unknown> } };
+    const meta = req.params?._meta ?? {};
+    const modern = meta['io.modelcontextprotocol/protocolVersion'] === '2026-07-28';
+    for (const m of msgs) {
+      if (!isPlainObject(m) || typeof m.method !== 'string' || 'id' in m) continue;
+      const name = scrub(m.method.slice(0, 100), redactor);
+      if (name in notifications.methods || Object.keys(notifications.methods).length < NOTIFICATION_METHOD_CAP) notifications.methods[name] = (notifications.methods[name] ?? 0) + 1;
+      else notifications.otherMethods = (notifications.otherMethods ?? 0) + 1;
+      if (m.method === 'notifications/message') {
+        const log = (notifications.message ??= { total: 0, unrequested: 0, invalidLevel: 0 });
+        log.total++;
+        if (modern && meta['io.modelcontextprotocol/logLevel'] === undefined) log.unrequested++;
+        const level = isPlainObject(m.params) ? m.params.level : undefined;
+        if (typeof level !== 'string' || !LOG_LEVELS.includes(level)) log.invalidLevel++;
+      }
+    }
+  };
 
   const begin = (label: string, url: string | URL, init: RequestInit | undefined): HttpExchange => {
     let requestJson: unknown;
@@ -383,6 +413,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     ex.bodyBytes = b.bytes;
     ex.bodySha256 = bodyDigest(b.text, redactor);
     const json = parseBody(b.text, ex.contentType, ex.requestJson);
+    noteNotifications(ex, b.text);
     const rpc = summarizeJsonRpc(json, keepResult);
     if (rpc) ex.jsonRpc = rpc;
     if (json !== undefined) ex.jsonParsed = true;
@@ -472,7 +503,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
   };
 
   return {
-    exchanges, timings, redactor, fetch: sdkFetch, request, now,
+    exchanges, timings, redactor, fetch: sdkFetch, request, now, notifications,
     flush: async () => { await Promise.allSettled(pending.splice(0)); },
   };
 }

@@ -36,6 +36,10 @@ export interface ModernRequestOptions {
   fullBody?: boolean;
   /** Keep the parsed body on the exchange (a wire probe the rules read through rpcView); default: the tracer's choice. */
   keepJson?: boolean;
+  /** Read the status line and headers only, then close (a long-lived stream such as subscriptions/listen). */
+  abortAfterHeaders?: boolean;
+  /** Client capabilities for this request instead of the client's own. */
+  capabilities?: Record<string, unknown>;
 }
 
 const NAME_PARAM: Record<string, 'name' | 'uri'> = {
@@ -76,7 +80,7 @@ export class ModernClient {
           ...meta,
           'io.modelcontextprotocol/protocolVersion': version,
           'io.modelcontextprotocol/clientInfo': CLIENT_INFO,
-          'io.modelcontextprotocol/clientCapabilities': this.capabilities,
+          'io.modelcontextprotocol/clientCapabilities': opts.capabilities ?? this.capabilities,
         },
       },
     };
@@ -94,6 +98,7 @@ export class ModernClient {
     const { exchange, bodyBytes, json } = await this.tracer.request(opts.label ?? `modern ${method}`, this.url, {
       method: 'POST', headers, body: JSON.stringify(body), timeoutMs: opts.timeoutMs ?? this.timeoutMs, fullBody: opts.fullBody ?? true,
       ...(opts.keepJson !== undefined ? { keepJson: opts.keepJson } : {}),
+      ...(opts.abortAfterHeaders ? { abortAfterHeaders: true } : {}),
     });
     const msgs = Array.isArray(json) ? json.filter(isObj) : isObj(json) ? [json] : [];
     const msg = msgs.find((m) => m.id === id) ?? msgs.find((m) => idMatches(m.id, id)) ?? msgs[0];

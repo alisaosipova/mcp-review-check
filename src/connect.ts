@@ -394,13 +394,14 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     if (snap.discoverRaw && isObj(snap.discoverRaw)) adoptDiscover(snap, snap.discoverRaw as Record<string, unknown>);
   }
 
-  if (progress) progress.collect = () => ({ modernResults: [...modern.results], observedErrors: collectErrors(tracer, conn.rec), timings: httpTimings(tracer, conn) });
+  if (progress) progress.collect = () => ({ modernResults: [...modern.results], observedErrors: collectErrors(tracer, conn.rec), timings: httpTimings(tracer, conn), notifications: structuredClone(tracer.notifications) });
   const finishHttp = async (): Promise<BuildResult> => {
     await tracer.flush();
     snap.transport.exchanges = ruleExchanges(tracer);
     snap.transport.timings = httpTimings(tracer, conn);
     snap.transport.modernResults = modern.results;
     snap.transport.observedErrors = collectErrors(tracer, conn.rec);
+    if (Object.keys(tracer.notifications.methods).length) snap.transport.notifications = tracer.notifications;
     closing(progress);
     await endSession(conn, tracer);
     return { snap, tracer };
@@ -953,6 +954,7 @@ function stoppedSnapshot(live: Snapshot, cause: StopCause, progress: Progress): 
   if (seen) {
     snap.transport.observedErrors ??= seen.observedErrors;
     snap.transport.modernResults ??= seen.modernResults;
+    if (seen.notifications && Object.keys(seen.notifications.methods).length) snap.transport.notifications ??= seen.notifications;
   }
   const at = PHASES.indexOf(progress.phase as (typeof PHASES)[number]);
   const unfinished = at < 0 ? [progress.phase] : PHASES.slice(at);
