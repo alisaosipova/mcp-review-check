@@ -6,7 +6,52 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Nothing yet.
+Rule catalog dated 2026-11-02. 29 rules are new (see **Rules added**) and the AUTH-012 message changes, and the CLI gains drift detection and manifest linting, so this is a minor release.
+
+### Added
+
+- `--baseline` also compares the tool definitions. `--save-baseline` and `--json-output` write `toolFingerprints` (one SHA-256 per tool over its `name`, `title`, `description`, `inputSchema`, `outputSchema`, `annotations` and `_meta`, plus one digest per field), and a later run reports **Changed tool definitions** (tools added, removed or changed, with the changed fields) in text, markdown, JSON (`baseline.toolChanges`) and JUnit (`<system-out>`); a baseline written by 0.3 or older still works and the report says its fingerprints were not recorded.
+- Each changed tool is a `note` result of the synthetic rule `BASE-001` ("Tool definition changed since baseline") in SARIF; it is not part of the rule catalog and never changes the exit code by itself.
+- `--fail-on-drift` exits 1 when a tool was added, removed or changed since `--baseline`, also with `--fail-on never`.
+- `--diff-only` (with `--baseline`) limits the text and markdown reports to the new findings and the changed tool definitions, without the known-findings line and the manual checklist.
+- `schema/report.schema.json` (JSON Schema draft 2020-12) describes the JSON report and ships in the npm package; the JSON report names it in `$schema`.
+- `--plugin-dir <dir>` lints a Claude plugin folder (`.claude-plugin/plugin.json`, `.mcp.json`, README, LICENSE) and `--openai-manifest <file>` lints a ChatGPT plugin package manifest, next to a `<url>` or `--stdio` check; with them the manual checklist drops the items the new LST rules automate, and a missing path or the wrong kind of path is exit 2.
+- The config file accepts the keys `pluginDir` and `openaiManifest` (paths relative to the file), `failOnDrift` and `diffOnly`.
+- CI has a `coverage` job (Linux, Node 24) that runs `npm run test:coverage` and uploads the report; the branch threshold is now 83.
+
+#### Rules added
+
+- LST-001..LST-026 (claude: error, warning, info; chatgpt: error, warning, info), run only with `--plugin-dir` or `--openai-manifest`: the Claude plugin folder (manifest, name, README, LICENSE, `.mcp.json`, remote URLs, version-pinned launchers, package sources, bundles, credentials in headers or env, system files, file limits, directory listing fields) and the ChatGPT package manifest (listing text limits, the four HTTPS listing URLs, starter prompts, brand color contrast, icons, review test cases, forbidden fields, the MCP server), with cross-checks against the live server; severity follows the vendor checklists (error only where they say a submission is blocked or rejected, and a heuristic is at most a warning), and no rule quotes a header, environment or credential value.
+- SPEC-021 (spec: info): `logging`, `sampling` or `roots` in the server's capabilities, an HTTP+SSE-only transport, `sampling/createMessage` or `roots/list` requested through `input_required` results and `includeContext: "thisServer"` or `"allServers"` are deprecated in the 2026-07-28 specification (SEP-2577, SEP-2596).
+- SPEC-022 (spec: info, 2026-07-28 servers only): results without `_meta["io.modelcontextprotocol/serverInfo"]`, or with a value that is not an object with a string `name` and `version`.
+- SPEC-023 (spec: error): `capabilities.extensions` must be an object keyed by `vendor-prefix/name` identifiers with object settings; a well-formed identifier under a prefix reserved for MCP is a warning, and `io.modelcontextprotocol/tasks` declared without verifiable `tasks/get`, `tasks/update` and `tasks/cancel` is info.
+
+#### Severity raised
+
+- None.
+
+#### Severity lowered / false positives fixed
+
+- AUTH-012: the DCR-only finding (info, unchanged) now says that Dynamic Client Registration is deprecated in 2026-07-28 for new servers and that Claude uses CIMD only with `client_id_metadata_document_supported: true` and `"none"` in `token_endpoint_auth_methods_supported`.
+- SPEC-021 no longer reports `constructor`, `toString` and other `Object.prototype` names as deprecated requests.
+
+#### Rules retired
+
+- None.
+
+### Changed
+
+- A run reads at most 64 MiB of server data (HTTP bodies, SDK responses and stdio messages together); when that budget is spent, reading stops, `limits.truncated` lists `snapshot budget` with `unit: "bytes"`, `limits.budgetExhausted` names the phase, and the rules run on what was observed.
+- A run that spent the byte budget is a partial check: the verdict is INCOMPLETE, rules that needed the unfinished phase are skipped with "snapshot budget exhausted", the exit code follows `--fail-on` and is never 4, and `--fail-on-incomplete` makes it 3.
+- The run no longer keeps the parsed body of every HTTP exchange, only a masked snippet, its size, a SHA-256 and a summary of the JSON-RPC responses, so a large `tools/list` is held once instead of several times.
+- `release.yml` publishes only through npm trusted publishing; the `NPM_TOKEN` fallback step is removed.
+- `--baseline`, `--config` and `--openai-manifest` must be regular files (a pipe, device or directory is exit 2), and `--baseline` and config files are capped at 16 MiB.
+- `--fail-on-drift` exits 1 with a warning on stderr when the tool definitions could not be compared (a baseline without fingerprints, or a run whose `tools/list` did not finish), instead of passing silently.
+
+### Fixed
+
+- A malformed `.mcp.json` or manifest no longer has a window of its content copied into the listing warning.
+- No input file can hang the run on a FIFO: the listing reader opens files without blocking and checks the descriptor again.
 
 ## [0.3.0] - 2026-11-02
 
