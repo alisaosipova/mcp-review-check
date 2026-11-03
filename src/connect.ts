@@ -901,7 +901,7 @@ export function sdkStdioShape(t: object): boolean {
 
 /** The SDK's stdio transport, but a server started through a wrapper (npx, .cmd, .bat, sh -c) ends with everything it
  *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
-class GroupStdioTransport extends StdioClientTransport {
+export class GroupStdioTransport extends StdioClientTransport {
   /** The SDK's start (client/stdio.js:60-107) with detached: true; Windows keeps it as is (no groups there). */
   override async start(): Promise<void> {
     const self = this as unknown as SdkStdio;
@@ -925,13 +925,21 @@ class GroupStdioTransport extends StdioClientTransport {
     });
   }
 
-  /** As the SDK's close (stdin EOF, up to 2 s), then the group or tree gets SIGTERM before the SDK ends the wrapper. */
+  /**
+   * The SDK's close sequence, once and for the whole group (Windows: the tree): stdin EOF, up to 2 s; SIGTERM, up to 2 s;
+   * then SIGKILL. The SDK's own close then finds the process gone, instead of waiting through its stdin EOF and SIGTERM
+   * steps a second time (about 6 s per connection for a server that ignores both).
+   */
   override async close(): Promise<void> {
     const proc = (this as unknown as SdkStdio)._process;
-    if (proc && proc.exitCode === null && proc.signalCode === null) {
+    const exited = () => !proc || proc.exitCode !== null || proc.signalCode !== null;
+    const waitExit = (ms: number) => exited() ? Promise.resolve()
+      : Promise.race([new Promise((done) => proc!.once('exit', done)), new Promise((done) => setTimeout(done, ms).unref())]);
+    if (proc && !exited()) {
       proc.stdin?.end();
-      await Promise.race([new Promise((done) => proc.once('exit', done)), new Promise((done) => setTimeout(done, 2000).unref())]);
-      if (proc.exitCode === null && proc.signalCode === null) endTree(proc, 'SIGTERM');
+      await waitExit(2000);
+      if (!exited()) { endTree(proc, 'SIGTERM'); await waitExit(2000); }
+      if (!exited()) { endTree(proc, 'SIGKILL'); await waitExit(1000); }
     }
     return super.close();
   }
