@@ -40,13 +40,14 @@ export NO_PROXY=localhost,127.0.0.1,.corp.example
 npx mcp-review-check https://mcp.example.com/mcp
 ```
 
-- `HTTPS_PROXY` applies to `https://` targets and `HTTP_PROXY` to `http://` ones; when only `HTTP_PROXY` is set it is used for `https://` too (lower-case names work as well). `NO_PROXY` is a comma-separated list of hosts and domain suffixes that connect directly.
-- The proxy must support `CONNECT` tunnelling (all common corporate proxies do); a proxy that only forwards plain HTTP requests does not work. SOCKS proxies are not supported.
+- `HTTPS_PROXY` applies to `https://` targets and `HTTP_PROXY` to `http://` ones; when only `HTTP_PROXY` is set it is used for `https://` too, and `ALL_PROXY` is the fallback for both (lower-case names work as well). `NO_PROXY` is a comma-separated list of hosts and domain suffixes that connect directly.
+- `http://` targets are sent to an HTTP proxy as ordinary forwarded requests (absolute-URI), so a proxy that only forwards plain HTTP works for them. `https://` targets need `CONNECT` tunnelling, which all common corporate proxies support; a forward-only proxy cannot carry them.
+- SOCKS5 proxies work: `socks5://host:1080` and `socks5h://host:1080` (user:pass in the URL is used for username/password authentication). The target host name is always sent to the proxy, so it resolves the name (what curl calls `socks5h`); `socks5://` and `socks5h://` behave the same. SOCKS4 and SOCKS4a are not supported: such a value stops the run with a usage error (exit 2) that names the variable (`HTTPS_PROXY: unsupported proxy scheme "socks4://" ...`), without credentials. SOCKS5 support in the HTTP client is marked experimental upstream.
 - Credentials in the proxy URL (`http://user:pass@proxy:3128`) are accepted and redacted in every output. Set the variable in the environment, not in a script that gets logged.
 - A refused or unreachable proxy, or a `407 Proxy Authentication Required` answer, is named as the cause of the failure (credentials removed).
 - A proxy that inspects TLS presents its own certificate: add its CA with `NODE_EXTRA_CA_CERTS` as above.
 - **The raw TLS check is inconclusive behind a proxy.** The tool opens its own TLS connection to measure the protocol version and the certificate chain (see [What the tool sends](privacy-and-requests.md)); that socket cannot go through an HTTP proxy, so for a proxied host the check is reported as inconclusive (info) with the reason instead of failing. Hosts listed in `NO_PROXY` are still checked. Re-run from a machine with direct access (a public CI runner) to get the TLS result.
-- Node prints a one-line experimental-feature warning on stderr when a proxy is in use; it does not affect the result.
+- The client library's `ExperimentalWarning` about its proxy support is not printed; every other warning still is.
 - Before 0.5.0 the proxy variables are ignored and the tool fails to connect (`connection refused` or `timed out`) on a network that only allows traffic through a proxy.
 
 ## WAF, Cloudflare and 403

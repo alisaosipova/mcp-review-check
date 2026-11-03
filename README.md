@@ -246,14 +246,17 @@ the agent setup you run.
 
 The rule catalog is dated <!-- CATALOG_DATE -->2026-11-02<!-- /CATALOG_DATE --> (shown as `rules <date>` in every report header and as `tool.catalogDate` in JSON, with `tool.catalogAgeDays`). A check run prints a warning on stderr when the catalog is more than 90 days old, because directory requirements change.
 
-While the version is 0.x:
+From 1.0.0 the project follows [semantic versioning](https://semver.org/). The public interface is the command line only (there is no programmatic API): options, config keys, exit codes, the JSON report, the SARIF and JUnit output, and rule IDs.
 
-- **Patch releases** (0.1.x) only fix bugs and false positives, lower a severity, or improve messages. They never add a rule or raise a severity, so they cannot turn a passing CI run red.
-- **Minor releases** (0.2.0, ...) may add rules, raise severities and change defaults. Each one is listed in [CHANGELOG.md](CHANGELOG.md).
+- **MAJOR** (2.0.0, ...) is required to remove or rename a CLI option or config key, to change the meaning of an exit code, to remove or rename a field of the JSON report (`schemaVersion` is bumped) or change the SARIF or JUnit structure incompatibly, to remove a rule, or to raise the minimum Node version.
+- **MINOR** (1.1.0, ...) adds rules, raises severities, and adds options, config keys, report fields and output formats. A new rule or a higher severity can turn a `--fail-on` gate red, so read [CHANGELOG.md](CHANGELOG.md) before upgrading a minor.
+- **PATCH** (1.0.1, ...) fixes bugs and false positives, lowers severities and improves messages. A patch never adds a rule or raises a severity, so it cannot turn a passing CI run red.
 - **Rule IDs are never reused.** A retired rule's ID stays retired, so `--ignore` lists and saved reports keep their meaning.
-- **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear at any time.
+- **JSON output** carries `schemaVersion` (currently `1`). It changes only when a field is renamed, removed or changes type; new fields can appear in any minor release.
 
-In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@0.7 <url>`.
+Not covered by the policy, and free to change in any release: the wording of messages and fix hints, score values, the heuristics inside a rule (word lists, regexes, thresholds; they are capped at warning), the text of the manual checklist, the layout of the human-readable report, and every internal module (the package exports a CLI, not a library).
+
+In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@1.0 <url>`.
 
 ## Limitations and disclaimer
 
