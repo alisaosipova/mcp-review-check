@@ -67,7 +67,7 @@ function steps(job: Job): string[][] {
 
 describe('GitHub workflows', () => {
   it('finds the workflows and their jobs', () => {
-    expect(FILES).toEqual(['audit.yml', 'ci.yml', 'release.yml']);
+    expect(FILES).toEqual(['audit.yml', 'ci.yml', 'docker.yml', 'release.yml']);
     expect(jobs().length).toBeGreaterThanOrEqual(3);
   });
 
@@ -82,7 +82,7 @@ describe('GitHub workflows', () => {
     expect(jobs().filter((j) => !/^timeout-minutes:\s*\d+$/.test(key(j, 'timeout-minutes')?.[0].trim() ?? '')).map((j) => `${j.file}: ${j.name}`)).toEqual([]);
   });
 
-  it('only publish jobs get id-token: write or contents: write, and none of them runs npm ci, npm test or npm run build', () => {
+  it('only publish jobs get id-token: write, contents: write or packages: write, and none of them runs npm ci, npm test or npm run build', () => {
     // No write permission at the workflow level: a job inherits it when it sets none of its own.
     for (const f of FILES) {
       const lines = code(readFileSync(join(DIR, f), 'utf8'));
@@ -92,7 +92,7 @@ describe('GitHub workflows', () => {
     }
     const all = jobs();
     const writers = Object.fromEntries(all.filter((j) => writes(j).length).map((j) => [`${j.file}: ${j.name}`, writes(j)]));
-    expect(writers).toEqual({ 'release.yml: publish': ['id-token: write'], 'release.yml: gh-release': ['contents: write'] });
+    expect(writers).toEqual({ 'docker.yml: push': ['packages: write'], 'release.yml: publish': ['id-token: write'], 'release.yml: gh-release': ['contents: write'] });
     for (const j of all.filter((x) => writes(x).length)) {
       const run = j.lines.join('\n');
       expect(run, `${j.name} runs install scripts, tests or a build`).not.toMatch(/\bnpm\s+(ci|test|run\s+build|pack|install(?!\s+-g\s+npm@))\b/);
