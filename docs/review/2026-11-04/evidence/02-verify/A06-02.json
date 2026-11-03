@@ -1,0 +1,13 @@
+{
+ "id": "A06-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-02",
+   "verdict": "confirmed",
+   "evidence": "Checked at 1f24aba. In manualChecklist (src/rules/manual.ts:72-79), an item is dropped whenever given[auto.input] is true and it has no residual. LISTING_MANUAL['MAN-020'] (src/rules/listing.ts:936) is {input:'openai', rules:['LST-022','LST-025']} and has no residual. LST-025 declares needs ['openai-manifest','tools'] (listing.ts:805). Repro on openai-valid with --format json: skipped[] holds LST-025 with reason 'no server target (listing-only run)', and manual[] = MAN-016,021,022,025,027,029,030,031, so MAN-020 is missing. The 'tools_triggered exist' part goes unchecked."
+  }
+ ],
+ "arbiter": null
+}

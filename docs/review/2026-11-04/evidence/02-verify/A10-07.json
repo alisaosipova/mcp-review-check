@@ -1,0 +1,13 @@
+{
+ "id": "A10-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-07",
+   "verdict": "confirmed",
+   "evidence": "SRV-003 объявлен с severity warning у всех платформ, rationale «SSE has been deprecated since 2025-03-26», sources[0] = directory-policy. При snap.fatal правило переопределяет severity на spec error, но docs и rationale остаются прежними. Markdown на 127.0.0.1:59999 показывает в строке SRV-003 docs=support.claude.com/...directory-policy, а в «Why these rules» объяснение про SSE. `explain SRV-003` выдаёт «claude=warning, chatgpt=warning, spec=warning» и ничего не говорит об ошибке соединения. JSON содержит gate.notGated «spec: 1 error (SRV-003) not gated; add --fail-on-spec…» при summary.failed=true и exit 3, то есть совет бесполезен. Несоответствие метаданных реальное, low."
+  }
+ ],
+ "arbiter": null
+}

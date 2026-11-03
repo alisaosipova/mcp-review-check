@@ -1,0 +1,13 @@
+{
+ "id": "A10-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-04",
+   "verdict": "confirmed",
+   "evidence": "src/report/json.ts:16 JSON_SCHEMA_URL и schema/report.schema.json:3 $id жёстко указывают на v0.4.0, а package.json имеет версию 1.0.0 и теги v0.5.0..v1.0.0 существуют. `git diff v0.4.0 1f24aba -- schema/` показывает ровно одну добавленную строку: server.listingOnly (Since 0.6). У server в схеме стоит additionalProperties:false, поэтому JSON listing-only отчёта не проходит валидацию по схеме, на которую ссылается собственный $schema. Это реальный дефект, а не известный пункт «404 до тега». Severity low."
+  }
+ ],
+ "arbiter": null
+}

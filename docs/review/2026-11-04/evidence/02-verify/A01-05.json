@@ -1,0 +1,13 @@
+{
+ "id": "A01-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-05",
+   "verdict": "confirmed",
+   "evidence": "cli.ts:526-529 hashes report.snap after redactDeep(built, redactor), and redactor = redactorFor(typed, true) (line 477) covers the weak-tier --env values. Reproduced: a baseline saved without --env, then a run with --env WORKSPACE=Acme on good-server (which ignores WORKSPACE), gave exit 1 and '~ search_notes / create_note / delete_note: changed: description', because 'Acme' in the descriptions was redacted. The docs (options-and-config.md:114) say secrets are redacted before hashing on purpose ('a rotated secret echoed in a description is not a change'), but they do not mention that adding or changing a non-secret --env value creates drift. So drift depends on how the CLI was invoked. It is low severity and a side effect of the documented design, but the behaviour is real."
+  }
+ ],
+ "arbiter": null
+}

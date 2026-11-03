@@ -1,0 +1,13 @@
+{
+ "id": "A05-10",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-10",
+   "verdict": "confirmed",
+   "evidence": "mixedScript (injection.ts:116-119) requires \\p{Script=Latin} plus (Cyrillic or GREEK_LOOKALIKE). In node: 'Ｇoogle' false (fullwidth letters are Script=Latin), '𝐏aypal' false (math alphanumerics are Script=Common), 'Gօօgle' false (Armenian is not checked). Control 'Gооgle' (Cyrillic) true. Note: the spec and the rationale scope the heuristic to Cyrillic and Greek only, so this is a coverage gap of the heuristic, not a deviation from the spec. The factual claim holds."
+  }
+ ],
+ "arbiter": null
+}

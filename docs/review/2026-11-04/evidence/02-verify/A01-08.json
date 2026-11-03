@@ -1,0 +1,13 @@
+{
+ "id": "A01-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-08",
+   "verdict": "confirmed",
+   "evidence": "src/input-file.ts:6 sets INPUT_FILE_CAP = 16 MiB and readBaseline goes through readInputFile, while cli.ts:570-576 writes the JSON report with no size check. Reproduced with a copy of many-tools-server.mjs at 5000 tools: --save-baseline big.json gave exit 0, a 20,794,163-byte file and no warning. The next run with --baseline big.json gave exit 2 'cannot read --baseline: it is larger than 16 MiB'. The REMEDIATION 10.3 item only added the cap; it does not cover the asymmetry between what --save-baseline writes and what --baseline reads."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A01-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-07",
+   "verdict": "confirmed",
+   "evidence": "cli.ts:562 always appends '; re-save the baseline with --save-baseline'. Reproduced: hang-server with --timeout 1000 --baseline --fail-on-drift gave exit 1 and stderr '(this run did not list every tool: tools/list failed); re-save the baseline with --save-baseline'. Following that advice with the same run (--save-baseline hb.json) wrote toolFingerprints null, with only 'JSON report written'. A later good-server run with --baseline hb.json --fail-on-drift then gave exit 1 '(the baseline run did not list every tool...); re-save the baseline'. The advice only fits the baseline-side reasons (drift.ts:110-111)."
+  }
+ ],
+ "arbiter": null
+}

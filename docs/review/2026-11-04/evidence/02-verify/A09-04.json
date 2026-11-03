@@ -1,0 +1,18 @@
+{
+ "id": "A09-04",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "Read-only via git show 1f24aba. I did not create a worktree or run anything. The --max-duration deadline exists only inside buildSnapshot: withStops (src/connect.ts:822-852) arms setTimeout(fire, ms), races it against the run, and calls clearTimeout(timer) in `finally` as soon as buildSnapshot settles. After that, cli.ts:512 calls runRules(snap, RULES, { ignore }) synchronously. runRules (src/rules/engine.ts:168-) is a plain for-loop over the rules with no clock or deadline check, and no worker thread or async yield, so no timer could fire during it even if one were still armed. The exit code at cli.ts:563 is `snap.fatal ? 3 : snap.limits?.stopped ? 4 : ...`. limits.stopped is set only by stoppedSnapshot inside withStops, so a slow rule phase ends with the normal 0 or 1, not 4. A grep of src for deadline and worker_threads finds no other guard. This contradicts the --help text at cli.ts:55, \"Stop the whole check after this long and report what ran, exit 4\". README:141 is narrower: \"4 = --max-duration stopped the check after the handshake\". Neither document says the rule phase is outside the deadline. The issue is not in FINDINGS.md or REMEDIATION.md (searched for runRules, max-duration and quadratic; no match). Rule-phase time is the only thing I could not check without running it: I did not reproduce the 22 s / 13.5 s / 16.2 s timings, and the claim that real servers produce such slow rules rests on A09-01..03. Why low and not medium: the root cause and the real-world impact sit in the quadratic rules (A09-01..03). Once those are fixed, rule evaluation over the capped snapshot is fast, and what remains is a gap between the documented contract and the code (help says \"whole check\" while the deadline covers only connect, listing and probes). That needs either a help/README wording fix or a deadline check between rules. It is a UX/contract issue, not a deterministic MUST violation."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Reproduced at 1f24aba, built in a detached worktree (since removed). Code: in src/cli.ts:512, runRules(snap, RULES, { ignore }) runs after buildSnapshot returns. runRules (src/rules/engine.ts:169ff) is a synchronous for-loop over the rules with no deadline check. The exit code (cli.ts:563) is 4 only when snap.limits.stopped is set, and only the connect/listing/probe checkpoints set it. --help (cli.ts:55) says \"Stop the whole check after this long ... exit 4\", and spec.md:1212 says \"Overall deadline for the whole check\". Run: a local stdio fixture with one tool whose inputSchema has a single property named 'A'.repeat(N), started as `node dist/cli.js --max-duration 3000 --format json --stdio -- node slow.mjs N`. With N=2000: wall 0.99 s, exit 1. With N=60000: wall 49.2 s, exit 1, report durationMs 48767, limits.stopped undefined, so no INCOMPLETE and no exit 4. The handshake and listing finished well inside the deadline (otherwise the stop would have been recorded), so the extra ~48 s is spent in rule evaluation, which --max-duration does not bound. The CI time bound and the exit-4 contract fail whenever a rule is slow. Severity medium: a documented contract is broken and the run took 16x the deadline on a 60 KB input. The root cause of the slowness is the quadratic rules (A09-01..03); this finding is the missing safety bound."
+  }
+ ],
+ "arbiter": null
+}

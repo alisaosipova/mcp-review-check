@@ -1,0 +1,18 @@
+{
+ "id": "A10-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "Code at 1f24aba: buildStdio (src/connect.ts ~704-760) runs listEverything, then readUiResources, then runWireProbes, one after another, and each request gets the full timeoutMs (default 30000). listEverything (connect.ts:144) loops tools/list → resources/list → resources/templates/list → prompts/list with no early exit after tools/list times out. It retries only on NETWORK_ERROR, and \"Request timed out\" does not match that. The only skip is the tools re-list/fresh/active block (guarded by !snap.listMeta.tools?.error), so those are not added. --max-duration defaults to no limit (cli.ts:55, 375). Output is collected in runCli and written once at the end (cli.ts:648-650). The only other stderr write is the usage error (cli.ts:625). There is no progress or phase line on a TTY, and --verbose only expands the final report and trace. README and the docs I grepped have no guard or hint for this. FINDINGS.md / REMEDIATION.md do not list it (only F011/R003, which cover exit 4 and partial results on a --max-duration stop, not silent sequential timeouts). I ran it in my own worktree at 1f24aba: `node dist/cli.js --stdio 'node test/fixtures/hang-server.mjs' --timeout 2000` finished in 14.7 s (about 7 x 2 s), exit 1, with 3x SPEC-020 'Request timed out' and nothing on stderr. That scales to about 210 s at the default 30 s. The claim is accurate as stated. On severity I put it at low, not medium: the result is correct and the diagnostics are right, it only affects a pathological server, and both --timeout and --max-duration avoid it. It is a UX/latency issue, not a wrong result. Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "Собрал 1f24aba в отдельном worktree (npm ci, build прошли успешно, worktree потом удалил). Команда `node dist/cli.js --stdio 'node test/fixtures/hang-server.mjs' --timeout 2000` работала 15.5 s и завершилась с exit 1; stderr пустой. В отчёте 3x SPEC-020 'Request timed out' (prompts/list, resources/list, tools/list) и строка \"161 skipped\". 15.5 s — это примерно 7 последовательных таймаутов по 2 s. Значит, с дефолтным --timeout 30000 будет около 210 s. Полный прогон на 210 s я не запускал, это экстраполяция. Под pseudo-TTY (`script -qc`) через 8 s после старта в выводе было 0 байт, весь вывод (2793 байт) появился только в конце. В src есть всего два места с записью в stderr: cli.ts:625 (ошибка usage) и cli.ts:650 (финальный flush в runCli). Progress-строк нет нигде, на TTY тоже. Само поведение подтверждено. Но с отчётом всё корректно: результат правильный и детерминированный, --timeout работает на каждый запрос, а --max-duration и раздел \"Timeouts and --max-duration\" в docs/guide/troubleshooting.md это ограничивают. Это только UX: нет обратной связи о прогрессе, и таймауты не обрываются досрочно после того, как tools/list упал по таймауту. Поэтому я ставлю low, а не medium."
+  }
+ ],
+ "arbiter": null
+}

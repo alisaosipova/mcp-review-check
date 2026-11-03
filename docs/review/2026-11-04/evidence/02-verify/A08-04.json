@@ -1,0 +1,13 @@
+{
+ "id": "A08-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-04",
+   "verdict": "confirmed",
+   "evidence": "Dockerfile:22-23 runs `adduser -D -u 10001 reviewer` and then `USER reviewer`. docs/guide/ci.md:261 recommends `docker run --rm -v \"$PWD/out:/out\" ... --output /out/report.json`. On a Linux engine, `-v` auto-creates a missing host directory as root:root 0755, and an existing user-owned 0755 directory belongs to uid 1000. uid 10001 can write to neither. src/cli.ts:588 then returns code 2 with `error: cannot write --output ...`. The docker.yml smoke test mounts `:ro` and never writes. Docker is not installed here, so the container run was not done. The conclusion follows from standard bind-mount semantics plus the code path in the CLI."
+  }
+ ],
+ "arbiter": null
+}

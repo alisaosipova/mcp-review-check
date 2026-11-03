@@ -1,0 +1,13 @@
+{
+ "id": "A05-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-08",
+   "verdict": "confirmed",
+   "evidence": "tools.ts:578 TOOL-034 fix: 'Consolidate related operations into fewer tools (for example one tool with an `action` parameter)'. TOOL-024 (warning on both platforms, tools.ts:297-322) checks property names action|operation|op|mode|command. It fires 'mixes read and write operations' when the enum has both read and write verbs, 'N verb modes' (chatgpt) when there are 4 or more verbs, and an info 'split by action type'. Its fix is 'Split the tool by action type'. So the CRUD-into-one-action-enum consolidation suggested by TOOL-034 directly triggers TOOL-024. The fix texts contradict each other. It is a doc/fix-text inconsistency, low severity."
+  }
+ ],
+ "arbiter": null
+}

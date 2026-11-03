@@ -1,0 +1,101 @@
+{
+ "area": "A04",
+ "name": "protocol, auth, server and runtime rules and the engine",
+ "coverage": "Read in full at 1f24aba: src/rules/engine.ts, spec.ts, auth.ts, server.ts and runtime.ts. Also read the parts they depend on: src/rules/util/obs.ts (rpcView/probeRpc/allExchanges), src/probe/wire.ts (tasksGet, subscriptionsListen and the other modern probes), src/protocol/trace.ts (noteNotifications, the abortAfterHeaders JSON change), src/snapshot.ts (NotificationLog, PHASES, emptySnapshot), the diffs of 19a60a9, 7cae017 and ce7705e, and the deferred/open tables in REMEDIATION.md §8.3, §9.3, §10.3 and §10.4, plus the FINDINGS.md index, to avoid re-reporting. Spec text verified with WebFetch from the cited URLs only: 2026-07-28 logging, streamable-http and caching. Ran: npm ci and build in a detached worktree; npx vitest run test/p7-protocol.test.ts (11 passed); two scratch vitest files (since deleted) that reproduce A04-01, 02, 03, 05 and 06 through runRules on hand-built snapshots; a node script against the built trace.js and a 127.0.0.1 server for A04-04; node dist/cli.js --format json --stdio -- node test/fixtures/bad-server.mjs as a sanity check. Worktree removed afterwards. Not done: end-to-end CLI runs against leaky/hang/huge/many-tools/listing fixtures and the modern-server variants beyond p7; a line-by-line check of every AUTH rule against the RFC 8414/9728 text (I checked only the severity logic); the RT rules' interplay with src/probe/active.ts; and the cacheScope-per-request question, which is listed as an improvement because I did not reproduce it.",
+ "improvements": [
+  {
+   "title": "Cite the 2025-11-25 logging page in SPEC-024",
+   "detail": "SPEC-024's capability finding also fires for legacy (2025-11-25) requests, which the 2025-11-25 logging page also covers ('Servers that emit log message notifications MUST declare the logging capability'). Today the rule cites only the 2026-07-28 page. Add the 2025-11-25 URL to sources so the citation matches what is checked.",
+   "effort": "S"
+  },
+  {
+   "title": "SPEC-013 cacheScope consistency is per list request, not per method",
+   "detail": "The spec says 'Servers MUST apply the same cacheScope to all response pages for a given list request'. SPEC-013 groups every modernResults entry by method, including separate tools/list requests (re-list, text-only list). If the server legitimately gives a different scope per client context, the rule reports 'cacheScope differs between pages'. I did not reproduce this against a server. Grouping pages by request chain (first page plus its cursors) would match the spec exactly.",
+   "effort": "M"
+  },
+  {
+   "title": "A test that the GROWING/ATOMIC engine tables cover every snapshot field a rule reads",
+   "detail": "A04-02 came from a new snapshot field (transport.notifications) that nobody added to the tracked tables. A unit test could list the Snapshot/transport keys and require each one to be in LISTS/ATOMIC/GROWING/GROWING_TRANSPORT or in an explicit 'judged on what was made' allowlist (exchanges, timings), so future rules cannot silently pass after a stop.",
+   "effort": "S"
+  },
+  {
+   "title": "Check for prototype-key lookups in src/protocol and src/probe",
+   "detail": "H1 limited its search to src/rules/spec.ts, listing.ts and src/listing/. A04-04 shows the same class of bug in src/protocol/trace.ts. A quick search for `in <plainObject>` and `obj[serverValue]` patterns in src/protocol, src/probe and src/connect.ts would close the class of bug.",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A04-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/server.ts",
+   "line": "361-366 (with src/rules/spec.ts:673-697)",
+   "title": "A server/discover result without (or with a malformed) _meta serverInfo is reported by both SRV-013 and SPEC-022, at different severities",
+   "claim": "SRV-013 checks discoverRaw._meta['io.modelcontextprotocol/serverInfo'] on modern and dual servers. It gives a warning when the key is missing and an error when the value is malformed. SPEC-022 (added in wave 6) checks the same key on the same server/discover result and reports info for both cases. So one fact produces two findings. They also disagree on the level: SPEC-022's rationale treats the key as a SHOULD (info), and SRV-013 makes the same absence a warning. This is the 'one finding per defect' duplication the project removed elsewhere (F050 SRV-013 vs SPEC-001), and it came back with SPEC-022.",
+   "repro": "Ran (vitest scratch file, built tree at 1f24aba). Input: snapshot with era='modern', discoverRaw={supportedVersions:['2026-07-28'],capabilities:{},resultType:'complete'}, then runRules([SRV_013, SPEC_022]). Output: [SRV-013 warning 'server/discover result has no _meta[\"io.modelcontextprotocol/serverInfo\"]'], [SPEC-022 info 'server/discover result lacks _meta[...]']. With _meta serverInfo {name:'',version:1}: two SRV-013 errors plus SPEC-022 info '... is not an object with string name and version'.",
+   "fix": "Give the server/discover serverInfo check to a single rule. Suggested: drop the server/discover branch from SRV-013 (keep it for initialize, where the 2025-11-25 lifecycle requires serverInfo). Let SPEC-022 own the _meta serverInfo, keep info for absence, and keep the deterministic Implementation-shape check (name and version strings) at error when the key is present. Or have SPEC-022 skip server/discover when SRV-013 already reports it. Add a regression test that runs both rules on one snapshot.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A04-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/engine.ts",
+   "line": "92",
+   "title": "After a --max-duration or budget stop, SPEC-024 and SRV-018 count as passed even though their run-wide data is partial",
+   "claim": "GROWING_TRANSPORT marks only observedErrors, modernResults and tls as data that keeps growing over the run. transport.notifications (SPEC-024) and transport.stdio.nonJsonStdout/nonJsonTotal (SRV-018) also fill up over the whole run, but neither is tracked. So a stopped run that saw nothing yet returns [] and counts in rulesRun as a pass, not as skipped 'stopped by --max-duration'. That contradicts the R003 rule that a stopped report claims no unearned passes. SPEC-024 is new in 19a60a9 and was not added to the table.",
+   "repro": "Ran (vitest scratch). Input: HTTP snapshot with era='modern', coverage.toolLevel='stopped', limits.stopped={phase:'listing', unfinished:['listing',...]}, then runRules([SPEC_024]). Result: findings [], skipped [], rulesRun 1. Same for a stdio snapshot with runRules([SRV_018]). Expected: skipped with 'stopped by --max-duration'.",
+   "fix": "Add notifications: RUN_WIDE and stdio: RUN_WIDE to GROWING_TRANSPORT in src/rules/engine.ts. Add a test that a stopped snapshot skips SPEC-024 and SRV-018 when they find nothing.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A04-03",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/auth.ts",
+   "line": "581",
+   "title": "AUTH-021 Claude error from a body regex: a well-formed RFC 6749 JSON error that mentions 'missing ... grant_type' reads as 'did not parse a form-encoded body'",
+   "claim": "The form-encoding verdict is error-level for Claude. Apart from 415 it rests on the free-text regex /unsupported.*(content|media)|could not parse|missing.*grant_type/i over the whole body snippet. The regex runs before any check of whether the body is a proper OAuth error JSON. An authorization server that parsed the form and refused the client (for example invalid_client 'missing client authentication for grant_type authorization_code') is reported as not parsing form bodies. Under the project's severity principle a heuristic is at most a warning.",
+   "repro": "Ran (vitest scratch). Input: authProbe.active.token[0] = {status:401, contentType:'application/json', bodySnippet:'{\"error\":\"invalid_client\",\"error_description\":\"missing client authentication for grant_type authorization_code\"}', json: same, parsed}, with options.activeAuth true, then runRules([AUTH_021]). Output: AUTH-021 error 'token endpoint did not parse a form-encoded body (401)'.",
+   "fix": "Treat a response with a JSON (or oauthError) RFC 6749 error code other than invalid_request as proof that the form was parsed, and skip the regex for it. Keep error only for 415. Make the text-regex branch a warning.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A04-04",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/protocol/trace.ts",
+   "line": "364",
+   "title": "The notification tally looks up server-controlled method names on a plain object: 'constructor' and 'toString' corrupt the counts and bypass the cap",
+   "claim": "noteNotifications uses `name in notifications.methods` and then `(notifications.methods[name] ?? 0) + 1` on a {} object. For an inherited key such as constructor, toString or hasOwnProperty, `in` is true, so the distinct-name cap check is skipped. The 'count' then becomes the string 'function Object() { [native code] }1', which breaks the NotificationLog type (Record<string, number>) and the snapshot JSON. A method named __proto__ is dropped silently. This is the same class of bug H1 fixed in SPEC-021. It sits outside the A04 file list but feeds SPEC-024 (snap.transport.notifications).",
+   "repro": "Ran: node script against the built dist/protocol/trace.js with createTracer(buildRedactor({})) and tracer.request to a 127.0.0.1 server that answers [{\"jsonrpc\":\"2.0\",\"method\":\"constructor\"},{\"jsonrpc\":\"2.0\",\"method\":\"toString\"},{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}]. tracer.notifications printed {\"methods\":{\"constructor\":\"function Object() { [native code] }1\",\"toString\":\"function toString() { [native code] }1\"}}.",
+   "fix": "Create the methods table with Object.create(null), or use a Map during collection and convert it to a plain object at publish time. Use Object.hasOwn(methods, name) for the cap check. Add a test with constructor, toString and __proto__ as method names.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A04-05",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "404-408",
+   "title": "SRV-015 misses the 2026-07-28 tasks extension: it reads only capabilities.tasks",
+   "claim": "SRV-015's rationale says Claude does not support tasks. In 2026-07-28 tasks moved into capabilities.extensions['io.modelcontextprotocol/tasks'], which SPEC-023 and the wire probe already know about. SRV-015 checks only caps.tasks, so a modern server that declares the tasks extension gets no Claude note. This is a false negative.",
+   "repro": "Ran (vitest scratch). Input: modern HTTP snapshot with capabilities={tools:{}, extensions:{'io.modelcontextprotocol/tasks':{}}}, then runRules([SRV_015]). Output: findings []. Expected: info 'uses tasks'.",
+   "fix": "Also push 'tasks' when isObj(caps.extensions) && caps.extensions['io.modelcontextprotocol/tasks'] !== undefined, and check the server/discover capabilities on dual servers (capabilitySources in spec.ts). Use Object.hasOwn or a fixed key so no prototype lookup is involved.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A04-06",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/spec.ts",
+   "line": "331",
+   "title": "SPEC-013 accepts a non-integer ttlMs",
+   "claim": "The cited caching page defines ttlMs as 'an integer value in milliseconds' and says 'Servers MUST provide a ttlMs value that is >= 0'. SPEC-013 tests only typeof number, Number.isFinite and >= 0, so ttlMs 1.5 passes. Both conditions are deterministic, so this is a false negative of a documented requirement.",
+   "repro": "Ran (vitest scratch). Input: modern snapshot with modernResults=[{method:'tools/list', result:{resultType:'complete', tools:[], ttlMs:1.5, cacheScope:'public'}}], then runRules([SPEC_013]). Output: no findings. Spec text checked via WebFetch of https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching.",
+   "fix": "Use Number.isInteger(result.ttlMs) && result.ttlMs >= 0, and change the message to 'ttlMs is not an integer >= 0'. Error is consistent with the MUST plus the schema type, but to stay conservative a non-integer could be a separate warning.",
+   "status": "disputed"
+  }
+ ]
+}

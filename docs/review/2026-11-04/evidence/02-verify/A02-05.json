@@ -1,0 +1,13 @@
+{
+ "id": "A02-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-05",
+   "verdict": "confirmed",
+   "evidence": "diagnose.ts:25 PROXY_HOP contains only socket codes plus UND_ERR_PRX_TLS. viaProxy (line 41) is therefore false for DEPTH_ZERO_SELF_SIGNED_CERT and similar codes, and lines 71-76 always say 'TLS certificate of <host> is not trusted... serve a certificate from a public CA', even though proxyForUrl(url) is already computed at line 40. docs/guide/troubleshooting.md:48 documents that a TLS-inspecting proxy presents its own certificate and that the fix is NODE_EXTRA_CA_CERTS. The diagnosis does not mention either. Confirmed by code; I did not run the MITM repro."
+  }
+ ],
+ "arbiter": null
+}

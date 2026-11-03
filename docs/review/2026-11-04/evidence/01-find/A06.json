@@ -1,0 +1,171 @@
+{
+ "area": "A06",
+ "name": "listings",
+ "coverage": "Read in full at 1f24aba: src/listing/load.ts, image.ts, index.ts, src/rules/listing.ts (LST-001..028, LISTING_MANUAL), src/rules/manual.ts; also the relevant parts of src/cli.ts (listing-only path, input validation, --verbose dump), src/limits.ts capStrings, src/rules/util/net.ts isSecretName/KNOWN_TOKEN. Checked the known items in docs/review/2026-11-01/FINDINGS.md and REMEDIATION.md §10.3/10.4 (JSON error window, FIFO/O_NONBLOCK, image metadata and mcpServers-path features), so none of those is re-reported. Built a detached worktree (npm ci --ignore-scripts, npm run build) and ran the built CLI on: the openai-mcp-only and openai-valid fixtures (checklist and JSON), crafted image packages (URL logo, GIF, SVG with commented <svg, text-as-.png, SVG with a 5 KB prologue, 70 MiB sparse PNGs), symlinked .claude-plugin and declared-mcpServers folders, symlinked --plugin-dir/--openai-manifest inputs, a missing declared mcpServers path, verbose redaction (privateKey, x-auth, args flags), and deeply nested JSON (400k-deep arrays and 80k/100k-deep objects in plugin.json/.mcp.json/openai review). The deep-nesting cases were robust (no crash, under 0.5 s), so no finding was raised for them. The V8 JSON error messages always carried a position. Ran a single vitest file, test/p6-listing-offline.test.ts (15 passed). Not done: vendor limits were not checked against the cited OpenAI/Anthropic pages, because third-party network access was not allowed. I did not review the LST-008 launcher parsing edge cases or the PNG CgBI and WebP variants beyond reading the code (the offsets for VP8, VP8L, VP8X, the PNG IHDR and the JPEG SOF looked correct). The worktree was removed at the end, along with the scratch fixtures.",
+ "improvements": [
+  {
+   "title": "JPEG frame header beyond 256 KiB",
+   "detail": "jpegSize reads only the first IMAGE_HEADER_BYTES. A JPEG with large APP1/APP2/APP13 segments (ICC, XMP, Photoshop) ends up 'no-dimensions' (warning, check by hand). Reading the segments with positioned reads (2+2 bytes per marker, then skip len) would find the SOF in any file up to the cap at a cost of a few reads.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Manual checklist in listing-only mode",
+   "detail": "In a listing-only run, MAN-031 still prints `--url <url>` with a placeholder, and server-only items (MAN-009 WAF, MAN-012 tool descriptions, MAN-027 hints) are listed although no server was checked. Consider marking them '(applies to the server)' or dropping MAN-031 when snap.target.kind === 'listing'.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Finding subject 'server' for listing findings",
+   "detail": "LST findings print as 'LST-016 [chatgpt] server: ...' or 'server (plugin.json): ...' even in a listing-only run with no server. A subject such as 'listing (plugin.json)' would read better.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Note when images beyond IMAGE_COUNT_CAP are not examined",
+   "detail": "openAiImages slices to 32 refs silently. Record a truncation entry in listing.truncated so the report says that some images were not measured.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Share one secret-key predicate",
+   "detail": "describeListing (SECRET_KEY), LST-011 (SECRET_HEADER + isSecretName) and the report redactor each use their own lists. One exported predicate in util/net would keep the --verbose dump, the rules and the report consistent (see A06-07).",
+   "dimension": "security",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A06-01",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/rules/manual.ts",
+   "line": "73-79",
+   "title": "Manual items MAN-015/017/018/019/020/023 are dropped even when the LST rules could not check anything",
+   "claim": "The filter drops an automated item whenever `snap.listing.openai` exists. It does not check whether the manifest gave a listing object. When --openai-manifest is an MCP config, does not parse, or has no interface, LST-016 reports that the listing fields 'were not checked'. Yet the checklist hides MAN-015, 017, 018, 019, 020 and 023 and shows MAN-016, 021 and 024 cut down to their remainders ('the rest is checked by LST-018'). Neither the automated checks nor the checklist then covers those requirements.",
+   "repro": "Ran: node dist/cli.js --openai-manifest test/fixtures/listing/openai-mcp-only/mcp.json --target chatgpt --checklist. Output: a LST-016 warning saying the fields were not checked. The checklist lists only MAN-016 (residual), MAN-021 (residual), 022, 025, 027, 029, 030 and 031.",
+   "fix": "Set `given.openai` from the rules that actually ran: `!!snap.listing?.openai && !!openAiInterface(snap.listing.openai)` (and the same idea for the plugin with a parsed manifest). Better still, have the engine pass the set of LST rules that ran without a parse-level error and drop an item only when all of its `rules` ran.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-03",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/listing/load.ts",
+   "line": "47-56, 166-167, 227",
+   "title": "Listing JSON files are read through symlinked parent folders, which breaks the 'never through a link' promise and reads outside the plugin root",
+   "claim": "readCapped only lstat()s the last path component and opens with O_NOFOLLOW, which also guards only the last component. If `.claude-plugin` (or a folder in a declared mcpServers path such as `cfg/mcp.json`) is a symlink to a folder anywhere on disk, that file is parsed. Its contents then appear in findings (server names, URLs) and in the --verbose dump. image.ts already guards against this with a realpath check, but readJson does not. A third-party plugin linted in CI can thus pull local files (for example ~/.claude.json-style configs) into a published report.",
+   "repro": "Ran: mkdir -p outside/secretdir pl; put {\"name\":\"leaked-outside-name\",\"mcpServers\":{\"s\":{\"type\":\"http\",\"url\":\"http://inner.corp.example/mcp\"}}} in outside/secretdir/plugin.json; ln -s ../outside/secretdir pl/.claude-plugin; node dist/cli.js --plugin-dir pl --target claude --verbose. The output shows LST-007 quoting http://inner.corp.example/mcp from .claude-plugin/plugin.json, and the [listing] dump has \"name\": \"leaked-outside-name\". The same happens with --openai-manifest and \"mcpServers\": \"./cfg/mcp.json\" where cfg is a symlink: LST-024 quotes the URL from outside.",
+   "fix": "In readCapped, after the open, compare realpathSync(abs) (or fstat dev/ino against an lstat walk of each component) with realpathSync(root), as examineImage does, and refuse with 'is behind a symbolic link (not followed)'. Pass the root into readJson and readText.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-04",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/listing/load.ts",
+   "line": "152-161, 50-51",
+   "title": "A --plugin-dir or --openai-manifest that is itself a symlink passes the CLI check, then gives a false LST-001/LST-016 error",
+   "claim": "cli.ts:457 checks the input with statSync, which follows links, so a symlink to a folder or file is accepted. The loader then uses lstat and reports 'is not a directory' / 'is a symbolic link (not followed)' as an error-level LST finding, so the run is BLOCKED. The user chose this path themselves, so refusing to follow it is not a vendor rule. The stderr text '--plugin-dir . is not a directory' is also misleading.",
+   "repro": "Ran: ln -s .../test/fixtures/listing/plugin-valid lnk/plugdir; node dist/cli.js --plugin-dir lnk/plugdir --target claude. Output: 'warning: --plugin-dir . is not a directory', 'x LST-001 the plugin folder is not a directory', 'Claude: BLOCKED (3 errors)'. With ln -s .../openai-valid/plugin.json lnk/plugin.json, --openai-manifest lnk/plugin.json gives 'x LST-016 plugin.json is a symbolic link (not followed)'.",
+   "fix": "Resolve the user-given root once (realpathSync(dir) / realpathSync(path)) before loading, and apply the no-follow policy only to entries inside it. Alternatively, make the CLI check use lstat and raise a UsageError (exit 2) that names the cause.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-05",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/listing.ts",
+   "line": "693-698, 853-863, 880-882",
+   "title": "Non-./ icon refs are a warning in LST-021 but an error in LST-027; a wrong format is reported twice",
+   "claim": "For a logo given as a URL or a ../ path, LST-021 deliberately warns ('is not a ./ path inside the package'). examineImage marks it 'outside', and unmeasured() returns it at the rule's default severity, so LST-027 adds an error for the same fact. The run is BLOCKED by something the project rated a warning. In the same way, a .gif icon gets an LST-021 error and an LST-027 'unknown-format' error, which makes two root causes and a double score penalty.",
+   "repro": "Ran with interface.logo = \"https://cdn.example.com/logo.png\" and composerIcon = \"./assets/gif.gif\" (a GIF89a file). Output: '! LST-021 ... logo ... is not a ./ path inside the package', 'x LST-027 ... logo ... is not a ./ path inside the package, so it was not read', 'x LST-021 ... composerIcon ... is not a PNG, JPEG, WebP or SVG file' and 'x LST-027 ... composerIcon ... no matching file signature'.",
+   "fix": "In unmeasured(), return undefined for 'outside' and 'not-a-path', since LST-021 owns those. For 'unknown-format', skip when the ref's extension already failed IMAGE in LST-021, or downgrade it to info. LST-027/028 should report only what they measured.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-06",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/listing/image.ts",
+   "line": "259, 313",
+   "title": "SVG detection: a valid SVG with more than 4 KiB of prologue gets a false 'not an image' error, and a <svg in a comment gives a wrong size",
+   "claim": "sniffFormat looks for '<svg' only in the first 4096 bytes. An SVG with a license comment or a long DOCTYPE/metadata header before the root element is reported as 'no matching file signature', an error that blocks the run. svgSize takes the first '<svg' anywhere, including inside an XML comment, so a commented-out old tag sets the measured size. The reverse also happens: a text or HTML file named .png that mentions '<svg width=512 height=512>' passes as a 512x512 SVG icon.",
+   "repro": "Ran: an icon file '<?xml ...?>\\n<!-- ' + 5 KB license text + ' -->\\n<svg xmlns=... width=\"512\" height=\"512\">'. Result: 'x LST-027 ... lic.svg is not a PNG, JPEG, WebP or SVG image (no matching file signature)', BLOCKED. An SVG with '<!-- old: <svg width=\"4\" height=\"4\"> --><svg ... width=\"512\" height=\"512\">' gives 'x LST-027 ... is 4x4 px; icons must be 48 to 4096 px'. A .png file holding plain text with '<svg width=\"512\" height=\"512\">' gives no finding.",
+   "fix": "Strip comments, the XML declaration, processing instructions and the DOCTYPE (including its internal subset) from the decoded header (up to IMAGE_HEADER_BYTES). Then require the first element to be <svg (after optional whitespace) for both sniffing and sizing. Treat a non-matching text file as unknown-format.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-02",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/manual.ts",
+   "line": "77-79",
+   "title": "In a listing-only run MAN-020 is dropped although LST-025 (tools_triggered exist) is skipped",
+   "claim": "LISTING_MANUAL['MAN-020'] says LST-022 and LST-025 cover the item, but LST-025 needs 'tools'. In a listing-only run it is skipped ('no server target'). MAN-020 is still removed in full, and its 'tools_triggered exist' part is checked nowhere.",
+   "repro": "Ran: node dist/cli.js --openai-manifest test/fixtures/listing/openai-valid/plugin.json --target chatgpt --format json. skipped[] includes LST-025 'no server target (listing-only run)', and manual[] does not include MAN-020.",
+   "fix": "Drop or shorten an item only when every rule in `auto.rules` ran (or was applicable). Otherwise keep it with a residual such as 'tools_triggered names exist in tools/list (run with a server target)'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-07",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/listing/index.ts",
+   "line": "390, 398",
+   "title": "The --verbose listing dump prints privateKey, x-auth and credential flag values in args",
+   "claim": "describeListing redacts by its own regex SECRET_KEY, which is narrower than the project's isSecretName(): 'privateKey' and 'x-auth' are not matched, though isSecretName returns true for both. Values in `args` are never checked by key, so `[\"--api-key\", \"<value>\"]` and `\"--auth=<value>\"` print in full. The report redactor that runs afterwards catches only known token formats. The README/docstring promise that 'credential-named values' are removed.",
+   "repro": "Ran: .mcp.json {\"mcpServers\":{\"s\":{\"command\":\"node\",\"args\":[\"srv.js\",\"--api-key\",\"Zq8vLmN3pRt5WxY2\",\"--auth=Zq8vLmN3pRt5WxY2b\"],\"privateKey\":\"PRIVKEYVALUE123456\",\"x-auth\":\"XAUTHVALUE98765\"}}}; node dist/cli.js --plugin-dir red --verbose. stderr contains all four values verbatim. (A sig= query value is also kept, because displayUrl does not treat 'sig' as secret.)",
+   "fix": "Use `SECRET_KEY.test(k) || isSecretName(k)` in dumpValue. In arrays, redact the value after an element for which isSecretName(flag) holds, and the part after '=' in '--flag=value' when the flag is secret-named (the same flag logic the stdio argv redactor uses). Add a test with these keys.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-08",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "548",
+   "title": "The --verbose [listing] dump is one line with literal \\u{A} instead of newlines",
+   "claim": "JSON.stringify(..., null, 2) is passed whole to visibleText, which escapes every LF, including the pretty-print newlines. The dump becomes a single unreadable line of '{\\u{A}  \"plugin\": {\\u{A} ...'. JSON.stringify already escapes control characters inside strings, so only format and bidi characters need visibleText.",
+   "repro": "Ran: node dist/cli.js --plugin-dir test/fixtures/listing/plugin-valid --target claude --verbose 2>&1 >/dev/null | grep -A1 '^\\[listing\\]'. The second line starts '{\\u{A}  \"plugin\": {\\u{A}    \"manifest\": ...'.",
+   "fix": "`JSON.stringify(describeListing(l), null, 2).split('\\n').map(visibleText).join('\\n')`, and add a test that the dump has more than one line.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-09",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/listing/load.ts",
+   "line": "224-229",
+   "title": "A declared mcpServers path that is missing, or rejected for '..', silently falls back to mcp.json / .mcp.json",
+   "claim": "When plugin.json sets \"mcpServers\": \"./config/x.json\" and that file is missing (or the path is dropped for '..' or a scheme), the loader quietly reads mcp.json from the root. LST-022 to LST-026 then check a configuration the package does not use, and nothing tells the user. The portal would fail on the declared path.",
+   "repro": "Ran: openai-valid plugin.json with \"mcpServers\": \"./config/missing.json\", next to the fixture's mcp.json, with --verbose. The dump shows \"mcp\": {\"path\": \"mcp.json\"}, and there is no error or finding about missing.json.",
+   "fix": "When `declared` is set, push a ListingError ('declared mcpServers file does not exist' / 'is outside the package, not read') and add a LST-024 error for it. Use the fallback files only when mcpServers is not a string.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-10",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/listing.ts",
+   "line": "840, 863, 884; src/listing/load.ts:98-101",
+   "title": "Our own read caps are reported as error-level vendor findings",
+   "claim": "An image over IMAGE_FILE_CAP (64 MiB) gets an LST-027/028 error 'over the 64 MiB read cap'. A plugin.json or .mcp.json over LISTING_JSON_CAP (1 MiB, while the comment says the directory's per-file limit is 5 MiB) gets an LST-001/LST-006/LST-016 error 'over the 1 MiB read cap; not parsed'. For icons this duplicates the 5 MiB error. For screenshots there is no documented size MUST at all, yet the run is BLOCKED. This goes against the project principle that error is only for documented MUSTs.",
+   "repro": "Ran: truncate -s 70M assets/huge.png assets/shot.png; logo and composerIcon = ./assets/huge.png, screenshots = [./assets/shot.png]. Output: two errors per icon ('is 70.0 MiB, over the 5 MiB limit' and 'is over the 64 MiB read cap and was not opened') and 'x LST-028 ... shot.png is over the 64 MiB read cap'. 5 errors, BLOCKED.",
+   "fix": "Make 'too-large' (and the JSON read cap) a warning that says the tool could not check it ('not checked: over the reader cap'). In LST-027, skip the read-cap message when the 5 MiB error already fired.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A06-11",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/listing.ts",
+   "line": "380, 429",
+   "title": "LST-014 accepts a font file as the plugin icon",
+   "claim": "The icon check reuses MEDIA, which includes ttf, otf, woff, woff2 and eot (that regex is meant to exempt media from the 256 KiB rule). As a result, \"icon\": \"./assets/icon.woff2\" passes as 'an image file path'.",
+   "repro": "Ran: a plugin with \"icon\": \"./assets/icon.woff2\" (an existing file) and all URLs set. node dist/cli.js --plugin-dir font --target claude gives no LST-014 finding; only LST-004 (README) fires.",
+   "fix": "Use a separate image regex for the icon (`/\\.(png|jpe?g|gif|webp|svg)$/i`, whatever the plugin reference allows) and keep MEDIA only for the size exemption.",
+   "status": "confirmed"
+  }
+ ]
+}

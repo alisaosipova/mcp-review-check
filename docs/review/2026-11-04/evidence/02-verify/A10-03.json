@@ -1,0 +1,18 @@
+{
+ "id": "A10-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "At 1f24aba, src/report/json.ts:29 sets the server block to only `{ listingOnly: true }` when snap.target.kind === 'listing', so url, command and argv are left out. In schema/report.schema.json, properties.server.oneOf (lines ~42-45) has two branches: one requires \"url\", the other requires \"command\". There is no branch for listingOnly, even though the schema declares listingOnly as \"Since 0.6\" and says no url/command/argv are present. I compiled the server subschema from 1f24aba with Ajv 2020 (strict:false) and validated a listing-only server object built from the fields json.ts emits. Result: false, with errors \"must have required property 'url'\", \"must have required property 'command'\", \"must match exactly one schema in oneOf\". Nothing else guards against this: test/remediation-w6a-schema.test.ts never mentions listing/plugin-dir, and test/p6-listing-offline.test.ts only does toMatchObject({listingOnly:true}) with no schema check. So every listing-only JSON report fails validation against its own schema. Medium fits: the report is a documented machine-readable contract, consumers that validate will reject it, and the analysis results are not affected. Fix: add a third oneOf branch {required:[\"listingOnly\"], properties:{url:false,command:false,argv:false}}, or make the existing branches forbid listingOnly, and add a schema-validation test for a listing-only report. No worktree was created; I only read the code via git show and wrote a scratchpad copy of the schema."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Built 1f24aba in my own detached worktree. Ran `node dist/cli.js --plugin-dir test/fixtures/listing/plugin-valid --format json`, which exited 0. The report's server field is {\"listingOnly\":true,\"serverInfo\":null,\"era\":\"unknown\",...} with no url, command or argv, and its $schema points to the v0.4.0 schema URL. I validated it with Ajv 2020 from node_modules against the HEAD schema/report.schema.json and got false: \"/server must have required property 'url'\", \"/server must have required property 'command'\", \"/server must match exactly one schema in oneOf\". Line 34 of the schema defines listingOnly (const true, \"Since 0.6\", \"no url, command or argv\"), but lines 42-45 still require url or command through oneOf, so the schema contradicts itself. The schema at the v0.4.0 tag has no listingOnly at all (grep count 0), so the published $schema rejects the report too. test/remediation-w6a-schema.test.ts never mentions listing, so no test validates a listing-only report. Neither FINDINGS.md nor REMEDIATION.md lists this (only W6F wiring and deferred items). Medium fits: the documented JSON contract breaks for a whole output mode, and any consumer that validates the report rejects every listing-only run. Fix: add a third oneOf branch {required:[\"listingOnly\"], properties:{url:false, command:false, argv:false}} and a test that validates a listing-only report. The worktree is to be removed afterwards."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,117 @@
+{
+ "area": "A08",
+ "name": "supply chain and pipeline",
+ "coverage": "Worktree at 1f24aba (detached, created and removed at the end), `npm ci --ignore-scripts` and `npm run build` OK. Read in full: package.json, the package-lock.json scan (install scripts, engines, integrity, registry origins, runtime count 96, undici 7.30.1), .github/workflows/{ci,release,docker,audit}.yml, .github/dependabot.yml, action.yml, Dockerfile, .dockerignore, .pre-commit-hooks.yaml, scripts/postbuild.mjs, src/proxy.ts, the docs/guide/ci.md Docker and pre-commit sections, the README GitHub Action section and Stability policy, CONTRIBUTING release steps, and FINDINGS.md / REMEDIATION.md for known items (F145, F151, F159, F160, F166, the v0 tag and the coverage deferrals were not re-reported). Ran: `npm pack --dry-run --json` (67 files, clean apart from the stale-dist point); the action run-step script extracted from action.yml with an argv printer (A08-01); an offline npx install-script demo with local tarballs (A08-02); the add-mask newline echo and the CLI CR/LF bearer check (A08-06); the CLI with no args as the pre-commit hook runs it (exit 2 usage, as documented); the listing-only Docker smoke-test command on the host (exit 0); --output into an unwritable dir (EACCES, exit 2); vitest test/remediation-w4d-action.test.ts and test/workflows.test.ts (18 passed). Not done: no Docker or podman on the host, so the image build, uid and mount behaviour were not run in a container (A08-04 and A08-05 come from reading the code); action SHA-to-tag correspondence not verified (needs network); npm audit and registry queries not run (third-party network). One side effect: the npx demo printed an npm update notice, so npm may have contacted registry.npmjs.org for that check despite --offline. Pre-commit was not run with the real pre-commit tool (not installed); its install flow was checked by reading only.",
+ "improvements": [
+  {
+   "title": "Clean dist before every build",
+   "detail": "`build` is `tsc && node scripts/postbuild.mjs`, and neither step removes stale output. A file left behind in dist/ by a deleted or renamed module ends up in the tarball (verified: dist/old-removed-module.js appeared in `npm pack --dry-run` even though prepack rebuilt). CI and release are not affected because they check out fresh, but 0.2.0 was published from the maintainer's machine (REMEDIATION status log, 2026-11-02). Add `rm -rf dist` (or `node -e \"fs.rmSync('dist',{recursive:true,force:true})\"`) at the start of `build`.",
+   "dimension": "supply-chain",
+   "effort": "S"
+  },
+  {
+   "title": "Exercise the action's default npx path in CI",
+   "detail": "Every ci.yml `action` step uses `cli-path: dist/cli.js`, so the path every user runs (version regex, `npx --yes mcp-review-check@<default>`, Git Bash and bash 3.2 behaviour of npx) is never executed. Add a push-to-main or post-release job that uses `uses: ./` with the default `version` against test/fixtures/good-server.mjs.",
+   "dimension": "supply-chain",
+   "effort": "S"
+  },
+  {
+   "title": "Chain docker.yml to the Release workflow instead of polling npm",
+   "detail": "docker.yml starts in parallel with release.yml on the same tag and polls `npm view` for up to 30 minutes. When the release build fails (tests or tag mismatch), the Docker job burns 30 runner-minutes and fails with a misleading 'not published within 30 minutes'. Use `on: workflow_run: workflows: [Release], types: [completed]` with a success check, or move the image jobs into release.yml with `needs: publish`.",
+   "dimension": "pipeline",
+   "effort": "S"
+  },
+  {
+   "title": "Verify the provenance attestation content, not only its presence",
+   "detail": "release.yml:71-85 accepts any non-empty `dist.attestations`. Run `npm audit signatures` in a scratch install of the just-published version, or check the SLSA predicate's repository, workflow path and commit against GITHUB_REPOSITORY, the workflow ref and GITHUB_SHA. That proves the published bits come from this run.",
+   "dimension": "supply-chain",
+   "effort": "M"
+  },
+  {
+   "title": "Slim the runtime image",
+   "detail": "The final stage is node:22-alpine with npm, npx, corepack and yarn, none of which the CLI uses at runtime. They add CVE-scanner noise and attack surface. Delete /usr/local/lib/node_modules/{npm,corepack} and /opt/yarn* in the final stage, or base it on a distroless or `node:22-alpine` + `apk del` variant. Also add the `org.opencontainers.image.revision` label from GITHUB_SHA.",
+   "dimension": "hardening",
+   "effort": "S"
+  },
+  {
+   "title": "Tag-release guard: the tag commit must be on main and green",
+   "detail": "release.yml only checks that the tag matches package.json. A tag pushed on a branch commit that never passed ci.yml still publishes, because release.yml reruns tests only on ubuntu and Node 24. Add a step that checks `git merge-base --is-ancestor $GITHUB_SHA origin/main`, or query the ci.yml check-run for the SHA.",
+   "dimension": "pipeline",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A08-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "action.yml",
+   "line": "127",
+   "title": "extra-args written across several lines: every line after the first is dropped without a warning",
+   "claim": "`read -r -a extra <<< \"$INPUT_EXTRA_ARGS\"` reads only up to the first newline. A YAML block scalar (`extra-args: |`), the usual way to write a long option list, loses every option after line 1 without any message. The input's description says the value is \"split on whitespace\", and a newline counts as whitespace. Options that quietly go missing include `--fail-on-incomplete`, `--baseline <file>`, `--ignore`, `--max-duration` and `--config`. The CI gate becomes weaker, or a different gate runs, and the run still exits 0.",
+   "repro": "Ran it. I extracted the `run:` block of the `run` step from action.yml into a script and set INPUT_CLI_PATH to a small node script that prints its argv. With INPUT_EXTRA_ARGS=$'--timeout 60000\\n--ignore TOOL-013\\n--fail-on-incomplete\\n' the CLI received [... \"--timeout\",\"60000\",\"--stdio\",\"node x.mjs\"]. `--ignore TOOL-013` and `--fail-on-incomplete` were missing, and the step reported exit-code=0. The existing tests only use a single line (test/remediation-w4d-action.test.ts:139).",
+   "fix": "Read the whole value: `extra=(); read -r -d '' -a extra <<< \"$INPUT_EXTRA_ARGS\" || true` (works in bash 3.2; read -d '' returns 1 at EOF, hence the `|| true`). I checked it locally: all 6 tokens come through, and globbing is still off. Add a test case with a multi-line value to test/remediation-w4d-action.test.ts.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A08-02",
+   "dimension": "security",
+   "severity": "low",
+   "file": "action.yml",
+   "line": "138",
+   "title": "The action runs npx without --ignore-scripts, after the bearer token is already in its environment",
+   "claim": "Line 130 exports MCP_REVIEW_CHECK_TOKEN, then line 138 runs `npx --yes mcp-review-check@$INPUT_VERSION`. That command installs the package and its ~96 runtime dependencies with lifecycle scripts enabled and resolves them fresh, without a lockfile (see A08-03). So any preinstall/postinstall script anywhere in that tree runs inside the user's job with the server token in env, next to the job's GITHUB_TOKEN-scoped environment and the workspace. The repository's own policy is the opposite everywhere else: ci.yml/release.yml use `npm ci --ignore-scripts` and the Dockerfile uses `npm install --ignore-scripts`. Today no runtime dependency has an install script (I checked the lockfile: only esbuild and fsevents, both dev), so the risk is a future compromised transitive release, the worm-via-postinstall pattern.",
+   "repro": "Ran it offline with local tarballs. A fake CLI package depends on `evil-dep`, whose postinstall writes process.env.MCP_REVIEW_CHECK_TOKEN to a file. `MCP_REVIEW_CHECK_TOKEN=SYNTH-token npx --yes --offline --package fake-cli-1.0.0.tgz fake-cli` printed `leak: SYNTH-token`. The same run with `npm_config_ignore_scripts=true` printed `leak with ignore-scripts: none`, and the CLI still ran.",
+   "fix": "In the npx branch, set `npm_config_ignore_scripts=true` for that command (e.g. `cli=(env npm_config_ignore_scripts=true npx --yes ...)`). Better still: install first (`npm install --ignore-scripts --no-save --prefix \"$RUNNER_TEMP/mrc\" mcp-review-check@$INPUT_VERSION`), export the token only after that, and run `$RUNNER_TEMP/mrc/node_modules/.bin/mcp-review-check`. Add an assertion to test/remediation-w4d-action.test.ts that the npx path carries ignore-scripts.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A08-03",
+   "dimension": "security",
+   "severity": "low",
+   "file": "package.json",
+   "line": "62",
+   "title": "No npm-shrinkwrap.json: pinning the action to a SHA, the Docker tag and the npx recipes all run a dependency tree that CI never tested",
+   "claim": "The published package ships no lockfile. Every consumer resolves `undici ^7.30.1`, `ajv ^8`, `zod ^4` and the SDK's transitive tree (express 5, hono, cross-spawn, eventsource, ...; 96 runtime packages) at install time: the action's npx (action.yml:138), the Docker build (Dockerfile:10) and every `npx mcp-review-check@1.0` recipe. In addition, the action's `version` default `'1.0'` (action.yml:45) means that `uses: alisaosipova/mcp-review-check@<sha>` runs whatever the newest npm 1.0.x is. The README (lines 103, 113) and docs/guide/ci.md:163 present pinning a tag or SHA as the hardening step and never say this. audit.yml and the ci.yml audit check package-lock.json, which users never receive. undici's EnvHttpProxyAgent and SOCKS5 support are experimental (src/proxy.ts:60 suppresses the warning), so a minor undici bump in that range can change proxy behaviour without any change in this repository.",
+   "repro": "Read the code and ran `npm pack --dry-run --json`: the 67 entries contain no npm-shrinkwrap.json. A lockfile scan shows 96 non-dev packages with caret/tilde parents. Not run against the registry (no third-party network).",
+   "fix": "Publish an `npm-shrinkwrap.json` (npm's recommended practice for CLIs: `npm shrinkwrap` before pack, or keep package-lock.json in sync and copy it in prepack). Then npx, the global install and the Docker image get the audited tree. Optionally default the action's `version` to the exact release version on each tag (CONTRIBUTING step 2 already edits it per minor), or document next to the SHA advice that `version` floats over patch releases.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A08-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "Dockerfile",
+   "line": "22",
+   "title": "Docker recipe `-v \"$PWD/out:/out\" ... --output /out/report.json` fails with EACCES for the non-root uid 10001",
+   "claim": "The image runs as `reviewer` uid 10001 (Dockerfile:22-23). docs/guide/ci.md:260-261 recommends mounting a writable folder and writing --output into it. On Linux Docker, a host directory owned by the user (uid 1000, mode 755), or one that Docker auto-creates as root, cannot be written by uid 10001. The CLI then prints `Error: cannot write --output ...: EACCES` and exits 2. Only Docker Desktop's file-sharing layer or rootless engines hide the problem. The smoke test in docker.yml:57 mounts read-only and never writes, so this path is untested.",
+   "repro": "Docker is not installed on this host, so the container run was NOT run. I ran the equivalent CLI path: `node dist/cli.js --plugin-dir test/fixtures/listing/plugin-valid --format json --output <dir chmod 555>/report.json` -> `Error: cannot write --output ...: EACCES`, exit=2.",
+   "fix": "Document `--user \"$(id -u):$(id -g)\"` in the recipe (the CLI needs no home directory writes), or add a writable `WORKDIR /work` owned by 10001 and tell users to `chmod`/`chown` the mount. Extend the docker.yml smoke test with a write to a `-v $RUNNER_TEMP/out:/out` mount using `--user $(id -u)`.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A08-05",
+   "dimension": "perf",
+   "severity": "low",
+   "file": ".github/workflows/docker.yml",
+   "line": "89",
+   "title": "The pushed image is a second, separate build: the smoke-tested image is not the one published, and arm64 is never executed",
+   "claim": "The `build` job builds and smoke-tests a linux/amd64 image with `load: true`. The `push` job then rebuilds from scratch for linux/amd64 and linux/arm64 and pushes the result. That image's `npm install` resolves the floating transitive tree again (see A08-03), and the base layers are re-pulled, so the published digest is not the tested artifact. The arm64 variant is never run at all. The workflow header says \"the image never contains anything other than what npm users get\", but nothing ties the pushed bits to the tested ones.",
+   "repro": "Read the code (docker.yml:42-61 vs 83-95). Not run: no Docker or GitHub runner here.",
+   "fix": "Build once: one buildx build for both platforms, pushed by digest (or exported to an OCI layout). Smoke-test each platform with `docker run --platform` (add docker/setup-qemu-action) against that digest. Then promote it with `docker buildx imagetools create -t $IMAGE:$version -t $IMAGE:latest <digest>` in the packages: write job. Together with a shrinkwrap this makes the tested and the published images the same.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A08-06",
+   "dimension": "security",
+   "severity": "low",
+   "file": "action.yml",
+   "line": "130",
+   "title": "A bearer containing a newline is partly printed in the log by the add-mask echo before the CLI rejects it",
+   "claim": "`echo \"::add-mask::$INPUT_BEARER\"` registers a mask only for the first line. Every following line of the value is written to the job log as plain text. The CLI then rejects the token (`--bearer must not contain CR or LF`, exit 2), but by then the log already holds the rest of the value. A value from `secrets.*` is masked by the runner anyway. The exposure is real for a token from a step output or from `$(cat file)` with an embedded CR/LF, such as a file with Windows line endings.",
+   "repro": "Ran it: `INPUT_BEARER=$'abc\\nsecondline' bash -c 'echo \"::add-mask::$INPUT_BEARER\"'` prints `::add-mask::abc` and then `secondline` raw. `MCP_REVIEW_CHECK_TOKEN=$'abc\\nsecondline' node dist/cli.js http://127.0.0.1:9/mcp` -> `Error: --bearer must not contain CR or LF`, exit 2.",
+   "fix": "Before the add-mask line: `case \"$INPUT_BEARER\" in *$'\\n'*|*$'\\r'*) usage \"bearer must not contain CR or LF (the value is not shown)\";; esac`. It fails just as the CLI does, but without echoing anything.",
+   "status": "confirmed"
+  }
+ ]
+}

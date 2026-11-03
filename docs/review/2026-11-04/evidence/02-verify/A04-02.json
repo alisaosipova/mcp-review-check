@@ -1,0 +1,13 @@
+{
+ "id": "A04-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-02",
+   "verdict": "confirmed",
+   "evidence": "engine.ts@1f24aba:92 GROWING_TRANSPORT = {observedErrors, modernResults, tls}. The transport proxy (tracked(), ~l.107-113) calls note() only for 'probes' and for those keys. SPEC-024 (spec.ts:742) reads snap.transport.notifications?.message and returns [] when it is absent. SRV-018 (server.ts:475) reads transport.stdio.nonJsonStdout/nonJsonTotal and returns [] when total is 0. Neither read lands in `hit`. So in runRules (`if (hit.size && raw.length === 0)` -> skip) the empty result goes to rulesRun++ and counts as a pass, not as STOPPED_REASON/BUDGET_REASON. Both data sets fill over the whole run, the same as observedErrors (RUN_WIDE). Not in FINDINGS/REMEDIATION. Low severity."
+  }
+ ],
+ "arbiter": null
+}

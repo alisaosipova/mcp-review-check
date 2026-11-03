@@ -1,0 +1,13 @@
+{
+ "id": "A02-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-03",
+   "verdict": "confirmed",
+   "evidence": "trace.ts parseBody (around line 226-233) for text/event-stream returns `msgs.find(m => idOf(m) === id) ?? ...`, with no check for result/error/method. A server request {id, method:'ping'} with the same id is therefore taken as the body. modern.ts:103-115 then picks that single message: idMatches gives true, but it has no result and no error, so result and error stay undefined. listAll (modern.ts:125) falls back to `HTTP ${status}` and gives 'HTTP 200'. hasResultFor exists in trace.ts but parseBody does not use it. Confirmed by reading the code; I did not run a live repro. Not among the known items (the FINDINGS items on isResponseTo and id mismatch are different issues)."
+  }
+ ],
+ "arbiter": null
+}

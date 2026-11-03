@@ -1,0 +1,13 @@
+{
+ "id": "A04-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-03",
+   "verdict": "confirmed",
+   "evidence": "auth.ts@1f24aba:581: `code.status === 415 || /unsupported.*(content|media)|could not parse|missing.*grant_type/i.test(code.bodySnippet)` gives an error at the rule's level (claude:'error') before any check that the body is a valid RFC 6749 error JSON. The probe (probe/auth.ts:214) sends a form with grant_type=authorization_code and a bogus code but no client secret, so answers like invalid_client 'missing client authentication for grant_type ...' or invalid_grant 'code missing ... for grant_type authorization_code' are realistic, and the greedy regex matches them. The verdict rests on a free-text heuristic at error level, which breaks the severity principle. Not in the known lists. Low."
+  }
+ ],
+ "arbiter": null
+}

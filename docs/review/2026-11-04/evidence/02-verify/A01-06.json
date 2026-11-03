@@ -1,0 +1,13 @@
+{
+ "id": "A01-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-06",
+   "verdict": "confirmed",
+   "evidence": "The only collision check, cli.ts:383-389, compares resolve(save-baseline|json-output) with resolve(output). --baseline is not part of the check, and the paths are not canonicalised (no realpath). Reproduced: '--baseline b2.json --output b2.json' gave exit 0 'report written to b2.json', and the next '--baseline b2.json' run gave exit 2 '--baseline is not valid JSON'. With a symlink, link.txt -> real.json plus '--output link.txt --save-baseline real.json', the run reported both files written, and real.json begins 'mcp-review-check 1.0.0 · rules 2026-11-02', which is the text report."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A06-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-08",
+   "verdict": "confirmed",
+   "evidence": "src/cli.ts:548 runs `[listing]\\n${visibleText(JSON.stringify(describeListing(snap.listing), null, 2))}`, so visibleText also escapes the pretty-print newlines. Repro on plugin-valid --verbose: the line after [listing] is '{\\u{A}  \"plugin\": {\\u{A}    \"manifest\": {\\u{A} ...', all on one line."
+  }
+ ],
+ "arbiter": null
+}

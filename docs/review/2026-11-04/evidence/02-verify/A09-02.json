@@ -1,0 +1,18 @@
+{
+ "id": "A09-02",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "I read the code at commit 1f24aba. In src/rules/policy.ts:73 the ADS regex ends with `...)\\b|\\d+% off!/i`, so the last alternative sits outside the leading `\\b` group. It has no anchor, and V8 tries it at every position inside a digit run, consuming the rest of the run each time before failing on '%'. That makes a run of n digits cost O(n^2). POL-003 (policy.ts:83-85) runs `ADS.exec(nfkc(e.text))` on every entry from `corpus(snap)` (src/rules/util/text.ts:100). The corpus includes the tool name, title, annotations.title, description, and each param description found through walkSchema, plus prompts and resources. I found only two guards: TEXT_CAP = 16 KB per string and ID_CAP = 1 MB for identifiers such as name (src/limits.ts:7,11). Nothing limits how many params or tools there are. Bench with node on the exact regex: '0'.repeat(4000) took 15 ms, 8000 took 37 ms and 16000 took 159 ms, a quadratic curve. 'a'.repeat(16000) took about 0 ms. 200 params at 16 KB of digits each therefore cost about 30 s, which matches the claimed 29.9 s. The rules are synchronous, so the --max-duration timer cannot fire while the regex runs; this is consistent with the claimed 16 s end to end at a 5000 ms limit (I did not rerun the end-to-end case). FINDINGS.md and REMEDIATION.md contain no entry for this ReDoS or for POL-003, so it is not a known item. Severity should be low, not medium. Only a hostile or broken server produces long digit runs, the effect is a slowdown of the linter itself with no wrong verdict and no leak, and earlier verifications rated similar DoS-by-hostile-server cases (F141, unbounded UI reads) low. The fix is trivial: `\\b\\d+% off!` or folding the alternative into the group."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Checked in a detached worktree at 1f24aba (since removed). Line 73 of src/rules/policy.ts defines ADS = /\\b(...)\\b|\\d+% off!/i, and the last alternative sits outside the \\b group. Between two digits there is no word boundary, so \\b stops every other alternative right away. The bare \\d+% off! has no such guard: the engine tries it at every digit position and consumes the rest of the run each time, which makes the scan quadratic. FINDINGS.md and REMEDIATION.md do not mention A09-02, ADS or POL-003.\n\nMicrobench of the exact ADS regex taken from the source: '0'.repeat(4000) takes 6.1 ms, 8000 takes 23.2 ms and 16000 (TEXT_CAP) takes 107 ms. That is about 4x per doubling, so quadratic. 'a'.repeat(16000) takes 0.1 ms. A variant with (?<!\\d) in front of \\d+% off! takes 0.2 ms at 16000.\n\nEnd to end: a stdio SDK server returned one tool with 200 parameters, each with a 16000-char description. I ran node dist/cli.js --max-duration 5000 --stdio -- node srv.mjs. With digits it took 22.4 s and exited 0 ('Result: PASS (--fail-on error)', no stop reported). With 'a' it took 1.5 s. So --max-duration does not bound this, because the rules run after collection. The number of parameters has no cap, so the stall grows linearly with the count. Each entry costs about 0.1 s, so a few MB of digits stalls a CI run for tens of seconds or more.\n\nMedium is right: this is a denial of service on the linter, triggered by the untrusted server data being linted, and it bypasses the documented time bound. It does not cause a wrong verdict. Fix: anchor the alternative, for example (?<!\\d)\\d+% off! or \\b\\d+% off!."
+  }
+ ],
+ "arbiter": null
+}

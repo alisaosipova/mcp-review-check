@@ -1,0 +1,18 @@
+{
+ "id": "A05-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read src/rules/injection.ts at 1f24aba with git show; I did not create a worktree. Line 320, referencedIdentifiers, uses /\\b(?:call|invoke|use|run|using|calling)\\s+(?:the\\s+)?([A-Za-z0-9_.-]+)/gi. In \"call the `search_docs`\" the optional group takes \"the \", but the capture group then has no character to match because a backtick comes next. The regex backtracks, drops the optional group, and captures \"the\". I ran the same two loops from line 318-320 in node on \"Always call the `search_docs` tool first.\" and got ['search_docs', 'the']. ownToolFilter is at line 329-349. INJ-007 pattern 1 (line 305) has no refGroup, so it goes through the branch `ids.length>0 && ids.every(isOwn)`. isOwn checks only own tool names and titles plus SELF_REFS = {this, it, me, these, our}. 'the' is in neither set, so the filter returns true and the warning is emitted. Nothing upstream or elsewhere drops 'the' or treats it as a stopword. RT-011 (src/rules/runtime.ts:3 and :296) imports the same INJ_007_PATTERNS and ownToolFilter, so it has the same false positive. Neither docs/review/2026-11-01/FINDINGS.md nor REMEDIATION.md lists this item: F093 and F097 are about other INJ-007 patterns. Severity medium, in line with F093: it is a false warning on a common workflow hint about the server's own tool, from a heuristic rule that is warning-only. Possible fixes: make the article non-backtrackable, e.g. (?:the\\s+)?(?!the\\b)([A-Za-z0-9_.-]+), or filter out 'the'/'a'/'an' from ids."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at 1f24aba, src/rules/injection.ts:320: referencedIdentifiers() runs /\\b(?:call|invoke|use|run|using|calling)\\s+(?:the\\s+)?([A-Za-z0-9_.-]+)/gi. When a quote or backtick follows \"the\", the optional group backtracks and captures \"the\". A direct node check on \"Always call the `search_docs` tool\" returns ['the']. ownToolFilter (L329-350) requires ids.every(isOwn), so the result ['search_docs','the'] fails the exemption because 'the' is neither an own tool name nor in SELF_REFS. To reproduce, I built the CLI in a detached worktree and served one tool, search_docs (serverInfo acme-docs), from a minimal scratchpad stdio server. I ran `node dist/cli.js --format json --stdio -- node raw-server.mjs tN.json` on four descriptions: (t1) \"...Always call the `search_docs` tool first.\" gave INJ-007 warning \"Always call the `search_docs` tool\". (t3) The double-quoted variant gave the same INJ-007 warning. (t2) Without \"the\", \"Always call `search_docs` tool first.\" gave no finding. (t4) Unquoted, \"Always call the search_docs tool first.\" gave no finding. So the article plus quote combination alone causes the false warning on a typical self-referencing workflow hint. The RT-011 claim follows from the code: RT-011 uses the same INJ_007_PATTERNS with ownToolFilter (FINDINGS.md notes runtime.ts reuses the filter). I did not run RT-011 live because that needs an active snapshot. FINDINGS.md and REMEDIATION.md do not cover this backtracking case. The existing entries there are about pattern 3 missing ownToolExempt and the brand/serverInfo exemption. Severity: medium, because it is a false warning from a heuristic rule (warning level only, not an error) on common phrasing in real tool descriptions. A likely fix is to drop the optional `(?:the\\s+)?` group in favour of a lookahead, or add 'the', 'a' and 'an' to the ignored tokens. The worktree has been removed."
+  }
+ ],
+ "arbiter": null
+}

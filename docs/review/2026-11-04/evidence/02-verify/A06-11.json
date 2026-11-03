@@ -1,0 +1,13 @@
+{
+ "id": "A06-11",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-11",
+   "verdict": "confirmed",
+   "evidence": "src/rules/listing.ts:380 defines MEDIA = /\\.(png|jpe?g|gif|webp|svg|ttf|otf|woff2?|eot)$/i, meant for the 256 KiB exemption at line 394. Line 429 reuses it for the icon check: `!isStr(icon) || !MEDIA.test(icon)` -> 'is not an image file path'. An existing ./assets/icon.woff2 therefore passes both the path test and the file-exists test, and LST-014 reports nothing."
+  }
+ ],
+ "arbiter": null
+}

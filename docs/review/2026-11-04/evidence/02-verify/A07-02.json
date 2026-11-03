@@ -1,0 +1,18 @@
+{
+ "id": "A07-02",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read commit 1f24aba with git show and did not create a worktree. In src/report/json.ts:29, a target of kind 'listing' produces server {listingOnly: true, ...} and no url, command or argv. The cli.ts:355-357/494 path routes a run with --plugin-dir or --openai-manifest and no server to that target kind. In schema/report.schema.json, server.properties declares listingOnly as const true ('Since 0.6'), but server still has oneOf [{required:[url], ...}, {required:[command], ...}]. An object with neither url nor command fails both branches, so the oneOf fails. This follows from the schema alone, and I found nothing in the code that changes it. test/remediation-w6a-schema.test.ts has no listing, plugin-dir or manifest case. test/p6-listing-offline.test.ts:154/190 only checks server.listingOnly === true and never validates against the schema. Neither FINDINGS.md nor REMEDIATION.md mentions the problem. So every JSON, --json-output and --save-baseline document from a listing-only run fails validation against the $schema it names. I did not re-run ajv myself because the result is deterministic from the oneOf. Fix: add a third oneOf branch {required:[listingOnly], properties:{url:false, command:false, argv:false}}, and add a listing-only case to the schema test."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built 1f24aba in a detached worktree (npm ci --ignore-scripts, npm run build). Then I ran `node dist/cli.js --no-config --format json --plugin-dir test/fixtures/listing/plugin-valid` and the same with `--openai-manifest test/fixtures/listing/openai-valid/plugin.json`. Both exit 0 and emit server = {\"listingOnly\":true,\"serverInfo\":null,\"era\":\"unknown\",\"protocolVersion\":null,\"transport\":\"streamable-http\",\"auth\":\"none\",\"localMode\":false}, so there is no url and no command. I validated both documents against schema/report.schema.json with ajv/dist/2020, using the options from test/remediation-w6a-schema.test.ts (strict:true, strictRequired:false, allErrors:true). Both fail with the same three errors: \"/server must have required property 'url'\", \"/server must have required property 'command'\", \"/server must match exactly one schema in oneOf\". As a control, a stdio run against good-server.mjs (`--stdio -- node test/fixtures/good-server.mjs`) validates true. The cause is in the schema at lines 34 and 42-45: it defines listingOnly (\"Since 0.6\") but keeps oneOf [{required:[url]},{required:[command]}] with no listing-only branch. Test coverage: test/p6-listing-offline.test.ts checks only server.listingOnly through toMatchObject and never validates against the schema. The schema test has no listing-only case. FINDINGS.md and REMEDIATION.md do not mention this issue. Severity medium: the machine-readable contract output (--format json, --json-output, baselines) fails its own declared schema for a whole run mode, but there is no wrong lint result or crash. The worktree has been removed."
+  }
+ ],
+ "arbiter": null
+}

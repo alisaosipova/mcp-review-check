@@ -1,0 +1,18 @@
+{
+ "id": "A04-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at 1f24aba with git show. src/rules/server.ts:361-366 (SRV_013): when era is 'modern' or 'dual' and discoverRaw is an object, a missing _meta['io.modelcontextprotocol/serverInfo'] gives {severity:'warning', 'server/discover result has no _meta[...]'}. Otherwise serverInfoProblems() runs, so a malformed name or a non-string version gives an error. Each problem is a separate finding, which is why {name:'',version:1} gives two errors. src/rules/spec.ts:673-697 (SPEC_022, spec:'info', needs:['modern']): it adds discoverRaw as the 'server/discover' result when modernResults has none, then reports 'server/discover result lacks _meta[...]' (missing) or '... is not an object with string name and version' (malformed). Both are info. So the same discover result and the same key produce findings from both rules. I found no guard against this: src/rules/engine.ts runRules (line 169) does no dedup across rules, only per-rule sorting and skipping. SPEC-022's design entry in docs/design/spec.md:400 does not mention SRV-013 and has no \"Not duplicated\" note, unlike SPEC-021. FINDINGS.md has only F050 (SRV-013 vs SPEC-001 on initialize.serverInfo, fixed). REMEDIATION.md lists SPEC-022 only as added in W6, with no deferred or refuted entry for this overlap, so it is a new item. The levels also disagree: SPEC-022's rationale treats the key as a SHOULD and gives info, while SRV-013 makes the same absence a warning, which can trip --fail-on warning. I did not re-run the repro, but the code paths match the claimed output exactly."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "Read the code at 1f24aba. In src/rules/server.ts SRV_013, when era is modern or dual, a missing discoverRaw._meta['io.modelcontextprotocol/serverInfo'] gives a warning and a malformed value goes through serverInfoProblems, which gives errors. In src/rules/spec.ts SPEC_022 (needs modern, spec: info), discoverRaw is added to the results when no server/discover entry exists, and the same key is reported as missing or malformed at info. Neither rule excludes the other's case, and RULES.md, design/spec.md and the W6C report do not say the overlap is intended.\n\nRan it in my own detached worktree at 1f24aba (npm ci, build OK) with a scratch vitest file using snap() from test/helpers, era='modern', no initializeRaw, discoverRaw={supportedVersions:['2026-07-28'],capabilities:{},resultType:'complete'}, then runRules([SRV_013, SPEC_022]).\n- No _meta: [SRV-013 warning \"server/discover result has no _meta[\\\"io.modelcontextprotocol/serverInfo\\\"]\"], [SPEC-022 info \"server/discover result lacks _meta[...]\"].\n- _meta serverInfo {name:'',version:1}: [SRV-013 error \"serverInfo.name is not a non-empty string (server/discover)\"], [SRV-013 error \"serverInfo.version is missing or not a string (server/discover)\"], [SPEC-022 info \"_meta[...] on server/discover is not an object with string name and version\"].\n\nSo one fact gives two rules' findings at different levels, and SPEC-022's own rationale (W6C report: SHOULD) disagrees with SRV-013's warning. This is the same one-defect, two-findings pattern fixed in F050. Worktree removed afterwards.\n\nSeverity low rather than medium: the gate-relevant finding (SRV-013) was already there before wave 6, and SPEC-022 only adds an info duplicate. The real costs are noise and a contradictory severity. Suggested fix: SPEC-022 skips server/discover when SRV-013 covers it (or SRV-013 drops the discover branch), and the missing-key level is made consistent with the SHOULD."
+  }
+ ],
+ "arbiter": null
+}

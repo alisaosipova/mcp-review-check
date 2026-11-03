@@ -1,0 +1,105 @@
+{
+ "area": "A02",
+ "name": "connection and transport",
+ "coverage": "Read in full at 1f24aba, in a detached worktree (since removed): src/connect.ts, src/protocol/trace.ts, modern.ts, legacy.ts, recording.ts, stdioArgs.ts and clientCaps.ts, src/proxy.ts and src/diagnose.ts. Read in part: src/redact.ts (proxy and redactor section), src/probe/network.ts (preflight, sameHostRedirect, closeProbeSession, TLS proxy skip), the undici 7.30.1 EnvHttpProxyAgent and socks5 error messages, the SDK stdio close and default env. Checked against the FINDINGS.md tables and REMEDIATION.md §8.3, §9.3 and §10.4; none of the findings above is listed there. Ran against the built CLI with local servers on 127.0.0.1 only: a cross-origin 307 redirect with --bearer, X-Api-Key and Cookie, which the SDK refuses under its same-origin policy (refuted, not reported); a full run through a local forwarding proxy (works); NO_PROXY mismatch runs; ALL_PROXY vs HTTP_PROXY with an echoing proxy; a MITM CONNECT proxy; nginx-style 502/503 pages; the hang-server fixture with --max-duration 5000 (stops in 6.2 s); leaky-server (no secret in output); good-server normally and with SIGTERM ignored (2.5 s vs 19.2 s); a library-level script for the SSE id collision. Not covered: SOCKS5 end to end, Windows paths (taskkill, cmd quoting), legacy HTTP+SSE fallback and endpoint-origin handling at runtime (code read only), modern-server.ts and the vitest files (no single test file run), byte-budget exhaustion runs with a lowered snapshotBudget, and session DELETE behaviour against a stateful SDK server.",
+ "improvements": [
+  {
+   "title": "End Streamable HTTP sessions on a --max-duration or budget stop as well",
+   "detail": "After R012, endSession (connect.ts:533) runs only in finishHttp. On a stop, progress.close only calls client.close(). Because the tracer's stop signal is already aborted, no DELETE can be sent, so a stopped run leaves the main session and any fresh session open on a stateful server. One option: send the main session's DELETE with its own short signal (independent of progress.abort) from progress.close.",
+   "dimension": "bug",
+   "effort": "S"
+  },
+  {
+   "title": "Measure legacy listing page size in bytes, not UTF-16 code units",
+   "detail": "legacy.ts:314 counts JSON.stringify(result).length against LIST_BYTE_BUDGET. For non-ASCII listings this undercounts up to about 3x compared with the HTTP path, which counts body bytes. Buffer.byteLength(JSON.stringify(result)) would make the two eras consistent.",
+   "dimension": "perf",
+   "effort": "S"
+  },
+  {
+   "title": "End-to-end SOCKS5 and CONNECT proxy tests against local fixtures",
+   "detail": "I did not exercise socks5://, socks5h:// or socks:// (with credentials) through installProxy. A small in-repo SOCKS5 and CONNECT proxy fixture (similar to the scripts I used: forwarding proxy, MITM CONNECT proxy, echoing proxy) would pin the routing, the 407 diagnosis, ALL_PROXY redaction and the NO_PROXY agreement with undici.",
+   "dimension": "test",
+   "effort": "M"
+  },
+  {
+   "title": "Parse SSE bodies once per exchange",
+   "detail": "For SSE bodies, finishBody runs parseSseMessages twice: once in parseBody and again in noteNotifications. For a 64 MiB fullBody read that is a second full split and JSON parse. Parsing once and passing the message list to both would halve the cost.",
+   "dimension": "perf",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A02-01",
+   "dimension": "security",
+   "severity": "medium",
+   "file": "src/redact.ts",
+   "line": "118",
+   "title": "Proxy credentials from ALL_PROXY are not redacted, while those from HTTP(S)_PROXY are",
+   "claim": "proxyUrls() builds the list of proxy URLs whose credentials are secret from HTTPS_PROXY, HTTP_PROXY and their lowercase forms only. src/proxy.ts:33 also uses ALL_PROXY/all_proxy as the fallback proxy. With ALL_PROXY=http://user:pass@proxy, undici sends Proxy-Authorization: Basic <b64(user:pass)> on plain-forwarded http: requests. When the proxy or the server echoes that value in a body (a debugging proxy, or an error page that quotes the request), it reaches the console output, --verbose and the JSON report unmasked. docs/guide/troubleshooting.md:46 promises that proxy credentials are 'redacted in every output'.",
+   "repro": "Ran it. echoproxy.mjs is a local HTTP server that answers 502 with body `got ${req.headers['proxy-authorization']}`, listening on 127.0.0.1:18720. `HTTP_PROXY=http://alice:Sup3rS3cretPw@127.0.0.1:18720 node dist/cli.js http://10.255.255.1:18000/mcp --timeout 3000 --json-output o.json`: 0 occurrences of YWxpY2U6U3VwM3JTM2NyZXRQdw== (the value is masked). The same run with `ALL_PROXY=...` instead: console prints `got Basic YWxpY2U6U3VwM3JTM2NyZXRQdw==` and o.json has 3 occurrences.",
+   "fix": "Add 'ALL_PROXY' and 'all_proxy' to proxyUrls() (better: build the list from proxyConfig() in src/proxy.ts so the two lists cannot drift). Add a test with ALL_PROXY and an echoing proxy.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A02-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/proxy.ts",
+   "line": "41-50",
+   "title": "bypassesProxy disagrees with undici's EnvHttpProxyAgent on NO_PROXY, so diagnostics and the TLS check assume the wrong route",
+   "claim": "fetch routes requests through undici's EnvHttpProxyAgent, but proxyForUrl/bypassesProxy decides the route on its own. That decision is used by describeCause, describeHttpFailure (407) and the raw TLS check (probe/network.ts:212). The two disagree in two cases. (a) A '*' entry inside a list ('localhost,*'): bypassesProxy returns 'direct'. undici (like curl) treats '*' as a wildcard only when it is the whole value, so it proxies. (b) A bracketed IPv6 entry '[::1]': undici matches it against the bracketed host and connects directly. bypassesProxy strips the brackets first and then parses '::1' as host ':' with port 1, so it says 'proxy'. Result: the cause of a connect failure is attributed to the wrong hop, and the TLS check is skipped as 'cannot go through the proxy' for a host fetch reaches directly (or is attempted directly for a host fetch proxies).",
+   "repro": "Ran these. (1) A harness that compares proxyForUrl with EnvHttpProxyAgent's agent choice gives: NO_PROXY='localhost,*' to http://127.0.0.1:9/ is ours=direct, undici=proxy; NO_PROXY='[::1]' to http://[::1]:9/ is ours=proxy, undici=direct. (2) With a live server on 127.0.0.1:18742, `HTTP_PROXY=http://127.0.0.1:1 NO_PROXY='localhost,*' node dist/cli.js http://127.0.0.1:18742/mcp` prints 'connection refused by 127.0.0.1:18742 (ECONNREFUSED); nothing is listening there', but the server is up and the refusal came from the proxy. (3) `HTTP_PROXY=http://127.0.0.1:1 NO_PROXY='[::1]' node dist/cli.js 'http://[::1]:18713/mcp'` prints 'cannot reach [::1]:18713 through the HTTP proxy ... list hosts to reach directly in NO_PROXY', but the host is already in NO_PROXY and the connection was direct.",
+   "fix": "Mirror undici exactly: treat '*' only when the whole trimmed value is '*'. Parse the port before removing brackets, e.g. /^\\[([^\\]]+)\\](?::(\\d+))?$|^([^:]+)(?::(\\d+))?$/, and compare the bracket-stripped host with the bracket-stripped entry. Better still, normalize NO_PROXY once and give the same entries to both EnvHttpProxyAgent and bypassesProxy. Add table tests that run both implementations on the same inputs.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A02-03",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/protocol/trace.ts",
+   "line": "233",
+   "title": "SSE body parsing picks a server-to-client request with the same id instead of the response, so the result is lost",
+   "claim": "For text/event-stream, parseBody returns the first message whose id equals the request id, without checking that it is a response. The stream may carry server requests (ping, elicitation, sampling, roots/list) before the response, and server request ids start at 0/1 just like the client's. On a collision parseBody returns the server's request. ModernClient.request (modern.ts:207) then has no result and no error, the exchange gets no jsonRpc summary, and listAll fails with the meaningless error 'HTTP 200'. That gives SPEC-020 / list-failed coverage for a server that answered correctly. sseResponseWatcher already uses isResponseTo, so the reader stops at the right event but the parser takes the wrong one. The same applies to the raw wire probes that go through tracer.request.",
+   "repro": "Ran it: sseid.mjs, a local server whose POST answers with SSE `data:{\"jsonrpc\":\"2.0\",\"id\":<same id>,\"method\":\"ping\"}` followed by `data:{\"jsonrpc\":\"2.0\",\"id\":<same id>,\"result\":{\"tools\":[...]}}`. `new ModernClient(url, createTracer(createRedactor()), {}).request('tools/list')` gives result undefined, error undefined, idMismatch undefined, jsonRpc undefined. listAll gives {items:[],pages:[],error:'HTTP 200'}.",
+   "fix": "In parseBody (and the msgs.find in modern.ts:207), prefer messages that are responses: msgs.find(m => isResponseTo(m, id)) ?? msgs.find(m => idMatches(id) && no method) ?? msgs[0]. In ModernClient.listAll, report '200 without a JSON-RPC response for id N' instead of 'HTTP 200'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A02-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/diagnose.ts",
+   "line": "111",
+   "title": "A 502/503 HTML gateway page is diagnosed as 'not an MCP endpoint' with a path suggestion",
+   "claim": "describeHttpFailure classifies any response with an HTML body as kind 'not-mcp', whatever the status. When the MCP backend behind nginx, a load balancer or a corporate forward proxy is down, the 502/503 'Bad Gateway' page becomes '<url> is not an MCP endpoint; try <path>/mcp' (or 'check the path the server mounts MCP on'). That sends the user to change a URL that is correct. A 502 with an empty plain-text body (a forwarding proxy whose upstream is unreachable) shows the dangling 'HTTP 502: Streamable HTTP error: Error POSTing to endpoint: ' and does not mention the proxy, even when proxyForUrl(url) says one is in use.",
+   "repro": "Ran these. gw.mjs answers 502 or 503 with nginx's HTML page. `node dist/cli.js http://127.0.0.1:18760/mcp` prints 'HTTP 502 with an HTML page (\"502 Bad Gateway\"): http://127.0.0.1:18760/mcp is not an MCP endpoint; check the path the server mounts MCP on'. For /api it suggests 'try http://127.0.0.1:18760/api/mcp'. Through a local forwarding proxy to a dead port: `HTTP_PROXY=http://127.0.0.1:18740 node dist/cli.js http://127.0.0.1:18799/mcp` prints 'Could not connect: HTTP 502: Streamable HTTP error: Error POSTing to endpoint: '.",
+   "fix": "Restrict 'not-mcp' to 404/405/410 and to HTML pages with a 2xx/3xx/4xx status. For 5xx, return kind 'http' with a summary such as 'HTTP 502 (\"Bad Gateway\" HTML page): the gateway or proxy in front of the server could not reach it' and the hint 'check that the MCP server behind it is running'. Name the proxy when proxyForUrl(url) is set. Drop a trailing ': ' when the SDK message has no body.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A02-05",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/diagnose.ts",
+   "line": "71-76",
+   "title": "A TLS failure behind a proxy blames the server's certificate and does not mention the proxy or NODE_EXTRA_CA_CERTS",
+   "claim": "describeCause checks for a proxy only for socket-level codes (PROXY_HOP). A TLS code such as DEPTH_ZERO_SELF_SIGNED_CERT or SELF_SIGNED_CERT_IN_CHAIN always gets 'TLS certificate of <host> is not trusted; serve a certificate from a public CA'. With HTTPS_PROXY set, the certificate is usually the TLS-inspecting proxy's own. The documented fix is NODE_EXTRA_CA_CERTS (troubleshooting.md:48), but the diagnosis sends the user to the server owner. The code knows a proxy is in use: proxyForUrl is already called at line 40.",
+   "repro": "Ran it: mitm.mjs, a local CONNECT proxy that terminates TLS with a self-signed certificate. `HTTPS_PROXY=http://127.0.0.1:18730 node dist/cli.js https://127.0.0.2:18443/mcp` prints 'Could not connect: TLS certificate of 127.0.0.2 is not trusted (DEPTH_ZERO_SELF_SIGNED_CERT); serve a certificate from a public CA with the full chain; ...', and SRV-001 says the direct TLS check was skipped because of the proxy.",
+   "fix": "When proxyForUrl(url) is set and isTlsCode(code), say 'TLS certificate presented for <host> through the proxy <label> is not trusted' and add the hint 'a TLS-inspecting proxy presents its own certificate: add its CA with NODE_EXTRA_CA_CERTS; otherwise the server's certificate is at fault'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A02-06",
+   "dimension": "perf",
+   "severity": "low",
+   "file": "src/connect.ts",
+   "line": "929-937",
+   "title": "GroupStdioTransport.close waits twice for each connection: 6 s per stdio connection for a server that ignores SIGTERM",
+   "claim": "The override ends stdin, waits up to 2 s, then sends SIGTERM to the group. It then calls super.close(), which ends stdin again, waits another 2 s, sends SIGTERM again, waits 2 s more, and only then sends SIGKILL. A stdio run opens 2 to 4 connections (main, the fresh tools/list, the text-only re-list, and the --active clientName re-lists). A server that does not exit on stdin EOF or SIGTERM (a signal handler that does nothing, or a wrapper) therefore adds about 6 s per connection.",
+   "repro": "Ran it. `node dist/cli.js --stdio \"node $F/good-server.mjs\"` takes 2.5 s. `node dist/cli.js --stdio \"node --import pre.mjs $F/good-server.mjs\"`, where pre.mjs does process.on('SIGTERM',()=>{}) plus setInterval, takes 19.2 s with the same PASS result: 3 connections at about 6 s each. No process was left behind.",
+   "fix": "After the group SIGTERM in the override, wait a bounded time (for example 1 to 2 s) for 'exit' and then SIGKILL the group (endTree(proc,'SIGKILL')) before calling super.close(), so the SDK finds the process gone. Alternatively, take over the SDK's close sequence entirely: stdin EOF, then SIGTERM, then SIGKILL, one wait each. Add a timing test with a fixture that ignores SIGTERM (stubborn-server --ignore-term answering the listing).",
+   "status": "confirmed"
+  }
+ ]
+}

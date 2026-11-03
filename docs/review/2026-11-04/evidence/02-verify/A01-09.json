@@ -1,0 +1,13 @@
+{
+ "id": "A01-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-09",
+   "verdict": "confirmed",
+   "evidence": "cli.ts:275-277: shownUrl() masks only '//…@' userinfo and the ?/# tail. cli.ts:438 prints it for any positional argument that fails to parse as a URL. Reproduced: --header \"X-Api-Key:\" \"$KEY\" printed 'error: invalid URL: SYNTHsk_live_0123456789abcdef' (exit 2). Elsewhere the CLI avoids repeating values ('the value is not shown' for --env, --cwd, --sarif-location, --ignore and config validation). This is a low-severity hygiene gap, since it shows up only on the user's own stderr or CI log."
+  }
+ ],
+ "arbiter": null
+}

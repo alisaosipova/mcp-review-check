@@ -1,0 +1,13 @@
+{
+ "id": "A02-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-04",
+   "verdict": "confirmed",
+   "evidence": "diagnose.ts:111: `if ((status in [404,405,410]) || html)` gives kind 'not-mcp' for any status, including 5xx. connect.ts:440 routes the handshake failure there. Ran a local 502 nginx-style HTML server: `node dist/cli.js http://127.0.0.1:18761/api` printed 'Could not connect: HTTP 502 with an HTML page (\"502 Bad Gateway\"): http://127.0.0.1:18761/api is not an MCP endpoint; try http://127.0.0.1:18761/api/mcp'. This is a misleading diagnosis; low."
+  }
+ ],
+ "arbiter": null
+}

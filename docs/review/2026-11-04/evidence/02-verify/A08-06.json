@@ -1,0 +1,13 @@
+{
+ "id": "A08-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-06",
+   "verdict": "confirmed",
+   "evidence": "action.yml:130 has `if [ -n \"$INPUT_BEARER\" ]; then echo \"::add-mask::$INPUT_BEARER\"; ...`. Workflow commands are parsed line by line, so only the first line is registered as a mask and the following lines go to the log as plain stdout. Reproduced locally: `INPUT_BEARER=$'abc\\nsecondline' bash -c 'echo \"::add-mask::$INPUT_BEARER\"'` prints `::add-mask::abc` followed by a raw `secondline`. The CLI rejects such a value only later (src/cli.ts:407 `--bearer must not contain CR or LF`, exit 2), after the echo has already written it. Values from `secrets.*` are masked by the runner per line, so the exposure is limited to tokens from step outputs or files, as the finding states. Not covered in FINDINGS.md or REMEDIATION.md."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,18 @@
+{
+ "id": "A07-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at 1f24aba. connect.ts budgetStopped() (around lines 988-1003) always pushes a truncated entry {where:'snapshot budget (N bytes over)', length, cap, unit:'bytes'}. When the phase is not CLOSING it also sets limits.budgetExhausted {bytes, overBytes, phase, completed, unfinished}. src/snapshot.ts:157 types unit as 'items' | 'bytes'. report/json.ts:38 copies the object unchanged (`limits: snap.limits ?? null`), and nothing strips or remaps it. In schema/report.schema.json:69-101, limits has additionalProperties:false with only the properties truncated and stopped, and truncated.items.unit is {const:'items'}. Any budget-exhausted report therefore fails 2 checks against its own $schema: the additional property budgetExhausted, and unit != 'items'. Even the CLOSING branch, which records only the cut, fails because of unit:'bytes'. I found no guard. test/remediation-w6a-schema.test.ts does not cover a budget run, and the tests in w6d-core check the snapshot, not schema validity. This is not in FINDINGS/REMEDIATION as known; F146 only introduced the feature. I did not re-run the ajv repro; the verdict rests on reading the code, which is unambiguous. Medium is right because it breaks the published contract for exactly the partial runs that consumers need to parse."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built a detached worktree at 1f24aba and ran the build. I then ran buildSnapshot against stdio test/fixtures/many-tools-server.mjs with snapshotBudget 20000, followed by runRules, buildReport and renderJson. I validated the output with ajv 2020 against schema/report.schema.json. The validator returned false with exactly the two errors the finding names: (1) /limits must NOT have additional properties {additionalProperty:'budgetExhausted'}; (2) /limits/truncated/0/unit must be equal to constant 'items'. The emitted limits were {\"truncated\":[{\"where\":\"snapshot budget (31166 bytes over)\",\"length\":51166,\"cap\":20000,\"unit\":\"bytes\"}],\"budgetExhausted\":{\"bytes\":20000,\"overBytes\":31166,\"phase\":\"listing\",\"completed\":[\"connect\"],\"unfinished\":[...]}}. Source matches the claim. connect.ts:993 pushes unit:'bytes' and connect.ts:1002 sets budgetExhausted. snapshot.ts:169 types budgetExhausted. The schema's limits object (lines 69-101) has additionalProperties:false, declares only truncated and stopped, and sets unit to {const:'items'}. snapshotBudget is not a CLI option, but the default 64 MiB SNAPSHOT_BUDGET (F146) hits the same code path for any server that sends more than 64 MiB. So a real budget-exhausted (INCOMPLETE) report fails its own schema. FINDINGS/REMEDIATION list F146 and W6G as the budget feature, not this schema gap. Medium fits: it breaks the published report contract for consumers that validate, but there is no crash and no wrong verdict. Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

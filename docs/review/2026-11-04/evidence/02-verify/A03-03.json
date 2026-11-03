@@ -1,0 +1,13 @@
+{
+ "id": "A03-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-03",
+   "verdict": "confirmed",
+   "evidence": "src/probe/auth.ts:187 stores json.client_id in out.clientId (snapshot.ts:190 authProbe.active.clientId). git grep for clientId in src finds it only in probe/auth.ts and snapshot.ts. No reporter (src/report/json.ts, text.ts, markdown, sarif, junit, github) reads it. json.ts builds its fields from snap.options, target, coverage and limits, not from authProbe.active. AUTH-019 (rules/auth.ts:535-545) quotes the DCR body only when registration is rejected. So the client_id appears only in the --verbose /authorize URLs. Meanwhile SECURITY.md:38 tells the user to delete the registered client afterwards. This is a documentation and usability gap, not listed as known. Low."
+  }
+ ],
+ "arbiter": null
+}

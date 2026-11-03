@@ -1,0 +1,18 @@
+{
+ "id": "A05-04",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read the code at 1f24aba. In walkSchema (src/rules/util/schemaWalk.ts), the property node `{ $ref }` is visited first with viaProperty=true. After that, the walker visits the $ref target under path `<p>/$ref` with the same rawName and viaProperty. In TOOL-015 (annotations.ts:149-156), `free` is computed on the raw node: type undefined, no enum, no pattern, so it is true. `prop` is set at that point, and the `if (prop || ...) return` guard then ignores the target visit, which carries the enum. scanNames (data.ts:20) has `if (... v.path.endsWith('/$ref')) return`, so the target visit is dropped there. The isNonText and notAPlace skips only ever see the unresolved `{ $ref }` node. Neither function uses deref; only isRoleContentArray derefs items. I found no other guard. tools.ts has its own isFreeString/resolvedProperties (lines 255-261), and walkSchema callers do not use them.\n\nI ran it against the built dist in a temporary worktree, calling the rules' check() directly:\n- TOOL-015: host={$ref:'#/$defs/Host'} with Host={type:string, enum:[...]} and openWorldHint:false gives `openWorldHint: false but free-form \"host\" parameter reaches arbitrary targets`. The inline enum control is not flagged.\n- DATA-001: history={$ref integer def} gives a warning `parameter \"history\" may request conversation data`. The inline integer `memory` gives nothing.\n- DATA-005, an extra case: long={$ref boolean def} gives `parameter \"long\" requests a precise location`. This is an error-default finding with no severity override, while an inline boolean `long` is skipped.\n\nNone of this is in FINDINGS/REMEDIATION. F081 covers walkSchema dedup and is a different issue. F063 is TOOL-023 in tools.ts only.\n\nSeverity is medium. These are false positives on common pydantic/zod output. They are mostly warnings, but the DATA-005 `long`/`lat` case gives a non-warning finding."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Built 1f24aba in a detached worktree and ran it against a local stdio MCP server with three tools. (a) lookup_region: host = {$ref:'#/$defs/Host'}, where Host = {type:string, enum:[eu.acme.example, us.acme.example]}, openWorldHint:false. Output: `TOOL-015 [chatgpt] lookup_region: openWorldHint: false but free-form \"host\" parameter reaches arbitrary targets`. (b) lookup_inline: the same enum written inline. Output: no TOOL-015. (c) get_stats: history = {$ref:'#/$defs/Hours'}, where Hours = {type:integer}, plus an inline memory = {type:integer}. Output: `DATA-001 [claude, chatgpt] get_stats (/properties/history): parameter \"history\" may request conversation data`, and nothing for memory. Code at annotations.ts:149-156 checks n.type, n.enum and n.pattern on the raw node and never calls deref. The `if (prop || !v.viaProperty)` guard ignores the visit to the $ref target. In data.ts, isNonText(v.node) at lines 52/75/117 and notAPlace at line 142 also read the raw property node. Same input in a $ref-ed form versus inline gives a different result, so these are deterministic false positives on schemas that pydantic and zod emit. I found no entry for this in FINDINGS.md or REMEDIATION.md (grep for $ref/$defs near TOOL-015/DATA found nothing). The affected findings are heuristic warnings, so medium fits. Worktree and scratch fixture removed."
+  }
+ ],
+ "arbiter": null
+}

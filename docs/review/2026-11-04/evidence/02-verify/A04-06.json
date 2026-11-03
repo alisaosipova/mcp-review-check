@@ -1,0 +1,13 @@
+{
+ "id": "A04-06",
+ "status": "disputed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-06",
+   "verdict": "uncertain",
+   "evidence": "spec.ts@1f24aba:331 does check only typeof number / isFinite / >= 0, so ttlMs 1.5 passes. That part is right. The project's design document docs/design/spec.md:344 itself sets the criterion as 'ttlMs is not a finite number >= 0 -> error', and the rule follows it. The repo has no local copy of the 2026-07-28 caching text, and the task bans network requests to third-party hosts, so I could not check the claim that ttlMs is defined as 'an integer value in milliseconds'. Even if it is true, the integer requirement comes from the field definition, not from the quoted MUST (>= 0). The practical impact is negligible. The finding cannot be confirmed without the spec source."
+  }
+ ],
+ "arbiter": null
+}

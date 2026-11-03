@@ -1,0 +1,13 @@
+{
+ "id": "A10-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-06",
+   "verdict": "confirmed",
+   "evidence": "src/rules/server.ts:76 для stdio-fatal выдаёт неизменный fix «(the stderr cause is shown above; --verbose prints all of stderr)». Запуск `--stdio 'nonexistent-cmd-xyz'` вывел только «Could not connect: spawn nonexistent-cmd-xyz ENOENT» и этот fix, хотя никакого stderr выше нет. `--stdio 'node -e 0'` вывел «MCP error -32000: Connection closed» без кода выхода процесса и без подсказки. Для HTTP есть подсказки diagnose (ECONNREFUSED → «nothing is listening there»). С известными пунктами не совпадает: F008 касается только несуществующего --cwd, R002 касается потери stderr при --max-duration, а находка про stdout-баннер описывает другой сценарий. UX, low."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A06-10",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-10",
+   "verdict": "confirmed",
+   "evidence": "PROBLEM_TEXT 'too-large' ('over the 64 MiB read cap') goes through unmeasured() with no severity override, so it takes the rule's error level (LST-027 and LST-028 are chatgpt:error). image.ts:115 still sets bytes for too-large files, so icons also get the separate 5 MiB error. readJson (load.ts:98-101) adds a listing error 'over the 1 MiB read cap; not parsed', while the comment says the directory's own limit is 5 MiB. Repro with 70M huge.png as logo and composerIcon and shot.png as a screenshot: 2 errors per icon (5 MiB limit and 64 MiB read cap) plus 'x LST-028 ... shot.png is over the 64 MiB read cap'. Result: 'ChatGPT: BLOCKED (5 errors)'."
+  }
+ ],
+ "arbiter": null
+}

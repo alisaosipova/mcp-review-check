@@ -1,0 +1,13 @@
+{
+ "id": "A05-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-09",
+   "verdict": "confirmed",
+   "evidence": "injection.ts:113 GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u includes α, γ and κ. I checked a local copy of mixedScript in node: TNFα true, NFκB true, PPARγ true, ERα true. The F091 fix only exempted μ, Ω, Δ, π and σ, so biomedical notation still gets a false INJ-002 warning. This is a new false-positive class, separate from F091 (units)."
+  }
+ ],
+ "arbiter": null
+}

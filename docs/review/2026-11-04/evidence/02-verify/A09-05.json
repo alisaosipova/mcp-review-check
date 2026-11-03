@@ -1,0 +1,13 @@
+{
+ "id": "A09-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A09-05",
+   "verdict": "confirmed",
+   "evidence": "Reproduced at 1f24aba in a detached worktree, which has since been removed. src/report/sarif.ts:82 is `JSON.stringify(toSarif(r, location), null, 2) + '\\n'`, so the whole log is pretty-printed into one string. I generated many80000.mjs from test/fixtures/many-tools-server.mjs with length 80000. The tools/list response it sends is 10,537,802 bytes, well under SNAPSHOT_BUDGET = 64 MiB in src/limits.ts. I ran `NODE_OPTIONS=--max-old-space-size=3500 node dist/cli.js --format sarif --output out.sarif --stdio -- node many80000.mjs`. It exited 3 with `fatal: RangeError: Invalid string length at JSON.stringify (<anonymous>) at renderSarif (dist/report/sarif.js:74:17) at render (dist/cli.js:201) at runCli (dist/cli.js:607)` and wrote no out.sarif. This is not a duplicate of known items. F136 covers a different site, the spread in the protocol list readers. F146 limits the input bytes, not the size of the rendered output. Nothing in FINDINGS.md or the REMEDIATION.md deferred tables covers report or output size. Low severity is right: it needs a pathological server, exit 3 is a clear failure rather than a false PASS, and nothing leaks. I did not check the json-format extrapolation or the RSS figures."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A07-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-05",
+   "verdict": "confirmed",
+   "evidence": "At 1f24aba, src/report/github.ts:10-13 escapeCommand replaces only %, CR, LF and, for properties, ':' and ','. annotations() at :41-42 builds the title from subjectOf(f), which returns the raw tool name (engine.ts:150-152), and the message from f.message. I reproduced it in my own worktree: a stdio SDK server with a tool named 'ok\\u001b[2K\\u001b[8mhidden‮x', run as GITHUB_ACTIONS=true node dist/cli.js --no-config --no-color --stdio -- node evil.mjs. stderr had 6 lines with raw ESC, e.g. '::error title=INJ-001 ok^[[2K^[[8mhidden<U+202E>x::...'. stdout had 0 such lines, because text.ts visibleText shows the same name as \\u{1B}. F135 in FINDINGS.md covered only the text and markdown renderers, and no deferred item covers annotations. Low severity fits: the checked server itself has to be hostile."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A01-10",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-10",
+   "verdict": "confirmed",
+   "evidence": "cli.ts:406 uses `values.bearer ?? env.MCP_REVIEW_CHECK_TOKEN`, so '' does not fall back to the env token. connect.ts:350 (`if (opts.bearer)`) and connect.ts:412 then treat '' as no credentials, so no Authorization header is sent. Nothing rejects an empty --bearer, unlike --output, --config, --save-baseline, --json-output, --plugin-dir and --openai-manifest. cli.ts:445 `if (values['tool-args'])` skips '' silently. Reproduced: --stdio good-server --active --tool-args \"\" gave exit 0 with empty stderr, and the listing-only run with --tool-args \"\" also exited 0 because the guard at line 358 uses !!values['tool-args']. I did not re-run the HTTP listener for the bearer case, but the code path is clear. Neither the docs nor the tests define an empty bearer as meaning 'no token'."
+  }
+ ],
+ "arbiter": null
+}

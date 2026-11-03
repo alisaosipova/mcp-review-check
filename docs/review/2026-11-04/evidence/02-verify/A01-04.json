@@ -1,0 +1,13 @@
+{
+ "id": "A01-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-04",
+   "verdict": "confirmed",
+   "evidence": "In src/report/drift.ts:81-96 (the finding's line numbers are off by about 200), incompleteTools() returns undefined when toolLevel is 'ok'. For a listing-only run (emptySnapshot({kind:'listing'}) at cli.ts:485) that makes toolFingerprints() return []. Reproduced: a baseline saved with good-server plus --plugin-dir, then a listing-only --baseline --fail-on-drift run, gave exit 1 with baseline.toolChanges.removed=[search_notes,create_note,delete_note,show_note_board] and no warning. The reverse also reproduced: a listing-only --save-baseline wrote toolFingerprints [], and a later stdio run reported 'CHANGED TOOL DEFINITIONS (4 since baseline) · fails the run'. The docs say fingerprints are null when tools/list did not finish, and a listing-only run never calls tools/list. REMEDIATION 10.4 covers only the listing-only run itself and the --verbose dump, not this drift behaviour."
+  }
+ ],
+ "arbiter": null
+}

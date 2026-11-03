@@ -58,3 +58,4 @@ Severity: **high** wrong result, crash, leak or contract break on realistic inpu
 |---|---|
 | 2026-11-04 | Spec written. 1.0.0 CI failed on Windows in `test/repo-config.test.ts` (`git check-attr` argument list over the Windows command-line limit); fixed by passing paths on stdin (`1f24aba`). |
 | 2026-11-04 | CI on `1f24aba` green; tag `v1.0.0` pushed. Review workflow `wf_d789777f-6bf` launched against `1f24aba` (10 finders, two-lens verification, critic, all Opus). |
+| 2026-11-04 | Review finished (80 agents, 74 findings: 73 confirmed, 1 disputed, 0 refuted). Evidence under `evidence/`; FINDINGS.md and REMEDIATION.md written. |

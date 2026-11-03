@@ -1,0 +1,13 @@
+{
+ "id": "A02-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-06",
+   "verdict": "confirmed",
+   "evidence": "connect.ts GroupStdioTransport.close ends stdin, waits up to 2 s, sends endTree SIGTERM, then calls super.close(). The SDK close (node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js) waits 2 s again, sends SIGTERM, waits 2 s more, then sends SIGKILL, so about 6 s per connection. Ran it: `--stdio \"node good-server.mjs\"` took 0.87 s; the same with `--import pre.mjs` (a SIGTERM handler that does nothing plus setInterval) took 19.1 s, consistent with 3 connections at about 6 s each. Low (latency only)."
+  }
+ ],
+ "arbiter": null
+}

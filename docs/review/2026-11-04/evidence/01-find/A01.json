@@ -1,0 +1,159 @@
+{
+ "area": "A01",
+ "name": "CLI, config, input files, baseline and drift",
+ "coverage": "Read in full at 1f24aba (detached worktree, since removed): src/cli.ts, src/config.ts, src/input-file.ts, src/baseline.ts, src/report/drift.ts. Read in part: src/redact.ts buildRedactor, the bearer handling in src/connect.ts, action.yml invocation, docs/guide/ci.md baseline recipes, docs/guide/listings.md intro, and the options-and-config.md config section. Checked against the in-scope rows of FINDINGS.md and REMEDIATION.md §8.3, §9.3 and §10.3-10.4; none of the above re-reports a fixed or deferred item. 'Fingerprints over uncapped definitions' is deferred and A01-05 is a different cause; the --tool-args FIFO item is fixed at this commit. Ran against the built CLI with test/fixtures (good, bad, hang, many-tools, listing/plugin-valid, plus sandbox copies: a 30k-duplicate-tool server and a 127.0.0.1:18731 listener): repros for A01-01..A01-10 as stated in each; usage-error echo probes (unknown short option, ambiguous values, --stdio tokenizer errors, --env without '=', scheme hint with query, userinfo URLs: all clean except A01-09); exit codes 4 (max-duration after handshake), 1 (tools/list failed with --fail-on-drift), 0 (listing-only with --fail-on-incomplete), 2 (config errors, write collisions); a micro-benchmark of knownFindings and compareTools via dist imports. Not done: the vitest files (no test-suite run), Windows and macOS path behaviour (case-insensitive collisions, the O_NONBLOCK fallback, the cmdQuote rerun line), the GITHUB_ACTIONS annotation and step-summary paths, signal exit codes 128+N, the http-bridge and auth-server fixtures, huge-server and budget-exhausted exit mapping beyond reading the code, and a deep audit of the SARIF and JUnit baseline renderers.",
+ "improvements": [
+  {
+   "title": "Linear baseline and drift matching",
+   "detail": "knownFindings builds pool entries with [...old, b] (baseline.ts:102) and compareTools uses [...m.get()] plus shift() (drift.ts:315,321), so both are quadratic per subject or name. Measured with synthetic same-subject input: knownFindings 10k=2.4 s, 40k=12.1 s; compareTools 10k=1.4 s, 40k=6.3 s. The 16 MiB baseline cap bounds this, but a hostile server with duplicate names makes --baseline runs slow. Use push() and an index pointer instead of spread and shift.",
+   "dimension": "perf",
+   "effort": "S"
+  },
+  {
+   "title": "Warn when text-only options are given with a non-text format",
+   "detail": "--diff-only (text and markdown only), --quiet and --checklist (text only) are ignored silently with --format json, sarif or junit. --sarif-location already warns ('applies only to --format sarif'); do the same for these.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Let the command line turn off a config boolean",
+   "detail": "A config key set to true (active, failOnDrift, failOnIncomplete, quiet, verbose) cannot be turned off from the command line, because there is no --no-active etc. and false in the file means 'absent'. Accept --no-<flag> for the boolean config keys, or document that --no-config is the only way.",
+   "dimension": "ux",
+   "effort": "M"
+  },
+  {
+   "title": "Name the config file and the target it supplied on stderr",
+   "detail": "Print one line such as 'config: ./mcp-review-check.config.json (server from key \"stdio\")' whenever a config file is applied, at least for a discovered one. Today a discovered file changes the target, the outputs and the active probes with no trace except in error messages. This also limits the damage in A01-01.",
+   "dimension": "security",
+   "effort": "S"
+  },
+  {
+   "title": "Clarify config discovery with --cwd",
+   "detail": "options-and-config.md:46 says the file is looked for 'in the --cwd directory, or else in the working directory'. The code (cli.ts:328) looks only in --cwd when it is given and does not fall back to the working directory (verified: a working-directory config with an invalid failOn is ignored when --cwd points elsewhere). Reword the docs, or add the fallback.",
+   "dimension": "ux",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A01-01",
+   "dimension": "security",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "328, 341-345, 355",
+   "title": "An auto-discovered config file turns a listing-only run into a command execution or a connection, and $MCP_REVIEW_CHECK_TOKEN goes to the file's URL",
+   "claim": "findConfig(values.cwd ?? process.cwd()) reads mcp-review-check.config.json or .mcp-review-check.json from the working directory with no --config. When the command line names no server, the file's url or stdio becomes the target. So `mcp-review-check --plugin-dir .` stops being listing-only, even though listings.md says 'Without a target ... the run is listing-only: nothing connects'. Running it inside an untrusted plugin folder (a downloaded plugin, a marketplace submission checkout) starts whatever command the folder's .mcp-review-check.json names. If the file names a url instead, the run sends the environment's MCP_REVIEW_CHECK_TOKEN as a Bearer header to that URL (line 406). Nothing on stderr says the server came from a config file. The same discovered file can also set output, saveBaseline and jsonOutput to absolute paths, which overwrites any file the user can write, and can set activeAuth.",
+   "repro": "RAN. mkdir plugin; cp -r test/fixtures/listing/plugin-valid/. plugin/; echo '{\"stdio\":\"node\",\"args\":[\"-e\",\"require(\\\"fs\\\").writeFileSync(\\\"<sandbox>/PWNED\\\",\\\"ran\\\")\"]}' > plugin/.mcp-review-check.json; cd plugin && node dist/cli.js --plugin-dir . -> exit 3, <sandbox>/PWNED created, stderr empty. Token variant: {\"url\":\"http://127.0.0.1:18731/mcp\"} in the same file, local listener on 127.0.0.1:18731, MCP_REVIEW_CHECK_TOKEN=SYNTH-secret-token-123 node dist/cli.js --plugin-dir . -> listener logged 2 POSTs with 'Authorization: Bearer SYNTH-secret-token-123'.",
+   "fix": "Take the server (url/stdio/args) only from an explicit --config, never from a discovered file. At minimum, do not let a discovered file supply a server when --plugin-dir or --openai-manifest is on the command line, and print 'checking <url|command> from config file X' on stderr whenever the target comes from a file. Do not apply $MCP_REVIEW_CHECK_TOKEN to a URL that came from a discovered file. Document the trust model: a discovered config is code and file-write authority.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-02",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "570-580 (and docs/guide/ci.md:231)",
+   "title": "--save-baseline/--json-output also write after a failed connect (exit 3), and the documented GitLab refresh then replaces the accepted baseline",
+   "claim": "The JSON outputs are written whatever `code` is. After snap.fatal (could not connect) the file holds only the connect-failure findings (SRV-002/SRV-003) and toolFingerprints null. `--baseline b.json --save-baseline b.json` destroys a good baseline on a single flaky start. The GitLab recipe in ci.md copies mcp-review-check.json over the baseline in after_script on the default branch, and after_script runs whatever the job status, so this happens on exit 3 and 4 too. On later merge-request runs every real finding counts as new, and --fail-on-drift exits 1 with 'not compared'.",
+   "repro": "RAN. cp base.json keep.json (a good-server baseline); node dist/cli.js --no-config --stdio \"node <sandbox>/nonexistent.mjs\" --baseline keep.json --save-baseline keep.json -> exit 3, 'JSON report written to keep.json'; keep.json now has findings [SRV-003, SRV-002, SRV-002] and toolFingerprints null.",
+   "fix": "Do not write --save-baseline when snap.fatal (and probably not on a --max-duration stop): skip it with a 'baseline not saved: the run did not connect' line on stderr, and keep exit 3. --json-output can still be written for the Action outputs. In ci.md, guard the after_script copy with `[ \"$CI_JOB_STATUS\" = success ]` or check the report's coverage/fatal state.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-03",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "336-340 (conflicts raised at 390, 404, 419-420, 440)",
+   "title": "A command-line option does not override the config file's opposite or transport-specific key: the run stops with exit 2 instead",
+   "claim": "The merge copies every config key the command line did not set, so a flag's counterpart from the file conflicts with it rather than giving way. Three cases: --local on the command line with noLocal in the file is exit 2 'give either --local or --no-local'. --bearer on the command line with header.Authorization in the file is exit 2. A <url> on the command line (allowed to override the file's stdio server) with env or cwd in the file is exit 2 '--env and --cwd apply only to --stdio'. The help says 'Command-line options override the file', and the error blames the user's file. A config written for local stdio work cannot be reused to check the deployed URL without --no-config, which drops every other key too.",
+   "repro": "RAN. config {\"stdio\":\"node\",\"args\":[\"test/fixtures/good-server.mjs\"],\"env\":{\"API_BASE\":\"http://localhost:4000\"},\"cwd\":\".\",\"noLocal\":true}: `node dist/cli.js http://127.0.0.1:9/mcp` -> exit 2 '--env and --cwd apply only to --stdio (from ...: key \"env\", key \"cwd\")'; `node dist/cli.js --stdio \"node test/fixtures/bad-server.mjs\" --local` -> exit 2 'give either --local or --no-local, not both (... key \"noLocal\")'. Config {\"url\":...,\"header\":{\"Authorization\":\"Bearer SYNTHfile\"}} + --bearer SYNTHcli -> exit 2.",
+   "fix": "During the merge, treat pairs as one setting: a command-line --local/--no-local drops the file's other one, and --bearer drops the file's Authorization header. When the server comes from the command line, drop the file's keys for the other transport (env and cwd for a URL; header, bearer and activeAuth for stdio) with a one-line note, rather than failing. Raise the conflict error only when both values came from the same source.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-04",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/report/drift.ts",
+   "line": "281-296 (used at src/cli.ts:529)",
+   "title": "A listing-only run compares tools as if the server had none: every baseline tool shows as 'removed' and --fail-on-drift exits 1",
+   "claim": "incompleteTools() has no case for a listing-only snapshot (target kind 'listing', coverage.toolLevel 'ok', tools []). So toolFingerprints() returns [] instead of null. With --baseline, a listing-only run lists every baseline tool as removed, and --fail-on-drift fails with no warning. The reverse also happens: --save-baseline on a listing-only run records toolFingerprints [], and a later server run reports every tool as added.",
+   "repro": "RAN. node dist/cli.js --no-config --stdio \"node test/fixtures/good-server.mjs\" --plugin-dir test/fixtures/listing/plugin-valid --save-baseline base.json; node dist/cli.js --no-config --plugin-dir test/fixtures/listing/plugin-valid --baseline base.json --fail-on-drift -> exit 1, JSON baseline.toolChanges.removed = [search_notes, create_note, delete_note, show_note_board]. Reverse: a listing-only --save-baseline lb.json gives toolFingerprints []; --baseline lb.json --fail-on-drift --stdio good-server -> exit 1, 'CHANGED TOOL DEFINITIONS (4 since baseline)'.",
+   "fix": "In incompleteTools(), return 'a listing-only run lists no tools' when snap.target.kind === 'listing'. Fingerprints are then null and the drift is notCompared. Consider also rejecting --fail-on-drift in a listing-only run as a usage error, like --active.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-05",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "487, 526-529",
+   "title": "Tool fingerprints are taken after the run-specific weak-tier redaction, so changing an --env value reports drift on tools that did not change",
+   "claim": "compareTools() runs over report.snap, which redactDeep(built, redactor) redacted with the report redactor (redactorFor(typed, true)). That redactor includes every --env value under a plain name that is not a PLAIN_SETTING (for example WORKSPACE=Acme or API_BASE=http://localhost:4000). Any tool whose description, schema or _meta contains such a value gets a different digest from a baseline saved without that --env or with another value. Drift then depends on the CLI invocation rather than on the server's definitions, and --fail-on-drift fails the gate on a false positive. The same applies to finding subjects in knownFindings.",
+   "repro": "RAN. node dist/cli.js --no-config --save-baseline b.json --fail-on never --stdio -- node test/fixtures/good-server.mjs; node dist/cli.js --no-config --baseline b.json --fail-on-drift --env WORKSPACE=Acme --stdio -- node test/fixtures/good-server.mjs -> exit 1, '~ search_notes / create_note / delete_note: changed: description' (good-server ignores WORKSPACE).",
+   "fix": "Compute toolFingerprints over the snapshot as the rules see it (only strong values scrubbed, opts.redactor) rather than the weak-tier redacted report. Better, digest the definitions before redaction: the report stores only SHA-256 digests. If low-entropy secrets are a concern, redact only the strong tier before hashing. Document that the fingerprints do not depend on --env values.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-06",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "381-389",
+   "title": "The output collision check misses --output overwriting --baseline, and misses symlinked or differently-cased paths",
+   "claim": "The only collision check is resolve(--save-baseline or --json-output) === resolve(--output) when the format is not json. Gaps: (a) `--baseline b.json --output b.json` with the text format overwrites the baseline with the text report, and the next run fails exit 2 'not valid JSON'. This is easy to set up in a config with baseline and output keys. (b) A symlink (or a hard link, or a different case on macOS or Windows) between --output and --save-baseline passes the check, and the summary still says 'JSON report written to real.json' although the file now holds the text report.",
+   "repro": "RAN. node dist/cli.js --no-config --baseline b2.json --output b2.json --stdio \"node test/fixtures/good-server.mjs\" -> exit 0 'report written to b2.json'; next run with --baseline b2.json -> exit 2 '--baseline is not valid JSON'. ln -s real.json link.txt; --output link.txt --save-baseline real.json -> both reported written; real.json starts 'mcp-review-check 1.0.0 · rules ...' (text).",
+   "fix": "Also reject --output === --baseline for non-json formats. --save-baseline === --baseline is the intended refresh and stays allowed. Compare by realpath of the parent directory plus the base name, or by device and inode when the file exists (statSync), and fold case on win32 and darwin.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-07",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "561-562",
+   "title": "--fail-on-drift's 'not compared' warning always says to re-save the baseline, even when this run caused the failure",
+   "claim": "The message always ends with '; re-save the baseline with --save-baseline'. When the reason is 'this run did not list every tool: tools/list failed' or 'the run stopped before tools/list finished', following that advice with this run writes toolFingerprints null (see A01-02). Every later comparison then fails as 'the baseline run did not list every tool'. The advice fits only the 0.3-baseline and null-baseline reasons.",
+   "repro": "RAN. node dist/cli.js --no-config --stdio \"node test/fixtures/hang-server.mjs\" --timeout 1000 --baseline base.json --fail-on-drift -> exit 1, stderr '--fail-on-drift: tool definitions not compared (this run did not list every tool: tools/list failed); re-save the baseline with --save-baseline'. The same run with --save-baseline writes toolFingerprints null with no warning.",
+   "fix": "Add the re-save hint only when the reason concerns the baseline (baseline.tools undefined or null). For a reason in this run, say 'this run did not list every tool; fix the run (see coverage) before saving a baseline'. Also warn on stderr when --save-baseline writes toolFingerprints null.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-08",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/input-file.ts",
+   "line": "158 (writer: src/cli.ts:570-576)",
+   "title": "--save-baseline writes reports that --baseline rejects (16 MiB cap) and says nothing at save time",
+   "claim": "A report costs about 4.2 KB per tool: 400 tools give 1.68 MB. A server with roughly 4,000 or more tools therefore gets a baseline larger than INPUT_FILE_CAP. The run that writes it succeeds silently, and every later --baseline run exits 2 'larger than 16 MiB'. The snapshot budget is 64 MiB, so the CLI can produce baselines it will not read back.",
+   "repro": "RAN. A copy of many-tools-server.mjs with 30000 tools -> --save-baseline dup.json exit 1, file 123,408,885 bytes, no warning; then --baseline dup.json -> exit 2 'cannot read --baseline: it is larger than 16 MiB'. many-tools-server.mjs (400 tools) -> 1,676,765 bytes.",
+   "fix": "When the JSON document exceeds INPUT_FILE_CAP, warn on stderr at --save-baseline time, or raise the cap for --baseline specifically (64 to 128 MiB, matching the snapshot budget). The baseline only needs findings and toolFingerprints, so a lean --save-baseline document without snapshot and skipped would also fix it.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-09",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "438",
+   "title": "The 'invalid URL' usage error prints the whole positional argument, so a stray secret shows up on stderr or in CI logs",
+   "claim": "shownUrl() hides only userinfo, query and fragment. A positional argument that is not a URL is printed as given. A common slip such as `--header \"X-Api-Key:\" \"$KEY\"` (value given as a separate argument) makes the key the <url> positional, and the error prints it. This breaks the 'usage errors never echo option values' rule that explain and --ignore follow ('(value not shown)').",
+   "repro": "RAN. KEY=SYNTHsk_live_0123456789abcdef; node dist/cli.js --no-config --header \"X-Api-Key:\" \"$KEY\" -> 'error: invalid URL: SYNTHsk_live_0123456789abcdef'.",
+   "fix": "Print the argument only when it looks like a URL (contains '://', or a dot or colon before the first '/'), and print it through the strong redactor's tokenLike check. Otherwise print 'invalid URL (the value is not shown; is a value missing its option?)'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A01-10",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "406, 445",
+   "title": "--bearer \"\" and --tool-args \"\" are accepted silently: an empty bearer drops $MCP_REVIEW_CHECK_TOKEN, an empty tool-args path is ignored",
+   "claim": "After F009 (--output \"\") the other path and credential options reject empty values, but these two do not. `--bearer \"$TOKEN\"` with TOKEN unset gives values.bearer '' (not undefined), so line 406 does not fall back to the environment token, connect sends no Authorization, and the run is auth-required (exit 0 unless --fail-on-incomplete). `--tool-args \"\"`, from the flag or a config key toolArgs \"\", is skipped by `if (values['tool-args'])` with no warning, and listing-only does not reject it either.",
+   "repro": "RAN. MCP_REVIEW_CHECK_TOKEN=SYNTHenvtok node dist/cli.js --no-config http://127.0.0.1:18731/mcp --bearer \"\" -> local listener saw no 'Bearer SYNTHenvtok' (only unauthenticated requests plus the tool's invalid-token probe). node dist/cli.js --no-config --stdio \"node test/fixtures/good-server.mjs\" --active --tool-args \"\" -> exit 0, empty stderr.",
+   "fix": "Usage errors '--bearer needs a value' and '--tool-args needs a file path', like --output and --baseline. If an empty --bearer is meant to turn the env token off, document it and print a one-line notice.",
+   "status": "confirmed"
+  }
+ ]
+}

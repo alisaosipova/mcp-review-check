@@ -1,0 +1,117 @@
+{
+ "area": "A07",
+ "name": "reports and redaction",
+ "coverage": "Read in full at 1f24aba (detached worktree, npm ci --ignore-scripts and npm run build OK, worktree removed at the end): src/redact.ts; src/report/{index,constants,json,score,text,markdown,github,sarif,junit,drift}.ts; schema/report.schema.json; the src/limits.ts parts on budget and truncation; src/cli.ts:494-650 (redaction point, GitHub mode, --verbose stderr, fatal annotation); the src/diagnose.ts hint and summary builders; proxy.ts variable handling; SECURITY.md lines 45-55; known items in FINDINGS.md (F115, F116-F119, F122-F123, F131, F135, R023) and REMEDIATION.md 8.3/9.3/10.4. Ran against the built CLI: a custom hostile stdio server (scratchpad a07/evil*.mjs) in all 5 formats with an --env secret echoed in serverInfo and tool names (no leak); a proxy credential test with HTTP(S)_PROXY to 127.0.0.1:1 in all 5 formats (no leak); an ALL_PROXY test with socks5, http and malformed values, then a local echoing proxy on 127.0.0.1 (leak, A07-01); ajv 2020 validation of the JSON reports from good, bad+baseline, hang (--max-duration), connect-refused, huge, leaky, evil, listing plugin-valid and openai-valid servers, plus a budget-exhausted report built via buildSnapshot({snapshotBudget}) (A07-02, A07-03); GitHub mode with --verbose and server stderr (A07-04) and with ESC/bidi tool names (A07-05); a listing-only --save-baseline then --baseline --fail-on-drift (A07-06). Not done: an HTTP target echoing --header, --bearer or Cookie values back (covered by earlier waves and e2e tests, not re-run); a real GitHub runner test of the '##[' v1 syntax (A07-07 is based on the runner's source); fitSummary multi-byte edge cases and fuller SARIF schema validation (fixtures/sarif-schema-2.1.0.json not run); the markdown escaper checked by reading the code only, with no GFM renderer run; no vitest files run.",
+ "improvements": [
+  {
+   "title": "Listing-only JSON says transport 'streamable-http' and auth 'none'",
+   "detail": "A listing-only run connects to nothing, but server.transport is 'streamable-http' (the schema enum allows no null) and auth is 'none'. Use null or a 'none' transport and add it to the schema, together with the A07-02 fix.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Validate the JSON of every report shape in the schema test",
+   "detail": "test/remediation-w6a-schema.test.ts misses listing-only, --openai-manifest and budget-exhausted reports, which is why A07-02 and A07-03 slipped through. Consider also generating the Snapshot['limits'] type and the schema from one source.",
+   "dimension": "bug",
+   "effort": "S"
+  },
+  {
+   "title": "One CI-safe line helper for every stdout and stderr line built from server text",
+   "detail": "The '::' guard exists only inside renderText. A shared helper (visibleText + leading '::' + '##[') used by text.ts, github.ts and the cli.ts --verbose block would close A07-04, A07-05 and A07-07 together and keep SECURITY.md:53 true by construction.",
+   "dimension": "security",
+   "effort": "S"
+  },
+  {
+   "title": "Share the proxy variable list between proxy.ts and redact.ts",
+   "detail": "Have proxy.ts export the list of proxy variables it reads (pick()) and have the redactor use the same list, so a new variable cannot again be honoured for routing but skipped for redaction (A07-01).",
+   "dimension": "security",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A07-01",
+   "dimension": "security",
+   "severity": "medium",
+   "file": "src/redact.ts",
+   "line": "118-121",
+   "title": "Credentials in ALL_PROXY are not redacted, though the same credentials in HTTP(S)_PROXY are",
+   "claim": "proxyUrls() reads only HTTPS_PROXY, HTTP_PROXY, https_proxy and http_proxy. Since commit a545537, src/proxy.ts:31-80 also routes traffic through ALL_PROXY, including socks5. So when the proxy comes from ALL_PROXY, its username, password and the derived 'Basic <b64>' value never reach the redactor. Any text that quotes them goes unmasked into every format: an HTML <title> in describeHttpFailure, an error message, or the --verbose trace. This breaks the comment at line 145 ('always secret') and the SECURITY.md promise that 'one redactor scrubs the whole report'.",
+   "repro": "RAN. Started a local proxy on 127.0.0.1 (scratchpad a07/echoproxy.mjs) that answers 404 text/html with <title>denied ${Proxy-Authorization} ${base64-decoded}</title>. Then ran: env -u HTTP_PROXY ... ALL_PROXY=http://alluser9:<pw>@127.0.0.1:$PORT node dist/cli.js --no-config --format json --timeout 3000 http://mcp.example.invalid/mcp. Result: coverage.reason, diagnosis.summary and the SRV finding contain 'denied Basic YWxsdXNlcjk6... alluser9:<pw>' in plain text (3 hits). The same run with HTTP_PROXY=... gives 'denied «redacted» «redacted»:«redacted»' (0 hits).",
+   "fix": "Build the proxy variable list from one shared source used by both src/proxy.ts and redact.ts: HTTPS_PROXY, HTTP_PROXY, ALL_PROXY in upper and lower case. Feed those values through urlSecrets() plus the Basic form, whatever the scheme (socks5 included). Add ALL_PROXY/all_proxy cases to the e2e redaction test.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-02",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "schema/report.schema.json",
+   "line": "42-45",
+   "title": "A listing-only JSON report fails the project's own schema (server.oneOf)",
+   "claim": "For a listing-only run (--plugin-dir or --openai-manifest with no server), toJson writes server: {listingOnly: true, ...} with no url and no command. The schema adds listingOnly ('Since 0.6') but keeps oneOf [{required:[url]}, {required:[command]}], so neither branch matches. Every --format json, --json-output and --save-baseline document from a listing-only run fails validation against the $schema it names. test/remediation-w6a-schema.test.ts covers no listing-only case.",
+   "repro": "RAN with ajv 2020 (strict, the same options as the schema test): node dist/cli.js --no-config --format json --plugin-dir test/fixtures/listing/plugin-valid > s.json, then validate. Errors: /server must have required property 'url'; must have required property 'command'; must match exactly one schema in oneOf. The same happens with --openai-manifest test/fixtures/listing/openai-valid/plugin.json.",
+   "fix": "Add a third oneOf branch: { required: ['listingOnly'], properties: { url: false, command: false, argv: false } }. Also forbid listingOnly in the url and command branches. Add listing-only reports (plugin and openai) to the schema test.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-03",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "schema/report.schema.json",
+   "line": "69-101",
+   "title": "A report with an exhausted snapshot budget fails the schema: limits.budgetExhausted is not declared, and truncated[].unit 'bytes' breaks const 'items'",
+   "claim": "When the byte budget runs out, connect.ts:993 pushes truncated {unit:'bytes'} and connect.ts:1002 sets limits.budgetExhausted {bytes, overBytes, phase, completed, unfinished}. The schema's limits object has additionalProperties:false and only truncated and stopped, and truncated.items.unit is {const:'items'}. Such a report, which is exactly the partial run a consumer most needs to parse, is invalid against its own $schema.",
+   "repro": "RAN: buildSnapshot({target: stdio many-tools-server.mjs, snapshotBudget: 20000}) -> runRules -> buildReport -> renderJson, validated with ajv. Errors: /limits must NOT have additional properties {additionalProperty:'budgetExhausted'}; /limits/truncated/0/unit must be equal to constant 'items'. Script: scratchpad a07/budget.mjs.",
+   "fix": "Declare limits.budgetExhausted (bytes and overBytes as integers >= 0, phase as string, completed and unfinished as string arrays, all required), change unit to enum ['items','bytes'], and add a budget-exhausted report (snapshotBudget via the test's buildSnapshot mock) to the schema test.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-04",
+   "dimension": "security",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "552",
+   "title": "Server stderr lines in --verbose start workflow commands in GitHub Actions",
+   "claim": "The `[stdio stderr]` tail goes through visibleText line by line, but nothing neutralizes a leading '::'. renderText does that at text.ts:180 and annotations use escapeCommand. A stdio server can therefore print '::error title=...::forged' or '::add-mask::', '::stop-commands::' and the runner executes it. This contradicts SECURITY.md:53 ('cannot ... start a line the GitHub runner reads as a workflow command'), the class closed for stdout by F135.",
+   "repro": "RAN: scratchpad a07/evil2.mjs writes '::error title=TOOL-000::forged annotation' and '  ::warning::indented' to stderr, then works as an MCP server. GITHUB_ACTIONS=true node dist/cli.js --no-config --verbose --no-color --stdio -- node evil2.mjs 2> e2.txt; grep '^\\s*::' e2.txt shows lines 10-11 verbatim after the tool's own annotations.",
+   "fix": "Apply the same guard as text.ts:180 (replace /^(\\s*):(?=:)/ with '$1\\\\u{3A}') to every stderr line built from server text: the stderr tail, the [http] trace and the [listing] dump. Better, move it into one exported ciSafeLine() helper in report/index.ts and use it in text.ts and cli.ts.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-05",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/report/github.ts",
+   "line": "314-315",
+   "title": "GitHub annotations carry raw ESC and bidi characters from tool names and messages",
+   "claim": "annotations() puts subjectOf(f) and f.message through escapeCommand only, which escapes %, CR, LF and, for properties, ':' and ','. Every other control or format character passes through. A tool name with ESC[8m, ESC[2K or U+202E reaches the stderr log and the annotation title raw, so it can hide or recolour CI log text and reorder the title. The text and markdown reports show the same name as \\u{1B}, because F135 fixed them but not the annotations.",
+   "repro": "RAN: scratchpad a07/evil3.mjs registers a tool named 'ok\\u001b[2K\\u001b[8mhidden‮x'. GITHUB_ACTIONS=true node dist/cli.js --no-config --no-color --stdio -- node evil3.mjs: stderr has 6 lines with raw ESC, e.g. '::error title=INJ-001 ok^[[2K^[[8mhidden<U+202E>x::...'. stdout has 0.",
+   "fix": "In annotations() wrap title and message in visibleText() before escapeCommand(). visibleText keeps tab, and CR and LF are already turned into %0D/%0A. Add a test with ESC and U+202E in a tool name.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-06",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/report/drift.ts",
+   "line": "273-287",
+   "title": "A listing-only report records toolFingerprints: [] instead of null, so as a baseline it reports every tool as added",
+   "claim": "incompleteTools() returns undefined for a listing-only snapshot (toolLevel 'ok', no fatal), so toolFingerprints() writes [] ('tools/list finished with zero tools'). If that report is then used as --baseline against a server, compareTools lists every tool as added, and --fail-on-drift exits 1. The correct result is 'not compared: the baseline checked no server'.",
+   "repro": "RAN: node dist/cli.js --no-config --plugin-dir test/fixtures/listing/plugin-valid --save-baseline bl.json; node dist/cli.js --no-config --baseline bl.json --fail-on-drift --stdio -- node test/fixtures/good-server.mjs -> exit 1, 'CHANGED TOOL DEFINITIONS (4 since baseline) · fails the run (--fail-on-drift)', '+ search_notes: added' and so on.",
+   "fix": "In incompleteTools(), return 'no server was checked (listing-only)' when snap.target.kind === 'listing', so the JSON has toolFingerprints: null and the drift reads 'not compared'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A07-07",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/report/text.ts",
+   "line": "180",
+   "title": "The legacy '##[command]' runner syntax inside server text is not neutralized in the text report",
+   "claim": "The text guard rewrites only a leading '::'. The Actions runner also parses the v1 form '##[name props]data' anywhere in a line (ActionCommand.TryParse uses IndexOf(\"##[\")). A tool or server name such as 'grab##[set-output name=verdict;]PASS' or 'x##[add-mask]FAIL' therefore reaches stdout unchanged. Because stderr is flushed before stdout, the impact is limited to masking words and setting extra step outputs in later stdout lines.",
+   "repro": "PARTLY RAN: scratchpad a07/evil.mjs. node dist/cli.js --no-config --no-color --stdio -- node evil.mjs prints 'Server  Evil ##[stop-commands]tok1 ...' and '  x TOOL-006 [claude] grab##[set-output name=verdict;]PASS: no title' verbatim. Whether the runner acts on them is from its source, not tested on a real runner.",
+   "fix": "In the same ciSafeLine() helper as A07-04, also rewrite '##[' as '#\\u{23}[' in text output and stderr lines; markdown already escapes '['.",
+   "status": "confirmed"
+  }
+ ]
+}

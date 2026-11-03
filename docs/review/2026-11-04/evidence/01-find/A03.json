@@ -1,0 +1,87 @@
+{
+ "area": "A03",
+ "name": "probes",
+ "coverage": "Read at 1f24aba in a detached worktree (built with npm ci --ignore-scripts and npm run build; removed afterwards): src/probe/active.ts, auth.ts, network.ts and wire.ts in full. Also read the probe wiring and stop handling in src/connect.ts (buildHttp, Progress/checkpoint, withStops, stoppedSnapshot, dropExchangeBodies), ModernClient.request in src/protocol/modern.ts, the tracer's request/redirect/timeout handling in src/protocol/trace.ts, WRITE_VERBS and tokenize, SPEC-005 and AUTH-019 in src/rules, the --verbose trace printing in src/cli.ts, docs/guide/privacy-and-requests.md and SECURITY.md (active / active-auth / retries). Checked the known items in FINDINGS.md (F018, F019, F023, F026, F029-F031, F037, F140, F144, R009, C002) and REMEDIATION.md 5.1/8.3/9.3/10.4 so as not to re-report them. Ran: isSafeToCall and synthesizeArgs edge cases against dist. Ran the CLI against modern-server.ts (listen sse, tasks ok) with --active --verbose to get the full request list. Ran a scratch proxy that never answers subscriptions/listen or GET, with --timeout 1000. Ran auth-server.ts with --active-auth in text, verbose and JSON formats. All requests went to 127.0.0.1 only. Confirmed as correct: redirect:'manual' on authorize, tasks/get and listen gated on the declared capabilities, session DELETEs after raw initialize probes, partial results for wire and active calls, a 50-tool / 3-calls-per-tool cap, and TLS checks honouring --timeout and the abort signal. Not covered: legacy HTTP+SSE origin probes against a live SSE fixture, stdio --active runs against bad-server/leaky-server, TLS against a real https endpoint (would need a local cert setup), and vitest suites (no test files run).",
+ "improvements": [
+  {
+   "title": "Clean up the DCR client via RFC 7592",
+   "detail": "If the DCR response includes registration_client_uri and registration_access_token, send a best-effort DELETE after the /token probes (no retries, short timeout, the token is never logged). Report whether the cleanup worked. This removes the manual-cleanup step in SECURITY.md:38 for compliant authorization servers.",
+   "dimension": "ux",
+   "effort": "M"
+  },
+  {
+   "title": "Fix placeholder synthesis for uniqueItems and conflicting bounds",
+   "detail": "Ran: synthesizeArgs gives [\"mcp-review-check\",\"mcp-review-check\"] for an array with minItems 2 and uniqueItems true. It gives 0.5 for a number with exclusiveMinimum 0 and maximum 0.1, which breaks the maximum. When both minimum and exclusiveMinimum are set, exclusiveMinimum is ignored. These invalid synthetic calls lower RT coverage. Fixes: suffix the items (-1, -2) when uniqueItems is set, clamp the result to max, and honour the stricter of minimum and exclusiveMinimum.",
+   "dimension": "bug",
+   "effort": "S"
+  },
+  {
+   "title": "clientInfo variants (RT-012) for modern-only servers",
+   "detail": "listWithClientName is wired only when conn.ok && kind === 'streamable-http' (connect.ts:483). A modern-only server therefore never gets the three clientInfo variants: the run showed no variant tools/list calls. Fix: send the variants through ModernClient with a different io.modelcontextprotocol/clientInfo in _meta. Otherwise RT-012 should say 'skipped' rather than silently showing nothing.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Use a non-resolvable sample host for format:uri arguments",
+   "detail": "FORMAT_SAMPLES maps uri/url to https://example.com/. A read-only fetch-style tool with openWorldHint true then makes the server send a request to a third-party host during --active. Use https://mcp-review-check.invalid/ or skip openWorldHint:true tools unless --tool-args gives arguments for them. Mention the choice in the privacy doc.",
+   "dimension": "security",
+   "effort": "S"
+  },
+  {
+   "title": "Publish partial auth-probe results on a --max-duration stop",
+   "detail": "runAuthProbe builds the probe locally, and connect.ts:425 assigns snap.authProbe only after the whole probe returns. A stop during the AS metadata fetches or --active-auth loses the PRM/AS observations already made, including the DCR exchange. Fix: pass an `into` object, as runWireProbes and runActive already do.",
+   "dimension": "ux",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A03-01",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/probe/active.ts",
+   "line": "17 (verb list in src/rules/lexicon.ts:7-14)",
+   "title": "--active write-verb name filter misses common mutating verbs, inflections and glued upper-case names",
+   "claim": "SECURITY.md:36 and spec.md:1019 say --active skips a readOnlyHint:true tool that has a write verb in its name. isSafeToCall matches only exact tokens from WRITE_VERBS. Inflected forms (deletes_file), verbs that are not in the set (exec, kill, restart, deploy, push, clear, unlink, rm) and an all-caps glued name (DELETEFILE) all pass. A mis-annotated tool such as exec_command, kill_process, restart_service or git_push with readOnlyHint:true is called up to 3 times with synthesized arguments. readOnlyHint is still the main gate, so this is a defense-in-depth gap, not a contract break.",
+   "repro": "Ran against dist: node --input-type=module -e \"import {isSafeToCall} from './dist/probe/active.js'; for (const n of ['deletes_file','exec_command','kill_process','restart_service','deploy_app','git_push','clear_cache','DELETEFILE','unlink_file','rm','delete_file']) console.log(n, isSafeToCall({name:n,annotations:{readOnlyHint:true}}))\" prints true for every name except delete_file.",
+   "fix": "Add to WRITE_VERBS: exec, kill, stop, restart, reboot, shutdown, deploy, push, commit, apply, install, uninstall, rollback, clear, flush, unlink, rm, notify, reply, lock, unlock, grant, ban, block, enable, activate, subscribe, pause, resume, toggle. Strip a trailing -s/-es/-ed/-ing before the lookup. Also check the whole lower-cased name for a hard-destructive prefix (delete, remove, drop, …) so that DELETEFILE is caught. Pin these cases in a test.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A03-02",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/probe/wire.ts",
+   "line": "84 (subscriptions/listen), 101-103 (GET probe)",
+   "title": "subscriptions/listen and GET probes wait a fixed 5 s and ignore a lower --timeout",
+   "claim": "Both probes pass timeoutMs: 5000 directly instead of Math.min(timeoutMs, 5000). With --timeout 1000, a server that never sends response headers holds each probe for 5 s, five times the per-request timeout the user set. Other probes cap their waits by --timeout (TLS, metadata GETs, session DELETE).",
+   "repro": "Ran: modern fixture (listen:'sse', tasks:'ok') behind a scratch proxy that never answers subscriptions/listen (in a second run, never answers GET). `node dist/cli.js <proxy>/mcp --timeout 1000 --verbose` prints `[http] subscriptions/listen: ... -> This operation was aborted (5005 ms)` and, with a hanging GET, `[http] get: GET ... -> This operation was aborted (5001 ms)`.",
+   "fix": "Use timeoutMs: Math.min(ctx.timeoutMs, 5000) for both probes, as closeProbeSession already does. Add a test that uses a hanging fixture and a 1000 ms timeout.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A03-03",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/probe/auth.ts",
+   "line": "187 (clientId stored), SECURITY.md:38",
+   "title": "--active-auth never reports the client_id it registered, though SECURITY.md tells the user to delete it",
+   "claim": "SECURITY.md:38 says the registered client stays on the authorization server and the user should delete it afterwards. The client_id from the DCR response is stored in snap.authProbe.active.clientId but no report format prints it: the text report and the JSON report both omit it. The only place it shows up is inside the /authorize URLs of the --verbose trace. A user who needs to clean up has to search the AS for clients named mcp-review-check.",
+   "repro": "Ran: auth-server fixture (DCR answers client_id client-123). `node dist/cli.js <url> --active-auth --format json | grep -c client-123` prints 0. Without --verbose the text report does not contain it either. With --verbose it appears only in the `[http] auth authorize: GET ...client_id=client-123...` lines.",
+   "fix": "Print one line after the --active-auth notice, for example `registered DCR client client_id=<id> at <registration_endpoint>; delete it if your AS does not expire unused clients`, and add authProbe.active.clientId to the JSON report. A client_id is not a secret. Never print client_secret or registration_access_token.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A03-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/probe/wire.ts",
+   "line": "72-74, 112 (docs/guide/privacy-and-requests.md:5-7)",
+   "title": "Request list in privacy-and-requests.md leaves out the modern-era probes, including a DELETE",
+   "claim": "The 'What the tool sends' section lists the default requests. For 2026-07-28 servers it names only tasks/get and subscriptions/listen. The code also sends the following to modern-only and dual servers: two tools/list header-mismatch probes (no Mcp-Method header, and a wrong one), modern badVersion, unknownMethod and resourceMissing probes, and on modern-only servers a DELETE to the endpoint without a session id (p.delete). The doc mentions DELETE only as the end of a session. It also says 'about 20 requests', but a run against the modern fixture made 26 requests before --active. All these probes are side-effect free, but a privacy page that promises a complete list should name the DELETE verb.",
+   "repro": "Ran: modern fixture (listen:'sse', tasks:'ok') with --verbose. The trace shows headerMismatch (none), headerMismatch (wrong), badVersion (modern), unknownMethod (modern), resourceMissing (modern), and `[http] delete: DELETE http://127.0.0.1:<port>/mcp -> 405`.",
+   "fix": "Add one sentence to privacy-and-requests.md (and SECURITY.md if it has the same list): a modern server also gets tools/list with a missing and a mismatched Mcp-Method header, the unsupported-version, unknown-method and missing-resource probes in the 2026-07-28 form, and, when modern-only, a DELETE without a session that expects 405. Update the 'about 20' count, or drop the number.",
+   "status": "confirmed"
+  }
+ ]
+}

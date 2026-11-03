@@ -1,0 +1,135 @@
+{
+ "area": "A10",
+ "name": "newcomer UX (cross-cutting)",
+ "coverage": "Worktree на 1f24aba (detached, scratchpad/r3/find-A10): `npm run build`. В конце удалён через `git worktree remove --force`, локальный 401-сервер остановлен. ЗАПУЩЕНО против dist/cli.js: без аргументов; --help; --version; опечатки (--fromat, --format jsn, --target claud, --fail-on warn, -x, --timeout abc, --stdio без значения, два URL, URL+--stdio, `help`); URL без схемы (127.0.0.1:1/mcp, localhost:1/mcp, example/mcp, ftp://); закрытый порт 127.0.0.1:59999 (text/--quiet/markdown/junit/sarif/json); порт 1 (`fetch failed (bad port)`); plain HTTP (python http.server на 127.0.0.1:58431, / и /mcp); OAuth-сервер с 401 + PRM + AS metadata (scratchpad/r3/s401.mjs): без токена, с неверным --bearer, --fail-on-incomplete во всех форматах, --output, GITHUB_ACTIONS=true; good/bad/many-tools/hang (дефолтный и 2000 мс таймаут) по stdio; leaky с синтетическими SYNTH-секретами через --env и argv в --verbose (редакция работает); stdio-ошибки (ENOENT, `node -e 0`, stdout-мусор, отсутствующий скрипт, форма `--stdio --`); listing-only (--plugin-dir plugin-invalid/plugin-valid, несуществующий путь, --openai-manifest на каталог); explain (TOOL-011, tool-011, MAN-001, LST-005, SRV-003, FOO-1, лишний аргумент, --format json); --list-rules (ZZZ, tool, --format sarif); --ignore TOOL-999; --diff-only и --fail-on-drift без --baseline; --sarif-location без sarif; config-файл с опечаткой ключа и со stdio; --output в несуществующую директорию. Валидация JSON-отчёта listing-only через Ajv 2020 по схеме HEAD и по v0.4.0. Прочитано: src/cli.ts (help, строка exit code), src/rules/engine.ts (unmetNeed/authReason), src/rules/server.ts (SRV-003), src/connect.ts (buildStdio, timeouts), src/report/junit.ts (suite), src/report/json.ts, schema/report.schema.json, REMEDIATION §8.3/9.3/10, FINDINGS (grep по R021, R002, fail-on-incomplete, SRV-003, junit). НЕ сделано: huge-server.mjs и modern-server.ts (нужен tsx, его нет), --active/--active-auth, --baseline/--save-baseline цикл и вывод drift (drift-суффикс в Result известен как открытый пункт W6A), реальный TTY (цвета и NO_COLOR не проверял), полный --verbose HTTP-trace, vitest не запускал. Пункты README/docs только как предложения.",
+ "improvements": [
+  {
+   "title": "`mcp-review-check help` и голые слова вместо URL",
+   "detail": "`node dist/cli.js help` → `error: invalid URL: help`. Для `help`/`version`/`list-rules` без дефисов, по аналогии с «did you mean --format?», подсказывать «did you mean --help?».",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Флаги, которые применяются не к каждому формату, игнорируются по-разному",
+   "detail": "`--sarif-location` без sarif и `--list-rules --format sarif` дают warning. `--quiet`/`--checklist` с `--format json|sarif|markdown` и `explain X --format json` молча игнорируются. Стоит выдавать одинаковый warning «applies only to --format text». При --quiet с не-text форматом stderr-заметка «Local target: …» тоже остаётся.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Путь в ошибке --plugin-dir скрыт",
+   "detail": "`--plugin-dir test/fixtures/nonexist` → `no such directory (the path is not shown)`. Пользователь вводит путь сам, и опечатку без пути не найти. Можно показывать путь, прогнанный через редактор секретов, или хотя бы basename. Для `--openai-manifest <dir>` (ошибка «must be a file, not a directory») подсказывать `<dir>/plugin.json` или `.codex-plugin/plugin.json`, если файл существует.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Subject «server» у LST-находок о файлах плагина",
+   "detail": "В listing-only run часть LST-находок имеет subject `server` (LST-005 «no LICENSE file in the plugin folder», LST-006..012), а часть — `server (.claude-plugin/plugin.json)`. Для файловых правил subject лучше делать `plugin` или путь к файлу (`.mcp.json`, `plugin folder`). Шапка «Server  MCP server · listing-only» тоже читается странно, точнее «Plugin <name> · listing-only».",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Естественная сортировка имён в свёрнутых находках",
+   "detail": "many-tools-server: `tool_0, tool_1, tool_10, +397 more` — лексикографический порядок. Natural sort (tool_0, tool_1, tool_2) читается лучше. Повторы в TOOL-027/TOOL-028 (`search_docs, search_docs` при дубликатах имени) лучше выводить как `search_docs (x2)`.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Строка контакта в каждом text-отчёте",
+   "detail": "Строка `Need help getting your connector approved? 20horizon93@gmail.com` (src/report/constants.ts:6-7) выводится в каждом не-quiet text-отчёте, в том числе в CI-логах, и в JSON (`contact`). Это решение мейнтейнера с baseline, а не дефект. Предложение для docs-сессии: прямо назвать её в README и не показывать при CI=true/GITHUB_ACTIONS, чтобы отчёт в логах не выглядел как реклама.",
+   "dimension": "ux",
+   "effort": "S"
+  },
+  {
+   "title": "Хвост R021 не исправлен",
+   "detail": "R021 помечен как исправленный, но исправлена только summary-строка --output (cli.ts). Строки Score в text (`1 root cause · 1 errors · 0 warnings`) и `Findings | 1 errors` в markdown на 1f24aba по-прежнему без плюрализации (видно в каждом прогоне с одной ошибкой). Как новую находку не завожу, но пункт стоит закрыть: использовать общий plural() в src/report/text.ts и markdown.ts.",
+   "dimension": "ux",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A10-01",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "563",
+   "title": "--fail-on-incomplete: exit 3, а Result/summary.failed/JUnit/GitHub говорят PASS",
+   "claim": "Exit code 3 для неполной проверки вычисляется только в cli.ts:563 (`values['fail-on-incomplete'] && partial ? 3`). В buildReport флаг не передаётся, поэтому отчёт противоречит exit code во всех форматах: в text и markdown `Result: PASS (--fail-on error)`, в summary-строке --output тоже `PASS`, в JSON `summary.failed=false` и `gate.reason=null`, в JUnit `failures=0 errors=0` (GitLab/Jenkins показывают зелёный job при exit 3). При GITHUB_ACTIONS печатается только `::warning … --fail-on-incomplete fails the run on a partial check.`, хотя флаг уже передан, а --help обещает: \"exit 3 and 4 as one ::error with its cause\". Новичок, который добавил флаг по совету warning'а, видит PASS и красный job одновременно.",
+   "repro": "ЗАПУСКАЛ. Локальный OAuth-сервер на 127.0.0.1:58432, который на /mcp отвечает 401 + PRM + AS metadata (scratchpad/r3/s401.mjs). `node dist/cli.js --fail-on-incomplete --quiet http://127.0.0.1:58432/mcp` → `Result: PASS (--fail-on error) · partial check: auth-required (...)`, exit=3. С `--format json`: summary.failed False, gate.reason None. С `--format junit`: `failures=\"0\" errors=\"0\"`. С `--output ../o.txt`: `… PASS (--fail-on error) · report written …`, exit=3. С `GITHUB_ACTIONS=true` приходит только ::warning, ::error нет.",
+   "fix": "Передавать failOnIncomplete в buildReport (как failOn). При partial && failOnIncomplete: summary.failed=true, gate.reason='partial check: <level>', Result `FAIL (partial check: auth-required; --fail-on-incomplete)`, в JUnit `<error type=\"incomplete\">`, в GitHub `::error` вместо `::warning`. Хвост «--fail-on-incomplete fails the run» выводить только когда флага нет.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-02",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/connect.ts",
+   "line": "727",
+   "title": "Сервер, который отвечает только на initialize: 3,5 минуты тишины с дефолтами",
+   "claim": "Если tools/list зависает, CLI всё равно по очереди ждёт каждый следующий запрос (resources/list, templates, prompts/list, пробы SPEC-008/009 и т.д.) полный --timeout. При дефолтных 30000 мс и --max-duration без лимита это около 7 x timeout. Весь вывод собирается в runCli и печатается только в конце (cli.ts:648-650), а progress-строки нет даже на TTY. Новичок 210 секунд не видит ничего и думает, что инструмент завис.",
+   "repro": "ЗАПУСКАЛ. `node dist/cli.js --stdio 'node test/fixtures/hang-server.mjs' --quiet` → 210 s, затем 3x SPEC-020 'Request timed out', exit 1. С `--timeout 2000` → 14.9 s (≈7x2 s).",
+   "fix": "После таймаута tools/list (или первого таймаута после handshake) считать сервер неотвечающим: остальные list/probe-запросы пропускать с причиной 'server stopped answering after initialize' или ставить им короткий таймаут. Дополнительно на stderr, когда он TTY, печатать фазу (`connecting…`, `tools/list…`, `waiting 30 s for prompts/list`), а при non-TTY выводить одну строку после первого таймаута.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-03",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "schema/report.schema.json",
+   "line": "42",
+   "title": "JSON-отчёт listing-only run не проходит валидацию по собственной схеме",
+   "claim": "Для listing-only run server.listingOnly=true, а url/command/argv отсутствуют. При этом `properties.server.oneOf` требует url либо command. В итоге каждый JSON-отчёт `--plugin-dir`/`--openai-manifest` без сервера невалиден и по схеме HEAD, и по опубликованной (поле $schema). Тест test/remediation-w6a-schema.test.ts listing-only отчёты не валидирует.",
+   "repro": "ЗАПУСКАЛ. `node dist/cli.js --plugin-dir test/fixtures/listing/plugin-valid --format json > lst.json`, затем Ajv 2020 (из node_modules) по schema/report.schema.json → false: `/server must have required property 'url'` / `'command'` / `must match exactly one schema in oneOf`. Тот же результат по схеме v0.4.0.",
+   "fix": "Добавить в oneOf третью ветку `{ \"required\": [\"listingOnly\"], \"properties\": { \"url\": false, \"command\": false, \"argv\": false } }`. Проверить, что serverInfo/era/transport/... в server.required для listing-only присутствуют, или вынести их в ветки. В тест схемы добавить listing-only отчёты из test/fixtures/listing/*.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/report/json.ts",
+   "line": "16",
+   "title": "$schema в JSON-отчёте 1.0.0 указывает на тег v0.4.0",
+   "claim": "JSON_SCHEMA_URL и $id схемы ссылаются на raw.githubusercontent.com/.../v0.4.0/schema/report.schema.json, а пакет имеет версию 1.0.0 (теги v0.5.0…v1.0.0 есть). Схема с тех пор менялась (+server.listingOnly с 0.6). Редактор или валидатор, который идёт по $schema, получает устаревшую схему. Это не известный пункт «$id отвечает 404 до тега v0.4.0»: тег есть, но ссылка застыла.",
+   "repro": "ПРОВЕРЕНО чтением: `git diff v0.4.0 HEAD -- schema/` показывает добавленный listingOnly; `node dist/cli.js --stdio 'node test/fixtures/good-server.mjs' --format json` → `\"$schema\": \".../v0.4.0/schema/report.schema.json\"`.",
+   "fix": "Генерировать URL из версии пакета (`v${VERSION}`) или из тега мажорной версии при сборке либо в release-скрипте и проверять это тестом (version.ts ↔ json.ts ↔ schema $id).",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-05",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/engine.ts",
+   "line": "43",
+   "title": "При connect-failed правила с need 'http' и needs:[] считаются выполненными и проходят в JUnit",
+   "claim": "authReason учитывает connect-failed только для need tools/resources/prompts/ui/active. Need 'http' (SRV-006, SRV-007, SRV-008, SRV-009, SRV-015) и SPEC-020 (needs: []) при недоступном сервере не пропускаются. Отсюда «34 rules run» в шапке и 11 «пройденных» testcase в claude-suite JUnit, среди них «SRV-007 Host-header (DNS-rebinding) protection rejects the public hostname» и «SRV-006 No cross-host redirect». Ни одна проба при этом не выполнялась. Ложный «зелёный» по правилам с claude/chatgpt=error.",
+   "repro": "ЗАПУСКАЛ. `node dist/cli.js http://127.0.0.1:59999/mcp --format junit | grep -c '<testcase classname=\"claude\" name=\"[^\"]*\"/>'` → 11 пустых (passed) testcase, в том числе SRV-006..009, SRV-015, SPEC-020. В text: `34 rules run · 145 skipped`.",
+   "fix": "В unmetNeed при coverage.toolLevel==='connect-failed' возвращать 'could not connect' для всех правил, которым нужны ответы сервера (http-пробы, SPEC-020). Выполнять только правила, работающие с одним URL/DNS (SRV-001, SRV-004, SRV-005, SRV-017) и сам SRV-003. Проще всего ввести need 'url-only' или проверку connect-failed перед case 'http'.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-06",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "76",
+   "title": "Ошибки старта stdio без диагноза: ENOENT и выход до initialize, fix ссылается на несуществующий stderr",
+   "claim": "Для HTTP есть diagnose.ts с понятными подсказками (ECONNREFUSED → «nothing is listening there…»). Для stdio выводится сырое `spawn nonexistent-cmd-xyz ENOENT` или `MCP error -32000: Connection closed`, без кода выхода и без следующего шага. Fix при этом всегда пишет «(the stderr cause is shown above; --verbose prints all of stderr)», хотя stderr пуст и выше ничего нет. Это другой путь, чем R002 (там stderr терялся при --max-duration).",
+   "repro": "ЗАПУСКАЛ. `node dist/cli.js --stdio 'nonexistent-cmd-xyz'` → `Could not connect: spawn nonexistent-cmd-xyz ENOENT` + fix про stderr above, exit 3. `node dist/cli.js --stdio 'node -e 0'` → `MCP error -32000: Connection closed`, ни слова о том, что процесс завершился с кодом 0 до ответа.",
+   "fix": "В connect.ts:714 классифицировать ошибку: ENOENT → «command \"X\" not found: check PATH or use an absolute path (on Windows, npx is npx.cmd)», EACCES → «not executable». Если процесс завершился до handshake, писать «the server process exited with code N (signal S) before answering initialize». Хвост про stderr в fix добавлять только при непустом stderrTail.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A10-07",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "67",
+   "title": "Находка о недоступности сервера (SRV-003) несёт метаданные правила про SSE",
+   "claim": "При connect-failed SRV-003 выдаётся как `[spec] error`, но к нему прикрепляются docs (sources[0]) со ссылкой на Anthropic directory policy, а в markdown «Why these rules» объясняет: «SSE has been deprecated since 2025-03-26». `explain SRV-003` и `--list-rules` показывают `spec=warning`. Ни про отказ в соединении, ни про переопределение severity нет ни слова. Кроме того, в JSON `gate.notGated` при connect-failed советует «add --fail-on-spec to fail on spec findings», хотя run и так уже FAIL с exit 3.",
+   "repro": "ЗАПУСКАЛ. `node dist/cli.js http://127.0.0.1:59999/mcp --format markdown` → в строке SRV-003 docs = support.claude.com/...directory-policy, а «Why these rules: SRV-003: SSE has been deprecated…». `node dist/cli.js explain SRV-003` → `Severity claude=warning, chatgpt=warning, spec=warning`. `--format json` → `gate.notGated: \"spec: 1 error (SRV-003) not gated; add --fail-on-spec…\"`, при этом failed=true.",
+   "fix": "Вынести «could not connect» в отдельный rule id (например, SRV-000 «Server reachable / handshake completed», spec=error) со своим rationale и ссылкой на transports, либо дать connect-failure-находке собственные docs/rationale и упомянуть это в explain SRV-003. Не формировать notGated, если run провален по connect-failed.",
+   "status": "confirmed"
+  }
+ ]
+}

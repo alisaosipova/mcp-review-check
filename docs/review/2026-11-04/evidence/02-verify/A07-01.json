@@ -1,0 +1,18 @@
+{
+ "id": "A07-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at 1f24aba (git show, no checkout, no worktree created). src/redact.ts:118-121: proxyUrls() iterates only ['HTTPS_PROXY','HTTP_PROXY','https_proxy','http_proxy']; buildRedactor (lines 145-150) adds urlSecrets() plus the 'Basic <b64(user:pass)>' value only for those URLs. src/proxy.ts:32-35 proxyConfig() uses pick(env,'ALL_PROXY') as the fallback for httpProxy/httpsProxy, and installProxy (lines 77-81) passes it to EnvHttpProxyAgent, so ALL_PROXY credentials really are used on the wire (and the proxy gets Proxy-Authorization from them). git grep over src/ finds no other place that adds ALL_PROXY/all_proxy to the redactor: buildRedactor's only caller is src/connect.ts:55, which passes url/bearer/headers/argv/env and nothing proxy-related. So any message that echoes the ALL_PROXY user/password or the derived Basic value (proxy error page title in describeHttpFailure, error text, --verbose trace) is not masked, while the same values in HTTP(S)_PROXY are. This contradicts the comment at redact.ts:145 ('always secret') and the --help text at cli.ts:130 ('ALL_PROXY is the fallback; credentials redacted'). The proxy-related entries in FINDINGS.md/REMEDIATION.md (F022 Set-Cookie, P5A HTTP_PROXY-for-https) do not cover this, so it is a new item. I did not re-run the reported repro; the code path alone proves it. Medium is the right severity: an operator-supplied secret leaks into reports that may be shared, but only when something echoes it (a proxy error page or a verbose trace). Fix: add 'ALL_PROXY','all_proxy' to proxyUrls() and add a test next to the HTTP_PROXY redaction test."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "At 1f24aba, src/redact.ts:118-121 proxyUrls() reads only HTTPS_PROXY, HTTP_PROXY, https_proxy and http_proxy. src/proxy.ts:31-33 and 79-80 use ALL_PROXY (or all_proxy, via pick()) as the fallback for both HTTP and HTTPS. I built the CLI in a detached worktree and ran a local echo proxy on 127.0.0.1 that returns 404 text/html with <title>denied ${Proxy-Authorization} ${decoded}</title>. I then ran `node dist/cli.js --no-config --format json --timeout 3000 http://mcp.example.invalid/mcp` with all other proxy variables unset. With ALL_PROXY=http://alluser9:Secr3tPw77@127.0.0.1:PORT the JSON contains 'denied Basic YWxsdXNlcjk6U2VjcjN0UHc3Nw== alluser9:Secr3tPw77' 3 times: username, password and base64 each appear 3 times. The same run with HTTP_PROXY prints 'denied «redacted» «redacted»:«redacted»' and has 0 hits. Limiting factor: an unreachable ALL_PROXY (socks5 to 127.0.0.1:1, --verbose text) showed 0 hits for both ALL_PROXY and all_proxy. So the leak needs a proxy or intermediary whose response quotes the credentials. The redaction promise still breaks deterministically for that path, so medium is reasonable (arguably low-medium). ALL_PROXY is not among the known items in FINDINGS.md or REMEDIATION.md (grep found no hits). Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

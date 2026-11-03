@@ -1,0 +1,13 @@
+{
+ "id": "A05-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-07",
+   "verdict": "confirmed",
+   "evidence": "src/rules/util/html.ts at 1f24aba: tagRe covers only script|link|img|source|video|audio|iframe|base. There is no embed or object, and for video/audio/img only src and srcset are read, so poster is never read. The jsPatterns list has fetch, WebSocket, EventSource, `.open(\"GET\", ...)` (the method is hard-coded to GET), axios, ky, openExternal, ui/open-link and import/export. It has no sendBeacon, no Worker/SharedWorker and no XHR open with POST, PUT and so on. I read the code; the claim matches it exactly. Not in FINDINGS (F101 was only about ES-module imports)."
+  }
+ ],
+ "arbiter": null
+}

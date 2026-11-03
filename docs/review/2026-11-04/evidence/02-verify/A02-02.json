@@ -1,0 +1,13 @@
+{
+ "id": "A02-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-02",
+   "verdict": "confirmed",
+   "evidence": "src/proxy.ts:41-50 at 1f24aba: `if (raw === '*') return true` for any list entry, while undici env-http-proxy-agent.js #shouldProxy skips the proxy only when the whole value (#noProxyValue) is '*'. For bracketed IPv6, bypassesProxy strips the brackets first and then runs /^(.*?)(?::(\\d+))?$/ on '::1', which yields host ':' and port 1. undici keeps '[::1]' because /^(.+):(\\d+)$/ does not match it, and compares it with the bracketed URL hostname. Ran dist/proxy.js: bypassesProxy('127.0.0.1',9,'localhost,*') returns true (undici would proxy); bypassesProxy('[::1]',9,'[::1]') returns false (undici would connect directly). Not among the known items. The impact is diagnostic only (describeCause and the TLS-check skip), so low."
+  }
+ ],
+ "arbiter": null
+}

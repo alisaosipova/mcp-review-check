@@ -1,0 +1,18 @@
+{
+ "id": "A08-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "At 1f24aba, action.yml:111 sets INPUT_EXTRA_ARGS straight from inputs.extra-args. Line 127 does `if [ -n \"$INPUT_EXTRA_ARGS\" ]; then read -r -a extra <<< \"$INPUT_EXTRA_ARGS\"; ...`, and `read` stops at the first newline because no `-d ''` is given. Nothing earlier in the step checks for newlines or collapses them, and nothing warns. The input description at line 59 says \"split on whitespace\", which reads as if a newline would split too. I ran the exact line under bash with `set -u` and INPUT_EXTRA_ARGS=$'--timeout 60000\\n--ignore TOOL-013\\n--fail-on-incomplete\\n': `extra` came out as only [--timeout] [60000], so the other two options were lost without any message. extra-args is not mentioned in the README at 1f24aba, and grep finds no extra-args entry in REMEDIATION.md, so this is not a known or deferred item. Impact: a block-scalar `extra-args: |` quietly loses gate options such as --fail-on-incomplete, --baseline and --config, and the CI gate gets weaker while the step still exits 0. Medium fits: it is a silent false-pass in a CI gate, but only multi-line input triggers it. Fix: `mapfile`/`read -r -d '' -a extra < <(printf '%s' \"$INPUT_EXTRA_ARGS\")`, or first turn newlines into spaces (`${INPUT_EXTRA_ARGS//$'\\n'/ }`). I did not need a worktree, so I created none."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read action.yml at commit 1f24aba with git show. Line 127 is `if [ -n \"$INPUT_EXTRA_ARGS\" ]; then read -r -a extra <<< \"$INPUT_EXTRA_ARGS\"; ...`. The input's description at line 59 says \"split on whitespace\", and the file says nothing about newlines or block scalars.\n\nI copied that line into a script under scratchpad/a08/t.sh, with `set -u`, and set INPUT_EXTRA_ARGS=$'--timeout 60000\\n--ignore TOOL-013\\n--fail-on-incomplete\\n'. Under bash, args came out as [x][--timeout][60000]. `--ignore TOOL-013` and `--fail-on-incomplete` were dropped and nothing was printed about it. This matches the claimed behaviour: `read` stops at the first newline.\n\nI did not build the CLI: the loss happens in the bash step before the CLI starts, so the build is not needed to show it. A grep for extra-args or A08 in FINDINGS.md and REMEDIATION.md found nothing, so the issue is not already listed as known.\n\nImpact: options written on several lines with `extra-args: |` are silently lost. Gate options like `--fail-on-incomplete`, `--baseline` and `--config` go missing, the CI gate gets weaker, and the step can still exit 0. Medium fits.\n\nPossible fix: use `read -r -d '' -a extra <<< \"$INPUT_EXTRA_ARGS\" || true`, or turn newlines into spaces first."
+  }
+ ],
+ "arbiter": null
+}

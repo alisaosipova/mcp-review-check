@@ -1,0 +1,74 @@
+{
+ "coverage": "Worked at 1f24aba in a detached worktree at scratchpad/r3/critic (npm ci --ignore-scripts and npm run build OK). The worktree and the scratch fixture folder scratchpad/r3/critic-fx were removed at the end. The main checkout was not touched and no network was used.\n\nGaps I targeted from the finders' coverage notes:\n(1) LST-008 launcher parsing (A06 did not cover it). Ran launcherOf through dist on 13 argv forms and ran the CLI end to end on 4 crafted plugins. This gave C-01.\n(2) LST-009 package-config discovery: read the walk() and PACKAGE_CONFIG_FILES code and ran pyproject.toml vs uv.toml plugins. This gave C-02.\n(3) Markdown escaper and helpers: read markdown.ts, index.ts helpers and drift.ts. Every server-controlled string passes through text()/code(). The dynamic fix and hint strings are built only from our own constants or the user's URL. Nothing found.\n(4) JUnit renderer: read junit.ts. xmlText covers attributes and bodies. Nothing found.\n(5) SARIF and its baseline renderer: read sarif.ts and renderSarifWithBaseline. baselineState and drift fingerprints are fine. The gate mismatch is listed as an improvement.\n(6) github.ts escapeCommand and fitSummary: read only. Line-based cutting is fine.\n(7) rules/util/wwwAuth.ts (not read by any finder): walked the parser by hand through the edge cases (multiple challenges, token68, unquoted URL, unterminated quote). No defect. The per-challenge s.slice is O(n·k), but headers are capped at about 16 KB.\n(8) rules/util/obs.ts (not read by A05): read it. rpcView takes the first element of a batch array, which is harmless for single-request probes.\n(9) Signal and EPIPE: ran --list-rules | head and a bad-server run | head. Clean exits.\n(10) stdio env inheritance: getDefaultEnvironment only, so the token does not reach the reviewed server.\n(11) Redaction ordering: the stderr tail is scrubbed before it is cut, and capSnapshot runs after masking. No partial-secret leak found.\n(12) --tool-args lookup uses hasOwnProperty, so it is safe from 'constructor' names.\n\nStill open: Windows and macOS behaviour (cmd /c wrappers, taskkill, case-insensitive paths). A live legacy HTTP+SSE run and the auth-server/http-bridge fixtures (only the e2e vitest covers them; I did not run them). A line-by-line check of the AUTH rules against RFC 8414/9728/6749. A real GitHub runner for annotations and the step summary. Docker image behaviour (no container runtime). Vendor policy texts for LST limits and launcher lists (third-party network not allowed). A deep fuzz of the PNG/WebP/JPEG parsers. No vitest files were run in this pass.",
+ "improvements": [
+  {
+   "title": "SARIF levels ignore the gate, unlike annotations and JUnit",
+   "detail": "toSarif sets result.level from f.severity. With --target chatgpt and no --fail-on-spec, findings that apply only to spec (APPS-001, SRV-018, TOOL-016 on bad-server) are uploaded as code-scanning 'error' alerts, while GitHub annotations and the exit code treat them as ungated. This is not reported as a defect, because the SARIF may be meant to hold everything. Either document it or add a property such as `gated: false`. Another option is to map ungated results to 'note'.",
+   "dimension": "ux",
+   "effort": "small"
+  },
+  {
+   "title": "PY_EXACT rejects PEP 440 arbitrary equality (===)",
+   "detail": "launcherOf([uvx, pkg===1.0]) returns pinned:false, so LST-008 raises an error on an exact pin. This is rare, and the fix is to accept `===` in PY_EXACT.",
+   "dimension": "bug",
+   "effort": "trivial"
+  },
+  {
+   "title": "stdio servers get only getDefaultEnvironment()",
+   "detail": "connect.ts:648 and 914 pass HOME/PATH/SHELL/TERM/USER plus --env. HTTP(S)_PROXY, NO_PROXY and NODE_EXTRA_CA_CERTS are not inherited. That is safe (the token is not leaked to the reviewed server), but a stdio server behind a corporate proxy fails without a clear hint. Document it in the --stdio and --env help text.",
+   "dimension": "ux",
+   "effort": "trivial"
+  },
+  {
+   "title": "Listing page size is counted in UTF-16 units, not bytes",
+   "detail": "legacy.ts listAll charges JSON.stringify(result).length against LIST_BYTE_BUDGET, so multi-byte text can be about 3x the stated byte cap. This is minor: the name should change or Buffer.byteLength should be used.",
+   "dimension": "perf",
+   "effort": "trivial"
+  }
+ ],
+ "findings": [
+  {
+   "id": "C-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/listing.ts",
+   "line": "79-105 (launcherOf), used by LST-008 line 284 and LST-009 line 304",
+   "title": "LST-008/LST-009 do not see common launcher forms: npm exec / npm x, bun x, uv tool run, pnpx, cmd /c npx, env A=1 npx; uv run accepts --locked placed after the script",
+   "claim": "launcherOf only recognises argv[0] in {npx,bunx,uvx} or the exact pairs pnpm dlx, yarn dlx, pipx run, uv run. Several forms that do the same thing return undefined: `npm exec`/`npm x` (the same as npx), `bun x` (the same as bunx), `uv tool run` (the same as uvx), `pnpx`, and the Windows wrapper `cmd /c npx ...` or an `env K=V npx ...` prefix. For these, LST-008 (claude: error) reports nothing on an unpinned package. LST-009 also bails out early because it decides whether the plugin uses a launcher through launcherOf, so an .npmrc that sets a foreign registry is not reported either. Separately, `uv run` counts as pinned when `--locked` appears anywhere in argv, including after the script name, where it is an argument for the server and not for uv. That is a false negative.",
+   "repro": "Copy test/fixtures/listing/plugin-valid and put {\"mcpServers\":{\"acme-local\":{\"command\":\"npm\",\"args\":[\"exec\",\"--yes\",\"@acme/notes-mcp\"]}}} in .mcp.json, plus an .npmrc containing `registry=https://npm.evil.test/`. `node dist/cli.js --plugin-dir <dir> --format json` gives no LST-008 and no LST-009. With command npx and args [-y, @acme/notes-mcp] both fire. The same misses happen with uv [tool, run, acme-mcp] and cmd [/c, npx, -y, @acme/notes-mcp]. launcherOf([npm,x,--yes,pkg]), launcherOf([bun,x,pkg]), launcherOf([pnpx,pkg]) and launcherOf([env,A=1,npx,pkg]) all return undefined. launcherOf([uv,run,server.py,--locked]) returns pinned:true.",
+   "fix": "Normalise argv before matching. Strip a leading `env` with its K=V words and a `cmd /c`, `cmd.exe /c` or `sh -c`/`bash -c` wrapper (split the single string). Map `npm exec`/`npm x`/`pnpx` to npx, `bun x` to bunx and `uv tool run` to uvx. For `uv run`, look for --locked/--frozen only among the options before the first positional or `--`. Add launcherOf unit cases for each form. A finding on a newly recognised form stays at the rule's current error severity, because it is the same documented block (exact version required).",
+   "status": "confirmed",
+   "votes": [
+    {
+     "verdict": "confirmed",
+     "severity": "low",
+     "evidence": "I read src/rules/listing.ts at 1f24aba with git show. I did not build or run anything, because the code path is deterministic and has no other branches.\n\nHow launcherOf (lines 79-105) works:\n- It takes b0 = launcherBase(argv[0]). This strips the path and any .cmd/.exe/.ps1 suffix and lowercases the name.\n- It recognises only three cases: b0 in [npx, bunx, uvx]; (pnpm|yarn) followed by argv[1]==='dlx'; and pipx run.\n- uv run is matched only when argv[1]==='run'. For it, pinned is computed as `argv.includes('--locked') || argv.includes('--frozen')`, which looks at the whole argv.\n- Every other form returns undefined. That covers npm exec/x, bun x, uv tool run, pnpx, cmd /c npx and env K=V npx.\n\nEffect on the rules:\n- argvOf (lines 60-64) only joins command and args. It does not unwrap cmd /c or env.\n- LST-008 (line 285) returns [] when l is undefined.\n- LST-009 (line 304) decides whether a launcher is present with `pluginServers(p).some(s => launcherOf(argvOf(s.cfg)))`. When no launcher is found it returns early, so .npmrc registry lines are never checked. I found no other code that compensates.\n\nTests: test/remediation-w6b-listing.test.ts:200-214 covers only the recognised forms. `uv run --frozen` is tested only with the flag before the script.\n\nThe uv run case is a real bug inside the documented scope. In `uv run server.py --locked`, the flag after the script goes to the server, not to uv. The code still marks this as pinned, which is a false negative for a spec'd check (spec.md:1170 says \"uv run needs --locked/--frozen\").\n\nThe other forms are outside the documented scope. spec.md:1170 and the LST-008 rationale list exactly npx, bunx, pnpm dlx, yarn dlx, uvx, pipx run and uv run, and the directory's block texts name only \"Unpinned npx/uvx launcher\". So missing npm exec, bun x, pnpx, uv tool run, cmd /c and env wrappers is a coverage gap / enhancement, not a departure from the spec.\n\nNone of this appears in FINDINGS.md or REMEDIATION.md, so it was not reported before.\n\nSeverity: low rather than medium. Every case is a false negative and none can cause a false BLOCKED. Most of the forms are outside the spec's launcher list, and the spec-scope uv run case needs a misplaced flag."
+    },
+    {
+     "verdict": "confirmed",
+     "severity": "medium",
+     "evidence": "I read src/rules/listing.ts at 1f24aba. launcherOf only recognises argv[0] in {npx,bunx,uvx} and the pairs pnpm/yarn dlx, pipx run and uv run. For uv run it sets pinned = argv.includes('--locked')||argv.includes('--frozen') over the whole argv, so a flag after the script name still counts. LST-009 runs only if launcherOf finds a launcher in the plugin.\n\nI built the CLI in a detached worktree. For each launcher form I copied test/fixtures/listing/plugin-valid, wrote .mcp.json with that form and added .npmrc `registry=https://npm.evil.test/`, then ran `node dist/cli.js --plugin-dir <d> --format json`:\n- npx -y @acme/notes-mcp: LST-008 and LST-009 both fire.\n- uv run server.py: LST-008 and LST-009 both fire.\n- npm exec --yes, npm x --yes, bun x, pnpx, uv tool run, cmd /c npx -y and env A=1 npx -y: neither LST-008 nor LST-009 fires.\n- uv run server.py --locked: only LST-009 fires, so LST-008 is a false negative.\n\nFINDINGS.md and REMEDIATION.md do not list this item as fixed, refuted or deferred. spec.md defers \"scripts that start launchers\", which is a different case from these inline argv forms.\n\nSeverity medium: these are false negatives in rules rated claude: error. npm exec and npm x run the same tool as npx, and cmd /c npx is the usual Windows form, so they are not edge cases. Detection would stay deterministic. It is not high because the rule's rationale lists only the launchers it covers."
+    }
+   ]
+  },
+  {
+   "id": "C-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/listing/load.ts",
+   "line": "21 (PACKAGE_CONFIG_FILES); src/rules/listing.ts:293 (PACKAGE_SOURCE)",
+   "title": "LST-009 ignores pyproject.toml [tool.uv] / [[tool.uv.index]], the most common place a uv project sets its package index",
+   "claim": "PACKAGE_CONFIG_FILES contains only .npmrc, .yarnrc, .yarnrc.yml, bunfig.toml, uv.toml, pip.conf and pip.ini. In a plugin that runs `uv run`, the index can also be set in pyproject.toml, through [[tool.uv.index]] or [tool.uv] index-url/extra-index-url, and uv honours it just like uv.toml. That file is never read, so LST-009 misses the same package-source configuration it reports when it sits in uv.toml. PACKAGE_SOURCE also only accepts a bare `[[index`, so `[[tool.uv.index]]` would not match even if the file were read.",
+   "repro": "Copy plugin-valid. Set .mcp.json to {\"mcpServers\":{\"acme-local\":{\"command\":\"uv\",\"args\":[\"run\",\"server.py\"]}}} and add a pyproject.toml with `[[tool.uv.index]]\\nname=\"corp\"\\nurl=\"https://pypi.evil.test/simple\"\\ndefault=true`. The run reports only LST-008 and no LST-009. Moving the same table into uv.toml as [[index]] produces `LST-009 uv.toml sets a package source`.",
+   "fix": "Read pyproject.toml at any depth, since the walk already lists it, and test only its [tool.uv] / [[tool.uv.index]] / [tool.uv.pip] sections: extend PACKAGE_SOURCE with `\\[\\[?\\s*tool\\.uv(\\.index|\\.pip)?\\s*\\]\\]?` and match index-url/extra-index-url/find-links inside it. Add a fixture test. Severity stays as LST-009's.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-02",
+     "verdict": "confirmed",
+     "evidence": "At 1f24aba, src/listing/load.ts:21 defines PACKAGE_CONFIG_FILES = {.npmrc, .yarnrc, .yarnrc.yml, bunfig.toml, uv.toml, pip.conf, pip.ini}. load.ts:170-172 fills plugin.packageConfigs only from files whose basename is in that set, so pyproject.toml is never read. `git grep -i pyproject 1f24aba -- src test` returns nothing. LST-009 (src/rules/listing.ts:300-309) tests only p.packageConfigs against PACKAGE_SOURCE. That regex (listing.ts:293) has the table alternative `\\[\\[?\\s*(index|install\\.scopes|install\\.registry)...`, which needs `index` right after the bracket, so `[[tool.uv.index]]` would not match even if the file were read. Only keys like `index-url =` / `extra-index-url =` under [tool.uv] would match. uv run is counted as a launcher (LST-008 handles `uv run` without --locked), so the repro gives LST-008 without LST-009. uv.toml with `[[index]]` matches and gets reported. Neither FINDINGS.md nor REMEDIATION.md mentions pyproject or tool.uv, so this is not a known or deferred item. I confirmed this by reading the code and did not run the CLI. Low severity holds: it is a coverage gap in a detection rule, not a false positive."
+    }
+   ]
+  }
+ ]
+}

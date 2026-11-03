@@ -1,0 +1,13 @@
+{
+ "id": "A01-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-03",
+   "verdict": "confirmed",
+   "evidence": "src/cli.ts:336-340 copies every cfg.options key the CLI left undefined, with no exception for a flag's opposite or for transport-specific keys. The conflict checks at 390, 404, 419 and 440 then run on the merged values. I reproduced all three cases at 1f24aba and each ended in exit 2: url on the CLI plus env/cwd in the file gave '--env and --cwd apply only to --stdio (from c1.json: key \"env\", key \"cwd\")'; --local plus noLocal gave 'give either --local or --no-local, not both (... key \"noLocal\")'; --bearer plus header.Authorization gave the 'either --bearer or --header' error. This contradicts the --help text at cli.ts:89 ('Command-line options override the file') and docs/guide/options-and-config.md:70-71 ('A <url> or --stdio on the command line replaces the file's server'; 'an option on the command line wins over the file's key'). It is not covered by FINDINGS or REMEDIATION."
+  }
+ ],
+ "arbiter": null
+}

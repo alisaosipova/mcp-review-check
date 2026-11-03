@@ -1,0 +1,18 @@
+{
+ "id": "A06-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "src/rules/manual.ts (1f24aba): `given = { plugin: !!snap.listing?.plugin, openai: !!snap.listing?.openai }` checks only that a listing input was supplied. The flatMap then drops every LISTING_MANUAL item that has no residual (MAN-015/017/018/019/020/023) and cuts MAN-016/021/024 down to their residuals. Nothing in it checks whether the manifest parsed, whether it is an MCP config, or whether it has an interface object. In listing.ts, LST_016 returns an error for a parse error, a non-object, or no interface, and a warning for format === 'mcp-config' (\"so they were not checked (MAN-015)\"). LST_017 and the other field rules return [] when openAiInterface(o) is falsy, so they check nothing. No other guard puts the items back. I ran the repro in a detached worktree after npm ci and build: `node dist/cli.js --openai-manifest test/fixtures/listing/openai-mcp-only/mcp.json --target chatgpt --checklist`. The only finding is the LST-016 warning, and it points to MAN-015, which is not in the checklist. The checklist shows only MAN-016 (residual, \"the rest is checked by LST-018\"), MAN-021 (residual), 022, 025, 027, 029, 030 and 031, and the result is PASS. The listing-field requirements are covered by neither the automated rules nor the checklist. Severity medium: a wrong or misleading result in a realistic case (the user passes mcp.json, and the help text itself mentions mcp.json). It only affects the checklist and is partly softened by the LST-016 message, so it is not high. Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "Built 1f24aba in a detached worktree and ran `node dist/cli.js --openai-manifest test/fixtures/listing/openai-mcp-only/mcp.json --target chatgpt --checklist`. The output has one warning: LST-016 \"mcp.json is an MCP configuration only; the listing fields live in plugin.json ..., so they were not checked (MAN-015)\". The MANUAL CHECKLIST shows only MAN-016 and MAN-021 (residual text, \"the rest is checked by LST-018/LST-022\"), plus 022, 025, 027, 029, 030 and 031. MAN-015, 017, 018, 019, 020 and 023 are missing.\n\nCause: src/rules/manual.ts manualChecklist sets `given = { openai: !!snap.listing?.openai }` and drops or trims each LISTING_MANUAL item when `given[auto.input]` is true. It never checks whether the manifest actually yielded a listing interface. spec.md:1329 says items are dropped \"with the input given\", meaning they are dropped because the LST rules check them. Here those rules checked nothing, so the drop goes against what the spec intends.\n\nThe finding is not in the FINDINGS.md or REMEDIATION.md deferred lists. The nearest entry is the OAuth-items-dropped finding, which is a different issue and was rated low.\n\nMitigation: LST-016 does warn and tells the user to pass plugin.json, but it names only MAN-015. The checklist is informational and affects neither the score nor the exit code. That is why I rate it low rather than medium."
+  }
+ ],
+ "arbiter": null
+}

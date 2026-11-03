@@ -1,0 +1,13 @@
+{
+ "id": "A03-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-02",
+   "verdict": "confirmed",
+   "evidence": "src/probe/wire.ts:84: the subscriptions/listen probe passes { abortAfterHeaders: true, ..., timeoutMs: 5000 }. wire.ts:101-103: the fallback GET probe passes timeoutMs: 5000. Neither uses the timeoutMs argument (--timeout) or a Math.min with it. The probes next to them (badVersion, delete, origin and challenge probes at wire.ts:105-116) use timeoutMs. So with --timeout 1000 a server that never sends headers holds each of these probes for about 5 s, as the repro trace (5005 ms / 5001 ms) shows. This is not listed as known or deferred. Low: --max-duration still bounds the whole run."
+  }
+ ],
+ "arbiter": null
+}

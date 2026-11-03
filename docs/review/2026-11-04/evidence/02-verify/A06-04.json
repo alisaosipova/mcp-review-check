@@ -1,0 +1,18 @@
+{
+ "id": "A06-04",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at 1f24aba: in cli.ts around lines 452-461 the input check uses statSync(path), which follows links, so a symlink to a dir or file is accepted (no exit 2). loadPluginDir (src/listing/load.ts:156) then does lstatSync(dir).isDirectory(). For a link this is false, so it records {path:'.', message:'is not a directory'} and returns an empty plugin. loadOpenAiManifest (load.ts:218) calls readJson, which calls readCapped (load.ts:50-51). readCapped uses lstat and records 'is a symbolic link (not followed)'. There is no realpath or other guard between the CLI check and the loaders (grep finds no realpath in load.ts). Ran this in a detached worktree after build. `ln -s .../plugin-valid lnk/plugdir; node dist/cli.js --plugin-dir lnk/plugdir --target claude` printed 'warning: --plugin-dir . is not a directory' and errors LST-001 ('the plugin folder is not a directory'), LST-004 and LST-005, then 'Claude: BLOCKED (3 errors)', exit 1. The same folder given directly gives 'NO AUTOMATED BLOCKERS', PASS. `--openai-manifest lnk/plugin.json` (a link to openai-valid/plugin.json) printed 'x LST-016 ... plugin.json is a symbolic link (not followed) (MAN-015)' and 'ChatGPT: BLOCKED (1 error)', exit 1. The real file passes. So a path the user chose themselves gives a false error-level block, and the stderr text '. is not a directory' is misleading. The symlink cases are not covered by any symlink entry in FINDINGS.md or REMEDIATION.md (grep found nothing). I removed the worktree afterwards. Severity is medium: it falsely blocks valid input and goes against the error-only-for-a-documented-MUST principle, but it only happens when the input path is a symlink, and there is an easy workaround (pass the real path)."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built 1f24aba in a detached worktree, which I have since removed. The CLI accepts the path in src/cli.ts:458 with statSync, which follows links. The loader then uses lstat: src/listing/load.ts:156 is loadPluginDir, which reports `lstatSync(dir).isDirectory()` false as \"is not a directory\", and src/listing/load.ts:50-51 is readCapped, which reports \"is a symbolic link (not followed)\".\n\nWhat I ran and what it showed:\n- `ln -s test/fixtures/listing/plugin-valid lnk/plugdir`, then `node dist/cli.js --plugin-dir lnk/plugdir --target claude`. Output: \"warning: --plugin-dir . is not a directory\", then errors LST-001 \"the plugin folder is not a directory\", LST-004 (no README) and LST-005 (no LICENSE). Result \"Claude: BLOCKED (3 errors)\", exit 1.\n- The same folder given by its real path: 0 errors, \"NO AUTOMATED BLOCKERS\", exit 0.\n- `ln -s .../openai-valid/plugin.json lnk/plugin.json`, then `--openai-manifest lnk/plugin.json --target chatgpt`. Output: \"x LST-016 plugin.json is a symbolic link (not followed) (MAN-015)\", \"ChatGPT: BLOCKED (1 error)\", exit 1.\n- The same manifest given by its real path: 0 errors, exit 0.\n\nSo a path the user chose, which the CLI check accepted, gives false error-level blockers and a FAIL exit. The \"--plugin-dir . is not a directory\" text is also misleading. Refusing links inside the plugin folder is fine, but no documented MUST is behind refusing the top-level input the user named. This is not in FINDINGS.md or REMEDIATION.md: a grep for symlink/symbolic in both found nothing. Medium: a valid listing is reported BLOCKED with exit 1, and passing the resolved path works around it."
+  }
+ ],
+ "arbiter": null
+}

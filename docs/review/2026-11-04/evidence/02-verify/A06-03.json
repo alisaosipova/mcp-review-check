@@ -1,0 +1,18 @@
+{
+ "id": "A06-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read the code at 1f24aba (src/listing/load.ts). readCapped (lines 47-56) runs lstatSync(abs) and opens with O_NOFOLLOW. Both checks apply only to the last path component. readJson (lines 97-99) checks with exists() (lstat) and then calls readCapped. There is no realpath check or containment check anywhere in that path. loadPluginDir reads join(dir,'.claude-plugin','plugin.json') directly, without using the walk results. walk lists `.claude-plugin` as kind 'symlink' but does not stop the read. loadOpenAiManifest joins the declared mcpServers path to root. It rejects '..' and absolute paths, but symlinked folders on the way pass. By contrast, image.ts lines 111-113 do check realpathSync(abs) against realpathSync(root), with the comment \"A folder on the way may be a link\". So readJson really lacks the guard. The file header says \"links are listed but never followed\", and the code breaks that promise.\n\nRan the repro in a detached worktree of 1f24aba (built dist): pl/.claude-plugin -> ../outside/secretdir, then node dist/cli.js --plugin-dir pl --target claude --verbose. The [listing] dump showed \"name\": \"leaked-outside-name\" and the URL. LST-007 also quoted \"http://inner.corp.example/mcp\" from .claude-plugin/plugin.json, and errors was []. The worktree and test data were removed afterwards. The finding is not in FINDINGS.md or REMEDIATION.md: grep for symlink/realpath matched only an unrelated isMain item.\n\nSeverity medium: the code breaks a guarantee it documents, and the bug lets a third-party plugin pull local JSON content into reports. The impact is limited because the leaked file must be valid JSON, must be named plugin.json or the declared/mcp.json name inside the linked folder, and only strings shaped like a manifest get surfaced."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built 1f24aba in a detached worktree and checked src/listing/load.ts. readCapped (lines 47-56) runs lstat and opens with O_NOFOLLOW on the final path component only. readJson does not run a realpath check, although image.ts:112-113 does.\n\nRepro 1: pl/.claude-plugin was a symlink to ../outside/secretdir, which held plugin.json with name \"leaked-outside-name\" and url http://inner.corp.example/mcp. Running `node dist/cli.js --plugin-dir pl --target claude --verbose` printed the full outside JSON in the [listing] dump with errors: []. LST-007 then quoted \"http://inner.corp.example/mcp\" from .claude-plugin/plugin.json. LST-013 only warns that .claude-plugin is a symlink; the file is still parsed and its content is still reported.\n\nRepro 2: .codex-plugin/plugin.json had \"mcpServers\":\"./cfg/mcp.json\", with cfg a symlink to ../cfgout. Running `--openai-manifest ... --verbose` dumped the outside mcp.json, and LST-024 quoted http://outside2.corp.example/mcp from cfg/mcp.json.\n\nThe declared path's filename is arbitrary, so a link such as cfg pointing at $HOME together with \"./cfg/.claude.json\" reaches any JSON file on disk. Its contents then land in the verbose output and in findings. FINDINGS.md and REMEDIATION.md have no entry on symlinked parent folders or realpath for listing reads, so this is a new issue.\n\nMedium is the right severity: the leak is real and deterministic but needs --verbose or URL-bearing fields to expose much. I removed the worktree afterwards."
+  }
+ ],
+ "arbiter": null
+}

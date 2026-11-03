@@ -1,0 +1,18 @@
+{
+ "id": "A06-06",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read 1f24aba:src/listing/image.ts. The finding cites lines 259/313, but the code is at lines 23 and 77. sniffFormat (line 23) runs `/<svg[\\s>/]/i.test(b.toString('utf8', 0, Math.min(b.length, 4096))))`, so it only looks at the first 4096 bytes, even though examineImage reads up to IMAGE_HEADER_BYTES = 256 KiB. When sniffFormat finds no format, examineImage returns problem 'unknown-format'. In src/rules/listing.ts, unmeasured() then returns that finding with no severity, and LST-027 is severity {chatgpt:'error'}, so the result is a blocking error with the text 'is not a PNG, JPEG, WebP or SVG image (no matching file signature)'. svgSize (line 77) uses `/<svg(?=[\\s>/])([^>]*)>/i.exec(text)`. It takes the first match and does not skip comments or CDATA, so the size comes from a commented-out tag. Sniffing is also just a substring test, so a text/HTML file that contains '<svg ...>' is accepted as SVG, whatever its name. I ran the same regexes in node. A 5000-byte license comment before the root element gives sniff=false, which leads to unknown-format and an error. '<!-- old: <svg width=\"4\" height=\"4\"> --><svg width=\"512\" height=\"512\">' gives the attributes width=\"4\" height=\"4\", which leads to the 4x4 'must be 48 to 4096 px' error. Plain text with '<svg width=\"512\" height=\"512\">' gives sniff=true and passes as 512x512. Nothing else guards against these cases. I found no SVG/4096 entry in FINDINGS.md or REMEDIATION.md. This breaks the project principle that error is reserved for deterministic detection: a valid file gets a false error, BLOCKED. I rate it medium because a prologue over 4 KiB and commented-out svg tags are uncommon, and the false-negative case alone would be low."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "At 1f24aba the code is at src/listing/image.ts:23 and :77, not 259/313. sniffFormat runs /<svg[\\s>/]/i only on b.toString('utf8',0,4096). svgSize takes the first /<svg(?=[\\s>/])([^>]*)>/i match anywhere in the text and does not skip comments. None of this appears in FINDINGS.md or REMEDIATION.md.\n\nI built the CLI in a detached worktree and copied test/fixtures/listing/openai-valid four times, replacing assets/icon.png (composerIcon) in each copy. I ran `node dist/cli.js --openai-manifest <copy>/plugin.json --target chatgpt` on each:\n(1) Control, unmodified: PASS, exit 0.\n(2) XML declaration, then a comment of about 5.6 KB of license text, then `<svg ... width=\"512\" height=\"512\">`: \"x LST-027 ... composerIcon \"./assets/icon.png\" is not a PNG, JPEG, WebP or SVG image (no matching file signature) (MAN-019)\", ChatGPT: BLOCKED, exit 1. This is a false error on a valid SVG.\n(3) `<!-- old: <svg width=\"4\" height=\"4\"> --><svg ... width=\"512\" height=\"512\">`: \"x LST-027 ... is 4x4 px; icons must be 48 to 4096 px on a side\", BLOCKED, exit 1. Wrong size, false error.\n(4) A plain-text .png containing \"Use <svg width=\"512\" height=\"512\"> in your page.\": no LST-027 finding, PASS, exit 0. A non-image passes as an icon.\n\nLST-027 has severity chatgpt:error. The detection is presented as deterministic, but it is a substring heuristic, so it produces false blocking errors (cases 2 and 3) and false passes (case 4). Medium severity fits: the inputs are uncommon (very long prologue, commented-out tag), but when they occur they fail the run. I removed the worktree afterwards."
+  }
+ ],
+ "arbiter": null
+}

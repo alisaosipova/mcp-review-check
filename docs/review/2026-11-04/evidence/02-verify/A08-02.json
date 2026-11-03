@@ -1,0 +1,18 @@
+{
+ "id": "A08-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "I read action.yml at 1f24aba with git show. I did not need a worktree. Line 130 runs `export MCP_REVIEW_CHECK_TOKEN=\"$INPUT_BEARER\"` when a bearer is given. The input description at line 39 says that an empty bearer keeps a MCP_REVIEW_CHECK_TOKEN the job already set, so the token can be in env even then. Line 138 is `cli=(npx --yes \"mcp-review-check@$INPUT_VERSION\")`. No guard exists: grep for `ignore-scripts` and `npm_config` in action.yml finds nothing, no `.npmrc` is involved, and `version_re` only checks the version string. Install scripts are therefore on for the fresh npx install, and the token is already exported when it runs. This matches the reported repro (npx runs dependency postinstall scripts unless ignore-scripts is set). In package-lock.json only two entries have hasInstallScript, and both are dev:true. That fits the claim that today's risk is only a possible future compromised release. FINDINGS.md and REMEDIATION.md have no entry for this. F145 covers release.yml's `npm ci`, not action.yml, so this is not a known item.\n\nI rate it low instead of medium. The CLI process itself runs with the token in env and imports its runtime dependencies. A compromised dependency could therefore read the token from its module code at run time, and `--ignore-scripts` would not stop that. The flag only blocks payloads that live in install scripts, which is the worm pattern. So it is cheap defense-in-depth for a hypothetical supply-chain event, not an exploitable flaw today. Fix: put `npm_config_ignore_scripts=true` in the step env for the npx call, or install from a lockfile (see A08-03)."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "I read action.yml at commit 1f24aba. If INPUT_BEARER is set, the step runs `export MCP_REVIEW_CHECK_TOKEN=\"$INPUT_BEARER\"` (about line 130). When cli-path is not given, it then runs `npx --yes \"mcp-review-check@$INPUT_VERSION\"` (about line 138). Nothing in action.yml sets --ignore-scripts or npm_config_ignore_scripts (grep found no match). FINDINGS.md and REMEDIATION.md have no entry for action.yml/npx: F145 covers ignore-scripts only in release.yml/ci.yml. So this is not a known item.\n\nOffline repro in the scratchpad, with a local npm cache and local tarballs, no network. The fake-cli tarball depends on evil-dep, whose postinstall writes process.env.MCP_REVIEW_CHECK_TOKEN to a file.\n- `MCP_REVIEW_CHECK_TOKEN=SYNTH-token npx --yes --offline --package fake-cli-1.0.0.tgz fake-cli` printed `cli ran` and `leak: SYNTH-token`.\n- With `npm_config_ignore_scripts=true` it printed `cli ran` and `leak ignore-scripts: none`.\n\nSo the mechanism is real: install scripts run with the bearer token in env. Adding `npm_config_ignore_scripts=true` (or `--ignore-scripts`) fixes it and the CLI still runs.\n\nWhy I lower the severity from medium to low:\n- The risk is hypothetical. The 4 runtime deps are @modelcontextprotocol/sdk, ajv, undici and zod. Only 2 lockfile entries have hasInstallScript, and the claim says both are dev deps (esbuild and fsevents).\n- A compromised runtime dependency already gets the token at import time, because the CLI process runs with the same env. So ignore-scripts only stops payloads that are install-time only, or that sit in deps that are never imported. That is defense-in-depth and consistency with ci.yml and the Dockerfile, not an exploitable flaw."
+  }
+ ],
+ "arbiter": null
+}

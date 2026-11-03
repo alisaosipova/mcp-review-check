@@ -1,0 +1,13 @@
+{
+ "id": "C-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-02",
+   "verdict": "confirmed",
+   "evidence": "At 1f24aba, src/listing/load.ts:21 defines PACKAGE_CONFIG_FILES = {.npmrc, .yarnrc, .yarnrc.yml, bunfig.toml, uv.toml, pip.conf, pip.ini}. load.ts:170-172 fills plugin.packageConfigs only from files whose basename is in that set, so pyproject.toml is never read. `git grep -i pyproject 1f24aba -- src test` returns nothing. LST-009 (src/rules/listing.ts:300-309) tests only p.packageConfigs against PACKAGE_SOURCE. That regex (listing.ts:293) has the table alternative `\\[\\[?\\s*(index|install\\.scopes|install\\.registry)...`, which needs `index` right after the bracket, so `[[tool.uv.index]]` would not match even if the file were read. Only keys like `index-url =` / `extra-index-url =` under [tool.uv] would match. uv run is counted as a launcher (LST-008 handles `uv run` without --locked), so the repro gives LST-008 without LST-009. uv.toml with `[[index]]` matches and gets reported. Neither FINDINGS.md nor REMEDIATION.md mentions pyproject or tool.uv, so this is not a known or deferred item. I confirmed this by reading the code and did not run the CLI. Low severity holds: it is a coverage gap in a detection rule, not a false positive."
+  }
+ ],
+ "arbiter": null
+}

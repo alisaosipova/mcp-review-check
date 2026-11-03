@@ -1,0 +1,13 @@
+{
+ "id": "A03-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-04",
+   "verdict": "confirmed",
+   "evidence": "docs/guide/privacy-and-requests.md:5-7 ('What the tool sends') lists the default requests and adds only tasks/get and subscriptions/listen for 2026-07-28 servers. It mentions DELETE only as the end of a Streamable HTTP session. The code in src/probe/wire.ts:70-74 sends headerMismatch (none) and headerMismatch (wrong) tools/list probes, which the doc does not name. wire.ts:111-112 sends a DELETE without a session id to the endpoint on modern-only servers (p.delete), which the doc does not describe. The modern badVersion, unknownMethod and resourceMissing probes are arguably covered by the generic wording ('an unsupported protocol version, an unknown method, a read of ...'). The headerMismatch probes and the session-less DELETE are real omissions, and the 'about 20 requests' figure is approximate. All the probes are side-effect free, so this is a low-severity docs finding."
+  }
+ ],
+ "arbiter": null
+}

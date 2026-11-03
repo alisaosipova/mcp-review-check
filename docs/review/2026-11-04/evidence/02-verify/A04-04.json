@@ -1,0 +1,13 @@
+{
+ "id": "A04-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-04",
+   "verdict": "confirmed",
+   "evidence": "trace.ts@1f24aba:351 `const notifications: NotificationLog = { methods: {} }` is a plain object. Line ~364 `if (name in notifications.methods || keys<CAP) notifications.methods[name] = (notifications.methods[name] ?? 0) + 1`. For 'constructor'/'toString', `in` is true through the prototype, and `?? 0` does not replace the inherited function, so the value becomes the string 'function Object() { [native code] }1'. That breaks Record<string, number>. '__proto__' assignment changes the prototype and the name is lost. This is plain JS semantics, and the repro output matches. It is the same class as the SPEC-021 fix (REMEDIATION l.329), and that audit did not cover src/protocol/trace.ts. Practical impact is small (SPEC-024 reads only .message; the cap bypass is limited to the finite set of inherited names)."
+  }
+ ],
+ "arbiter": null
+}

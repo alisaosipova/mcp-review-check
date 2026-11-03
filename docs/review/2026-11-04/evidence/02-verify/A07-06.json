@@ -1,0 +1,13 @@
+{
+ "id": "A07-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-06",
+   "verdict": "confirmed",
+   "evidence": "drift.ts:81-90: incompleteTools() returns undefined when fatal is unset, there is no tools error and toolLevel is 'ok'. toolFingerprints() (:94-96) then returns snap.tools.map(...), which is [] for a listing-only snapshot. compareTools (:108-125) only gives 'not compared' when the baseline is null or undefined, so [] marks every current tool as added. Reproduced at 1f24aba: --plugin-dir test/fixtures/listing/plugin-valid --save-baseline bl.json wrote toolFingerprints [] with coverage.toolLevel 'ok'. Then --baseline bl.json --fail-on-drift --stdio -- node test/fixtures/good-server.mjs printed 'CHANGED TOOL DEFINITIONS (4 since baseline) · fails the run (--fail-on-drift)' and '+ search_notes: added' and so on, and exited 1 while the Result line said PASS. FINDINGS.md and REMEDIATION.md have no item for this."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A08-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-03",
+   "verdict": "confirmed",
+   "evidence": "At 1f24aba the repository root holds only package-lock.json. There is no npm-shrinkwrap.json, and package.json does not list one in `files`. The runtime deps are ranges: `@modelcontextprotocol/sdk ~1.32.1`, `ajv ^8.20.0`, `undici ^7.30.1`, `zod ^4.6.7`. In action.yml the `version` default is '1.0' and the run step does `npx --yes \"mcp-review-check@$INPUT_VERSION\"`, so pinning the action to a SHA still runs the newest 1.0.x and whatever transitive tree the registry resolves at that moment. The Dockerfile does `npm install --global ... mcp-review-check@${VERSION}` with no lock. ci.yml:99 and audit.yml both run `npm audit --omit=dev` against the repo's package-lock.json, which consumers never get. src/proxy.ts:60 suppresses undici's experimental EHPA/SOCKS5 warning. README:113 ('pin a full release tag ... or a commit SHA') and ci.md:163 give no caveat about the dependency tree. No prior entry about this in FINDINGS.md or REMEDIATION.md. This is a design trade-off common to CLI packages, so low severity, but the factual claims all hold."
+  }
+ ],
+ "arbiter": null
+}

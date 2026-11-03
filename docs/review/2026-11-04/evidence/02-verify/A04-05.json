@@ -1,0 +1,13 @@
+{
+ "id": "A04-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-05",
+   "verdict": "confirmed",
+   "evidence": "server.ts@1f24aba:404-408 SRV-015 checks only `caps.tasks !== undefined` on snap.capabilities. The code already knows about the 2026-07-28 key io.modelcontextprotocol/tasks under capabilities.extensions: wire.ts:13/77 TASKS_EXTENSION, spec.ts:582 TASKS_KEY. SRV-015 does not look there, so a modern server that declares only the extension gets no info 'uses tasks', although the rule's rationale (Claude does not support tasks) applies equally. It is an info-level false negative. Not among the known items (F055 is about the word 'sampling')."
+  }
+ ],
+ "arbiter": null
+}

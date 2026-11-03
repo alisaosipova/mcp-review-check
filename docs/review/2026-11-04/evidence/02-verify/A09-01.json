@@ -1,0 +1,18 @@
+{
+ "id": "A09-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at 1f24aba: src/rules/util/schemaWalk.ts:21 snakeCase and src/rules/util/text.ts:10 tokenize both apply /([A-Z]+)([A-Z][a-z])/g to raw names. src/limits.ts caps property names (object keys) and ID_KEYS values such as name at ID_CAP = 1 MB. The comment there says this bound \"only keeps memory and the rules' run time finite\". Names are never cut at TEXT_CAP, and I found no length or charset guard before these helpers (19 call sites of snakeCase/tokenize in src). FINDINGS.md:2881 (key cap) measured only lowercase 'a-' keys and reported \"no ReDoS\", so this case is not a duplicate. I ran the regex alone with node on 'A'.repeat(n): 60 ms at 10k, 439 ms at 30k, 5449 ms at 100k, which is quadratic. End to end I used dist/cli.js from worktree r3-main (src identical to 1f24aba) with a stdio server whose only property is named 'A'.repeat(30000): 14.9 s, against 0.58 s for 'a'.repeat(30000). With --max-duration 2000 the same run still took 12.1 s and exited normally (exit 1, findings), so the deadline does not stop the synchronous rule work. Extrapolating the 1 MB cap from these timings gives several minutes per call, repeated for each caller, so the claim holds as stated. Severity: medium. Only a hostile or broken server triggers it, but a payload of tens of KB is enough, and it gets past both the input caps meant to prevent this and --max-duration. Fix: cap names passed to snakeCase/tokenize, for example slice to TEXT_CAP or 256, or use a linear rewrite (lookahead /([A-Z])(?=[A-Z][a-z])/g)."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I checked this at commit 1f24aba, in a detached worktree (since removed), after npm ci and a build.\n\nCode: snakeCase (src/rules/util/schemaWalk.ts:21) and tokenize (src/rules/util/text.ts:10) both contain .replace(/([A-Z]+)([A-Z][a-z])/g, ...). ID_CAP is 1 MB (src/limits.ts:11). The earlier finding at FINDINGS.md:2881 is different: it timed the name 'a-'*n, which is linear, and never tried a run of uppercase letters, so this is not a duplicate.\n\nMicrobench: snakeCase('A'.repeat(n)) took 52 ms at n=10k, 469 ms at 30k and 4719 ms at 100k. That is quadratic: about 10x the time for each 3.3x in n.\n\nEnd to end with a scratch stdio server (low-level SDK Server) and node dist/cli.js --stdio, timing the whole process:\n- one property named 'a'*40000: 1.28 s; named 'A'*40000: 22.5 s.\n- tool named 'a'*60000: 0.83 s; named 'A'*60000: 21.3 s.\n- --max-duration 3000 with the 'A'*40000 property: the run still took 29.7 s and exited 1, not the exit 4 a stopped run gives. The limit does not interrupt the synchronous rule work.\n\nNot run: the time at the full 1 MB cap. Extrapolating the quadratic curve gives several minutes per call.\n\nSeverity is medium: a hostile or buggy server can make the linter hang for minutes, and --max-duration does not stop it. There is no correctness or security impact beyond that."
+  }
+ ],
+ "arbiter": null
+}

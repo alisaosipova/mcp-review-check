@@ -1,0 +1,18 @@
+{
+ "id": "A02-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Checked by reading the code at 1f24aba; I did not rerun the repro. src/redact.ts:118 builds proxyUrls() only from ['HTTPS_PROXY','HTTP_PROXY','https_proxy','http_proxy']. buildRedactor (redact.ts:146-150) takes the URL credentials and the `Basic b64(user:pass)` value from that list alone, so neither is produced for ALL_PROXY/all_proxy. src/proxy.ts:33-35 (proxyConfig) does use ALL_PROXY as the fallback for httpProxy/httpsProxy. installProxy (proxy.ts:77-84) passes those values explicitly to undici's EnvHttpProxyAgent with proxyTunnel:false, so for http: targets the ALL_PROXY credentials go out as Proxy-Authorization on forwarded requests. No other guard covers this. `git grep` in src finds no other place that adds proxy credentials to the redactor. connect.ts:53-68 only covers user:pass in the target URL. trace.ts:27 masks the proxy-authorization header *name* in traces, not the value when it is echoed in a body. proxyLabel/displayUrl only strip userinfo from proxy URLs that are displayed. The docs promise is broken: docs/guide/troubleshooting.md:43 names ALL_PROXY as a supported fallback, :46 says proxy credentials are \"redacted in every output\", and the cli.ts:130 help says \"ALL_PROXY is the fallback; credentials redacted\". ALL_PROXY does not appear in FINDINGS.md or REMEDIATION.md, so this is not a known or deferred item. It is a gap left when R100 added the ALL_PROXY fallback without updating redact.ts. Medium is the right severity: a secret documented as redacted leaks into console, --verbose and the JSON report, but only when the proxy or server echoes the header."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at 1f24aba: in src/redact.ts, proxyUrls() reads only HTTPS_PROXY, HTTP_PROXY, https_proxy and http_proxy. src/proxy.ts proxyConfig() uses pick(env,'ALL_PROXY') as the fallback for both HTTP_PROXY and HTTPS_PROXY. docs/guide/troubleshooting.md:43 documents ALL_PROXY, and line 46 says proxy credentials are \"redacted in every output\". The review docs FINDINGS.md and REMEDIATION.md never mention ALL_PROXY, so this is not a known item. Repro: built in a detached worktree. Started a local echo proxy on 127.0.0.1:18721 that answers 502 with body \"got <proxy-authorization>\". Ran node dist/cli.js http://10.255.255.1:18000/mcp --timeout 3000 --json-output, with all other proxy variables unset. With HTTP_PROXY=http://alice:Sup3rS3cretPw@127.0.0.1:18721, b64(alice:Sup3rS3cretPw) appeared 0 times in the console and 0 times in the JSON. With ALL_PROXY set to the same value, it appeared 2 times in the console and 3 times in the JSON, e.g. \"x SRV-003 [spec] server: No working transport: ... HTTP 502: ... got Basic YWxpY2U6U3VwM3JTM2NyZXRQdw==\". The plaintext password did not appear in either run. The leak is the Basic header value, which is trivially reversible. Severity medium: a credential leaks into reports, but only when the proxy or an upstream echoes Proxy-Authorization back. Fix: add ALL_PROXY and all_proxy to proxyUrls(). The worktree was removed afterwards."
+  }
+ ],
+ "arbiter": null
+}

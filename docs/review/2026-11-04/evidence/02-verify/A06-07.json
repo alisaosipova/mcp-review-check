@@ -1,0 +1,13 @@
+{
+ "id": "A06-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-07",
+   "verdict": "confirmed",
+   "evidence": "src/listing/index.ts:18 defines SECRET_KEY = /secret|token|password|passwd|authorization|api[-_]?key|credential|cookie|.../. It does not match 'privateKey' or 'x-auth'. dumpValue recurses into arrays without any key/flag check, so '--api-key <v>' and '--auth=<v>' inside args are kept. The describeListing docstring promises that credential-named values are removed. Repro with the given .mcp.json and --plugin-dir --verbose: stderr contained PRIVKEYVALUE123456, XAUTHVALUE98765, Zq8vLmN3pRt5WxY2 and Zq8vLmN3pRt5WxY2b verbatim."
+  }
+ ],
+ "arbiter": null
+}

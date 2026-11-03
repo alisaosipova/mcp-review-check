@@ -1,0 +1,13 @@
+{
+ "id": "A07-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-07",
+   "verdict": "confirmed",
+   "evidence": "text.ts:180 rewrites only a leading '::' (regex /^(\\s*):(?=:)/), and src/ has no handling for '##['. Reproduced at 1f24aba: a server named 'Evil ##[stop-commands]tok1' with a tool named 'grab##[set-output name=verdict;]PASS'. stdout printed 'Server  Evil ##[stop-commands]tok1 1.0.0 · ...' and '  x TOOL-033 [claude, chatgpt] grab##[set-output name=verdict;]PASS: ...' unchanged, on about 10 lines. The runner side was not tested on a real runner and has no local source. I recall that actions/runner ActionCommand.TryParse (v1) finds the prefix with message.IndexOf(\"##[\"), and that ActionCommandManager falls back to it after TryParseV2, which matches the claim. No earlier item covers this: F135 and its fix address only '::'. Low severity fits: it needs a hostile server, and set-env and add-path are disabled on the runner."
+  }
+ ],
+ "arbiter": null
+}

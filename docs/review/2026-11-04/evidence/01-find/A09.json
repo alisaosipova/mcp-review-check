@@ -1,0 +1,93 @@
+{
+ "area": "A09",
+ "name": "performance and scale (cross-cutting)",
+ "coverage": "I worked in a detached worktree of 1f24aba (npm ci --ignore-scripts, npm run build) and removed it at the end; the main checkout was not touched. READ: src/rules/util/schemaWalk.ts, src/limits.ts, src/rules/util/text.ts (tokenize, corpus), src/rules/policy.ts (POL-002/003), src/rules/injection.ts (matchPattern, dynamic regexes), src/rules/util/html.ts (extractOrigins regexes), src/rules/apps.ts (blockedDialog, APPS-015), src/rules/util/ui.ts (uiResources), src/rules/engine.ts (runNeeds, runRules), src/report/sarif.ts (renderSarif), parts of src/redact.ts and src/cli.ts (imports, --max-duration), test/helpers.ts, and the FINDINGS.md/REMEDIATION.md entries on max-duration, OOM, F136/F137/F141/F142/R046. RAN: (1) an in-process per-rule timing harness over dist RULES with capSnapshot applied, fuzzing about 50 repeat units at 100k in ID-capped fields (tool name, property name, pattern, uri, uriTemplate, prompt name, _meta.ui.resourceUri, format, $ref), about 120 units at 16 KB in text fields (description, parameter description, instructions, enum, default), and about 80 units at 200 KB in UI HTML; (2) end-to-end CLI runs with scratch stdio servers for A09-01..04 and --cpu-prof profiles; (3) wide (160k properties), deep (5000 levels) and $ref-chain DAG (5000 defs, 2 refs each) schemas, all linear; (4) many-tools fixture scaled to 2000, 8000, 32000 and 80000 tools in every --format, with RSS measured, which gave A09-05; (5) startup timing; (6) equivalence and timing checks for the proposed replacement regexes. Findings with no 'NOT RUN' note were reproduced as stated. Timings came from a loaded machine, so absolute numbers are noisy, but the quadratic scaling showed in every repeat. NOT COVERED: src/protocol/trace.ts body scanning (F142 is already listed as known, so I did not re-test it); src/listing/** parsers; --format json at 125k+ tools (estimated only); a hard memory test of the 64 MB budget with large UI blobs; the baseline and drift renderers on thousands of findings; HTTP-transport-specific paths.",
+ "improvements": [
+  {
+   "title": "Memoize per-snapshot derived data shared by rules",
+   "detail": "corpus(snap) is rebuilt by about 10 rules, each with a fresh walkSchema plus nfkc on every entry. Each schema is walked by about 16 rules, and snakeCase runs again on every visit. uiResources(snap) is rebuilt by 14 APPS rules, each decoding the 2 MB item again. extractOrigins runs twice on the same HTML. A WeakMap<Snapshot, …> cache for corpus/nfkc, schema visits and uiResources would cut rule time roughly in proportion to the number of callers. Measured: 160k-property schema 7.4 s total, with DATA-001, DATA-003 and TOOL-019 each re-walking it; the url() case cost was paid twice, 6.3 s in each of APPS-007 and APPS-013.",
+   "dimension": "perf",
+   "effort": "M"
+  },
+  {
+   "title": "Lazy-load the network/rules stack for --version, --help and explain",
+   "detail": "node dist/cli.js --version and --help take about 236 ms and explain takes 245 ms, against 22 ms for node -e 0. dist/cli.js imports connect.js (SDK, undici), all rules (ajv) and all reporters at top level. Handle --version and --help before dynamic import()s of the heavy modules.",
+   "dimension": "perf",
+   "effort": "S"
+  },
+  {
+   "title": "Add a regex-complexity guard test",
+   "detail": "Add a vitest that feeds every corpus and ID field (tool name, property name, uri, uriTemplate, descriptions, UI HTML) a 200 KB run of each of a few dozen units ('A', '0', 'url(', '<a ', ...) and asserts the total rule time stays under a fixed limit. The fuzz loop used here found A09-01..03 in a few minutes. Alternatively, lint the regexes with a static ReDoS checker (e.g. recheck or safe-regex2) in CI.",
+   "dimension": "perf",
+   "effort": "S"
+  },
+  {
+   "title": "uiResources listEntry lookup is O(UI URIs x resources)",
+   "detail": "src/rules/util/ui.ts:49 runs snap.resources.find for every ui:// URI that is not listed, and it does so in each of the 14 APPS rules that call uiResources. The number of URIs taken from tools is not capped; only reads are capped at UI_READS_CAP. Building a Map once would make it linear. Not measured as a hotspot.",
+   "dimension": "perf",
+   "effort": "S"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A09-01",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/util/schemaWalk.ts",
+   "line": "21 (also src/rules/util/text.ts:10)",
+   "title": "snakeCase/tokenize regex /([A-Z]+)([A-Z][a-z])/g is quadratic on names that are capped only at ID_CAP (1 MB)",
+   "claim": "snakeCase (called on every walkSchema visit, about 30 times per property per run) and tokenize (called on tool names by TOOL-027, POL-002, TOOL-004/005/008/028 and others) both run /([A-Z]+)([A-Z][a-z])/g. On a long run of uppercase ASCII with no following [A-Z][a-z], [A-Z]+ backtracks over the rest of the string at every start position, so the cost is O(n^2). Property names and tool names are cut at ID_CAP = 1 MB, not at TEXT_CAP. A server that sends one such name can stall the linter for minutes or hours. The work runs synchronously inside the rules, so --max-duration does not stop it (see A09-04).",
+   "repro": "RAN: a single snakeCase('A'.repeat(n)) call takes 39 ms at 10k, 333 ms at 30k and 3384 ms at 100k (quadratic). End to end, a stdio fixture whose only property is named 'A'.repeat(40000) takes 30.9 s, against 0.6 s with a lowercase name of the same length; node --cpu-prof attributes 26.5 s of that to 'RegExp: ([A-Z]+)([A-Z][a-z])'. A tool named 'A'.repeat(60000) takes 38 s, 31.4 s of it in the same regex. The in-process per-rule bench at 100k uppercase tool-name characters gives 27.7 s (TOOL-027 6.4 s, POL-002 3.1 s, TOOL-008 3.0 s, ...). Scratch server: export const tools=[{name:'q',description:'Query things.',inputSchema:{type:'object',properties:{['A'.repeat(40000)]:{type:'string'}}}}]; node dist/cli.js --stdio -- node srv.mjs fixture.mjs. NOT RUN, extrapolated: at the 1 MB cap a single call takes about 340 s.",
+   "fix": "Use a linear lookahead form in both places: .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1_') in snakeCase and '$1 ' in tokenize. RAN: it gave identical output to the current pair of replaces on 300k random strings over [AaB0_ -], and takes 2 ms on 1 MB of 'A'. Optionally also cut the input to tokenize/snakeCase (e.g. the first 256 chars) because the result is only used for word matching.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A09-02",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/policy.ts",
+   "line": "73",
+   "title": "POL-003 ADS regex: the trailing alternative \\d+% off! has no anchor, so it is quadratic on digit runs",
+   "claim": "In ADS = /\\b(...)\\b|\\d+% off!/i the last alternative sits outside the \\b group. It is tried at every digit position, and \\d+ consumes the whole digit run before it fails on '%', which makes the scan O(n^2) in the length of the run. POL-003 runs it over every corpus entry: tool name (up to ID_CAP), title, description and every parameter description (TEXT_CAP 16 KB each, with no limit on how many there are). A tools/list of a few MB of digits therefore stalls the run, and --max-duration does not stop it.",
+   "repro": "RAN: in-process bench with 200 parameters whose descriptions are '0'.repeat(16000) (about 3.2 MB tools/list): POL-003 takes 29.9 s; with 'a' instead of '0' the whole rule set takes 0.34 s. End to end, tools=[{name:'q',title:'Q',description:'Query things.',inputSchema:{type:'object',properties:Object.fromEntries(Array.from({length:200},(_, i)=>['p'+i,{type:'string',description:'0'.repeat(16000)}]))},annotations:{...}}] with node dist/cli.js --max-duration 5000 --stdio -- node srv.mjs digits.mjs takes 16.2 s and exits 0. A tool name of 200k digits makes POL-003 take 12.4 s (764 ms at 50k).",
+   "fix": "Anchor the alternative: (?<!\\d)\\d+% off! (or \\b\\d+% off!). RAN: on 'get 50% off!', 'save 5% off! now', 'a50% off!' and 'x100% off!' it matches the same as before, and it takes 10 ms on 1 MB of digits, where the old regex takes 788 ms on 50k.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A09-03",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/util/html.ts",
+   "line": "64",
+   "title": "extractOrigins CSS url() regex is quadratic on repeated 'url(' and runs twice per UI resource (APPS-007, APPS-013)",
+   "claim": "/(?<![\\w$.]|\\bnew\\s+)url\\(\\s*[\"']?([^\"')\\s]+)[\"']?\\s*\\)/gi lets '(' into the captured class. On HTML like 'url(url(url(…' with no ')', every 'url(' start scans to the end of the input and then fails, which is O(n^2). The input is UI resource HTML capped at HTML_CAP = 2 MB, and up to UI_READS_CAP = 50 resources are read. APPS-007 and APPS-013 each call extractOrigins on the same HTML without sharing the result, so the cost is paid twice.",
+   "repro": "RAN: in-process bench with HTML 'url('.repeat(n/4): APPS-007 and APPS-013 each take 382 ms at 50k, 1.54 s at 100k and 6.3 s at 200k. End to end, a raw stdio server with one UI tool whose ui:// resource is that HTML at 200 KB (ui-srv.mjs 200000): node dist/cli.js --max-duration 3000 --stdio -- node ui-srv.mjs 200000 takes 13.5 s and exits 1; at 20 KB it takes 0.6 s. NOT RUN, extrapolated: at the 2 MB cap about 10 min per rule. Making the class atomic with (?=(...))\\1 does not help: still 372 s on 2 MB (RAN).",
+   "fix": "Split the quoted and unquoted forms and keep '(' out of the unquoted class: /(?<![\\w$.]|\\bnew\\s+)url\\(\\s*(?:\"([^\"\\n]*)\"|'([^'\\n]*)'|([^\"'()\\s]+))\\s*\\)/gi, taking m[1] ?? m[2] ?? m[3]. RAN: 7-14 ms on 2 MB of 'url(', 'url(\"', \"url('\" and 'url(\"url('. It also captures '/a(b).png' and 'x' correctly, where the old regex captured '/a(b' and 'url(x'. Also cache extractOrigins results per HTML string (WeakMap keyed on the UiResource, or a Map keyed on uri) so APPS-007 and APPS-013 share one pass.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A09-04",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/rules/engine.ts",
+   "line": "179 (loop in runRules; called from src/cli.ts:512)",
+   "title": "--max-duration does not bound rule evaluation: a slow rule phase ends with exit 0/1, not 4",
+   "claim": "--help says '--max-duration <ms> Stop the whole check after this long and report what ran, exit 4'. The deadline is only checked at connect, listing and probe checkpoints. runRules is a synchronous loop with no deadline check, so a CI job that relies on --max-duration to bound the run still runs until the slow rules finish. It then exits with the normal code, and limits.stopped is not set. The quadratic paths in A09-01..03 are exactly this case.",
+   "repro": "RAN: --max-duration 3000 on a 60k uppercase property name: 22.3 s, exit 1. --max-duration 3000 on the 200 KB 'url(' UI resource: 13.5 s, exit 1. --max-duration 5000 on the 200 x 16 KB digit descriptions: 16.2 s, exit 0.",
+   "fix": "Check the deadline in the runRules loop (between rules, using the same clock as the connect checkpoints). Once it has passed, mark the remaining rules skipped with STOPPED_REASON and phase 'rules', set snap.limits.stopped, and exit 4 as documented. For a hard bound, run runRules in a worker_thread and terminate() it at the deadline. Fixing A09-01..03 removes the known triggers but not the class.",
+   "status": "confirmed"
+  },
+  {
+   "id": "A09-05",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/report/sarif.ts",
+   "line": "82",
+   "title": "SARIF rendering crashes with RangeError: Invalid string length at about 80k tools (a tools/list of about 9 MB, well inside the 64 MB snapshot budget)",
+   "claim": "renderSarif pretty-prints the whole log with JSON.stringify(…, null, 2). That is about 1010 bytes per result, against 525 bytes compact. Many-tools fixtures produce about 7 results per tool. At 80,000 tools the string passes V8's maximum string length, and the run dies with 'fatal: RangeError: Invalid string length at JSON.stringify … renderSarif'. It exits 3 with no report and no --output file. Before that point memory is already high: 1.66 GB peak RSS at 32k tools in SARIF, against 0.51 GB for text. NOT RUN: by the same arithmetic, --format json (about 4.1 KB per tool) would hit the same limit at roughly 125k tools.",
+   "repro": "RAN: sed 's/length: 400/length: 80000/' test/fixtures/many-tools-server.mjs > many80000.mjs; NODE_OPTIONS=--max-old-space-size=3500 node dist/cli.js --format sarif --output out.sarif --stdio -- node many80000.mjs prints 'fatal: RangeError: Invalid string length at JSON.stringify (<anonymous>) at renderSarif (dist/report/sarif.js:74:17)', exits 3 after 10 s, and writes no file. Measured: 8000 tools give a 56.6 MB SARIF (56,003 results), and 32000 tools peak at 1657 MB RSS.",
+   "fix": "Bound the report. Above a threshold (e.g. 5000 results per rule, or 25,000 per run), collapse the repeated per-tool findings of one rule into a single result that carries a count and the first N subjects, and say so in the summary. Drop the indentation when the result count is large, or stream the results array to the output. Catch RangeError in render and print a clear 'report too large' error with a hint (--ignore, --target), not the internal-bug 'fatal:' text.",
+   "status": "confirmed"
+  }
+ ]
+}

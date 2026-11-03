@@ -1,0 +1,13 @@
+{
+ "id": "A03-01",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-01",
+   "verdict": "confirmed",
+   "evidence": "At 1f24aba, src/probe/active.ts:15-17 isSafeToCall = readOnlyHint===true && destructiveHint!==true && !tokenize(name).some(t => WRITE_VERBS.has(t)). WRITE_VERBS (src/rules/lexicon.ts:7-14) has only base forms. It contains 'execute' but not exec, kill, restart, deploy, push, clear, unlink or rm, and it has no inflections such as 'deletes'. tokenize (src/rules/util/text.ts:7-16) splits on camelCase, digits and _-./: but cannot split an all-caps glued name, so 'DELETEFILE' becomes ['deletefile']. So exec_command, kill_process, git_push, deletes_file and DELETEFILE with readOnlyHint:true all pass the filter. SECURITY.md:36 and spec.md §2.9 promise 'no WRITE verb token in the name', which is implemented only against this narrow list. FINDINGS.md and REMEDIATION.md 8.3/9.3/10.4 do not cover it. readOnlyHint is still the primary gate, so low (defense-in-depth)."
+  }
+ ],
+ "arbiter": null
+}

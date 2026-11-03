@@ -1,0 +1,13 @@
+{
+ "id": "A08-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-05",
+   "verdict": "confirmed",
+   "evidence": "In docker.yml, the `build` job runs build-push-action with `load: true`, `push: false`, `tags: mcp-review-check:test`, and the smoke test uses that tag only. The `push` job, which `needs: build`, runs on a fresh runner and calls build-push-action again with `push: true` and `platforms: linux/amd64,linux/arm64`. It has no cache-from and does not reuse the tested image or its digest. So the published image is a new build whose `npm install` resolves the floating dependency tree again, and the arm64 variant is never executed. The header says 'the image never contains anything other than what npm users get', but nothing ties the pushed digest to the tested image."
+  }
+ ],
+ "arbiter": null
+}

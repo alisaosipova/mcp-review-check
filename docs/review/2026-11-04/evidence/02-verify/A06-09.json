@@ -1,0 +1,13 @@
+{
+ "id": "A06-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-09",
+   "verdict": "confirmed",
+   "evidence": "src/listing/load.ts:224-229 builds candidates = [declared (only if it has no '..', scheme or leading slash), 'mcp.json', '.mcp.json'] and loops with `if (mcp) break`. readJson returns undefined for a file that does not exist and pushes no error. A declared path that is missing or rejected therefore falls back to the root mcp.json without any message. src/rules/listing.ts has no rule that checks a string mcpServers path in the OpenAI manifest. I ran the repro, but its grep output was one escaped line cut to 200 chars, so the dump did not visibly show mcp.path; the verdict rests on reading the code."
+  }
+ ],
+ "arbiter": null
+}

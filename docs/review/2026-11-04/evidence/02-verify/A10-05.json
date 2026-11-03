@@ -1,0 +1,13 @@
+{
+ "id": "A10-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-05",
+   "verdict": "confirmed",
+   "evidence": "engine.ts unmetNeed: для case 'http' возвращается только `isHttp ? undefined : 'stdio target'`, authReason/connect-failed не проверяется. Правило SPEC-020 с needs:[] тоже не пропускается. Запуск `node dist/cli.js http://127.0.0.1:59999/mcp --format junit` (exit 3) дал 11 пустых passed testcase в suite claude, среди них SRV-006, SRV-007, SRV-008, SRV-009, SRV-015, SPEC-020, AUTH-003. В text-выводе «34 rules run · 145 skipped». Есть смягчение: в JUnit присутствует error-testcase «mcp-review-check run», verdict INCOMPLETE. При этом отдельные пробные правила всё равно засчитаны как пройденные, хотя ни одна проба не выполнялась. SRV-005, SRV-017 и AUTH-001 работают по статическому URL, для них pass оправдан. Утверждение по сути верно."
+  }
+ ],
+ "arbiter": null
+}
