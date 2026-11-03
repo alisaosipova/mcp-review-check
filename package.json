@@ -41,10 +41,24 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
+    "mcp-server",
     "lint",
+    "linter",
+    "static-analysis",
+    "security",
     "claude",
     "chatgpt",
-    "connector"
+    "anthropic",
+    "openai",
+    "connector",
+    "apps-sdk",
+    "sarif",
+    "junit",
+    "github-actions",
+    "ci",
+    "cli",
+    "llm",
+    "ai-agents"
   ],
   "license": "MIT",
   "dependencies": {
