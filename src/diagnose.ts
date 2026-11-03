@@ -98,7 +98,31 @@ export interface HttpFailure {
   message?: string;
 }
 
-/** Describe an HTTP-level handshake failure: 404/405/410 or an HTML page means the URL is not an MCP endpoint. */
+const GATEWAY = new Set([502, 503, 504]);
+/** A 5xx answer to the handshake: a gateway status names the hop in front of the server (the proxy, when one is used). */
+function serverError(url: URL, status: number, title: string | undefined, html: boolean, message: string | undefined): ConnectDiagnosis {
+  const proxyUrl = proxyForUrl(url);
+  const hostPort = `${url.hostname}:${url.port || (url.protocol === 'https:' ? 443 : 80)}`;
+  // The SDK message ends in ": " when the body was empty ("Error POSTing to endpoint: ").
+  const sdk = (message ?? '').replace(/[\s:]+$/, '');
+  const page = html ? ` (${title ? `"${title}" ` : ''}HTML page)` : '';
+  if (GATEWAY.has(status)) {
+    const via = proxyUrl ? `the HTTP proxy ${proxyLabel(proxyUrl)}` : 'the gateway or proxy in front of the server';
+    return {
+      kind: 'http', status, summary: `HTTP ${status}${page}: ${via} could not reach ${hostPort}`,
+      hint: proxyUrl
+        ? 'check that the MCP server is running and that the proxy can reach it; list hosts to reach directly in NO_PROXY'
+        : 'check that the MCP server behind it is running; the URL path is not the cause',
+    };
+  }
+  const next = suggestedEndpoint(url);
+  return {
+    kind: 'http', status, summary: html ? `HTTP ${status}${page}: the server failed to answer the handshake` : sdk || `HTTP ${status}`,
+    ...(/\/sse\/?$/i.test(url.pathname) && next ? { hint: `/sse is the deprecated HTTP+SSE path; try ${next}` } : {}),
+  };
+}
+
+/** Describe an HTTP-level handshake failure: 404/405/410 or a non-5xx HTML page means the URL is not an MCP endpoint. */
 export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis {
   const html = /text\/html/i.test(f.contentType ?? '') || /<(!doctype|html|head|body)\b/i.test(f.body ?? '');
   const sse = /\/sse\/?$/i.test(url.pathname);
@@ -108,6 +132,8 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   // 407 is the proxy's answer, not the server's.
   const proxy = status === 407 ? proxyForUrl(url) : undefined;
   if (proxy) return proxyAuth(proxyLabel(proxy));
+  // A 5xx page (a gateway's "502 Bad Gateway", an app's error page) says the server behind the URL failed, not that the path is wrong.
+  if (status !== undefined && status >= 500) return serverError(url, status, html ? htmlTitle(f.body) : undefined, html, f.message);
   if ((status !== undefined && [404, 405, 410].includes(status)) || html) {
     const title = html ? htmlTitle(f.body) : undefined;
     const what = `${status !== undefined ? `HTTP ${status}` : 'response'}${html ? ` with an HTML page${title ? ` ("${title}")` : ''}` : ''}`;
