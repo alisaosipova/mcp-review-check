@@ -40,7 +40,7 @@ jobs:
         id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
-      # Build and smoke-test locally (no push): the entrypoint runs and the version matches the tag.
+      # Build and smoke-test locally (no push): the version matches the tag, a listing-only run exits 0, the user is not root.
       - uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: .
@@ -51,7 +51,14 @@ jobs:
       - name: Smoke test
         run: |
           version="${GITHUB_REF_NAME#v}"
-          docker run --rm mcp-review-check:test --version | grep -F "$version"
+          image=mcp-review-check:test
+          docker run --rm "$image" --version | grep -F "$version"
+          # Listing-only run: no network, read-only mount.
+          docker run --rm -v "$PWD/test/fixtures/listing:/listing:ro" "$image" --plugin-dir /listing/plugin-valid
+          # The image must not run as root.
+          uid="$(docker run --rm --entrypoint id "$image" -u)"
+          echo "container uid: $uid"
+          [ "$uid" != "0" ]
 
   push:
     needs: build

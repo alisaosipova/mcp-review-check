@@ -147,3 +147,19 @@ describe('Dockerfile', () => {
     expect(read(join(ROOT, '.dockerignore'))).toMatch(/^\*$/m);
   });
 });
+
+describe('docker.yml smoke test', () => {
+  const text = read(join(ROOT, '.github/workflows/docker.yml'));
+  const build = text.slice(text.indexOf('\n  build:'), text.indexOf('\n  push:\n    needs'));
+  const pushJob = text.slice(text.indexOf('\n  push:\n    needs'));
+  it('runs the built image (version, listing-only run, non-root) in a job the push job needs', () => {
+    expect(build).toMatch(/load: true/);
+    expect(build).toMatch(/push: false/);
+    expect(build).toMatch(/docker run --rm "\$image" --version/);
+    expect(build).toMatch(/--plugin-dir \/listing\/plugin-valid/);
+    expect(build).toMatch(/--entrypoint id "\$image" -u/);
+    expect(build).not.toMatch(/packages: write/);
+    expect(pushJob).toMatch(/needs: build/);
+    expect(pushJob).toMatch(/push: true/);
+  });
+});
