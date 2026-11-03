@@ -127,6 +127,9 @@ The score (100 - 12 per rule with errors - 4 per rule with only warnings) is pro
 With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
 severity), exit 3 and 4 as one ::error with its cause, a partial check as one ::warning naming why, and the markdown
 report is appended to $GITHUB_STEP_SUMMARY when it is set.
+Environment: HTTPS_PROXY, HTTP_PROXY and NO_PROXY route requests through a CONNECT proxy (credentials redacted);
+NODE_EXTRA_CA_CERTS adds trusted CAs; MCP_REVIEW_CHECK_TOKEN is the default --bearer.
+Guide: https://github.com/alisaosipova/mcp-review-check/tree/main/docs/guide
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
 

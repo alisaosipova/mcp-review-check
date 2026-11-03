@@ -6,7 +6,21 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Nothing yet.
+Rule catalog dated 2026-11-02. No rule changes; a minor release for corporate proxy support, the user guide and new ways to run the check.
+
+### Added
+
+- Corporate proxy support: `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (and their lower-case forms) apply to every HTTP request the check makes; the proxy must support `CONNECT`, and its credentials are redacted in every output.
+- A proxy that refuses the connection or answers `407 Proxy Authentication Required` is named as the cause of a failed connection.
+- A user guide in `docs/guide/`: a step-by-step walkthrough from the first run to directory submission, a troubleshooting page, and the reference pages for options and the config file, CI, authentication, listings, and privacy and requests.
+- A complete GitLab CI recipe (JUnit report, baseline cache), a pre-commit hook (`.pre-commit-hooks.yaml`) and a Docker image `ghcr.io/alisaosipova/mcp-review-check`, published on every release tag.
+- `--help` lists the environment variables the check reads and links to the guide.
+
+### Changed
+
+- The raw TLS handshake check reports a host reached through a proxy as inconclusive (info) instead of measuring the proxy.
+- The README is shorter: an overview, a quick start and the common commands; the detailed reference moved to `docs/guide/` (README anchors such as `#options`, `#config-file` and `#ci-recipes` now live there).
+- New runtime dependency: `undici` 6, used only when a proxy variable is set.
 
 ## [0.4.0] - 2026-11-03
 

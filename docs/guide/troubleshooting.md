@@ -40,11 +40,14 @@ export NO_PROXY=localhost,127.0.0.1,.corp.example
 npx mcp-review-check https://mcp.example.com/mcp
 ```
 
-- `HTTPS_PROXY` applies to `https://` targets and `HTTP_PROXY` to `http://` ones (lower-case names work too). `NO_PROXY` is a comma-separated list of hosts and domain suffixes that connect directly.
-- Credentials in the proxy URL (`http://user:pass@proxy:3128`) are accepted and redacted in every output, like URL credentials of the target. Prefer a proxy that does not need them on the command line: set the variable in the environment, not in a script that gets logged.
+- `HTTPS_PROXY` applies to `https://` targets and `HTTP_PROXY` to `http://` ones; when only `HTTP_PROXY` is set it is used for `https://` too (lower-case names work as well). `NO_PROXY` is a comma-separated list of hosts and domain suffixes that connect directly.
+- The proxy must support `CONNECT` tunnelling (all common corporate proxies do); a proxy that only forwards plain HTTP requests does not work. SOCKS proxies are not supported.
+- Credentials in the proxy URL (`http://user:pass@proxy:3128`) are accepted and redacted in every output. Set the variable in the environment, not in a script that gets logged.
+- A refused or unreachable proxy, or a `407 Proxy Authentication Required` answer, is named as the cause of the failure (credentials removed).
 - A proxy that inspects TLS presents its own certificate: add its CA with `NODE_EXTRA_CA_CERTS` as above.
-- **The raw TLS check is inconclusive behind a proxy.** The tool opens its own TLS connection to measure the protocol version and the certificate chain (see [What the tool sends](privacy-and-requests.md)). That socket does not go through the proxy, so behind one the result describes your network, not the server. Treat the TLS findings of such a run as unverified and re-run them from a machine with direct access (CI on a public runner is a good place).
-- Before 0.5.0 the proxy variables are ignored and the tool simply fails to connect (`connection refused` or `timed out`) on a network that only allows traffic through a proxy. Update, or run from a machine without that restriction.
+- **The raw TLS check is inconclusive behind a proxy.** The tool opens its own TLS connection to measure the protocol version and the certificate chain (see [What the tool sends](privacy-and-requests.md)); that socket cannot go through an HTTP proxy, so for a proxied host the check is reported as inconclusive (info) with the reason instead of failing. Hosts listed in `NO_PROXY` are still checked. Re-run from a machine with direct access (a public CI runner) to get the TLS result.
+- Node prints a one-line experimental-feature warning on stderr when a proxy is in use; it does not affect the result.
+- Before 0.5.0 the proxy variables are ignored and the tool fails to connect (`connection refused` or `timed out`) on a network that only allows traffic through a proxy.
 
 ## WAF, Cloudflare and 403
 
