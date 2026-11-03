@@ -10,6 +10,12 @@ export interface ModernOptions {
   extraTools?: number;
   /** Dual era: the same endpoint also answers 2025-11-25 clients (initialize, no 2026-07-28 version header). */
   dual?: boolean;
+  /** Declare io.modelcontextprotocol/tasks: 'ok' answers tasks/get for an unknown taskId with -32602, 'missing' leaves the method unimplemented (-32601). */
+  tasks?: 'ok' | 'missing';
+  /** Declare tools.listChanged and answer subscriptions/listen with an open SSE stream ('sse') or a JSON body ('json'). */
+  listen?: 'sse' | 'json';
+  /** tools/list streams a notifications/message before its result. `declared`: the server declares logging; `level`: the notification's level (default 'info'; null leaves it out). */
+  logging?: { declared: boolean; level?: string | null };
 }
 
 const VERSION = '2026-07-28';
@@ -75,11 +81,32 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     switch (msg.method) {
       case 'server/discover':
         return ok({
-          ...cache(), supportedVersions: opts.dual ? [VERSION, LEGACY_VERSION] : [VERSION], capabilities: { tools: {}, resources: {} },
+          ...cache(), supportedVersions: opts.dual ? [VERSION, LEGACY_VERSION] : [VERSION], capabilities: {
+            tools: opts.listen ? { listChanged: true } : {}, resources: {},
+            ...(opts.logging?.declared ? { logging: {} } : {}),
+            ...(opts.tasks ? { extensions: { 'io.modelcontextprotocol/tasks': {} } } : {}),
+          },
           instructions: 'Search the Acme documentation.',
           _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'acme-docs', title: 'Acme Docs', version: '2.0.0' } },
         });
+      case 'subscriptions/listen': {
+        if (!opts.listen) return err(404, -32601, 'Method not found: subscriptions/listen');
+        if (opts.listen === 'json') return ok({ resultType: 'complete' });
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+        res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/subscriptions/acknowledged', params: { _meta: { 'io.modelcontextprotocol/subscriptionId': id }, notifications: { toolsListChanged: true } } })}\n\n`);
+        return; // stays open until the client closes it
+      }
+      case 'tasks/get':
+        if (opts.tasks !== 'ok') return err(404, -32601, 'Method not found: tasks/get');
+        return err(200, -32602, `Unknown taskId: ${String(msg.params?.taskId)}`);
       case 'tools/list': {
+        if (opts.logging && msg.params?.cursor === undefined) {
+          const level = opts.logging.level === undefined ? 'info' : opts.logging.level;
+          const note = { jsonrpc: '2.0', method: 'notifications/message', params: { ...(level === null ? {} : { level }), data: 'hello' } };
+          const result = { jsonrpc: '2.0', id, result: { ...cache(), tools: [TOOLS[0]], nextCursor: 'p2', _meta: SERVER_INFO } };
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          return void res.end(`data: ${JSON.stringify(note)}\n\ndata: ${JSON.stringify(result)}\n\n`);
+        }
         const page = msg.params?.cursor === 'p2' ? 1 : 0;
         const extra = page === 0 ? Array.from({ length: opts.extraTools ?? 0 }, (_, i) => ({ ...TOOLS[0], name: `search_docs_${i}`, description: `${TOOLS[0].description} `.repeat(10).trim() })) : [];
         return ok({ ...cache(opts.bad && page === 1 ? 'private' : 'public'), tools: [TOOLS[page], ...extra], ...(page === 0 ? { nextCursor: 'p2' } : {}) });

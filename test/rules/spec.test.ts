@@ -109,6 +109,10 @@ const cases: Record<string, Case> = {
     pos: snap({ set: (s) => { s.capabilities = { tools: {}, extensions: { tasks: {} } }; } }),
     neg: snap({ set: (s) => { s.capabilities = { tools: {}, extensions: { 'io.modelcontextprotocol/skills': { directoryRead: true }, 'com.acme/audit': {} } }; } }),
     severity: 'error', match: /extension identifier "tasks" is not a "\{vendor-prefix\}\/\{name\}" _meta key \(no vendor prefix\)/,
+  },  'SPEC-024': {
+    pos: snap({ url: URL_OK, set: (s) => { s.transport.notifications = { methods: { 'notifications/message': 2 }, message: { total: 2, unrequested: 2, invalidLevel: 0 } }; s.capabilities = { tools: {} }; } }),
+    neg: snap({ url: URL_OK, set: (s) => { s.transport.notifications = { methods: { 'notifications/progress': 3 } }; s.capabilities = { tools: {} }; } }),
+    severity: 'error', match: /notifications\/message sent on 2026-07-28 requests without io\.modelcontextprotocol\/logLevel/,
   },
 };
 
