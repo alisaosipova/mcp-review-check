@@ -52,17 +52,23 @@ export function proxyConfig(env: Env = process.env): ProxyConfig | undefined {
   return { httpProxy, httpsProxy, noProxy: pick(env, 'NO_PROXY') };
 }
 
-/** True when `host:port` is excluded by a NO_PROXY list ("*", "example.com", ".example.com", "*.example.com", "host:8080"). */
+/**
+ * True when `host:port` is excluded by a NO_PROXY list ("example.com", ".example.com", "*.example.com", "host:8080",
+ * "[::1]"), decided exactly as undici's EnvHttpProxyAgent decides it, so diagnostics and the TLS check assume the route
+ * fetch really takes: "*" bypasses only as the whole value (inside a list it matches nothing), an entry's port is the
+ * digits after its last ":", and an IPv6 host is compared in brackets.
+ */
 export function bypassesProxy(host: string, port: number, noProxy: string | undefined): boolean {
-  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
-  for (const raw of (noProxy ?? '').split(/[,\s]+/).filter(Boolean)) {
-    if (raw === '*') return true;
-    const m = /^(.*?)(?::(\d+))?$/.exec(raw.toLowerCase().replace(/^\[([^\]]*)\]/, '$1'))!;
-    if (m[2] && Number(m[2]) !== port) continue;
-    const entry = m[1].replace(/^\*?\./, '');
-    if (entry && (h === entry || h.endsWith(`.${entry}`))) return true;
-  }
-  return false;
+  const bare = host.replace(/^\[|\]$/g, '').toLowerCase();
+  const h = bare.includes(':') ? `[${bare}]` : bare;
+  const value = noProxy ?? '';
+  const entries = value.split(/[,\s]/).filter(Boolean).map((e) => {
+    const m = /^(.+):(\d+)$/.exec(e);
+    return { hostname: (m ? m[1] : e).replace(/^\*?\./, '').toLowerCase(), port: m ? Number.parseInt(m[2], 10) : 0 };
+  });
+  if (!entries.length) return false;
+  if (value === '*') return true;
+  return entries.some((e) => (!e.port || e.port === port) && (h === e.hostname || h.slice(-(e.hostname.length + 1)) === `.${e.hostname}`));
 }
 
 /** The proxy URL used for `https://host:port`, or undefined when no proxy is set or NO_PROXY excludes the host. */
@@ -94,8 +100,9 @@ export function installProxy(env: Env = process.env): boolean {
   const httpProxy = normalize(env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpProxy);
   const httpsProxy = normalize(env.HTTPS_PROXY || env.https_proxy ? 'HTTPS_PROXY' : env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpsProxy);
   suppressProxyWarning();
+  // noProxy is always given ("" when unset) so undici never rereads the environment and decides as bypassesProxy does.
   // proxyTunnel: false sends http: targets as absolute-URI requests (plain forwarding); https: targets still use CONNECT.
-  const dispatcher = new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy: c.noProxy, proxyTunnel: false });
+  const dispatcher = new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy: c.noProxy ?? '', proxyTunnel: false });
   setGlobalDispatcher(dispatcher);
   // The fetch built into newer Node releases (24+) bundles a newer undici than the dependency and ignores a dispatcher
   // installed from it, so global fetch is replaced by the dependency's own fetch, bound to the proxy-aware dispatcher.
