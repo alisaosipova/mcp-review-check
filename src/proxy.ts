@@ -13,12 +13,12 @@ const pick = (env: Env, upper: string): string | undefined => {
 
 export interface ProxyConfig { httpProxy?: string; httpsProxy?: string; noProxy?: string }
 
-/** The proxy variables of `env`, or undefined when none is set. HTTPS_PROXY falls back to nothing: curl's rule, HTTP_PROXY is for http: only. */
+/** The proxy variables of `env`, or undefined when none is set. HTTPS_PROXY falls back to HTTP_PROXY, as undici's EnvHttpProxyAgent does, so diagnostics match what fetch really does. */
 export function proxyConfig(env: Env = process.env): ProxyConfig | undefined {
   const httpProxy = pick(env, 'HTTP_PROXY');
   const httpsProxy = pick(env, 'HTTPS_PROXY');
   if (!httpProxy && !httpsProxy) return undefined;
-  return { httpProxy, httpsProxy, noProxy: pick(env, 'NO_PROXY') };
+  return { httpProxy, httpsProxy: httpsProxy ?? httpProxy, noProxy: pick(env, 'NO_PROXY') };
 }
 
 /** True when `host:port` is excluded by a NO_PROXY list ("*", "example.com", ".example.com", "*.example.com", "host:8080"). */

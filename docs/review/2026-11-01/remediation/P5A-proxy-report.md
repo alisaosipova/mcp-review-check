@@ -34,3 +34,7 @@ src/proxy.ts, src/cli.ts, src/redact.ts, src/probe/network.ts, src/diagnose.ts, 
 
 ## Spec paragraph
 When HTTPS_PROXY/HTTP_PROXY is set, all HTTP requests go through it via CONNECT, except hosts matched by NO_PROXY. The direct TLS handshake check cannot traverse an HTTP proxy and is reported inconclusive (info) for proxied hosts. Proxy URL credentials are always redacted.
+
+## Review fixes
+- Fixed (medium): HTTP_PROXY alone also proxied https: requests while diagnostics/TLS check assumed direct. proxyConfig() now falls back httpsProxy to httpProxy, mirroring undici's EnvHttpProxyAgent, so proxyForUrl, describeCause (proxy-hop and 407 hints) and tlsCheckWithRetry (inconclusive) all treat the request as proxied. Test added in test/p5a-proxy.test.ts.
+- Spec/README note: HTTPS_PROXY falls back to HTTP_PROXY.

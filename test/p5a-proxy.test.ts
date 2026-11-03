@@ -128,6 +128,14 @@ describe('proxy end to end', () => {
   });
 });
 
+describe('HTTP_PROXY alone also covers https', () => {
+  it('proxyForUrl and describeCause agree with the agent', () => withEnv({ HTTP_PROXY: 'http://proxy.corp:3128' }, () => {
+    const u = new URL('https://mcp.example.com/mcp');
+    expect(proxyForUrl(u, { HTTP_PROXY: 'http://proxy.corp:3128' })).toBe('http://proxy.corp:3128');
+    expect(describeCause(u, { code: 'ECONNREFUSED' }).summary).toContain('http://proxy.corp:3128');
+  }));
+});
+
 describe('proxy diagnosis units', () => {
   const proxied = { HTTPS_PROXY: `http://corpuser:${PASS}@proxy.corp:3128` };
   it('names the redacted proxy for ECONNREFUSED and a CONNECT 407', () => withEnv(proxied, () => {
