@@ -251,12 +251,13 @@ describe('Node 22.12 minimum (F151)', () => {
 
 describe('CONTRIBUTING.md release text (wave 5)', () => {
   const text = read('CONTRIBUTING.md');
-  it('states the release cadence, trusted publishing and the NPM_TOKEN fallback', () => {
+  it('states the release cadence, trusted publishing and no NPM_TOKEN fallback (0.4.0)', () => {
     expect(text).toContain('Node 22.12 or newer');
     expect(text).toMatch(/each feature or coherent feature set is its own minor release/i);
     expect(text).toMatch(/trusted publishing/);
     expect(text).toMatch(/2026-11-02/);
     expect(text).toMatch(/environment `npm`/);
-    expect(text).toMatch(/NPM_TOKEN[^\n]*fallback/);
+    expect(text).not.toMatch(/NPM_TOKEN[^\n]*fallback/);
+    expect(text).toMatch(/Do not create an `NPM_TOKEN` secret/);
   });
 });
