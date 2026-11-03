@@ -75,9 +75,9 @@ describe('compatibility with the baseline', () => {
     expect(missing(keyPaths(good.json), BASE_KEYS.good)).toEqual([]);
   });
 
-  it('runtime dependencies are only @modelcontextprotocol/sdk, zod and ajv', () => {
+  it('runtime dependencies are only @modelcontextprotocol/sdk, zod, ajv and undici (proxy support, 0.5.0)', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-    expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(['@modelcontextprotocol/sdk', 'ajv', 'zod']);
+    expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(['@modelcontextprotocol/sdk', 'ajv', 'undici', 'zod']);
   });
 
   it('every baseline option is still documented in --help with the same default', async () => {
