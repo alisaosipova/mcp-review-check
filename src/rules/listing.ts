@@ -689,12 +689,12 @@ export const LST_021 = defineRule(
         ? { path, message: `${at}.${key} is missing (required in the Codex format)${man('MAN-019')}` }
         : { path, severity: 'warning', message: `${at}.${key} is missing${key === 'logo' ? '; the dashboard requires a primary icon before submission' : ''}${man('MAN-019')}` });
     }
-    const imgs = ['logo', 'logoDark', 'composerIcon', 'composerIconDark'].map((k) => [k, i[k]] as const)
-      .concat(Array.isArray(i.screenshots) ? i.screenshots.map((s, n) => [`screenshots[${n}]`, s] as const) : []);
+    const imgs = ['logo', 'logoDark', 'composerIcon', 'composerIconDark'].map((k) => [k, i[k]] as const);
+      // screenshots are checked by LST-028 (MAN-024)
     for (const [k, v] of imgs) {
       if (v === undefined) continue;
-      if (!isStr(v) || !IMAGE.test(v)) out.push({ path, message: `${at}.${k} ${JSON.stringify(v)} is not a PNG, JPEG, WebP or SVG file${man('MAN-019')}` });
-      else if (!v.startsWith('./') || v.split('/').includes('..')) out.push({ path, severity: 'warning', message: `${at}.${k} ${q(v)} is not a ./ path inside the package${man('MAN-019')}` });
+      if (!isStr(v) || !IMAGE.test(v)) out.push({ path, message: `${at}.${k} ${isStr(v) ? q(displayUrl(v)) : JSON.stringify(v)} is not a PNG, JPEG, WebP or SVG file${man('MAN-019')}` });
+      else if (!v.startsWith('./') || v.split('/').includes('..')) out.push({ path, severity: 'warning', message: `${at}.${k} ${q(displayUrl(v))} is not a ./ path inside the package${man('MAN-019')}` });
     }
     return out;
   },
@@ -852,7 +852,7 @@ function imagesOf(o: OpenAiListing, pick: (key: string) => boolean): ListingImag
  *  (it scales); any other recognised file whose header could not be parsed is a warning (our reader, not a vendor rule). */
 function unmeasured(at: string, im: ListingImage, id: string): RawFinding | undefined {
   if (!im.problem) return undefined;
-  const label = `${at}.${im.key} ${q(im.ref)}`;
+  const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
   const detail = im.problem === 'unreadable' && im.detail ? ` (${im.detail})` : '';
   const text = `${label} ${PROBLEM_TEXT[im.problem]}${detail}${man(id)}`;
   if (im.problem === 'no-dimensions') {
@@ -880,7 +880,7 @@ export const LST_027 = defineRule(
     for (const im of imagesOf(o, (k) => !k.startsWith('screenshots['))) {
       const bad = unmeasured(at, im, 'MAN-019');
       if (bad) { out.push({ path, ...bad }); }
-      const label = `${at}.${im.key} ${q(im.ref)}`;
+      const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
       if (im.bytes !== undefined && im.bytes > 5 * MIB) out.push({ path, message: `${label} is ${(im.bytes / MIB).toFixed(1)} MiB, over the 5 MiB limit${man('MAN-019')}` });
       if (im.width === undefined || im.height === undefined) continue;
       if (im.width !== im.height) out.push({ path, message: `${label} is ${im.width}x${im.height} px; icons must be square${man('MAN-019')}` });
@@ -906,7 +906,7 @@ export const LST_028 = defineRule(
     const out: RawFinding[] = [];
     const shots = imagesOf(o, (k) => k.startsWith('screenshots['));
     for (const im of shots) {
-      const label = `${at}.${im.key} ${q(im.ref)}`;
+      const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
       const bad = unmeasured(at, im, 'MAN-024');
       if (bad) out.push({ path, ...bad });
       if (im.format && im.format !== 'png' && im.format !== 'jpeg') out.push({ path, message: `${label} is a ${im.format} file; screenshots must be PNG or JPEG${man('MAN-024')}` });

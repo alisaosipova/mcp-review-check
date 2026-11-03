@@ -40,7 +40,7 @@ export function describeListing(l: Listing): unknown {
         files: l.plugin.files.length, ...(l.plugin.filesTruncated ? { filesTruncated: true } : {}),
       },
     }),
-    ...(l.openai && { openai: { format: l.openai.format, manifest: json(l.openai.manifest), mcp: json(l.openai.mcp), files: l.openai.files.map((f) => f.path), images: l.openai.images } }),
+    ...(l.openai && { openai: { format: l.openai.format, manifest: json(l.openai.manifest), mcp: json(l.openai.mcp), files: l.openai.files.map((f) => f.path), images: l.openai.images?.map((im) => ({ ...im, ref: displayUrl(im.ref) })) } }),
     errors: l.errors,
   };
 }

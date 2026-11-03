@@ -40,3 +40,9 @@ README, section "Listing and plugin manifests" (replace the "needs a server targ
 
 ## Proposed spec paragraph
 **§2.x Listing-only run.** With a listing input and no server target the snapshot target is `{ kind: 'listing' }`. The engine skips every rule without a `plugin-dir`/`openai-manifest` need, and every server need, with the reason "no server target (listing-only run)"; the score is null and the verdicts follow the findings. **Image sizes.** The loader reads at most 256 KiB of each image named in the package manifest (PNG IHDR, JPEG SOF, WebP VP8/VP8L/VP8X, SVG width/height or viewBox), never follows links, and records `problem` codes for what cannot be measured; LST-027 and LST-028 judge the sizes (MAN-019, MAN-024).
+
+## Review fixes
+
+- Fixed (high): image refs are now quoted through `displayUrl` in LST-027/LST-028 (`src/rules/listing.ts`) and in the LST-021 messages; `describeListing` (`src/listing/index.ts`) redacts `images[].ref` the same way. URL userinfo and secret parameters no longer appear in the report or the `--verbose` dump.
+- Fixed (medium): LST-021 no longer checks `screenshots[]`; LST-028 (MAN-024) is the single owner, so one bad screenshot gives one root cause.
+- Tests: new case in `test/p6-listing-offline.test.ts` (userinfo not echoed, no LST-021 on screenshots). Run: p6-listing-offline 15 passed; rules/listing, w6b-listing, w6f-listing-cli 62 passed. Typecheck and build pass.

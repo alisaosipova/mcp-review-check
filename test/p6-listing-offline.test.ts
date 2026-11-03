@@ -120,6 +120,16 @@ describe('LST-027 / LST-028 over real files', () => {
     expect(text).not.toMatch(/screenshots\[0\]/);
   });
 
+  it('review fixes: one root cause per screenshot (LST-028 only) and URL userinfo is not echoed', async () => {
+    const cred = 'https://u:' + ['pw', 'SYNTH'].join('') + '@x.test/a.png';
+    const m = pkg({}, { logo: './assets/i.svg', defaultPrompt: ['a'], screenshots: ['./assets/../plugin.json', 5, cred] });
+    const out = (await run(['--openai-manifest', m, '--format', 'json', '--target', 'chatgpt'])).stdout;
+    const f = ids(out);
+    expect(f.filter((x) => x.ruleId === 'LST-021' && /screenshots\[/.test(x.message))).toEqual([]);
+    expect(f.some((x) => x.ruleId === 'LST-028' && /screenshots\[2\]/.test(x.message))).toBe(true);
+    expect(out).not.toContain('pwSYNTH');
+  });
+
   it('the valid fixture (real PNG files) has no LST finding', () => {
     const l = loadOpenAiManifest(join(FIX, 'openai-valid', 'plugin.json'));
     expect(l.openai!.images!.map((i) => [i.key, i.width, i.height, i.problem])).toEqual([['logo', 64, 64, undefined], ['composerIcon', 64, 64, undefined]]);
