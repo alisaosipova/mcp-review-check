@@ -27,6 +27,7 @@ import type { Snapshot, TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
+import { attachListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { compareTools, driftCount, type Drift } from './report/drift.js';
 import type { Finding } from './rules/types.js';
 
@@ -60,6 +61,12 @@ Options:
   --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed since the baseline.
   --diff-only             With --baseline, text and markdown: only the new findings and the tool changes (no
                           known-findings line, no manual checklist).
+  --plugin-dir <dir>      Also lint a Claude plugin folder (.claude-plugin/plugin.json, .mcp.json, README, LICENSE) against
+                          the plugin directory checklist (LST rules). Needs a <url> or --stdio target.
+  --openai-manifest <file>
+                          Also lint a ChatGPT plugin package manifest (plugin.json with extensions.com.openai, or
+                          .codex-plugin/plugin.json; its mcp.json is read from the package root) (LST rules).
+                          Needs a <url> or --stdio target.
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -83,6 +90,8 @@ Examples:
   mcp-review-check https://mcp.example.com/mcp --target claude
   mcp-review-check --env API_BASE=http://localhost:4000 --stdio -- node dist/server.js
   mcp-review-check https://staging.example.com/mcp --format markdown --output report.md
+  mcp-review-check https://mcp.example.com/mcp --plugin-dir ./my-plugin
+  mcp-review-check --stdio "node dist/server.js" --openai-manifest ./package/plugin.json --target chatgpt
   mcp-review-check explain TOOL-011
   mcp-review-check --list-rules TOOL --format json
 
@@ -127,6 +136,7 @@ const OPTIONS = {
   'fail-on-incomplete': { type: 'boolean' }, 'fail-on-drift': { type: 'boolean' }, 'diff-only': { type: 'boolean' }, baseline: { type: 'string' }, 'save-baseline': { type: 'string' }, 'json-output': { type: 'string' },
   config: { type: 'string' }, 'no-config': { type: 'boolean' },
   active: { type: 'boolean' }, 'active-auth': { type: 'boolean' }, 'tool-args': { type: 'string' },
+  'plugin-dir': { type: 'string' }, 'openai-manifest': { type: 'string' },
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
   quiet: { type: 'boolean' }, checklist: { type: 'boolean' }, local: { type: 'boolean' }, 'no-local': { type: 'boolean' },
@@ -423,6 +433,16 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       }
       if (typeof toolArgs !== 'object' || toolArgs === null || Array.isArray(toolArgs)) throw new UsageError('--tool-args must contain a JSON object {toolName: args}');
     }
+    // Listing inputs are read after the connect, but checked here: a missing path or the wrong kind is exit 2, before
+    // anything connects. The messages name the flag and never the path's content.
+    for (const [opt, kind] of [['plugin-dir', 'directory'], ['openai-manifest', 'file']] as const) {
+      const path = values[opt];
+      if (path === undefined) continue;
+      if (path === '') throw new UsageError(`--${opt} needs a ${kind} path`);
+      const st = statSync(path, { throwIfNoEntry: false });
+      if (!st) throw new UsageError(`--${opt}: no such ${kind} (the path is not shown)`);
+      if (kind === 'directory' ? !st.isDirectory() : !st.isFile()) throw new UsageError(`--${opt} must be a ${kind}, not a ${kind === 'directory' ? 'file' : 'directory'}`);
+    }
     // Read before connecting: a wrong --baseline is a usage error (exit 2), not a finished run that gated on everything.
     let baseline: Baseline | undefined;
     for (const opt of ['fail-on-drift', 'diff-only'] as const) {
@@ -461,6 +481,16 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
     }
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
+    // The listing inputs go on the snapshot before the rules, which skip LST-* without them. Problems reading a file
+    // are warnings (relative paths and codes only, never contents).
+    if (values['plugin-dir'] !== undefined || values['openai-manifest'] !== undefined) {
+      const listing = mergeListings(
+        values['plugin-dir'] !== undefined ? loadPluginDir(values['plugin-dir']) : undefined,
+        values['openai-manifest'] !== undefined ? loadOpenAiManifest(values['openai-manifest']) : undefined,
+      );
+      attachListing(snap, listing);
+      for (const e of listing.errors) stderr += `warning: ${e.source === 'plugin' ? '--plugin-dir' : '--openai-manifest'} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}\n`;
+    }
     const result = runRules(snap, RULES, { ignore });
     // --baseline: the known findings leave the report (the gate, the verdicts and the counts see only new ones) and are
     // added back by each format. They are compared redacted, as the baseline report was written; the score keeps every finding.
