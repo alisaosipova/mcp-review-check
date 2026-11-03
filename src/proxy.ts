@@ -11,14 +11,30 @@ const pick = (env: Env, upper: string): string | undefined => {
   return !v ? undefined : /^[a-z][a-z0-9+.-]*:\/\//i.test(v) || upper === 'NO_PROXY' ? v : `http://${v}`;
 };
 
+/** A proxy variable holds a scheme undici cannot use (socks4, socks4a, ftp, ...). The message names the variable; credentials are never shown. */
+export class ProxyConfigError extends Error {}
+
+/** Schemes undici's ProxyAgent speaks: http(s) proxies and SOCKS5 (socks5h is the same: the target host name is always sent to the proxy). */
+const SUPPORTED = new Set(['http:', 'https:', 'socks5:', 'socks5h:', 'socks:']);
+const normalize = (name: string, value: string | undefined): string | undefined => {
+  if (!value) return value;
+  let u: URL;
+  try { u = new URL(value); } catch { throw new ProxyConfigError(`${name}: not a valid proxy URL (the value is not shown)`); }
+  if (!SUPPORTED.has(u.protocol)) {
+    throw new ProxyConfigError(`${name}: unsupported proxy scheme "${u.protocol.slice(0, -1)}://" (use http://, https://, socks5:// or socks5h://; SOCKS4 is not supported). (${displayUrl(value)})`);
+  }
+  return u.protocol === 'socks5h:' ? value.replace(/^socks5h:/i, 'socks5:') : value;
+};
+
 export interface ProxyConfig { httpProxy?: string; httpsProxy?: string; noProxy?: string }
 
-/** The proxy variables of `env`, or undefined when none is set. HTTPS_PROXY falls back to HTTP_PROXY, as undici's EnvHttpProxyAgent does, so diagnostics match what fetch really does. */
+/** The proxy variables of `env`, or undefined when none is set. ALL_PROXY is the fallback for HTTP_PROXY, and HTTPS_PROXY falls back to HTTP_PROXY, as undici's EnvHttpProxyAgent does, so diagnostics match what fetch really does. */
 export function proxyConfig(env: Env = process.env): ProxyConfig | undefined {
-  const httpProxy = pick(env, 'HTTP_PROXY');
-  const httpsProxy = pick(env, 'HTTPS_PROXY');
+  const all = pick(env, 'ALL_PROXY');
+  const httpProxy = pick(env, 'HTTP_PROXY') ?? all;
+  const httpsProxy = pick(env, 'HTTPS_PROXY') ?? httpProxy;
   if (!httpProxy && !httpsProxy) return undefined;
-  return { httpProxy, httpsProxy: httpsProxy ?? httpProxy, noProxy: pick(env, 'NO_PROXY') };
+  return { httpProxy, httpsProxy, noProxy: pick(env, 'NO_PROXY') };
 }
 
 /** True when `host:port` is excluded by a NO_PROXY list ("*", "example.com", ".example.com", "*.example.com", "host:8080"). */
@@ -41,11 +57,30 @@ export function httpsProxyFor(host: string, port: number, env: Env = process.env
   return c.httpsProxy;
 }
 
+const EXPERIMENTAL = /^(\[UNDICI-EHPA\]|SOCKS5 proxy support is experimental)/;
+/** Drop exactly undici's ExperimentalWarning about its proxy agents; every other warning goes through unchanged. */
+export function suppressProxyWarning(): void {
+  if ((process.emitWarning as { proxyFilter?: boolean }).proxyFilter) return;
+  const original = process.emitWarning.bind(process) as (...a: unknown[]) => void;
+  process.emitWarning = ((warning: unknown, ...rest: unknown[]) => {
+    const first = rest[0] as unknown;
+    const type = typeof first === 'string' ? first : (first as { type?: string } | undefined)?.type ?? (warning as Error | undefined)?.name;
+    const message = typeof warning === 'string' ? warning : (warning as Error | undefined)?.message ?? '';
+    if (type === 'ExperimentalWarning' && EXPERIMENTAL.test(message)) return;
+    original(warning, ...rest);
+  }) as typeof process.emitWarning;
+  (process.emitWarning as { proxyFilter?: boolean }).proxyFilter = true;
+}
+
 /** Install the proxy-aware dispatcher for global fetch when a proxy variable is set; returns whether it did. */
 export function installProxy(env: Env = process.env): boolean {
   const c = proxyConfig(env);
   if (!c) return false;
-  const dispatcher = new EnvHttpProxyAgent({ httpProxy: c.httpProxy, httpsProxy: c.httpsProxy, noProxy: c.noProxy });
+  const httpProxy = normalize(env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpProxy);
+  const httpsProxy = normalize(env.HTTPS_PROXY || env.https_proxy ? 'HTTPS_PROXY' : env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpsProxy);
+  suppressProxyWarning();
+  // proxyTunnel: false sends http: targets as absolute-URI requests (plain forwarding); https: targets still use CONNECT.
+  const dispatcher = new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy: c.noProxy, proxyTunnel: false });
   setGlobalDispatcher(dispatcher);
   // The fetch built into newer Node releases (24+) bundles a newer undici than the dependency and ignores a dispatcher
   // installed from it, so global fetch is replaced by the dependency's own fetch, bound to the proxy-aware dispatcher.

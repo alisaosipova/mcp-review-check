@@ -4,7 +4,7 @@ import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { installProxy } from './proxy.js';
+import { installProxy, ProxyConfigError } from './proxy.js';
 import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
 import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
 import { schemeSuggestion } from './diagnose.js';
@@ -127,7 +127,7 @@ The score (100 - 12 per rule with errors - 4 per rule with only warnings) is pro
 With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
 severity), exit 3 and 4 as one ::error with its cause, a partial check as one ::warning naming why, and the markdown
 report is appended to $GITHUB_STEP_SUMMARY when it is set.
-Environment: HTTPS_PROXY, HTTP_PROXY and NO_PROXY route requests through a CONNECT proxy (credentials redacted);
+Environment: HTTPS_PROXY, HTTP_PROXY and NO_PROXY route requests through an HTTP(S) or SOCKS5 proxy (ALL_PROXY is the fallback; credentials redacted);
 NODE_EXTRA_CA_CERTS adds trusted CAs; MCP_REVIEW_CHECK_TOKEN is the default --bearer.
 Guide: https://github.com/alisaosipova/mcp-review-check/tree/main/docs/guide
 No telemetry is sent. Passing these checks does not guarantee directory approval.
@@ -616,7 +616,11 @@ const isMain = (() => {
 })();
 
 if (isMain) {
-  installProxy();
+  try { installProxy(); } catch (e) {
+    if (!(e instanceof ProxyConfigError)) throw e;
+    process.stderr.write(`error: ${e.message}\nRun with --help for usage.\n`);
+    process.exit(2);
+  }
   // The stdio servers lead their own process group, so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
   // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
   // a process cannot die by a signal, exit 128 + its number. A second signal SIGKILLs every server at once.

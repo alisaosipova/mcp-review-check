@@ -7,7 +7,7 @@ import { listen, startBridge, type Started } from './fixtures/http-bridge.js';
 // @ts-expect-error untyped .mjs fixture
 import { createGoodServer } from './fixtures/good-server.mjs';
 import { runCli } from '../src/cli.js';
-import { bypassesProxy, installProxy, proxyConfig, proxyForUrl } from '../src/proxy.js';
+import { bypassesProxy, installProxy, ProxyConfigError, proxyConfig, proxyForUrl } from '../src/proxy.js';
 import { describeCause } from '../src/diagnose.js';
 import { defaultDeps, tlsCheckWithRetry } from '../src/probe/network.js';
 import { buildRedactor, scrub } from '../src/redact.js';
@@ -21,6 +21,53 @@ afterEach(async () => {
   await Promise.all(closers.map((c) => c()));
   closers = [];
 });
+
+/** Forward-only proxy: answers absolute-URI requests, refuses CONNECT (405). */
+async function startForwardOnly(): Promise<Proxy> {
+  const seen: string[] = [];
+  const server = http.createServer((req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    if (!/^http:\/\//.test(req.url!)) { res.writeHead(400).end(); return; }
+    const u = new URL(req.url!);
+    const up = http.request({ host: u.hostname, port: u.port, path: u.pathname + u.search, method: req.method, headers: req.headers }, (r) => { res.writeHead(r.statusCode!, r.headers); r.pipe(res); });
+    req.pipe(up);
+  });
+  server.on('connect', (req, socket) => { seen.push(`CONNECT ${req.url}`); socket.end('HTTP/1.1 405 Method Not Allowed\r\n\r\n'); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const port = (server.address() as net.AddressInfo).port;
+  closers.push(() => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }));
+  return { url: `http://127.0.0.1:${port}`, port, seen };
+}
+
+/** Minimal SOCKS5 server (no auth, CONNECT only); records the target as host:port and whether it was a domain name. */
+async function startSocks(): Promise<Proxy> {
+  const seen: string[] = [];
+  const socks = new Set<net.Socket>();
+  const server = net.createServer((c) => {
+    socks.add(c); c.on('close', () => socks.delete(c));
+    c.once('data', () => {
+      c.write(Buffer.from([5, 0]));
+      c.once('data', (d) => {
+        const atyp = d[3];
+        let host: string; let off: number;
+        if (atyp === 3) { host = d.subarray(5, 5 + d[4]).toString(); off = 5 + d[4]; } else if (atyp === 1) { host = [...d.subarray(4, 8)].join('.'); off = 8; } else { c.destroy(); return; }
+        const port = d.readUInt16BE(off);
+        seen.push(`SOCKS5 ${atyp === 3 ? 'domain' : 'ip'} ${host}:${port}`);
+        const up = net.connect(port, host === 'localhost' ? '127.0.0.1' : host, () => {
+          c.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
+          up.pipe(c); c.pipe(up);
+        });
+        up.on('error', () => c.destroy());
+        c.on('error', () => up.destroy());
+      });
+    });
+    c.on('error', () => {});
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const port = (server.address() as net.AddressInfo).port;
+  closers.push(() => new Promise<void>((r) => { server.close(() => r()); for (const x of socks) x.destroy(); }));
+  return { url: `socks5://127.0.0.1:${port}`, port, seen };
+}
 
 interface Proxy { url: string; port: number; seen: string[] }
 /** A forward proxy for http: and a CONNECT proxy; `status` answers every request with that status instead (407). */
@@ -172,4 +219,71 @@ describe('proxy diagnosis units', () => {
     expect(text).not.toContain(PASS);
     expect(text).not.toContain('corpuser');
   }));
+});
+
+describe('plain-forwarding proxy for http: targets', () => {
+  it('forwards a GET and a POST as absolute-URI requests without CONNECT', async () => {
+    const s = await mcp();
+    const p = await startForwardOnly();
+    const env = { HTTP_PROXY: p.url };
+    installProxy(env);
+    const r = await withEnv(env, () => runCli([s.url, '--format', 'json'], env, false));
+    expect(r.code, r.stderr).toBe(0);
+    expect(p.seen.some((l) => l.startsWith('POST http://127.0.0.1:'))).toBe(true);
+    expect(p.seen.some((l) => l.startsWith('GET http://127.0.0.1:'))).toBe(true);
+    expect(p.seen.some((l) => l.startsWith('CONNECT'))).toBe(false);
+  });
+});
+
+describe('SOCKS5 proxy', () => {
+  it('routes the run through socks5:// and socks5h:// and ALL_PROXY, sending the host name', async () => {
+    for (const mk of [(u: string) => ({ HTTP_PROXY: u }), (u: string) => ({ ALL_PROXY: u }), (u: string) => ({ HTTP_PROXY: u.replace('socks5:', 'socks5h:') })]) {
+      const s = await mcp();
+      const p = await startSocks();
+      const env = mk(p.url);
+      installProxy(env);
+      const r = await withEnv(env, () => runCli([s.url.replace('127.0.0.1', 'localhost'), '--format', 'json'], env, false));
+      expect(r.code, r.stderr).toBe(0);
+      expect(p.seen.length).toBeGreaterThan(0);
+      expect(p.seen[0]).toContain(`domain localhost:${new URL(s.url).port}`);
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('rejects socks4 and other schemes, naming the variable without credentials', () => {
+    for (const v of ['socks4://u:' + PASS + '@h:1080', 'socks4a://h:1080', 'ftp://h:21']) {
+      let err: unknown;
+      try { installProxy({ HTTPS_PROXY: v }); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(ProxyConfigError);
+      expect((err as Error).message).toMatch(/^HTTPS_PROXY: unsupported proxy scheme/);
+      expect((err as Error).message).not.toContain(PASS);
+    }
+    expect(() => installProxy({ ALL_PROXY: 'socks4://h:1' })).toThrow(/^ALL_PROXY:/);
+  });
+
+  it('the CLI exits 2 with the message', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, ['dist/cli.js', 'http://127.0.0.1:1/mcp'], { env: { PATH: process.env.PATH, HTTP_PROXY: 'socks4://u:' + PASS + '@h:1' }, encoding: 'utf8' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/HTTP_PROXY: unsupported proxy scheme/);
+    expect(r.stderr).not.toContain(PASS);
+  });
+});
+
+describe('experimental warning', () => {
+  it('drops only the undici proxy ExperimentalWarning', async () => {
+    const orig = process.emitWarning;
+    const seen: string[] = [];
+    const onWarning = (w: Error) => seen.push(`${w.name}: ${w.message}`);
+    process.on('warning', onWarning);
+    try {
+      installProxy({ HTTP_PROXY: 'http://127.0.0.1:1' });
+      process.emitWarning('SOCKS5 proxy support is experimental and subject to change', 'ExperimentalWarning');
+      process.emitWarning('[UNDICI-EHPA] EnvHttpProxyAgent is experimental, expect them to change at any time.', 'ExperimentalWarning');
+      process.emitWarning('some other experimental feature', 'ExperimentalWarning');
+      process.emitWarning('unrelated warning');
+      await new Promise((r) => setTimeout(r, 20));
+    } finally { process.off('warning', onWarning); process.emitWarning = orig; }
+    expect(seen).toEqual(['ExperimentalWarning: some other experimental feature', 'Warning: unrelated warning']);
+  });
 });
