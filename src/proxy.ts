@@ -5,6 +5,21 @@ import { displayUrl } from './rules/util/net.js';
 
 type Env = Record<string, string | undefined>;
 
+/** Every proxy variable proxyConfig() routes through (each also read in lowercase). The redactor treats the credentials of each as secret, so the two lists cannot drift. */
+export const PROXY_URL_VARS = ['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY'] as const;
+
+/** The proxy URL values of `env` under every name and case in PROXY_URL_VARS (schemeless values read as http://), for redaction. */
+export function proxyEnvUrls(env: Env = process.env): string[] {
+  const out: string[] = [];
+  for (const name of PROXY_URL_VARS) {
+    for (const k of [name, name.toLowerCase()]) {
+      const v = env[k]?.trim();
+      if (v) out.push(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `http://${v}`);
+    }
+  }
+  return out;
+}
+
 /** The variable under either case; a value without a scheme ("proxy:3128") is read as http://, as curl does. */
 const pick = (env: Env, upper: string): string | undefined => {
   const v = (env[upper] || env[upper.toLowerCase()] || '').trim();

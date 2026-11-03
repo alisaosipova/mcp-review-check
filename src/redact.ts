@@ -2,6 +2,7 @@
 // finished Report is scrubbed in one place before any format renders it.
 import { createRedactor, scrub, type Redactor } from './protocol/trace.js';
 import { isKnownToken, isSecretName } from './rules/util/net.js';
+import { proxyEnvUrls } from './proxy.js';
 
 export type { Redactor } from './protocol/trace.js';
 export { scrub } from './protocol/trace.js';
@@ -114,11 +115,8 @@ export function argvSecrets(args: string[], strongOnly = false): string[] {
 }
 
 const safeUrl = (raw: string) => { try { return new URL(raw); } catch { return { username: '', password: '' }; } };
-/** The proxy URLs of the process environment (schemeless values read as http://, as src/proxy.ts does). */
-const proxyUrls = () => ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy'].flatMap((k) => {
-  const v = process.env[k]?.trim();
-  return v ? [/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `http://${v}`] : [];
-});
+/** The proxy URLs of the process environment: the same variables src/proxy.ts routes through, ALL_PROXY included. */
+const proxyUrls = () => proxyEnvUrls(process.env);
 
 export interface RedactionInput {
   url?: string;
@@ -142,7 +140,7 @@ export function buildRedactor(input: RedactionInput, strongOnly = false): Redact
   if (input.bearer) values.push(input.bearer);
   for (const [k, v] of Object.entries(headers)) values.push(v, ...headerSecrets(k, v).slice(1));
   if (input.url) values.push(...urlSecrets(input.url, strongOnly));
-  // Credentials of a proxy URL (HTTPS_PROXY=http://user:pass@host) may appear in connection errors: always secret.
+  // Credentials of a proxy URL (HTTPS_PROXY, HTTP_PROXY or ALL_PROXY=http://user:pass@host, socks5 included) may appear in connection errors: always secret.
   for (const p of proxyUrls()) {
     values.push(...urlSecrets(p));
     const { username, password } = safeUrl(p);
