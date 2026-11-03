@@ -1,14 +1,20 @@
 // Connection diagnostics: turn "fetch failed" and HTML error pages into a cause and a next step.
 import type { ConnectDiagnosis } from './snapshot.js';
 import { displayUrl } from './rules/util/net.js';
+import { proxyForUrl, proxyLabel } from './proxy.js';
 
 const TLS_CODE = /^(CERT_|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_(GET|VERIFY)|ERR_TLS_|ERR_SSL_|HOSTNAME_MISMATCH)/;
 
 /** The network cause of a failed fetch: undici puts the system error on `cause`. */
 export function networkCause(e: unknown): { code?: string; message?: string } | undefined {
-  const err = e as { code?: unknown; cause?: { code?: unknown; message?: unknown } } | undefined;
-  const code = typeof err?.cause?.code === 'string' ? err.cause.code : typeof err?.code === 'string' && /^[A-Z_]+$/.test(err.code) ? err.code : undefined;
-  const message = typeof err?.cause?.message === 'string' ? err.cause.message : undefined;
+  // The chain is fetch failed > cause > cause: undici's fetch wraps a tunnel failure ("Proxy response (407) !== 200") one level deeper.
+  const chain: Array<{ code?: unknown; message?: unknown; cause?: unknown }> = [];
+  for (let x = e as (typeof chain)[number] | undefined, i = 0; x && typeof x === 'object' && i < 4; x = x.cause as typeof x, i++) chain.push(x);
+  const causes = chain.slice(1);
+  const code = causes.map((c) => c.code).find((c): c is string => typeof c === 'string')
+    ?? (typeof (chain[0] as { code?: unknown })?.code === 'string' && /^[A-Z_]+$/.test(chain[0].code as string) ? (chain[0].code as string) : undefined);
+  const messages = causes.map((c) => c.message).filter((m): m is string => typeof m === 'string');
+  const message = messages.find((m) => /^Proxy response \(\d+\)/.test(m)) ?? messages[0];
   return code || message ? { code, message } : undefined;
 }
 
@@ -16,11 +22,32 @@ export function isTlsCode(code: string | undefined): boolean {
   return !!code && TLS_CODE.test(code);
 }
 
+const PROXY_HOP = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_PRX_TLS']);
+
+function proxyAuth(proxyLabelText: string): ConnectDiagnosis {
+  return {
+    kind: 'http', status: 407, summary: `HTTP 407: the proxy ${proxyLabelText} requires authentication (Proxy Authentication Required)`,
+    hint: 'put the credentials in the proxy URL (HTTPS_PROXY=http://user:pass@host:port), or list the target in NO_PROXY',
+  };
+}
+
 /** Describe a network-level failure for `url` by its error code (falls back to the cause message). */
 export function describeCause(url: URL, cause: { code?: string; message?: string }): ConnectDiagnosis {
   const { code, message } = cause;
   const host = url.hostname;
   const hostPort = `${url.hostname}:${url.port || (url.protocol === 'https:' ? 443 : 80)}`;
+  // With a proxy in the way, the socket error comes from the proxy hop (or the proxy's refusal to tunnel), not from the target.
+  const proxy = proxyForUrl(url);
+  const viaProxy = proxy && (PROXY_HOP.has(code ?? '') || /^Proxy response \(\d+\)|\b407\b/.test(message ?? ''));
+  if (proxy && viaProxy) {
+    const p = proxyLabel(proxy);
+    if (/\b407\b/.test(message ?? '')) return proxyAuth(p);
+    const kind = code === 'ECONNREFUSED' ? 'refused' : code === 'ENOTFOUND' || code === 'EAI_AGAIN' ? 'dns' : code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' ? 'timeout' : code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET' ? 'reset' : 'other';
+    return {
+      kind, code, summary: `cannot reach ${hostPort} through the HTTP proxy ${p} (${code ?? 'proxy error'})`,
+      hint: 'check HTTPS_PROXY / HTTP_PROXY: the proxy address and port, that it is running and allows CONNECT to the target; list hosts to reach directly in NO_PROXY',
+    };
+  }
   switch (code) {
     case 'ENOTFOUND':
       return { kind: 'dns', code, summary: `hostname ${host} does not resolve (ENOTFOUND)`, hint: 'check the hostname for typos and that its DNS records are published' };
@@ -78,6 +105,9 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   const next = suggestedEndpoint(url);
   // The SDK reports an unexpected content type as code -1: that is not an HTTP status.
   const status = f.status !== undefined && f.status >= 100 ? f.status : undefined;
+  // 407 is the proxy's answer, not the server's.
+  const proxy = status === 407 ? proxyForUrl(url) : undefined;
+  if (proxy) return proxyAuth(proxyLabel(proxy));
   if ((status !== undefined && [404, 405, 410].includes(status)) || html) {
     const title = html ? htmlTitle(f.body) : undefined;
     const what = `${status !== undefined ? `HTTP ${status}` : 'response'}${html ? ` with an HTML page${title ? ` ("${title}")` : ''}` : ''}`;

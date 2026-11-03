@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { installProxy } from './proxy.js';
 import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
 import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
 import { schemeSuggestion } from './diagnose.js';
@@ -600,6 +601,7 @@ const isMain = (() => {
 })();
 
 if (isMain) {
+  installProxy();
   // The stdio servers lead their own process group, so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
   // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
   // a process cannot die by a signal, exit 128 + its number. A second signal SIGKILLs every server at once.

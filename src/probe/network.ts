@@ -2,6 +2,7 @@
 import { promises as dns } from 'node:dns';
 import { isIP } from 'node:net';
 import tls from 'node:tls';
+import { proxyForUrl, proxyLabel } from '../proxy.js';
 import type { DnsResult, HttpExchange, ProbeObservation } from '../snapshot.js';
 import type { Tracer } from '../protocol/trace.js';
 import { CLIENT_CAPABILITIES } from '../protocol/clientCaps.js';
@@ -207,6 +208,12 @@ export interface TlsResult {
  * Each handshake waits at most `opts.timeoutMs` (capped at TLS_TIMEOUT_MS); once `opts.signal` aborts, nothing is retried.
  */
 export async function tlsCheckWithRetry(deps: Deps, hostname: string, port: number, opts: TlsCheckOptions = {}): Promise<TlsResult> {
+  // The handshake is a raw socket: it cannot go through an HTTP proxy, and a direct one would fail or hit another route.
+  const proxy = proxyForUrl(new URL(`https://${hostname.includes(':') ? `[${hostname.replace(/^\[|\]$/g, '')}]` : hostname}:${port}`));
+  if (proxy) {
+    const code = `not checked: the direct TLS handshake cannot go through the HTTP proxy ${proxyLabel(proxy)} (list the host in NO_PROXY to check it)`;
+    return { ok: false, code, attempts: [code], transient: true };
+  }
   const codes: string[] = [];
   const timeoutMs = Math.min(opts.timeoutMs ?? TLS_TIMEOUT_MS, TLS_TIMEOUT_MS);
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
