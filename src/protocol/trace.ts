@@ -253,9 +253,13 @@ export function snippetOf(text: string, r: Redactor): string {
   }
 }
 
+const ERROR_DATA_CAP = 4096;
+
 /** The JSON-RPC responses (with a result or an error) in a parsed body, without the results: what collectErrors and
  *  the handshake checks read once the body itself is not kept (F036). */
-export function summarizeJsonRpc(json: unknown): JsonRpcSummary[] | undefined {
+const isPlainObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+export function summarizeJsonRpc(json: unknown, keepResult = false): JsonRpcSummary[] | undefined {
   const out: JsonRpcSummary[] = [];
   for (const m of Array.isArray(json) ? json : [json]) {
     if (!m || typeof m !== 'object' || Array.isArray(m)) continue;
@@ -264,9 +268,25 @@ export function summarizeJsonRpc(json: unknown): JsonRpcSummary[] | undefined {
     if (!err && !('result' in o)) continue;
     const s: JsonRpcSummary = {};
     if ('id' in o) s.id = o.id;
-    if ('result' in o) s.result = true;
+    if ('result' in o) {
+      s.result = true;
+      // What the rules read of a probe's result, so the result itself need not be kept (rpcView, SPEC-008/009).
+      const r = o.result;
+      if (r !== null && typeof r === 'object' && !Array.isArray(r)) {
+        const ro = r as Record<string, unknown>;
+        const info: NonNullable<JsonRpcSummary['resultInfo']> = {};
+        if (typeof ro.isError === 'boolean') info.isError = ro.isError;
+        if (Array.isArray(ro.contents)) info.contents = ro.contents.length;
+        if (Object.keys(info).length) s.resultInfo = info;
+      }
+      if (keepResult) s.resultValue = o.result;
+    }
     if ('method' in o) s.method = true;
-    if (err) s.error = { code: err.code, message: err.message };
+    if (err) {
+      s.error = { code: err.code, message: err.message };
+      // error.data is small in practice (SPEC-001 reads data.supported); an oversized one is not kept.
+      if (err.data !== undefined && JSON.stringify(err.data)?.length <= ERROR_DATA_CAP) s.error.data = err.data;
+    }
     out.push(s);
   }
   return out.length ? out : undefined;
@@ -299,7 +319,7 @@ export interface Tracer {
    * `keepJson`: keep the parsed body on `exchange.json` (default: the tracer's `keepJson`). The parsed body is returned
    * as `json` either way, once: the caller stores what it needs (F036).
    */
-  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean; keepJson?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number; json?: unknown }>;
+  request(label: string, url: string | URL, init?: RequestInit & { timeoutMs?: number; abortAfterHeaders?: boolean; fullBody?: boolean; keepJson?: boolean; keepResult?: boolean }): Promise<{ exchange: HttpExchange; response?: Response; bodyBytes?: number; json?: unknown }>;
   flush(): Promise<void>;
   now(): number;
 }
@@ -358,13 +378,16 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
    * The exchange keeps the masked snippet, the size, a digest and a summary of the JSON-RPC responses; the parsed body
    * goes back to the caller once and stays on the exchange only with `keep` (F036).
    */
-  const finishBody = (ex: HttpExchange, b: BodyRead, keep: boolean): unknown => {
+  const finishBody = (ex: HttpExchange, b: BodyRead, keep: boolean, keepResult = false): unknown => {
     ex.bodySnippet = snippetOf(b.text, redactor);
     ex.bodyBytes = b.bytes;
     ex.bodySha256 = bodyDigest(b.text, redactor);
     const json = parseBody(b.text, ex.contentType, ex.requestJson);
-    const rpc = summarizeJsonRpc(json);
+    const rpc = summarizeJsonRpc(json, keepResult);
     if (rpc) ex.jsonRpc = rpc;
+    if (json !== undefined) ex.jsonParsed = true;
+    // An OAuth error body ({"error": "invalid_grant"}, RFC 6749 5.2), which AUTH-021 reads without the body.
+    if (isPlainObject(json) && typeof json.error === 'string') ex.oauthError = json.error.slice(0, 200);
     if (keep) ex.json = json;
     return json;
   };
@@ -409,7 +432,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
     const timeout = setTimeout(() => ctrl.abort(), timeoutMs); // not AbortSignal.timeout: the timeout checks expect an AbortError
     const signal = stop ? AbortSignal.any([ctrl.signal, stop]) : ctrl.signal;
     // Tracer-only options are not passed to fetch.
-    const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, keepJson, ...fetchInit } = init;
+    const { timeoutMs: _timeoutMs, abortAfterHeaders, fullBody, keepJson, keepResult, ...fetchInit } = init;
     // The byte budget is spent: nothing more is read, so nothing more is sent (F146).
     if (budget?.exhausted) {
       clearTimeout(timeout);
@@ -431,7 +454,7 @@ export function createTracer(redactor: Redactor, now: () => number = () => perfo
           ? await readBody(res, Math.max(0, timeoutMs - (now() - started)), FULL_READ_CAP, rpcId, FULL_READ_CAP, budget)
           : await readBody(res, Math.min(timeoutMs, BODY_TIMEOUT_MS), READ_CAP, rpcId, READ_CAP, budget);
         ex.bodyMs = now() - started;
-        json = finishBody(ex, body, keepJson ?? keepByDefault);
+        json = finishBody(ex, body, keepJson ?? keepByDefault, keepResult);
         sample(ex, body, json, false);
         bodyBytes = body.bytes;
         if (body.budgetExhausted) ex.error = { name: 'SnapshotBudget', message: `${BUDGET_ERROR}: response body cut after ${Buffer.byteLength(body.text)} bytes` };

@@ -786,11 +786,29 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   } finally {
     await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close()
   }
+  dropExchangeBodies(result.snap);
   // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises.
   // The target stays as entered (rules parse and hash it).
   const masked = { ...redactDeep(result.snap, redactorFor(opts)), target: result.snap.target };
   capSnapshot(masked);
   return { ...result, snap: masked };
+}
+
+/**
+ * No exchange keeps the full parsed body once the probes are done: rpcView and AUTH-021 read the summary the tracer
+ * stored (jsonRpc, jsonParsed, oauthError). The PRM and AS metadata exchanges are not touched: `prm.json` and
+ * `as[].json` are the same objects and are snapshot fields (F036).
+ */
+export function dropExchangeBodies(snap: Snapshot): void {
+  const drop = (e: unknown) => {
+    const x = e as HttpExchange | undefined;
+    if (x && x.json !== undefined && (x.jsonParsed || x.jsonRpc)) delete x.json;
+  };
+  // The discover probe's result stays in its summary (SPEC-019 falls back to it): the same object as snap.discoverRaw.
+  const disc = snap.transport.probes.discover as HttpExchange | undefined;
+  if (disc && (disc as { kind?: string }).kind !== 'jsonrpc' && disc.json !== undefined) disc.jsonRpc = summarizeJsonRpc(disc.json, true) ?? disc.jsonRpc;
+  for (const o of Object.values(snap.transport.probes)) if (o && (o as { kind?: string }).kind !== 'jsonrpc') drop(o);
+  for (const e of snap.authProbe?.active?.token ?? []) drop(e);
 }
 
 /** Why a run stopped early: the --max-duration deadline, or the snapshot byte budget ran out (F146). */

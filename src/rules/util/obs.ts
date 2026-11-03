@@ -48,6 +48,14 @@ export function rpcView(o: ProbeObservation | undefined): RpcView | undefined {
     if ('result' in json) view.result = json.result;
     if (isObj(json.error)) view.error = json.error as RpcView['error'];
   }
+  else if (o.jsonRpc?.[0]) {
+    // The parsed body is not kept (F036): the exchange summary carries what the rules read.
+    const m = o.jsonRpc[0];
+    view.responseId = m.id;
+    if (m.resultValue !== undefined) view.result = m.resultValue;
+    else if (m.result) view.result = { ...(m.resultInfo?.isError !== undefined ? { isError: m.resultInfo.isError } : {}), ...(m.resultInfo?.contents !== undefined ? { contents: new Array(m.resultInfo.contents) } : {}) };
+    if (m.error) view.error = m.error;
+  }
   if (o.error) view.transportError = o.error.message;
   return view;
 }

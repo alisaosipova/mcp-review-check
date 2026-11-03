@@ -30,6 +30,10 @@ export interface HttpExchange {
   bodySha256?: string;
   /** The JSON-RPC responses in the body (one, or each of a batch or SSE stream), without their results (F036). */
   jsonRpc?: JsonRpcSummary[];
+  /** The body parsed as a JSON object or array (kept or not): AUTH-021 tells "not JSON" from "JSON" without `json`. */
+  jsonParsed?: true;
+  /** `error` of a JSON object body that is a string (an OAuth error such as invalid_grant, RFC 6749 5.2), first 200 chars. */
+  oauthError?: string;
   /** Time to headers (latency rules use this). */
   durationMs: number;
   /** Time until the body was read (or reading stopped at the matching SSE response). */
@@ -43,7 +47,11 @@ export interface JsonRpcSummary {
   id?: unknown;
   result?: true;
   method?: true;
-  error?: { code?: unknown; message?: unknown };
+  error?: { code?: unknown; message?: unknown; data?: unknown };
+  /** What rules read of the result: `isError` of a tools/call result, the length of `contents` of a resources/read result. */
+  resultInfo?: { isError?: boolean; contents?: number };
+  /** The whole result, only where a rule reads it (the discover probe: it is the same object as `discoverRaw`). */
+  resultValue?: unknown;
 }
 
 /** A JSON-RPC exchange observed through the SDK client (stdio, SSE, or legacy HTTP). */

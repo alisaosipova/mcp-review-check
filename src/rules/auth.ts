@@ -579,10 +579,10 @@ export const AUTH_021 = defineRule(
     const out: RawFinding[] = [];
     if (code) {
       if (code.status === 415 || /unsupported.*(content|media)|could not parse|missing.*grant_type/i.test(code.bodySnippet ?? '')) out.push({ message: `token endpoint did not parse a form-encoded body (${code.status})` });
-      else if (code.json === undefined) out.push({ severity: 'warning', message: `token error body is not JSON (${code.status})` });
+      else if (code.json === undefined && !code.jsonParsed) out.push({ severity: 'warning', message: `token error body is not JSON (${code.status})` });
     }
     if (refresh) {
-      const err = isObj(refresh.json) ? refresh.json.error : undefined;
+      const err = isObj(refresh.json) ? refresh.json.error : refresh.oauthError;
       if (!(refresh.status === 400 && err === 'invalid_grant')) out.push({ severity: 'warning', message: `bogus refresh_token got ${refresh.status} ${JSON.stringify(err)}; expected 400 invalid_grant` });
     }
     return out;

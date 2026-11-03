@@ -83,7 +83,7 @@ describe('exchanges keep a snippet, size, digest and JSON-RPC summary, not the p
 
   it('summarizeJsonRpc keeps ids, errors and the result and method flags of each response, not the results', () => {
     expect(summarizeJsonRpc([{ jsonrpc: '2.0', id: 1, result: { big: 'x'.repeat(1000) } }, { id: 2, error: { code: -1, message: 'm', data: { d: 1 } } }, { method: 'notifications/x' }, 3]))
-      .toEqual([{ id: 1, result: true }, { id: 2, error: { code: -1, message: 'm' } }]);
+      .toEqual([{ id: 1, result: true }, { id: 2, error: { code: -1, message: 'm', data: { d: 1 } } }]);
     expect(summarizeJsonRpc({ id: 5, method: 'sampling/createMessage', result: {} })).toEqual([{ id: 5, result: true, method: true }]);
     expect(summarizeJsonRpc(undefined)).toBeUndefined();
   });
@@ -114,9 +114,13 @@ describe('exchanges keep a snippet, size, digest and JSON-RPC summary, not the p
     expect(listing.jsonRpc).toEqual([{ id: expect.any(Number), result: true }]);
     expect(listing.bodySha256).toMatch(/^[0-9a-f]{64}$/);
     expect(listing.bodyBytes).toBeGreaterThan(0);
-    // The probes the SPEC rules read through rpcView keep theirs.
-    expect(snap.transport.probes.discover && 'json' in snap.transport.probes.discover && snap.transport.probes.discover.json).toBeTruthy();
-    expect((snap.transport.probes.unknownMethodModern as HttpExchange).json).toMatchObject({ error: { code: -32601 } });
+    // The probes the SPEC rules read through rpcView keep their summary, not the body (W6G): the discover result and error.data in it.
+    const disc = snap.transport.probes.discover as HttpExchange;
+    expect(disc.json).toBeUndefined();
+    expect(disc.jsonRpc?.[0].resultValue).toBe(snap.discoverRaw);
+    const unknown = snap.transport.probes.unknownMethodModern as HttpExchange;
+    expect(unknown.json).toBeUndefined();
+    expect(unknown.jsonRpc?.[0]).toMatchObject({ error: { code: -32601 } });
     expect(snap.transport.modernResults?.some((r) => r.method === 'tools/list')).toBe(true);
     expect(snap.transport.observedErrors?.some((e) => e.source === 'unknownMethod (modern)')).toBe(true);
   });
