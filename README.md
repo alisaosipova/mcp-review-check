@@ -237,7 +237,7 @@ Findings that apply to several platforms carry a severity per platform (for exam
 ### Example output
 
 ```
-mcp-review-check 0.3.0 · rules 2026-11-01 · target: all
+mcp-review-check 0.3.0 · rules 2026-11-02 · target: all
 Server  repo-wiki 0.1.0 · https://mcp.wiki.example/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth none
           2026-07-28 clients fall back to initialize. Not a defect.
@@ -525,7 +525,7 @@ As of 2026-10-23; each statement links to the tool's own documentation, checked 
 
 ## Stability policy
 
-The rule catalog is dated <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE --> (shown as `rules <date>` in every report header and as `tool.catalogDate` in JSON, with `tool.catalogAgeDays`). A check run prints a warning on stderr when the catalog is more than 90 days old, because directory requirements change.
+The rule catalog is dated <!-- CATALOG_DATE -->2026-11-02<!-- /CATALOG_DATE --> (shown as `rules <date>` in every report header and as `tool.catalogDate` in JSON, with `tool.catalogAgeDays`). A check run prints a warning on stderr when the catalog is more than 90 days old, because directory requirements change.
 
 While the version is 0.x:
 
@@ -538,7 +538,7 @@ In CI, pin the minor version so that new rules arrive when you choose to upgrade
 
 ## Limitations and disclaimer
 
-- Passing these automated checks **does not guarantee approval**. Directory reviews include manual testing and policy judgment, and requirements change. Rules reflect public documentation as of <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE -->.
+- Passing these automated checks **does not guarantee approval**. Directory reviews include manual testing and policy judgment, and requirements change. Rules reflect public documentation as of <!-- CATALOG_DATE -->2026-11-02<!-- /CATALOG_DATE -->.
 - Heuristic rules (word lists and regexes for injection, data collection, policy topics and tool shapes) can produce false positives and miss real problems. They are capped at warning; only deterministic markers (hidden characters, explicit "ignore previous instructions" or "don't tell the user", conversation-history and secret parameter names) are errors.
 - Tool-level checks on OAuth-protected servers need a valid `--bearer` token; without one only the auth checks run.
 - `--stdio` launches the server with your local Node. A server whose `engines` needs a newer Node fails at startup (exit 3); run the check under that Node version, or pass `--env NODE_OPTIONS=...` when a flag is enough.

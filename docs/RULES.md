@@ -1,6 +1,6 @@
 # mcp-review-check rules
 
-The rule catalog, dated <!-- CATALOG_DATE -->2026-11-01<!-- /CATALOG_DATE -->: every automated rule with its severity per platform and its public source, then the manual checklist. Generated from the code (`npm run build && npm run readme:rules`); do not edit the tables by hand. `mcp-review-check --list-rules --format markdown` prints the same tables, and `mcp-review-check explain <RULE-ID>` prints one rule's rationale, sources and fix.
+The rule catalog, dated <!-- CATALOG_DATE -->2026-11-02<!-- /CATALOG_DATE -->: every automated rule with its severity per platform and its public source, then the manual checklist. Generated from the code (`npm run build && npm run readme:rules`); do not edit the tables by hand. `mcp-review-check --list-rules --format markdown` prints the same tables, and `mcp-review-check explain <RULE-ID>` prints one rule's rationale, sources and fix.
 
 Severity is listed per platform; a rule's platforms are the keys. **error** only when the source states a MUST or a rejection criterion *and* detection is deterministic; heuristics (regex or word lists) are at most **warning**. In [local mode](../README.md#local-mode) deploy-time checks are reported as info.
 
