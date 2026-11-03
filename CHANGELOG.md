@@ -8,6 +8,25 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 Nothing yet.
 
+## [0.7.0] - 2026-11-03
+
+Rule catalog dated 2026-11-02. One rule is new and two report more than before (see **Rules added** and **Severity raised**), so this is a minor release.
+
+### Added
+
+- A read-only `tasks/get` probe with a random task id that does not exist, sent only when a 2026-07-28 server declares the `io.modelcontextprotocol/tasks` extension.
+- A `subscriptions/listen` probe that reads only the response headers and closes at once, sent only when a 2026-07-28 server declares `listChanged` or resource subscriptions.
+- The JSON report records the server notifications seen during the run, by method name and count, without payloads.
+
+#### Rules added
+
+- SPEC-024 (spec: error) reports `notifications/message` sent without `io.modelcontextprotocol/logLevel` on the request, without a declared `logging` capability, or without a valid level.
+
+#### Severity raised
+
+- SPEC-023 reports a declared tasks extension whose `tasks/get` is not implemented as an error, instead of "declared, not verified".
+- SPEC-005 warns when `subscriptions/listen` is answered with something other than an event stream (a JSON-RPC error answered with HTTP 200 is accepted).
+
 ## [0.6.0] - 2026-11-03
 
 Rule catalog dated 2026-11-02. Two rules are new (see **Rules added**), so this is a minor release.
@@ -408,7 +427,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.3.0...v0.4.0
