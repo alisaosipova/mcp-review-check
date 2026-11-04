@@ -1,7 +1,7 @@
 // Auth probe: WWW-Authenticate, PRM discovery, AS discovery, invalid token, timings; active-auth probes.
 import { createHash, randomBytes } from 'node:crypto';
 import type { AsObservation, AuthProbe, HttpExchange } from '../snapshot.js';
-import type { Tracer } from '../protocol/trace.js';
+import { scrub, type Redactor, type Tracer } from '../protocol/trace.js';
 import { isObj, isStr } from '../rules/util/access.js';
 import { parseWwwAuthenticate } from '../rules/util/wwwAuth.js';
 import { closeProbeSession, initializeBody, JSON_HEADERS, lookupHost, requestRetried, requestWithRetry, type Deps } from './network.js';
@@ -218,4 +218,28 @@ async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown
     if (out.clientId) out.token.push(await post('auth token refresh', form({ grant_type: 'refresh_token', refresh_token: 'mcp-review-check-bogus-refresh', client_id: clientId })));
   }
   return out;
+}
+
+/** Server-chosen text for one stderr line: printable ASCII only (anything else as \u{..}), at most 200 characters. */
+function oneLine(s: string): string {
+  const shown = s.replace(/[^\x20-\x7e]/gu, (ch) => `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`);
+  return shown.length > 200 ? `${shown.slice(0, 199)}…` : shown;
+}
+
+/**
+ * --active-auth: the stderr line that names the DCR client the run registered, so the user can delete it
+ * (SECURITY.md). Only the client_id and the registration endpoint (a client_id is not a secret; client_secret and
+ * registration_access_token are never printed), scrubbed of the run's secret values. Undefined when no DCR POST was
+ * accepted.
+ */
+export function dcrClientNotice(probe: AuthProbe | undefined, redactor?: Redactor): string | undefined {
+  const dcr = probe?.active?.dcr;
+  if (!dcr || dcr.status === undefined || dcr.status < 200 || dcr.status >= 300) return undefined;
+  // Scrub before escaping, so a secret value is recognised as the run sent it.
+  const shown = (v: string) => oneLine(redactor ? scrub(v, redactor) : v);
+  const at = shown(dcr.url);
+  const clientId = probe!.active!.clientId;
+  return clientId !== undefined
+    ? `Notice: --active-auth registered DCR client client_id=${shown(clientId)} at ${at}; delete it if your authorization server does not expire unused clients.\n`
+    : `Notice: --active-auth registration at ${at} answered ${dcr.status} without a client_id; check your authorization server for a client named mcp-review-check.\n`;
 }
