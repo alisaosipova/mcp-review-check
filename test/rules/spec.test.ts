@@ -102,7 +102,7 @@ const cases: Record<string, Case> = {
       s.discoverRaw = { ...(s.discoverRaw as object), _meta: meta };
       s.transport.modernResults = [{ method: 'server/discover', result: s.discoverRaw }, { method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs: 1, cacheScope: 'public', _meta: meta } }];
     }),
-    severity: 'info', match: /tools\/list.*lack _meta\["io\.modelcontextprotocol\/serverInfo"\]/,
+    severity: 'info', match: /tools\/list.*lacks? _meta\["io\.modelcontextprotocol\/serverInfo"\]/,
   },
   // Near miss: an official extension the core spec does not list, with settings, and a third-party one.
   'SPEC-023': {

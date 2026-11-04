@@ -94,21 +94,22 @@ describe('SPEC-022 _meta["io.modelcontextprotocol/serverInfo"] on 2026-07-28 res
       { method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs: 1, cacheScope: 'public' } },
       { method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs: 1, cacheScope: 'public' } },
     ]));
-    expect(f).toMatchObject([{ severity: 'info', message: 'server/discover, tools/list results lack _meta["io.modelcontextprotocol/serverInfo"]' }]);
+    // server/discover is SRV-013's (review A04-01): one finding per defect.
+    expect(f).toMatchObject([{ severity: 'info', message: 'tools/list result lacks _meta["io.modelcontextprotocol/serverInfo"]' }]);
   });
   it('reports a malformed value separately', () => {
-    const f = messages('SPEC-022', modern({ ...DISCOVER, _meta: { 'io.modelcontextprotocol/serverInfo': 'acme-notes 1.0.0' } }));
-    expect(f).toEqual(['_meta["io.modelcontextprotocol/serverInfo"] on server/discover is not an object with string name and version']);
+    const f = messages('SPEC-022', modern(DISCOVER, [{ method: 'tools/list', result: { resultType: 'complete', tools: [], _meta: { 'io.modelcontextprotocol/serverInfo': 'acme-notes 1.0.0' } } }]));
+    expect(f).toEqual(['_meta["io.modelcontextprotocol/serverInfo"] on tools/list is not an object with string name and version']);
   });
   it('is clean when every result carries it (an empty version string is a string)', () => {
     const d = { ...DISCOVER, _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'kiwi', version: '' } } };
     expect(messages('SPEC-022', modern(d, [{ method: 'tools/list', result: { resultType: 'complete', tools: [], _meta: SI } }]))).toEqual([]);
   });
-  it('checks the frozen discover result when no modern results were recorded (dual-era fixtures)', () => {
+  it('leaves the server/discover result to SRV-013, also when no modern results were recorded (dual-era fixtures; review A04-01)', () => {
     const s = withCaps({ tools: {} });
     s.era = 'dual';
     s.discoverRaw = DISCOVER;
-    expect(messages('SPEC-022', s)).toEqual(['server/discover result lacks _meta["io.modelcontextprotocol/serverInfo"]']);
+    expect(messages('SPEC-022', s)).toEqual([]); // SRV-013 reports it (test/r3-p4-protocol-engine.test.ts)
   });
   it('is skipped unless 2026-07-28 was negotiated (legacy initialize carries serverInfo in its body)', () => {
     const r = evaluate(byId('SPEC-022'), withCaps({ tools: {} }), true);

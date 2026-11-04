@@ -673,14 +673,15 @@ export const SPEC_021 = defineRule(
 export const SPEC_022 = defineRule(
   {
     id: 'SPEC-022', title: '2026-07-28 results identify the server', severity: { spec: 'info' }, needs: ['modern'],
-    rationale: 'Without initialize, a 2026-07-28 client learns which server software answered only from _meta["io.modelcontextprotocol/serverInfo"], which servers should put on every result.',
+    rationale: 'Without initialize, a 2026-07-28 client learns which server software answered only from _meta["io.modelcontextprotocol/serverInfo"], which servers should put on every result. The server/discover result is checked by SRV-013.',
     fix: 'Add _meta["io.modelcontextprotocol/serverInfo"]: { name, version } to every 2026-07-28 result.',
     sources: [SCHEMA_TS, 'https://modelcontextprotocol.io/specification/2026-07-28/changelog#major-changes'],
   },
   (snap) => {
-    // Results to our 2026-07-28 requests only: a legacy initialize carries serverInfo in its body (SRV-013).
-    const results = [...(snap.transport.modernResults ?? [])];
-    if (isObj(snap.discoverRaw) && !results.some((r) => r.method === 'server/discover')) results.unshift({ method: 'server/discover', result: snap.discoverRaw });
+    // Results to our 2026-07-28 requests only: a legacy initialize carries serverInfo in its body (SRV-013). SRV-013
+    // also owns the server/discover result (missing: warning, malformed: error), so one defect is one finding (A04-01).
+    const ownedBySrv013 = isObj(snap.discoverRaw);
+    const results = (snap.transport.modernResults ?? []).filter((r) => !(ownedBySrv013 && r.method === 'server/discover'));
     const missing = new Set<string>();
     const malformed = new Set<string>();
     for (const { method, result } of results) {

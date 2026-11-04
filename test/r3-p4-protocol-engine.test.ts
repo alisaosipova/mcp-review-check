@@ -1,8 +1,8 @@
 // Review round 3, package P4 (1.0.1): protocol, server and auth rules, engine.
 import { describe, expect, it } from 'vitest';
 import { runRules } from '../src/rules/engine.js';
-import { SPEC_024 } from '../src/rules/spec.js';
-import { SRV_018 } from '../src/rules/server.js';
+import { SPEC_022, SPEC_024 } from '../src/rules/spec.js';
+import { SRV_013, SRV_018 } from '../src/rules/server.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { snap } from './helpers.js';
 import { RULES } from '../src/rules/index.js';
@@ -52,5 +52,24 @@ describe('A10-05: rules that need the server are skipped after connect-failed', 
     const r = runRules(snap({ url: 'https://mcp.acme.test/mcp' }), RULES.filter((x) => x.id === 'SRV-007'));
     expect(r.skipped).toEqual([]);
     expect(r.rulesRun).toBe(1);
+  });
+});
+
+describe('A04-01: one finding for the server/discover serverInfo, from SRV-013', () => {
+  const modern = (meta?: unknown, more: Array<{ method: string; result: unknown }> = []) => snap({ url: 'https://mcp.acme.test/mcp', set: (s) => {
+    s.era = 'modern'; s.initializeRaw = undefined;
+    s.discoverRaw = { supportedVersions: ['2026-07-28'], capabilities: {}, resultType: 'complete', ...(meta === undefined ? {} : { _meta: { 'io.modelcontextprotocol/serverInfo': meta } }) };
+    s.transport.modernResults = more;
+  } });
+  const both = (s: Snapshot) => runRules(s, [SRV_013, SPEC_022]).findings.map((f) => `${f.ruleId} ${f.severity} ${f.message}`);
+  it('a missing serverInfo on server/discover is reported once (SRV-013 warning), not again by SPEC-022', () => {
+    expect(both(modern())).toEqual(['SRV-013 warning server/discover result has no _meta["io.modelcontextprotocol/serverInfo"]']);
+  });
+  it('a malformed one only by SRV-013, at its existing levels', () => {
+    expect(both(modern({ name: '', version: 1 })).map((m) => m.split(' ').slice(0, 2).join(' '))).toEqual(['SRV-013 error', 'SRV-013 error']);
+  });
+  it('SPEC-022 still reports the other 2026-07-28 results', () => {
+    const s = modern({ name: 'acme', version: '1' }, [{ method: 'server/discover', result: {} }, { method: 'tools/list', result: { tools: [] } }]);
+    expect(both(s)).toEqual(['SPEC-022 info tools/list result lacks _meta["io.modelcontextprotocol/serverInfo"]']);
   });
 });
