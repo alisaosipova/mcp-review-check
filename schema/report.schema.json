@@ -40,8 +40,9 @@
         "localMode": { "type": "boolean" }
       },
       "oneOf": [
-        { "required": ["url"], "properties": { "command": false, "argv": false } },
-        { "required": ["command"], "properties": { "url": false } }
+        { "required": ["url"], "properties": { "command": false, "argv": false, "listingOnly": false } },
+        { "required": ["command"], "properties": { "url": false, "listingOnly": false } },
+        { "required": ["listingOnly"], "properties": { "url": false, "command": false, "argv": false } }
       ]
     },
     "coverage": {
@@ -70,7 +71,7 @@
       "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["truncated"],
-      "description": "Input caps applied and the --max-duration stop; null when neither happened.",
+      "description": "Input caps applied, the --max-duration stop and the snapshot budget stop; null when none happened.",
       "properties": {
         "truncated": {
           "type": "array",
@@ -82,7 +83,7 @@
               "where": { "type": "string" },
               "length": { "type": "integer", "minimum": 0 },
               "cap": { "type": "integer", "minimum": 0 },
-              "unit": { "const": "items" }
+              "unit": { "enum": ["items", "bytes"], "description": "items: length counts things (UI resources) rather than characters; bytes (since 0.4): the snapshot budget." }
             }
           }
         },
@@ -95,6 +96,19 @@
             "phase": { "type": "string" },
             "completed": { "type": "array", "items": { "type": "string" }, "description": "Since 0.3: the phases that ran to their end before the stop, in order." },
             "unfinished": { "type": "array", "items": { "type": "string" }, "description": "Since 0.3: the phase cut short and every later one." }
+          }
+        },
+        "budgetExhausted": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bytes", "overBytes", "phase", "completed", "unfinished"],
+          "description": "Since 0.4: the snapshot byte budget ran out; the run went on with what it had read (a partial check).",
+          "properties": {
+            "bytes": { "type": "integer", "minimum": 0, "description": "The budget." },
+            "overBytes": { "type": "integer", "minimum": 0, "description": "What arrived past the budget in the read that crossed it." },
+            "phase": { "type": "string" },
+            "completed": { "type": "array", "items": { "type": "string" } },
+            "unfinished": { "type": "array", "items": { "type": "string" } }
           }
         }
       }
