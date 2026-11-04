@@ -116,9 +116,10 @@ const GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u;
 /**
  * Biomedical notation: Latin capitals with lowercase Greek letters after them (TNFα, NFκB, PPARγ, ERα, IκBα). A
  * homoglyph swaps a letter inside a word of the same case ("pαypal", "PΑYPAL"); a lowercase Greek letter among capitals
- * reads as itself.
+ * reads as itself. Written without nested quantifiers: the classes are disjoint, so each character has one way to
+ * match and the test is linear on any word.
  */
-const GREEK_NOTATION = /^[A-Z]+(?:[α-ω]+[A-Z]*)+$/u;
+const GREEK_NOTATION = /^[A-Z]+[α-ω][A-Zα-ω]*$/u;
 
 /** A word mixing Latin with Cyrillic, or with a Greek letter that looks Latin. */
 export function mixedScript(word: string): boolean {
