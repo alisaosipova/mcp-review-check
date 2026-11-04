@@ -332,8 +332,8 @@ describe('A10-01: --fail-on-incomplete reads as failed in every format', () => {
 
 describe('improvement: linear baseline and drift matching', () => {
   // The spread-and-shift versions were quadratic (40k: 12 s and 6 s, four times 10k's 2.4 s and 1.4 s squared-ish);
-  // the check is on the growth from 10k to 40k (quadratic is about 16x), the best of two runs, so a loaded host passes.
-  const best = (f: () => void) => Math.min(...[0, 1].map(() => { const t = performance.now(); f(); return performance.now() - t; }));
+  // the check is on the growth from 10k to 40k (quadratic is about 16x), after a warm-up run the best of five, over a 5 ms floor, so a loaded host passes.
+  const best = (f: () => void) => { f(); return Math.min(...[0, 1, 2, 3, 4].map(() => { const t = performance.now(); f(); return performance.now() - t; })); };
   const keysOf = (n: number): FindingKey[] => Array.from({ length: n }, (_, i) => ({ ruleId: 'TOOL-001', platforms: ['claude'], tool: 'same', message: `m ${i % 3 ? 'a' : 'b'}` }));
   const snapOf = (n: number) => {
     const snap = { ...emptySnapshot({ kind: 'stdio', command: 'x', args: [] } as never, { target: 'all', active: false, activeAuth: false }), tools: Array.from({ length: n }, (_, i) => ({ name: 'dup', description: String(i) })) } as Snapshot;
@@ -344,7 +344,7 @@ describe('improvement: linear baseline and drift matching', () => {
   it('knownFindings grows about linearly for many findings on one subject', () => {
     const [small, big] = [keysOf(10000), keysOf(40000)];
     expect(knownFindings(big, big).every(Boolean)).toBe(true);
-    const ratio = best(() => knownFindings(big, big)) / Math.max(1, best(() => knownFindings(small, small)));
+    const ratio = best(() => knownFindings(big, big)) / Math.max(5, best(() => knownFindings(small, small)));
     expect(ratio).toBeLessThan(10);
   }, 120000);
 
@@ -353,7 +353,7 @@ describe('improvement: linear baseline and drift matching', () => {
     const [fs, fb] = [toolFingerprints(small)!, toolFingerprints(big)!];
     const d = compareTools([...fb, toolFingerprint({ name: 'dup' })], big);
     expect(d.toolChanges).toEqual({ added: [], removed: ['dup'], changed: [] });
-    const ratio = best(() => compareTools(fb, big)) / Math.max(1, best(() => compareTools(fs, small)));
+    const ratio = best(() => compareTools(fb, big)) / Math.max(5, best(() => compareTools(fs, small)));
     expect(ratio).toBeLessThan(10);
   }, 120000);
 
