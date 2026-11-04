@@ -28,7 +28,53 @@ function attr(tag: string, name: string): string | undefined {
   return m ? (m[1] ?? m[2] ?? m[3]) : undefined;
 }
 
+const CSS_URL_STOP = /["')\s]/;
+
+/**
+ * CSS `url(...)` values, exactly the matches of /(?<![\w$.]|\bnew\s+)url\(\s*["']?([^"')\s]+)["']?\s*\)/gi as
+ * [value, match]. That regex is quadratic on 'url(url(url(...' with no ')': its value class admits '(', so every start
+ * scans to the end of the input. The value cannot backtrack (the class excludes what may follow it), so the match is
+ * decided by the end of the run of value characters, and every start inside one run shares that end.
+ */
+function cssUrls(html: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const starts = /(?<![\w$.]|\bnew\s+)url\(/gi;
+  let runStart = -1;
+  let runEnd = -1;
+  let m: RegExpExecArray | null;
+  while ((m = starts.exec(html))) {
+    let i = m.index + m[0].length;
+    while (i < html.length && /\s/.test(html[i])) i++;
+    const q = html[i] === '"' || html[i] === "'" ? i + 1 : i;
+    if (!(q > runStart && q <= runEnd)) {
+      runStart = q;
+      runEnd = q;
+      while (runEnd < html.length && !CSS_URL_STOP.test(html[runEnd])) runEnd++;
+    }
+    let j = runEnd;
+    if (j === q) continue; // empty value: no match at this start
+    if (html[j] === '"' || html[j] === "'") j++;
+    while (j < html.length && /\s/.test(html[j])) j++;
+    if (html[j] !== ')') continue;
+    out.push([html.slice(q, runEnd), html.slice(m.index, j + 1)]);
+    starts.lastIndex = j + 1;
+  }
+  return out;
+}
+
+// APPS-007 and APPS-013 both extract the origins of the same resource HTML: the last result is reused.
+let lastHtml: string | undefined;
+let lastOrigins: readonly ExtractedOrigin[] = [];
+
 export function extractOrigins(html: string): ExtractedOrigin[] {
+  if (html !== lastHtml) {
+    lastOrigins = Object.freeze(scanOrigins(html).map((o) => Object.freeze(o)));
+    lastHtml = html;
+  }
+  return [...lastOrigins];
+}
+
+function scanOrigins(html: string): ExtractedOrigin[] {
   const out: ExtractedOrigin[] = [];
   const seen = new Set<string>();
   const add = (kind: OriginKind, raw: string | undefined, evidence: string, confidence: 'tag' | 'js') => {
@@ -61,7 +107,7 @@ export function extractOrigins(html: string): ExtractedOrigin[] {
   for (const m of html.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) add('resource', m[1], m[0], 'tag');
   // CSS url() is case-insensitive, so the JS URL constructor (`new URL("https://...")`, `URL(...)`, `x.URL(...)`) must
   // not be read as one: it builds a value and loads nothing, and a fetch of it is a connect origin, not a resource.
-  for (const m of html.matchAll(/(?<![\w$.]|\bnew\s+)url\(\s*["']?([^"')\s]+)["']?\s*\)/gi)) add('resource', m[1], m[0], 'tag');
+  for (const [value, evidence] of cssUrls(html)) add('resource', value, evidence, 'tag');
 
   const lit = `["'\`]((?:https?|wss?):\\/\\/[^"'\`\\s]+)["'\`]`;
   const jsPatterns: Array<[OriginKind, RegExp]> = [
