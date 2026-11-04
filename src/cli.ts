@@ -29,7 +29,7 @@ import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
 import { attachListing, describeListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
-import { compareTools, driftCount, type Drift } from './report/drift.js';
+import { compareTools, driftCount, pinFingerprints, type Drift } from './report/drift.js';
 import { inputFileProblem, readInputFile } from './input-file.js';
 import type { Finding } from './rules/types.js';
 
@@ -559,7 +559,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     let gated = result;
     let knownRaw: Finding[] | undefined;
     if (baseline) {
-      const isKnown = knownFindings(redactDeep(result.findings, redactor), baseline.findings);
+      // Also tried as the rules wrote them, so a non-secret --env value added since the baseline does not make a finding new.
+      const isKnown = knownFindings(redactDeep(result.findings, redactor), baseline.findings, result.findings);
       knownRaw = result.findings.filter((_, i) => isKnown[i]);
       gated = { ...result, findings: result.findings.filter((_, i) => !isKnown[i]), scored: result.scored ?? result.findings };
     }
@@ -569,7 +570,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
     const baselined = knownRaw && redactDeep(knownRaw, redactor);
-    // Tool-definition drift: over the redacted snapshot, as the baseline's fingerprints were (its JSON report).
+    // Tool fingerprints (the JSON report's and the drift's) over the snapshot the rules saw: secrets scrubbed, but not
+    // the run's other --env values, so the digests do not depend on the command line (A01-05). Names stay redacted.
+    pinFingerprints(report.snap, snap);
     const drift: Drift | undefined = baseline && compareTools(baseline.tools, report.snap);
     const changes = driftCount(drift);
 
@@ -604,7 +607,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // A comparison that could not be made (a baseline without fingerprints, a partial tools/list) must not pass a
     // --fail-on-drift gate silently: exit 1 with a warning, unless 3 or 4 already says more.
     const notCompared = values['fail-on-drift'] ? drift?.notCompared : undefined;
-    if (notCompared) stderr += `--fail-on-drift: tool definitions not compared (${notCompared.replace(/;? ?write it again with --save-baseline$/, '')}); re-save the baseline with --save-baseline\n`;
+    // The advice depends on the side: a baseline without fingerprints is re-saved; a partial run must be fixed first, as
+    // saving it would record no fingerprints either (A01-07).
+    const advice = drift?.notComparedBy === 'run' ? 'fix this run (see the coverage line) before saving a baseline from it' : 're-save the baseline with --save-baseline';
+    if (notCompared) stderr += `--fail-on-drift: tool definitions not compared (${notCompared.replace(/;? ?write it again with --save-baseline$/, '')}); ${advice}\n`;
     const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
