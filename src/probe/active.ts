@@ -34,17 +34,28 @@ function stems(t: string, first: boolean): string[] {
   return out.filter((s) => s.length >= 2);
 }
 
+/** Words that join a second action to a name's first verb (get_and_kill, fetch_then_restart). */
+const CONJUNCTIONS = new Set(['and', 'then', 'or', 'also', 'plus']);
+
+/** A probe-only verb, an inflected write verb or a glued hard-destructive word (DELETEFILE) in this token. */
+const mutatingToken = (t: string, verbPosition: boolean) =>
+  isWriteVerb(t)
+  || stems(t, verbPosition).some(isWriteVerb)
+  || (!GLUED_NOUNS.test(t) && [...HARD_DESTRUCTIVE].some((v) => t.length > v.length && t.startsWith(v)));
+
 /** A write verb in the name. A name that starts with a read verb (get_order_status, list_commits) keeps the exact
- *  WRITE_VERBS token check of 1.0.0; every other name is also checked for the probe-only verbs, inflected forms and an
- *  all-caps or glued name that starts with a hard-destructive verb (DELETEFILE). */
+ *  WRITE_VERBS token check of 1.0.0 up to a conjunction; the tokens after one (get_and_kill_process) and every token
+ *  of any other name are also checked for the probe-only verbs, inflected forms and an all-caps or glued name that
+ *  starts with a hard-destructive verb (DELETEFILE). */
 export function hasWriteVerb(name: string): boolean {
   const tokens = tokenize(name);
   if (tokens.some((t) => WRITE_VERBS.has(t))) return true;
-  if (tokens.length === 0 || READ_VERBS.has(tokens[0])) return false;
-  return tokens.some((t, i) =>
-    isWriteVerb(t)
-    || stems(t, i === 0).some(isWriteVerb)
-    || (!GLUED_NOUNS.test(t) && [...HARD_DESTRUCTIVE].some((v) => t.length > v.length && t.startsWith(v))));
+  if (tokens.length === 0) return false;
+  if (READ_VERBS.has(tokens[0])) {
+    const joined = tokens.findIndex((t) => CONJUNCTIONS.has(t));
+    return joined > 0 && tokens.slice(joined + 1).some((t, i) => !CONJUNCTIONS.has(t) && mutatingToken(t, i === 0));
+  }
+  return tokens.some((t, i) => mutatingToken(t, i === 0));
 }
 
 export function isSafeToCall(tool: Obj): boolean {
