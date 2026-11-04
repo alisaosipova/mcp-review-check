@@ -282,8 +282,20 @@ function shownUrl(raw: string): string {
  *  that lost its option (--header "X-Api-Key:" "$KEY" makes the key the <url>). A shown one has token-like pieces cut. */
 function invalidUrlMessage(raw: string): string {
   if (!raw.includes('://')) return 'invalid URL (the value is not shown; is a value missing its option?)';
-  const cut = shownUrl(raw).replace(/[^\s/:@?#.]{16,}/g, (p) => (isKnownToken(p) || (/[a-z]/i.test(p) && /\d/.test(p)) ? '…' : p));
-  return `invalid URL: ${visibleText(cut)}`;
+  return `invalid URL: ${visibleText(tokenCut(shownUrl(raw)))}`;
+}
+
+/** Token-like pieces (a known token shape, or 16+ characters with letters and digits between / : @ ? # .) as "…". */
+function tokenCut(s: string): string {
+  return s.replace(/[^\s/:@?#.]{16,}/g, (p) => (isKnownToken(p) || (/[a-z]/i.test(p) && /\d/.test(p)) ? '…' : p));
+}
+
+/** The usage error for a <url> without a scheme. A host-shaped argument may be a value that lost its option (a JWT,
+ *  a key with a dot or a ":<port>" ending): with a token-like piece, the suggestion is not shown (A01-09). */
+function schemeMessage(hint: string): string {
+  const shown = shownUrl(hint);
+  if (tokenCut(shown) !== shown) return 'the URL needs a scheme (http:// or https://); the value is not shown, as it looks like a token: is a value missing its option?';
+  return `the URL needs a scheme: did you mean ${visibleText(shown)}?`;
 }
 
 /** Whether two paths name one file: the same device and inode when both exist (a symlink or hard link), otherwise
@@ -497,7 +509,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const raw = positionals[0];
       const hint = schemeSuggestion(raw);
       // "host:3000/mcp" parses as scheme "host:", so a missing scheme is checked before the protocol.
-      if (hint) throw new UsageError(`the URL needs a scheme: did you mean ${shownUrl(hint)}?`);
+      if (hint) throw new UsageError(schemeMessage(hint));
       let u: URL;
       try { u = new URL(raw); } catch { throw new UsageError(invalidUrlMessage(raw)); }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new UsageError('URL must use http or https');
