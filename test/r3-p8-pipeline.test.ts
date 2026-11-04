@@ -36,11 +36,20 @@ function job(name: string): string {
 // Assembled at runtime, never a contiguous token-shaped literal.
 const TOKEN = ['sk', 'live', 'SYNTH', 'p8', 'token', '0123456789'].join('_');
 
+// The real npm, for the checks that need npm's own config resolution (`npm prefix`, `npm config get`); neither
+// reaches the network.
+const REAL_NPM = spawnSync('bash', ['-c', 'command -v npm'], { encoding: 'utf8' }).stdout.trim();
+
 describe.skipIf(process.platform === 'win32')('action.yml script (review round 3, P8)', () => {
   /** Runs the script with a fake CLI that records its argv and whether a token reached it. */
-  const run = (env: Record<string, string>, opts: { fakeNpm?: boolean; npmFails?: boolean } = {}) => {
+  const run = (
+    env: Record<string, string>,
+    opts: { fakeNpm?: boolean; npmFails?: boolean; setup?: (dir: string) => string } = {},
+  ) => {
     const dir = mkdtempSync(join(tmpdir(), 'r3-p8-action-'));
     try {
+      // The step's working directory (the workspace); setup may create a project there and return a folder in it.
+      const cwd = opts.setup ? opts.setup(dir) : new URL('.', root);
       const out = join(dir, 'out');
       writeFileSync(out, '');
       const log = join(dir, 'log');
@@ -55,13 +64,17 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
       if (opts.fakeNpm) {
         // npx must not be used; if it is, it records the call and exits 0 instead of reaching the registry.
         writeFileSync(join(bin, 'npx'), `#!/usr/bin/env bash\necho "npx ignore=\${npm_config_ignore_scripts:-none} token=\${MCP_REVIEW_CHECK_TOKEN:+set}" >> ${JSON.stringify(log)}\nexit 0\n`);
-        // npm install --prefix <dir> ...: records the environment it ran in and installs a bin shim that runs the fake CLI.
+        // npm prefix: runs the real npm and records the environment. npm install --prefix <dir> ...: records the
+        // environment it ran in, the registry the real npm resolves for that prefix, and installs a bin shim that
+        // runs the fake CLI.
         writeFileSync(join(bin, 'npm'), [
           '#!/usr/bin/env bash',
+          `if [ "$1" = prefix ]; then echo "npm-prefix token=\${MCP_REVIEW_CHECK_TOKEN:+set}" >> ${JSON.stringify(log)}; exec ${JSON.stringify(REAL_NPM)} prefix; fi`,
           `echo "npm ignore=\${npm_config_ignore_scripts:-none} token=\${MCP_REVIEW_CHECK_TOKEN:+set} args=$*" >> ${JSON.stringify(log)}`,
           ...(opts.npmFails ? ['exit 1'] : []),
           'prefix=""; while [ $# -gt 0 ]; do [ "$1" = --prefix ] && prefix="$2"; shift; done',
           '[ -n "$prefix" ] || exit 1',
+          `echo "npm-registry $(${JSON.stringify(REAL_NPM)} config get registry --prefix "$prefix") mode=$(node -e 'try { console.log((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8)) } catch { console.log("none") }' "$prefix/.npmrc")" >> ${JSON.stringify(log)}`,
           'mkdir -p "$prefix/node_modules/.bin"',
           `printf '#!/usr/bin/env bash\\nexec node ${fakeCli} "$@"\\n' > "$prefix/node_modules/.bin/mcp-review-check"`,
           'chmod +x "$prefix/node_modules/.bin/mcp-review-check"',
@@ -74,7 +87,7 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
         INPUT_BEARER: '', INPUT_VERSION: '1.0', INPUT_CLI_PATH: fakeCli, INPUT_SARIF_FILE: join(dir, 'r.sarif'), INPUT_EXTRA_ARGS: '', ...env,
       };
       const r = spawnSync('bash', ['-c', actionScript()], {
-        cwd: new URL('.', root), encoding: 'utf8', timeout: 60000,
+        cwd, encoding: 'utf8', timeout: 60000,
         env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: process.env.HOME, GITHUB_OUTPUT: out, GITHUB_ACTIONS: 'true', RUNNER_TEMP: dir, ...inputs },
       });
       const lines = readFileSync(log, 'utf8').split('\n').filter(Boolean);
@@ -138,6 +151,43 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
     expect(r.cli).toEqual([]);
   });
 
+  it('A08-02: the project .npmrc (a registry mirror) still reaches the install, found from a subfolder as npm does', () => {
+    const mirror = 'https://mirror.example.invalid/npm/';
+    const r = run({ INPUT_CLI_PATH: '', INPUT_BEARER: TOKEN }, {
+      fakeNpm: true,
+      setup: (dir) => {
+        const ws = join(dir, 'ws');
+        mkdirSync(join(ws, 'sub'), { recursive: true });
+        writeFileSync(join(ws, 'package.json'), '{"name":"ws","version":"1.0.0"}\n');
+        writeFileSync(join(ws, '.npmrc'), `registry=${mirror}\n`);
+        return join(ws, 'sub');
+      },
+    });
+    expect(r.code, r.log).toBe(0);
+    // The lookup of the project root runs without the token, before the install.
+    expect(r.lines.filter((l) => l.startsWith('npm-prefix '))).toEqual(['npm-prefix token=']);
+    // The real npm resolves the mirror for the install prefix; the copy is readable by the owner only.
+    expect(r.lines.filter((l) => l.startsWith('npm-registry '))).toEqual([`npm-registry ${mirror} mode=600`]);
+    expect(r.lines.filter((l) => l.startsWith('npm '))[0]).toMatch(/^npm ignore=true token= args=install /);
+    expect(r.cli).toHaveLength(1);
+    expect(r.cli[0]!.token).toBe('set');
+  });
+
+  it('A08-02: without a project .npmrc nothing is copied and the install still runs', () => {
+    const r = run({ INPUT_CLI_PATH: '' }, {
+      fakeNpm: true,
+      setup: (dir) => {
+        const ws = join(dir, 'ws');
+        mkdirSync(ws);
+        writeFileSync(join(ws, 'package.json'), '{"name":"ws","version":"1.0.0"}\n');
+        return ws;
+      },
+    });
+    expect(r.code, r.log).toBe(0);
+    expect(r.lines.find((l) => l.startsWith('npm-registry '))).toMatch(/ mode=none$/);
+    expect(r.cli).toHaveLength(1);
+  });
+
   it('A08-06: a bearer with CR or LF is rejected before anything is echoed, and no part of it reaches the log', () => {
     for (const sep of ['\n', '\r', '\r\n']) {
       const first = ['SYNTH', 'first', 'part'].join('-');
@@ -168,6 +218,14 @@ describe('Docker image (review round 3, P8)', () => {
     expect(DOCKERFILE).toMatch(/-v "\$PWD\/out:\/out"/);
     // Still non-root by default.
     expect(DOCKERFILE).toMatch(/^USER reviewer$/m);
+  });
+
+  it('A08-04: every Docker recipe in the CI guide that mounts an output folder runs as the host user', () => {
+    const guide = read('docs/guide/ci.md');
+    const mounts = guide.split('\n').filter((l) => /^docker run .*-v "\$PWD\/out:\/out"/.test(l));
+    expect(mounts.length).toBeGreaterThan(0);
+    for (const l of mounts) expect(l).toContain('--user "$(id -u):$(id -g)"');
+    expect(guide).toMatch(/^mkdir -p out$/m);
   });
 
   it('A08-04: the smoke test writes a report into a host mount as the runner user', () => {

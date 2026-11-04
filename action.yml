@@ -141,6 +141,13 @@ runs:
           # Installed before the token is exported, with install scripts off and without a token the job set, so no
           # lifecycle script of the package or a dependency runs, and none could read the token.
           prefix="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mcp-review-check-$$-pkg"
+          # With --prefix npm reads the project config from <prefix>/.npmrc only, so the project's own .npmrc (a
+          # registry mirror, scoped registry or auth, proxy, cafile) is copied there: the install reaches the registry
+          # it did before. `npm prefix` finds the project root as npm does; the working directory is unchanged, so
+          # relative paths in the file resolve as before.
+          mkdir -p -- "$prefix"
+          project="$(env -u MCP_REVIEW_CHECK_TOKEN npm prefix 2> /dev/null)" || project="$PWD"
+          if [ -n "$project" ] && [ -f "$project/.npmrc" ]; then (umask 077 && cp -- "$project/.npmrc" "$prefix/.npmrc"); fi
           if ! env -u MCP_REVIEW_CHECK_TOKEN npm_config_ignore_scripts=true \
             npm install --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --prefix "$prefix" "mcp-review-check@$INPUT_VERSION" >&2; then
             echo "::error title=mcp-review-check::could not install mcp-review-check@$INPUT_VERSION from the npm registry"
