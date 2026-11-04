@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
-import { realpathSync, statSync, writeFileSync } from 'node:fs';
+import { lstatSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -308,7 +308,15 @@ function samePath(a: string, b: string): boolean {
 }
 
 function canonical(p: string): string {
-  const abs = resolve(p);
+  let abs = resolve(p);
+  // A symlink whose target does not exist yet (a first --save-baseline) is followed by hand: the write goes to the
+  // target, so --output link.txt and --save-baseline target.json are one file (A01-06). 40 hops, as Linux allows.
+  for (let hops = 0; hops < 40; hops++) {
+    let st;
+    try { st = lstatSync(abs); } catch { break; }
+    if (!st.isSymbolicLink()) break;
+    try { abs = resolve(realpathSync(dirname(abs)), readlinkSync(abs)); } catch { break; }
+  }
   let dir = dirname(abs);
   try { dir = realpathSync(dir); } catch { /* a missing directory: the write fails later with its own message */ }
   const full = join(dir, basename(abs));
