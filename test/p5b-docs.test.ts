@@ -153,13 +153,15 @@ describe('docker.yml smoke test', () => {
   const build = text.slice(text.indexOf('\n  build:'), text.indexOf('\n  push:\n    needs'));
   const pushJob = text.slice(text.indexOf('\n  push:\n    needs'));
   it('runs the built image (version, listing-only run, non-root) in a job the push job needs', () => {
-    expect(build).toMatch(/load: true/);
-    expect(build).toMatch(/push: false/);
-    expect(build).toMatch(/docker run --rm "\$image" --version/);
+    // Review round 3, A08-05: the build job pushes only to a registry on its runner and tests every platform of that
+    // digest; the push job copies that image (test/r3-p8-pipeline.test.ts).
+    expect(build).toMatch(/outputs: type=registry,name=localhost:5000\//);
+    expect(build).toMatch(/docker run --rm --pull always --platform "\$platform"/);
+    expect(build).toMatch(/run "\$image" --version/);
     expect(build).toMatch(/--plugin-dir \/listing\/plugin-valid/);
     expect(build).toMatch(/--entrypoint id "\$image" -u/);
     expect(build).not.toMatch(/packages: write/);
     expect(pushJob).toMatch(/needs: build/);
-    expect(pushJob).toMatch(/push: true/);
+    expect(pushJob).toMatch(/skopeo copy --all --preserve-digests "oci-archive:/);
   });
 });

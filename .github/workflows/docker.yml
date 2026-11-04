@@ -2,8 +2,10 @@ name: Docker image
 
 # Push a tag like v0.5.0: release.yml publishes the npm package, this workflow then builds
 # ghcr.io/alisaosipova/mcp-review-check:<version> (and :latest for a final release) from the PUBLISHED package
-# (Dockerfile, build-arg VERSION). It waits until the registry serves that version, so the image never contains
-# anything other than what npm users get. Only the push job can write packages; it installs and runs no project code.
+# (Dockerfile, build-arg VERSION). It waits until the registry serves that version, so the image contains what npm
+# users get. The image is built ONCE, for linux/amd64 and linux/arm64, into a registry that lives only on the build
+# runner; every platform is smoke-tested by that digest, and the push job copies the same image, by digest, to
+# ghcr.io and checks the digest it pushed. Only the push job can write packages; it builds, installs and runs nothing.
 on:
   push:
     tags: ['v*.*.*']
@@ -17,9 +19,17 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    services:
+      # registry:2 (2.8.3), pinned by digest (multi-arch index, resolved 2026-11-04). Reachable on the runner only.
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -35,30 +45,73 @@ jobs:
           done
           echo "::error::mcp-review-check@$version was not published to npm within 30 minutes"
           exit 1
-      # docker/* actions: SHAs of the newest tags listed by `ls-remote` on 2026-11-03 (checked offline from the tag list only).
+      # docker/* actions: SHAs of the newest tags listed by `ls-remote` on 2026-11-03 (setup-qemu-action on 2026-11-04).
       - name: Version
         id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      # QEMU runs the arm64 variant on the amd64 runner, for the build and for the smoke test.
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      # network=host: BuildKit reaches the runner's registry on localhost:5000.
       - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
-      # Build and smoke-test locally (no push): the version matches the tag, a listing-only run exits 0, the user is not root.
-      - uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          driver-opts: network=host
+      # The only build of the image. OCI media types, so the archive below keeps every manifest byte for byte.
+      - id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: .
-          load: true
-          push: false
-          tags: mcp-review-check:test
+          platforms: linux/amd64,linux/arm64
+          outputs: type=registry,name=localhost:5000/mcp-review-check:test,oci-mediatypes=true
           build-args: VERSION=${{ steps.v.outputs.version }}
+      - name: Image digest
+        id: image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the build reported no image digest"; exit 1; }
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      # Every platform of that digest: the version matches the tag, the CPU is the platform's, a listing-only run
+      # exits 0, a report can be written into a host mount as the runner's user, the default user is not root.
       - name: Smoke test
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          image=mcp-review-check:test
-          docker run --rm "$image" --version | grep -F "$version"
-          # Listing-only run: no network, read-only mount.
-          docker run --rm -v "$PWD/test/fixtures/listing:/listing:ro" "$image" --plugin-dir /listing/plugin-valid
-          # The image must not run as root.
-          uid="$(docker run --rm --entrypoint id "$image" -u)"
-          echo "container uid: $uid"
-          [ "$uid" != "0" ]
+          image="localhost:5000/mcp-review-check@$DIGEST"
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::$platform"
+            case "$platform" in linux/amd64) arch=x86_64 ;; linux/arm64) arch=aarch64 ;; esac
+            run() { docker run --rm --pull always --platform "$platform" "$@"; }
+            run "$image" --version | grep -F "$version"
+            [ "$(run --entrypoint uname "$image" -m)" = "$arch" ]
+            # Listing-only run: no network, read-only mount.
+            run -v "$PWD/test/fixtures/listing:/listing:ro" "$image" --plugin-dir /listing/plugin-valid
+            # The documented recipe for writing a report: --user as the host user, a host folder mounted at /out.
+            rm -rf "$RUNNER_TEMP/out" && mkdir -p "$RUNNER_TEMP/out"
+            run --user "$(id -u):$(id -g)" -v "$RUNNER_TEMP/out:/out" -v "$PWD/test/fixtures/listing:/listing:ro" "$image" \
+              --plugin-dir /listing/plugin-valid --format json --output /out/report.json
+            test -s "$RUNNER_TEMP/out/report.json"
+            # The image must not run as root.
+            uid="$(run --entrypoint id "$image" -u)"
+            echo "container uid: $uid"
+            [ "$uid" != "0" ]
+            echo "::endgroup::"
+          done
+      # The tested image, every platform, as an OCI archive; --preserve-digests fails rather than change a manifest.
+      - name: Export the tested image
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          command -v skopeo > /dev/null || { echo "::error::skopeo is not installed on this runner"; exit 1; }
+          skopeo copy --all --preserve-digests --src-tls-verify=false \
+            "docker://localhost:5000/mcp-review-check@$DIGEST" "oci-archive:$RUNNER_TEMP/image.tar"
+          [ "sha256:$(skopeo inspect --raw "oci-archive:$RUNNER_TEMP/image.tar" | sha256sum | cut -d' ' -f1)" = "$DIGEST" ]
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: image
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 1
+          if-no-files-found: error
 
   push:
     needs: build
@@ -68,28 +121,30 @@ jobs:
       contents: read
       packages: write # push to ghcr.io with the job's GITHUB_TOKEN
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          persist-credentials: false
-      - name: Image tags
-        id: tags
+          name: image
+          path: ${{ runner.temp }}/image
+      # Copies the archive the build job tested, after checking it is still that digest, then checks what ghcr.io serves.
+      - name: Push the tested image
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          tags="$IMAGE:$version"
+          archive="$RUNNER_TEMP/image/image.tar"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the build job passed no image digest"; exit 1; }
+          command -v skopeo > /dev/null || { echo "::error::skopeo is not installed on this runner"; exit 1; }
+          [ "sha256:$(skopeo inspect --raw "oci-archive:$archive" | sha256sum | cut -d' ' -f1)" = "$DIGEST" ]
+          tags="$version"
           # A pre-release (v0.6.0-rc.1) does not move :latest.
-          case "$version" in *-*) ;; *) tags="$tags,$IMAGE:latest" ;; esac
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.tags.outputs.tags }}
-          build-args: VERSION=${{ steps.tags.outputs.version }}
+          case "$version" in *-*) ;; *) tags="$tags latest" ;; esac
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'skopeo logout ghcr.io || true' EXIT
+          for tag in $tags; do
+            skopeo copy --all --preserve-digests "oci-archive:$archive" "docker://$IMAGE:$tag"
+            pushed="sha256:$(skopeo inspect --raw "docker://$IMAGE:$tag" | sha256sum | cut -d' ' -f1)"
+            [ "$pushed" = "$DIGEST" ] || { echo "::error::$IMAGE:$tag is $pushed, not the tested $DIGEST"; exit 1; }
+            echo "$IMAGE:$tag -> $DIGEST"
+          done
