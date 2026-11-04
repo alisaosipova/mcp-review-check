@@ -113,3 +113,21 @@ describe('A01-01: options-and-config.md documents the trust model of a discovere
     expect(trust).toContain('A file you name with `--config` is trusted and can set all of these keys');
   });
 });
+
+describe('A08-04: the Docker recipe writes a report as a user that can write the mounted folder', () => {
+  const ci = doc('ci.md');
+  const start = ci.indexOf('\n## Docker\n');
+  const section = ci.slice(start, ci.indexOf('\n## ', start + 1));
+  it('every docker run with --output into a mount also passes --user "$(id -u):$(id -g)"', () => {
+    const runs = section.split('\n').filter((l) => /^docker run .*-v .*--output /.test(l));
+    expect(runs.length).toBeGreaterThan(0);
+    for (const l of runs) expect(l, l).toContain('--user "$(id -u):$(id -g)"');
+    expect(section).toMatch(/^mkdir -p out$/m);
+  });
+  it('the uid the recipe names is the image user of the Dockerfile', () => {
+    const uid = /adduser -D -u (\d+) /.exec(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'))?.[1];
+    expect(uid).toBeDefined();
+    expect(section).toContain(`(uid ${uid})`);
+    expect(section).toContain('EACCES');
+  });
+});

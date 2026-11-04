@@ -263,6 +263,8 @@ mkdir -p out
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp --format json --output /out/report.json
 ```
 
+The image's user is `reviewer` (uid 10001). On a Linux engine a bind-mounted folder keeps its host owner (your uid, or `root` when `docker run` creates a missing folder), so without `--user` uid 10001 cannot write to it and the run exits 2 with `cannot write --output ...: EACCES`. `--user "$(id -u):$(id -g)"` is enough, because the tool writes only the files you name; the alternative is a folder uid 10001 can write (`sudo chown 10001 out`). Docker Desktop and rootless engines map the ownership for you.
+
 Limits: the container cannot start a `--stdio` server that lives on your host (use `npx` for that, or build your own image from this one), and `localhost` inside the container is the container; for a server on the host use `--network host` (Linux) or `http://host.docker.internal:PORT/mcp`. A host without a dot runs in [local mode](options-and-config.md#local-mode). Behind a corporate proxy pass `-e HTTPS_PROXY -e NO_PROXY` ([Troubleshooting](troubleshooting.md#corporate-proxy)). The `Dockerfile` in the repository builds the image from the published npm package: `docker build --build-arg VERSION=0.5.0 -t mcp-review-check .`.
 
 ## pre-commit
