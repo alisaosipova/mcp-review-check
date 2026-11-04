@@ -157,3 +157,13 @@ describe('1.0.1 docs follow the integrated code', () => {
     expect(ci).toContain('`args: [--config, mcp-review-check.config.json]`');
   });
 });
+
+describe('A06-08 end to end: the --verbose listing dump', () => {
+  it('prints the parsed listing over several lines, not one line of \\u{A}', async () => {
+    const r = await runCli(['--plugin-dir', join(ROOT, 'test/fixtures/listing/plugin-valid'), '--target', 'claude', '--verbose'], {}, false);
+    const dump = r.stderr.slice(r.stderr.indexOf('[listing]\n'));
+    expect(dump.startsWith('[listing]\n{\n')).toBe(true);
+    expect(dump.split('\n').length).toBeGreaterThan(5);
+    expect(dump).not.toContain('\\u{A}');
+  });
+});

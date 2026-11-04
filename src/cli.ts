@@ -29,7 +29,7 @@ import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
-import { attachListing, describeListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
+import { attachListing, listingDump, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { compareTools, driftCount, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
 import { INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
 import type { Finding } from './rules/types.js';
@@ -648,7 +648,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {
-      if (snap.listing) stderr += `[listing]\n${JSON.stringify(describeListing(snap.listing), null, 2).split('\n').map(ciSafeLine).join('\n')}\n`;
+      if (snap.listing) stderr += `[listing]\n${listingDump(snap.listing, ciSafeLine)}\n`;
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
       // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135), and no
       // line of it starts a GitHub workflow command (A07-04).
