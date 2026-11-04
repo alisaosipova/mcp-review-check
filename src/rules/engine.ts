@@ -20,11 +20,19 @@ function listOk(snap: Snapshot, key: string): boolean {
 export function authReason(snap: Snapshot): string | undefined {
   if (snap.coverage.toolLevel === 'auth-required') return 'server requires auth; pass --bearer <token>';
   if (snap.coverage.toolLevel === 'token-rejected') return 'token rejected (401)';
-  if (snap.coverage.toolLevel === 'connect-failed') return 'could not connect';
+  if (snap.coverage.toolLevel === 'connect-failed') return CONNECT_REASON;
   if (snap.coverage.toolLevel === 'list-failed') return snap.coverage.reason ?? 'tools/list failed';
   if (snap.coverage.toolLevel === 'stopped') return snap.limits?.budgetExhausted ? `${BUDGET_REASON} (during ${snap.limits.budgetExhausted.phase})` : STOPPED_REASON;
   return undefined;
 }
+
+/** The skip reason of a rule that needs the server's answers when no transport worked (A10-05). */
+export const CONNECT_REASON = 'could not connect';
+
+/** Rules that judge the entered URL or its DNS alone (and SRV-003, which reports the connect failure itself): finding
+ *  nothing is a pass for them even when the server could not be reached. Every other rule that finds nothing in a run
+ *  without a working transport is skipped, not counted as run (A10-05). */
+const URL_ONLY = new Set(['SRV-001', 'SRV-003', 'SRV-004', 'SRV-005', 'SRV-017', 'AUTH-001']);
 
 /** The skip reason of every rule that needs a server in a listing-only run. */
 export const LISTING_ONLY_REASON = 'no server target (listing-only run)';
@@ -206,6 +214,11 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     // there is no pass: it is skipped instead of counted as run.
     if (hit.size && raw.length === 0) {
       if (applies) skipped.push({ ruleId: rule.id, reason: snap.limits?.budgetExhausted ? BUDGET_REASON : STOPPED_REASON });
+      continue;
+    }
+    // Without a working transport only the URL and DNS rules can pass: any other rule found nothing because it saw nothing.
+    if ((snap.fatal || snap.coverage.toolLevel === 'connect-failed') && raw.length === 0 && !URL_ONLY.has(rule.id)) {
+      if (applies) skipped.push({ ruleId: rule.id, reason: authReason(snap) ?? CONNECT_REASON });
       continue;
     }
     if (applies) rulesRun++;
