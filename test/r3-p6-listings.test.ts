@@ -272,6 +272,25 @@ describe('A06-07 the --verbose dump hides credential-named keys and flag values'
   });
 });
 
+describe('A06-07 review: the dump redacts --flag=value forms as the stdio argv redactor does', () => {
+  it('--header=Name: value, --header=Name:value and a known token after --flag= are redacted', async () => {
+    const h1 = ['HdrEq1', 'SYNTH', 'AAAAAAA'].join('_');
+    const h2 = ['HdrEq2', 'SYNTH', 'BBBBBBB'].join('_');
+    const gh = ['ghp_', 'SYNTH', 'abcdefghijklmnopqrstuvwxyz0123'].join('');
+    mkdirSync(join(dir, 'red'));
+    writeFileSync(join(dir, 'red', '.mcp.json'), JSON.stringify({ mcpServers: { s: { command: 'npx', args: ['-y', 'mcp-remote@1.2.3', 'https://h.example/mcp', `--header=Authorization: Bearer ${h1}`, `--header=X-Api-Key:${h2}`, `--keys=${gh}`, '--mode=fast'] } } }));
+    const r = await run(['--plugin-dir', join(dir, 'red'), '--verbose', '--format', 'json']);
+    expect(r.stderr).toMatch(/\[listing\]/);
+    for (const v of [h1, h2, gh]) expect(r.stderr, v).not.toContain(v);
+    const d = JSON.stringify(describeListing(loadPluginDir(join(dir, 'red'))));
+    for (const v of [h1, h2, gh]) expect(d, v).not.toContain(v);
+    expect(d).toContain('"--header=Authorization: [redacted]"');
+    expect(d).toContain('"--header=X-Api-Key: [redacted]"');
+    expect(d).toContain('"--mode=fast"');
+    expect(d).toContain('"mcp-remote@1.2.3"');
+  });
+});
+
 describe('A06-08 the [listing] dump keeps its newlines', () => {
   it('listingDump is indented JSON over several lines, escaped per line', () => {
     const l = loadPluginDir(join(FIX, 'plugin-valid'));

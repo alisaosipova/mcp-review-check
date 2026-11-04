@@ -22,8 +22,21 @@ const secretKey = (k: string) => SECRET_KEY.test(k) || isSecretName(k);
 const MAX_DUMP_DEPTH = 12;
 const REDACTED = '[redacted]';
 
-/** An array, with the values of credential flags hidden as the stdio argv redaction finds them: the element after
- *  `--api-key`, the part after `=` in `--auth=...` or `TOKEN=...`, and the value of an `Authorization: ...` header. */
+/** Known-format tokens inside a string, bounded like a word (`--keys=ghp_…`, a JWT of up to three dot-separated
+ *  pieces), replaced: the same scan as argvSecrets in src/redact.ts. */
+function maskKnownTokens(s: string): string {
+  return s.replace(/[\w.-]+/g, (w) => {
+    const p = w.split('.');
+    for (let n = 3; n >= 1; n--) for (let i = 0; i + n <= p.length; i++) {
+      if (isKnownToken(p.slice(i, i + n).join('.'))) return [...p.slice(0, i), REDACTED, ...p.slice(i + n)].join('.');
+    }
+    return w;
+  });
+}
+
+/** An array, with the values of credential flags hidden as the stdio argv redaction (argvSecrets) finds them: the
+ *  element after `--api-key`, the part after `=` in `--auth=...` or `TOKEN=...`, the value of an `Authorization: ...`
+ *  header, also after a leading `--flag=` (`--header=Authorization: Bearer ...`), and a known-format token anywhere. */
 function dumpArray(a: unknown[], depth: number): unknown[] {
   const out: unknown[] = [];
   for (let i = 0; i < a.length; i++) {
@@ -31,11 +44,14 @@ function dumpArray(a: unknown[], depth: number): unknown[] {
     if (typeof x === 'string') {
       const eq = /^(-{1,2}[\w.-]+|[A-Za-z_][\w.-]*)=(.+)$/s.exec(x);
       if (eq && isSecretName(eq[1])) { out.push(`${eq[1]}=${REDACTED}`); continue; }
-      const header = x.includes('://') ? null : /^([\w-]+)\s*:\s*(.+)$/s.exec(x);
-      if (header && secretKey(header[1])) { out.push(`${header[1]}: ${REDACTED}`); continue; }
+      const flag = /^-{1,2}[\w.-]+=/.exec(x)?.[0] ?? '';
+      const header = x.includes('://') ? null : /^([\w-]+)\s*:\s*(.+)$/s.exec(x.slice(flag.length));
+      if (header && secretKey(header[1])) { out.push(`${flag}${header[1]}: ${REDACTED}`); continue; }
       const next = a[i + 1];
       if (/^-{1,2}[\w.-]+$/.test(x) && isSecretName(x) && typeof next === 'string' && !next.startsWith('--')) { out.push(x, REDACTED); i++; continue; }
       if (isKnownToken(x)) { out.push(REDACTED); continue; }
+      const masked = maskKnownTokens(x);
+      if (masked !== x) { out.push(masked); continue; }
     }
     out.push(dumpValue(x, depth + 1));
   }
