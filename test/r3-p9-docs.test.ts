@@ -6,7 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startModernServer, type ModernOptions } from './fixtures/modern-server.js';
-import type { Started } from './fixtures/http-bridge.js';
+import { startBridge, type Started } from './fixtures/http-bridge.js';
+// @ts-expect-error untyped .mjs fixture
+import { createGoodServer } from './fixtures/good-server.mjs';
+// @ts-expect-error untyped .mjs fixture
+import { createBadServer } from './fixtures/bad-server.mjs';
 import { CLI, GOOD, cli, ROOT } from './cli-runner.js';
 
 const doc = (name: string) => readFileSync(join(ROOT, 'docs', 'guide', name), 'utf8');
@@ -22,12 +26,14 @@ const NAMED: [RegExp, string[]][] = [
   [/^preflight$/, ['an unauthenticated `initialize`']],
   [/^discover$/, ['`server/discover`']],
   [/^(sdk|modern) (initialize|notifications\/initialized|tools\/list|resources\/list|resources\/templates\/list|GET)$/, ['the SDK handshake and list calls']],
+  [/^sdk DELETE$/, ['Each Streamable HTTP session the check opens', 'is ended with one `DELETE`']],
+  [/^(preflight|origin .+) \(close session\)$/, ['each one a stateful server mints for a raw `initialize` probe (the unauthenticated one and the `Origin` ones)', 'is ended with one `DELETE`']],
   [/^get$/, ['a GET on the endpoint']],
   [/^badVersion$/, ['an unsupported protocol version']],
   [/^sdk mcp-review-check\/nonexistent$/, ['an unknown method']],
   [/^sdk tools\/call$/, ['`mcp_review_check_nonexistent_tool`']],
   [/^sdk resources\/read$/, ['`mcp-review-check://does-not-exist`']],
-  [/^origin /, ['three `Origin` values']],
+  [/^origin (?!.*\(close session\)$)/, ['`initialize` without an `Origin` and with three `Origin` values']],
   [/^challenge$/, ['`GET /.well-known/openai-apps-challenge`']],
   [/^(badVersion|unknownMethod|resourceMissing) \(modern\)$/, ['unsupported-version, unknown-method and missing-resource probes in their 2026-07-28 form']],
   [/^headerMismatch \((none|wrong)\)$/, ['two `tools/list` requests whose `Mcp-Method` header is missing or does not match']],
@@ -40,8 +46,8 @@ const NAMED: [RegExp, string[]][] = [
 let servers: Started[] = [];
 afterEach(async () => { await Promise.all(servers.map((s) => s.close())); servers = []; });
 
-async function trace(opts: ModernOptions): Promise<string[]> {
-  const s = await startModernServer(opts);
+async function trace(opts: ModernOptions | (() => unknown)): Promise<string[]> {
+  const s = typeof opts === 'function' ? await startBridge(opts as Parameters<typeof startBridge>[0]) : await startModernServer(opts);
   servers.push(s);
   const r = await cli([s.url, '--verbose', '--format', 'json']);
   return r.stderr.split('\n').flatMap((l) => {
@@ -50,21 +56,28 @@ async function trace(opts: ModernOptions): Promise<string[]> {
   });
 }
 
-describe('A03-04: the request list names every default request to a 2026-07-28 server', () => {
+describe('A03-04: the request list names every default request, and the count covers every era', () => {
   for (const [name, opts] of [
+    ['modern-only', {}],
     ['modern-only (tasks, listen)', { tasks: 'ok', listen: 'sse' }],
     ['dual era', { dual: true }],
-  ] as [string, ModernOptions][]) {
-    it(`${name}: each traced request is named in privacy-and-requests.md, and the count is within "20 to 30"`, async () => {
+    ['stateful 2025-11-25 SDK server (good)', createGoodServer],
+    ['stateful 2025-11-25 SDK server (bad)', createBadServer],
+  ] as [string, ModernOptions | (() => unknown)][]) {
+    it(`${name}: each traced request is named in privacy-and-requests.md, and the count is within "20 to 40"`, async () => {
       const labels = await trace(opts);
       const text = sends();
       const unnamed = labels.filter((l) => !NAMED.some(([re]) => re.test(l)));
       expect(unnamed, 'a request the doc table in this test does not know: name it in the doc and here').toEqual([]);
       const missing = [...new Set(labels.flatMap((l) => NAMED.find(([re]) => re.test(l))![1]))].filter((w) => !text.includes(w));
       expect(missing).toEqual([]);
-      expect(text).toContain('20 to 30 requests');
+      expect(text).toContain('By default 20 to 40 requests');
       expect(labels.length).toBeGreaterThanOrEqual(20);
-      expect(labels.length).toBeLessThanOrEqual(30);
+      expect(labels.length).toBeLessThanOrEqual(40);
+      // The per-era figures the doc gives ("about 35" stateful, "about 25" stateless) stay within 3 of the trace.
+      const about = typeof opts === 'function' ? 35 : 25;
+      expect(text).toContain(`about ${about} to a ${typeof opts === 'function' ? 'stateful 2025-11-25' : 'stateless 2026-07-28'}`);
+      expect(Math.abs(labels.length - about)).toBeLessThanOrEqual(3);
     }, 60000);
   }
 
