@@ -85,6 +85,25 @@ export function visibleText(s: string): string {
   return s.replace(HIDDEN, (ch) => (ch === '\t' ? ch : `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`));
 }
 
+/**
+ * A line of a CI log with no GitHub workflow command in it: a leading `::` (the v2 syntax) becomes `\u{3A}:` and every
+ * legacy `##[` (the v1 syntax, which the runner finds anywhere in a line) becomes `#\u{23}[`. For whole report lines
+ * that may already hold ANSI colour; server text inside them must have gone through visibleText first.
+ */
+export function neutralizeCommands(line: string): string {
+  return line.replace(/^(\s*):(?=:)/, '$1\\u{3A}').replace(/##\[/g, '#\\u{23}[');
+}
+
+/** Server text for a CI log or a workflow-command field: visibleText, and no legacy `##[` command anywhere. */
+export function ciSafeText(s: string): string {
+  return visibleText(s).replace(/##\[/g, '#\\u{23}[');
+}
+
+/** Server text printed as one line of its own on stdout or stderr (e.g. --verbose server stderr): ciSafeText, and no leading `::`. */
+export function ciSafeLine(s: string): string {
+  return neutralizeCommands(visibleText(s));
+}
+
 export function serverName(snap: Snapshot): string {
   const si = snap.serverInfo ?? {};
   const name = isStr(si.title) ? si.title : isStr(si.name) ? si.name : 'MCP server';

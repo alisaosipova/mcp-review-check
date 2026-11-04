@@ -9,7 +9,7 @@ import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
 import { driftCount, driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
-import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, visibleText, type Report } from './index.js';
+import { authSummary, counts, eraLine, neutralizeCommands, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, visibleText, type Report } from './index.js';
 
 export interface TextOptions {
   color: boolean;
@@ -177,5 +177,6 @@ export function renderText(r: Report, opts: TextOptions): string {
   out.push([...verdicts, `Result: ${result}`].join(' · '));
   if (opts.cta && !opts.quiet) out.push('', opts.cta);
   out.push('', DISCLAIMER);
-  return out.map((l) => l.replace(/^(\s*):(?=:)/, '$1\\u{3A}')).join('\n') + '\n';
+  // No line may start or carry a GitHub workflow command (`::` at the start, the legacy `##[` anywhere), A07-07.
+  return out.join('\n').split('\n').map((l) => neutralizeCommands(l)).join('\n') + '\n';
 }
