@@ -462,6 +462,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       spec = { kind: 'http', url: raw };
     }
 
+    // An empty value is most often an unset variable ("$TOKEN", "$ARGS_FILE"): said, so the run is not mistaken for one with it.
+    if (values.bearer === '' && spec.kind === 'http') stderr += 'warning: --bearer is empty, so no token is sent (not $MCP_REVIEW_CHECK_TOKEN either); is the variable you passed unset?\n';
+    if (values['tool-args'] === '') stderr += 'warning: --tool-args is empty, so no file is read; is the variable you passed unset?\n';
     let toolArgs: Record<string, unknown> | undefined;
     if (values['tool-args']) {
       try { toolArgs = readToolArgs(values['tool-args']); } catch (e) {
