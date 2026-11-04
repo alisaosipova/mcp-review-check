@@ -4,7 +4,13 @@ import { appendFileSync, statSync } from 'node:fs';
 import { authReason, subjectOf } from '../rules/engine.js';
 import { platformSeverity } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
-import { platformLabel, type Report } from './index.js';
+import { ciSafeText, platformLabel, type Report } from './index.js';
+
+// One helper for server text in a CI log (P1's --verbose block imports ciSafeLine from here).
+export { ciSafeLine, ciSafeText, neutralizeCommands } from './index.js';
+
+/** ciSafeText per line, the line breaks kept (escapeCommand turns them into %0A). */
+const shown = (s: string) => s.split(/\r?\n/).map(ciSafeText).join('\n');
 
 /** A workflow-command message (`%`, CR and LF escaped) or, with `property`, a property value (also `:` and `,`). */
 export function escapeCommand(s: string, property = false): string {
@@ -25,21 +31,23 @@ export function annotations(r: Report): string[] {
   const stop = r.snap.limits?.stopped;
   const outcome = r.snap.fatal ? `Could not connect: ${r.snap.coverage.reason ?? r.snap.fatal}`
     : stop ? `Stopped by --max-duration ${stop.maxDurationMs} ms during ${stop.phase}; the check is incomplete` : undefined;
-  const out: string[] = outcome ? [`::error title=mcp-review-check::${escapeCommand(outcome)}`] : [];
+  // The cause (and the auth reason below) can quote the server; its ESC, bidi and other hidden characters are shown (A07-05).
+  const out: string[] = outcome ? [`::error title=mcp-review-check::${escapeCommand(shown(outcome))}`] : [];
   const level = r.snap.coverage.toolLevel;
   if (!outcome && level !== 'ok') {
     const skipped = r.skipped.length ? ` (${r.skipped.length} rule${r.skipped.length === 1 ? '' : 's'} skipped)` : '';
     const budget = r.snap.limits?.budgetExhausted;
     const cause = budget ? `snapshot budget exhausted during ${budget.phase}, after ${budget.bytes} bytes` : authReason(r.snap) ?? level;
     const why = `Partial check: ${level} (${cause}); tool-level checks were skipped${skipped}, so the result covers only what ran. --fail-on-incomplete fails the run on a partial check.`;
-    out.push(`::warning title=mcp-review-check::${escapeCommand(why)}`);
+    out.push(`::warning title=mcp-review-check::${escapeCommand(shown(why))}`);
   }
   for (const f of r.findings) {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))
       .reduce<Severity>((a, b) => (RANK[b] > RANK[a] ? b : a), 'info');
     if (sev === 'info') continue;
-    const title = `${f.ruleId} ${subjectOf(f)}`;
-    out.push(`::${sev} title=${escapeCommand(title, true)}::${escapeCommand(`[${platformLabel(f)}] ${f.message}\nFix: ${f.fix}`)}`);
+    // Tool names and messages are the server's text: ESC, bidi overrides and the like are shown as \u{..} (A07-05).
+    const title = ciSafeText(`${f.ruleId} ${subjectOf(f)}`);
+    out.push(`::${sev} title=${escapeCommand(title, true)}::${escapeCommand(`[${platformLabel(f)}] ${shown(f.message)}\nFix: ${shown(f.fix)}`)}`);
   }
   return out;
 }
