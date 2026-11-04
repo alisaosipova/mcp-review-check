@@ -1,51 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="1270" height="780" viewBox="0 0 1270 780" role="img" aria-label="mcp-review-check text report: findings, fix snippets, score and per-directory verdicts">
-<title>mcp-review-check sample output (captured listing replayed offline; server and tool names redacted)</title>
-<rect width="1270" height="780" rx="8" fill="#1e1e1e"/>
-<rect width="1270" height="30" rx="8" fill="#2d2d2d"/><rect y="22" width="1270" height="8" fill="#2d2d2d"/>
-<circle cx="18" cy="15" r="6" fill="#ff5f56"/><circle cx="38" cy="15" r="6" fill="#ffbd2e"/><circle cx="58" cy="15" r="6" fill="#27c93f"/>
-<text x="635" y="19" text-anchor="middle" fill="#9a9a9a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="12">$ mcp-review-check --stdio -- node docs/launch/replay-fixture.mjs &lt;fixture&gt;</text>
-<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13" fill="#d4d4d4" xml:space="preserve">
-<text x="18.0" y="61" font-weight="bold">mcp-review-check 0.7.0 | rules 2026-11-02 | target: all</text>
-<text x="18.0" y="78">Server  &lt;server&gt; 1.0.0 | stdio:node docs/launch/replay-fixture.mjs &lt;fixture&gt;</text>
-<text x="18.0" y="95">Transport stdio | era legacy (2025-11-25) | auth n/a</text>
-<text x="18.0" y="112">Checked 5 tools | 0 resources | 0 prompts | 0 UI resources | 78 rules run | 101 skipped (36 stdio target; 15 no UI resources; 15 needs --plugin-dir; ...)</text>
-<text x="18.0" y="129" fill-opacity="0.6">Local target: deploy-time checks are informational; --no-local for strict checks.</text>
-
-<text x="18.0" y="163" fill="#f14c4c">ERRORS (5)</text>
-<text x="33.7" y="180" fill="#f14c4c">x</text><text x="49.3" y="180">TOOL-006 [claude] 5 tools: no title: get_regional_availability, list_regions, read_documentation, +2 more</text>
-<text x="65.0" y="197" fill-opacity="0.6">fix  Add `title` (top level, or in `annotations.title`).</text>
-<text x="65.0" y="214" fill-opacity="0.6">docs https://claude.com/docs/connectors/building/review-criteria</text>
-
-<text x="18.0" y="248" fill="#e5c07b">WARNINGS (1)</text>
-<text x="33.7" y="265" fill="#e5c07b">!</text><text x="49.3" y="265">TOOL-015 [chatgpt] read_documentation: openWorldHint: false but free-form &quot;url&quot; parameter reaches arbitrary targets</text>
-<text x="65.0" y="282" fill-opacity="0.6">fix  Set openWorldHint: true, or constrain the target with an enum or pattern.</text>
-<text x="65.0" y="299" fill-opacity="0.6">docs https://developers.openai.com/plugins/plugin-guidelines</text>
-
-<text x="18.0" y="333" fill="#4fc1d9">INFO (7)</text>
-<text x="33.7" y="350" fill="#4fc1d9">i</text><text x="49.3" y="350">SRV-002 [chatgpt] server: ChatGPT apps connect only to a public HTTPS Streamable HTTP endpoint; a local stdio server cannot be submitted.</text>
-<text x="33.7" y="367" fill="#4fc1d9">i</text><text x="49.3" y="367">SRV-002 [claude] server: Directory no longer accepts local MCPB servers; distribute via a plugin.</text>
-<text x="33.7" y="384" fill="#4fc1d9">i</text><text x="49.3" y="384">TOOL-008 [claude] read_documentation: description is 2118 characters; it may be mixing purposes</text>
-<text x="33.7" y="401" fill="#4fc1d9">i</text><text x="49.3" y="401">TOOL-008 [claude] search_documentation: description is 1059 characters; it may be mixing purposes</text>
-<text x="33.7" y="418" fill="#4fc1d9">i</text><text x="49.3" y="418">TOOL-018 [spec] list_regions: tool takes no parameters but does not set additionalProperties: false</text>
-<text x="33.7" y="435" fill="#4fc1d9">i</text><text x="49.3" y="435">TOOL-027 [claude] list_regions: collection tool without pagination or limit parameters</text>
-<text x="33.7" y="452" fill="#4fc1d9">i</text><text x="49.3" y="452">TOOL-028 [claude] server: 3 read tool(s) without a field-selection option: search_documentation, list_regions, get_regional_availability</text>
-
-<text x="18.0" y="486" font-weight="bold">FIX SNIPPETS (add to each tool definition; check the guessed hint values)</text>
-<text x="33.7" y="503">read_documentation: {&quot;title&quot;:&quot;Read documentation&quot;}</text>
-<text x="33.7" y="520">search_documentation: {&quot;title&quot;:&quot;Search documentation&quot;}</text>
-<text x="33.7" y="537">list_regions: {&quot;title&quot;:&quot;List regions&quot;}</text>
-<text x="33.7" y="554">get_regional_availability: {&quot;title&quot;:&quot;Get regional availability&quot;}</text>
-<text x="33.7" y="571">retrieve_skill: {&quot;title&quot;:&quot;Retrieve skill&quot;}</text>
-
-<text x="18.0" y="605" fill-opacity="0.6">22 manual items: --checklist to show</text>
-
-<text x="18.0" y="639">Score 84/100 | 2 root causes | 5 errors | 1 warnings | 7 info</text>
-<text x="18.0" y="656">Claude: BLOCKED (5 errors) | ChatGPT: NEEDS ATTENTION (1 warning) | Result:</text><text x="612.8" y="656" fill="#f14c4c">FAIL</text><text x="651.9" y="656">(--fail-on error) | claude: 5 errors (TOOL-006)</text>
-
-<text x="18.0" y="690">Need help getting your connector approved? 20horizon93@gmail.com</text>
-
-<text x="18.0" y="724">Passing these automated checks does not guarantee approval. Directory reviews include manual</text>
-<text x="18.0" y="741">testing and policy judgment, and requirements change. Rules reflect public docs as of 2026-11-02.</text>
-<text x="18.0" y="758">mcp-review-check is independent and not affiliated with Anthropic or OpenAI.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="949" height="742" viewBox="0 0 949 742" role="img" aria-label="mcp-review-check text report: an error and a warning with how to fix them, a fix snippet, a score and a verdict per directory">
+<title>mcp-review-check report for a small demo server</title>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" xml:space="preserve" style="white-space:pre">
+<rect width="949" height="742" rx="10" fill="#1e1e1e"/>
+<rect width="949" height="34" rx="10" fill="#2d2d2d"/><rect y="24" width="949" height="10" fill="#2d2d2d"/>
+<circle cx="20" cy="17" r="6" fill="#ff5f56"/><circle cx="40" cy="17" r="6" fill="#ffbd2e"/><circle cx="60" cy="17" r="6" fill="#27c93f"/>
+<text x="474.5" y="22" text-anchor="middle" fill="#9a9a9a" font-size="13">$ npx mcp-review-check --stdio -- node docs/launch/demo-server.mjs</text>
+<g font-size="15" fill="#d4d4d4">
+<text x="20.0" y="70" textLength="495.0" lengthAdjust="spacingAndGlyphs" font-weight="bold">mcp-review-check 1.0.0 &#183; rules 2026-11-02 &#183; target: all</text>
+<text x="20.0" y="91" textLength="585.0" lengthAdjust="spacingAndGlyphs">Server  Acme Tasks 2.3.0 &#183; stdio:node docs/launch/demo-server.mjs</text>
+<text x="20.0" y="112" textLength="468.0" lengthAdjust="spacingAndGlyphs">Transport stdio &#183; era legacy (2025-11-25) &#183; auth n/a</text>
+<text x="20.0" y="133" textLength="873.0" lengthAdjust="spacingAndGlyphs">Checked 4 tools &#183; 0 resources &#183; 0 prompts &#183; 0 UI resources &#183; 78 rules run &#183; 101 skipped (36 stdio</text>
+<text x="20.0" y="154" textLength="477.0" lengthAdjust="spacingAndGlyphs">target; 15 no UI resources; 15 needs --plugin-dir; &#8230;)</text>
+<text x="20.0" y="175" textLength="729.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">Local target: deploy-time checks are informational; --no-local for strict checks.</text>
+<text x="20.0" y="217" textLength="90.0" lengthAdjust="spacingAndGlyphs" fill="#f14c4c">ERRORS (1)</text>
+<text x="38.0" y="238" textLength="9.0" lengthAdjust="spacingAndGlyphs" fill="#f14c4c">x</text><text x="56.0" y="238" textLength="351.0" lengthAdjust="spacingAndGlyphs">TOOL-006 [claude] create_task: no title</text>
+<text x="74.0" y="259" textLength="504.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">fix  Add `title` (top level, or in `annotations.title`).</text>
+<text x="74.0" y="280" textLength="576.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">docs https://claude.com/docs/connectors/building/review-criteria</text>
+<text x="20.0" y="322" textLength="108.0" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">WARNINGS (1)</text>
+<text x="38.0" y="343" textLength="9.0" lengthAdjust="spacingAndGlyphs" fill="#e5c07b">!</text><text x="56.0" y="343" textLength="819.0" lengthAdjust="spacingAndGlyphs">TOOL-015 [chatgpt] import_tasks: openWorldHint: false but free-form &quot;url&quot; parameter reaches</text>
+<text x="56.0" y="364" textLength="153.0" lengthAdjust="spacingAndGlyphs">arbitrary targets</text>
+<text x="74.0" y="385" textLength="702.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">fix  Set openWorldHint: true, or constrain the target with an enum or pattern.</text>
+<text x="74.0" y="406" textLength="540.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">docs https://developers.openai.com/plugins/plugin-guidelines</text>
+<text x="20.0" y="448" textLength="72.0" lengthAdjust="spacingAndGlyphs" fill="#4fc1d9">INFO (2)</text>
+<text x="38.0" y="469" textLength="9.0" lengthAdjust="spacingAndGlyphs" fill="#4fc1d9">i</text><text x="56.0" y="469" textLength="855.0" lengthAdjust="spacingAndGlyphs">SRV-002 [chatgpt] server: ChatGPT apps connect only to a public HTTPS Streamable HTTP endpoint;</text>
+<text x="56.0" y="490" textLength="369.0" lengthAdjust="spacingAndGlyphs">a local stdio server cannot be submitted.</text>
+<text x="38.0" y="511" textLength="9.0" lengthAdjust="spacingAndGlyphs" fill="#4fc1d9">i</text><text x="56.0" y="511" textLength="801.0" lengthAdjust="spacingAndGlyphs">SRV-002 [claude] server: Directory no longer accepts local MCPB servers; distribute via a</text>
+<text x="56.0" y="532" textLength="63.0" lengthAdjust="spacingAndGlyphs">plugin.</text>
+<text x="20.0" y="574" textLength="657.0" lengthAdjust="spacingAndGlyphs" font-weight="bold">FIX SNIPPETS (add to each tool definition; check the guessed hint values)</text>
+<text x="38.0" y="595" textLength="324.0" lengthAdjust="spacingAndGlyphs">create_task: {&quot;title&quot;:&quot;Create task&quot;}</text>
+<text x="20.0" y="637" textLength="324.0" lengthAdjust="spacingAndGlyphs" fill="#8b8b8b">22 manual items: --checklist to show</text>
+<text x="20.0" y="679" textLength="549.0" lengthAdjust="spacingAndGlyphs">Score 84/100 &#183; 2 root causes &#183; 1 errors &#183; 1 warnings &#183; 2 info</text>
+<text x="20.0" y="700" textLength="666.0" lengthAdjust="spacingAndGlyphs">Claude: BLOCKED (1 error) &#183; ChatGPT: NEEDS ATTENTION (1 warning) &#183; Result:</text><text x="695.0" y="700" textLength="36.0" lengthAdjust="spacingAndGlyphs" fill="#f14c4c">FAIL</text><text x="740.0" y="700" textLength="171.0" lengthAdjust="spacingAndGlyphs">(--fail-on error) &#183;</text>
+<text x="20.0" y="721" textLength="234.0" lengthAdjust="spacingAndGlyphs">claude: 1 error (TOOL-006)</text>
+</g>
 </g>
 </svg>

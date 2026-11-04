@@ -1,39 +1,30 @@
-mcp-review-check 0.7.0 | rules 2026-11-02 | target: all
-Server  <server> 1.0.0 | stdio:node docs/launch/replay-fixture.mjs <fixture>
-Transport stdio | era legacy (2025-11-25) | auth n/a
-Checked 5 tools | 0 resources | 0 prompts | 0 UI resources | 78 rules run | 101 skipped (36 stdio target; 15 no UI resources; 15 needs --plugin-dir; ...)
+mcp-review-check 1.0.0 · rules 2026-11-02 · target: all
+Server  Acme Tasks 2.3.0 · stdio:node docs/launch/demo-server.mjs
+Transport stdio · era legacy (2025-11-25) · auth n/a
+Checked 4 tools · 0 resources · 0 prompts · 0 UI resources · 78 rules run · 101 skipped (36 stdio target; 15 no UI resources; 15 needs --plugin-dir; …)
 Local target: deploy-time checks are informational; --no-local for strict checks.
 
-ERRORS (5)
-  x TOOL-006 [claude] 5 tools: no title: get_regional_availability, list_regions, read_documentation, +2 more
+ERRORS (1)
+  x TOOL-006 [claude] create_task: no title
       fix  Add `title` (top level, or in `annotations.title`).
       docs https://claude.com/docs/connectors/building/review-criteria
 
 WARNINGS (1)
-  ! TOOL-015 [chatgpt] read_documentation: openWorldHint: false but free-form "url" parameter reaches arbitrary targets
+  ! TOOL-015 [chatgpt] import_tasks: openWorldHint: false but free-form "url" parameter reaches arbitrary targets
       fix  Set openWorldHint: true, or constrain the target with an enum or pattern.
       docs https://developers.openai.com/plugins/plugin-guidelines
 
-INFO (7)
+INFO (2)
   i SRV-002 [chatgpt] server: ChatGPT apps connect only to a public HTTPS Streamable HTTP endpoint; a local stdio server cannot be submitted.
   i SRV-002 [claude] server: Directory no longer accepts local MCPB servers; distribute via a plugin.
-  i TOOL-008 [claude] read_documentation: description is 2118 characters; it may be mixing purposes
-  i TOOL-008 [claude] search_documentation: description is 1059 characters; it may be mixing purposes
-  i TOOL-018 [spec] list_regions: tool takes no parameters but does not set additionalProperties: false
-  i TOOL-027 [claude] list_regions: collection tool without pagination or limit parameters
-  i TOOL-028 [claude] server: 3 read tool(s) without a field-selection option: search_documentation, list_regions, get_regional_availability
 
 FIX SNIPPETS (add to each tool definition; check the guessed hint values)
-  read_documentation: {"title":"Read documentation"}
-  search_documentation: {"title":"Search documentation"}
-  list_regions: {"title":"List regions"}
-  get_regional_availability: {"title":"Get regional availability"}
-  retrieve_skill: {"title":"Retrieve skill"}
+  create_task: {"title":"Create task"}
 
 22 manual items: --checklist to show
 
-Score 84/100 | 2 root causes | 5 errors | 1 warnings | 7 info
-Claude: BLOCKED (5 errors) | ChatGPT: NEEDS ATTENTION (1 warning) | Result: FAIL (--fail-on error) | claude: 5 errors (TOOL-006)
+Score 84/100 · 2 root causes · 1 errors · 1 warnings · 2 info
+Claude: BLOCKED (1 error) · ChatGPT: NEEDS ATTENTION (1 warning) · Result: FAIL (--fail-on error) · claude: 1 error (TOOL-006)
 
 Need help getting your connector approved? 20horizon93@gmail.com
 

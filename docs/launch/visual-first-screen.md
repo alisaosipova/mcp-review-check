@@ -12,52 +12,33 @@ what the tool prints: findings with fixes, a score and a per-directory verdict.
 
 | File | What it is | How it was made |
 |---|---|---|
-| `docs/launch/sample-output.ansi` | The raw ANSI text of one real CLI run, redacted | Command below, then the redaction map |
+| `docs/launch/demo-server.mjs` | A 4-tool stdio demo server (Acme Tasks) with two typical mistakes: `create_task` has no title, `import_tasks` takes a free-form URL but says `openWorldHint: false` | Written for the screenshot; no network |
+| `docs/launch/sample-output.ansi` | The raw ANSI stdout of one CLI run on it, unedited | Command below |
 | `docs/launch/sample-output.txt` | The same text with the ANSI codes stripped | `sed 's/\x1b\[[0-9;]*m//g'` on the `.ansi` file |
-| `docs/assets/sample-output.svg` | A static terminal mock of the `.ansi` file, 1270x780, 5501 bytes, pure ASCII | `node docs/launch/render-svg.mjs docs/launch/sample-output.ansi docs/assets/sample-output.svg` |
-| `docs/launch/replay-fixture.mjs` | A local stdio MCP server that serves a captured listing from `test/fixtures/real/` | Written for this draft; no network |
-| `docs/launch/render-svg.mjs` | The ANSI-to-SVG generator (SGR 0, 1, 2, 31, 33, 36 only) | Written for this draft |
+| `docs/assets/sample-output.svg` | A static terminal mock of the first 27 lines (up to the verdict), 949x742, pure ASCII | `render-svg.mjs`, command below |
+| `docs/launch/render-svg.mjs` | The ANSI-to-SVG generator (SGR 0, 1, 2, 31, 33, 36 only) | |
+| `docs/launch/replay-fixture.mjs` | A local stdio server that serves a captured listing from `test/fixtures/real/` (used for the aggregate, not for the image) | |
 
-Sizes and dimensions are from the output of `render-svg.mjs` and `wc -c`.
+### Why a demo server and not a captured listing (2026-11-04)
 
-### The run
+The first version of the image was a replayed third-party listing with the server, fixture and vendor names
+replaced by `<server>`, `<fixture>` and similar placeholders, from the 0.7.0 CLI, 42 lines and 153 columns wide.
+Readers took the placeholders for rendering bugs, the text was too small at `width="900"`, and the coloured runs
+were placed at absolute x positions measured for one font, so in other renderers (ImageMagick, and browsers whose
+fallback monospace font is wider) they overlapped (`Result:FAIL`). The demo server gives the same kind of report
+with real names and nothing to redact, and the renderer now fixes every run's width with `textLength`, wraps at
+100 columns and uses a 15 px font. Checked in Chromium, Firefox and ImageMagick: identical output.
 
-The CLI cannot read a fixture file directly, so the captured listing is served by a local stdio replay server and
-the unmodified CLI (`dist/cli.js`, version 0.7.0 from package.json) connects to it. Offline: no request leaves the
-machine.
+### What the image shows
 
-```bash
-npm run build
-FORCE_COLOR=1 node dist/cli.js --stdio -- node docs/launch/replay-fixture.mjs test/fixtures/real/<fixture>.json > raw.ansi
-# exit code 1 (Result: FAIL), stderr empty
-```
+- `ERRORS (1)`: `TOOL-006 [claude] create_task: no title`, with `fix` and `docs` lines.
+- `WARNINGS (1)`: `TOOL-015 [chatgpt] import_tasks: openWorldHint: false but free-form "url" parameter ...`.
+- `INFO (2)`: the two `SRV-002` lines every stdio run gets (a directory needs a deployed HTTPS server).
+- `FIX SNIPPETS`: `create_task: {"title":"Create task"}`.
+- `Score 84/100`, then `Claude: BLOCKED (1 error) · ChatGPT: NEEDS ATTENTION (1 warning) · Result: FAIL`.
 
-The fixture is one of the public no-login servers captured on 2026-10-22 (see `test/fixtures/real/NOTICE.md`).
-It was chosen because its run shows all three severities and two different verdicts. Its name is not given here.
-
-### Redactions applied (and nothing else)
-
-The output is the CLI's exact stdout except for these substitutions, applied to the `.ansi` file before stripping:
-
-1. The fixture path in the `Server` line -> `<fixture>`.
-2. The server's `serverInfo.name` -> `<server>`.
-3. A vendor prefix on every tool name removed (for example `<prefix>read_documentation` -> `read_documentation`).
-4. In the fix snippets, the vendor word at the start of each guessed title removed and the next word capitalised
-   (the CLI derives the title from the tool name, so this is what it prints for the redacted name).
-5. ASCII only: U+00B7 (middle dot, the CLI's field separator) -> `|`, and U+2026 (ellipsis) -> `...`. The real
-   terminal shows the middle dot and the ellipsis.
-
-Kept as is: the rule IDs, messages, counts, score, verdicts and result.
-
-### What the sample shows (from `docs/launch/sample-output.txt`)
-
-- 42 lines, widest line 153 columns (`wc -l`, `awk` over the file).
-- `ERRORS (5)`, `WARNINGS (1)`, `INFO (7)`, then `FIX SNIPPETS` with 5 copy-paste titles.
-- `Score 84/100 | 2 root causes | 5 errors | 1 warnings | 7 info`
-- `Claude: BLOCKED (5 errors) | ChatGPT: NEEDS ATTENTION (1 warning) | Result: FAIL (--fail-on error) | claude: 5 errors (TOOL-006)`
-
-Because the replay is a stdio server, the header says `Transport stdio` and the local-mode banner and two SRV-002
-info lines appear; a run against a deployed HTTPS server would show `streamable-http` instead.
+Not in the image (the lines after the verdict): the contact line and the 3-line disclaimer. They are in the
+`.ansi` and `.txt` files.
 
 ### Colours (from `src/report/text.ts`)
 
@@ -68,12 +49,7 @@ words `BLOCKED`, `NEEDS ATTENTION` and `NO AUTOMATED BLOCKERS` are printed uncol
 
 ## Decisions for you before publishing
 
-1. **The contact line.** The run prints `Need help getting your connector approved? <your email>` (the CTA in
-   `src/report/constants.ts`, shown on a BLOCKED verdict). It is in the `.txt`, `.ansi` and the SVG because it is
-   real output. To drop it, re-capture with `MCP_REVIEW_CHECK_NO_CTA=1` and re-run `render-svg.mjs`.
-2. **The disclaimer** (3 lines) is also real output and stays in the image; it is a fair thing to show.
-3. **Height.** 42 lines is tall for a first screen. A shorter variant: capture with `--quiet` (only errors and
-   warnings, the score and the verdict line). Not produced here; same commands with `--quiet` added.
+1. **Height.** The image stops at the verdict line (27 of 33 lines). `--lines` on `render-svg.mjs` sets the cut.
 
 ## README placement proposal
 
@@ -87,10 +63,10 @@ raw URL variant below):
 
 ```markdown
 <p align="center">
-  <img src="docs/assets/sample-output.svg" alt="mcp-review-check report: errors, warnings and info with fixes, copy-paste fix snippets, a score and a per-directory verdict (Claude: BLOCKED, ChatGPT: NEEDS ATTENTION, Result: FAIL)" width="900">
+  <img src="docs/assets/sample-output.svg" alt="mcp-review-check report for a small demo server: one error (TOOL-006, a tool without a title) and one warning (TOOL-015), each with a fix and a docs link, a copy-paste fix snippet, Score 84/100, and the verdict Claude: BLOCKED, ChatGPT: NEEDS ATTENTION, Result: FAIL" width="900">
 </p>
 
-<sub>A real run on a captured public listing, replayed offline; server and tool names redacted. Text version: [Example output](#example-output).</sub>
+<sub>A real run of mcp-review-check 1.0.0 on a small demo server (<a href="docs/launch/demo-server.mjs"><code>docs/launch/demo-server.mjs</code></a>, two typical mistakes), cut after the verdict line. Text version of a longer report: [Example output](#example-output).</sub>
 ```
 
 npm variant (the npm README renders images from absolute URLs only; `docs/` is not in the package `files`):
@@ -151,8 +127,9 @@ want it in the repo (it is plain text, a few KB).
 
 ```bash
 npm run build
-FORCE_COLOR=1 node dist/cli.js --stdio -- node docs/launch/replay-fixture.mjs test/fixtures/real/<fixture>.json > raw.ansi
-# apply the redaction map above, then
+FORCE_COLOR=1 node dist/cli.js --stdio -- node docs/launch/demo-server.mjs > docs/launch/sample-output.ansi
+# exit code 1 (Result: FAIL)
 sed 's/\x1b\[[0-9;]*m//g' docs/launch/sample-output.ansi > docs/launch/sample-output.txt
-node docs/launch/render-svg.mjs docs/launch/sample-output.ansi docs/assets/sample-output.svg
+node docs/launch/render-svg.mjs docs/launch/sample-output.ansi docs/assets/sample-output.svg --lines 27 \
+  --title '$ npx mcp-review-check --stdio -- node docs/launch/demo-server.mjs'
 ```

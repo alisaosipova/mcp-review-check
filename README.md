@@ -6,10 +6,10 @@ Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account).
 
 <!-- The image path is relative, so it renders on GitHub only: npm does not ship docs/ (package.json "files"), and the npm page renders images from absolute URLs only. For npm use https://raw.githubusercontent.com/alisaosipova/mcp-review-check/main/docs/assets/sample-output.svg instead. -->
 <p align="center">
-  <img src="docs/assets/sample-output.svg" alt="mcp-review-check report: errors, warnings and info with fixes, copy-paste fix snippets, a score and a per-directory verdict (Claude: BLOCKED, ChatGPT: NEEDS ATTENTION, Result: FAIL)" width="900">
+  <img src="docs/assets/sample-output.svg" alt="mcp-review-check report for a small demo server: one error (TOOL-006, a tool without a title) and one warning (TOOL-015), each with a fix and a docs link, a copy-paste fix snippet, Score 84/100, and the verdict Claude: BLOCKED, ChatGPT: NEEDS ATTENTION, Result: FAIL" width="900">
 </p>
 
-<sub>A real run on a captured public listing, replayed offline; server and tool names redacted. Text version: [Example output](#example-output).</sub>
+<sub>A real run of mcp-review-check 1.0.0 on a small demo server (<a href="docs/launch/demo-server.mjs"><code>docs/launch/demo-server.mjs</code></a>, two typical mistakes), cut after the verdict line. Text version of a longer report: [Example output](#example-output).</sub>
 
 `mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->179<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
 
