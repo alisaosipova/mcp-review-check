@@ -118,11 +118,18 @@ describe('P9 improvement: config discovery with --cwd is worded as the code beha
 });
 
 describe('A01-01: options-and-config.md documents the trust model of a discovered config file', () => {
-  it('a discovered file sets options only; an explicit --config can set the server, output paths and credentials', () => {
+  const KNOWN_FORBIDDEN = ['url', 'stdio', 'args', 'output', 'jsonOutput', 'saveBaseline', 'cwd', 'env', 'header', 'bearer', 'activeAuth', 'active'];
+  it('a discovered file sets options only; an explicit --config can set the server, output paths and credentials', async () => {
     const text = doc('options-and-config.md').replace(/\s+/g, ' ');
-    expect(text).toContain('A discovered file sets options only, not the server, output paths or credentials');
+    const row = text.split('| `--config <file>`')[1]?.split(' | ')[2] ?? '';
+    expect(row).toContain('A discovered file sets options only, not the server, output paths, credentials');
     const trust = /- \*\*Trust\*\*: (.*?)(?= - \*\*|$)/.exec(text)?.[1] ?? '';
-    for (const key of ['`url`', '`stdio`', '`args`', '`output`', '`jsonOutput`', '`saveBaseline`', '`header`', '`bearer`', '`activeAuth`', '`$MCP_REVIEW_CHECK_TOKEN`']) expect(trust).toContain(key);
+    // The keys P1 (src/config.ts DISCOVERED_FORBIDDEN) ignores in a discovered file; the export, once merged, is checked too.
+    const config = (await import('../src/config.js')) as { DISCOVERED_FORBIDDEN?: readonly string[] };
+    const keys = new Set([...KNOWN_FORBIDDEN, ...(config.DISCOVERED_FORBIDDEN ?? [])]);
+    for (const key of keys) expect(trust, key).toContain(`\`${key}\``);
+    for (const key of ['cwd', 'env', 'active']) expect(row, key).toContain(`\`${key}\``);
+    expect(trust).toContain('`$MCP_REVIEW_CHECK_TOKEN`');
     expect(trust).toContain('A file you name with `--config` is trusted and can set all of these keys');
   });
 });
