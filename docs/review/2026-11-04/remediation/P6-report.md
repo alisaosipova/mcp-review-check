@@ -75,3 +75,29 @@ before, in cases that used to give a wrong pass: a file read through a linked fo
 - `npx vitest run test/r3-p6-listings.test.ts`: 21 passed (on 5c521cb: 20 failed, 1 passed).
 - `npx vitest run test/rules/listing.test.ts test/unit-manual.test.ts test/p6-listing-offline.test.ts test/remediation-w6b-listing.test.ts test/remediation-w6f-listing-cli.test.ts test/remediation-w6h-review-fixes.test.ts test/r3-p6-listings.test.ts`: 120 passed. One message was reworded so that `remediation-w6b` still matches without edits.
 - `npx vitest run test/cta.test.ts test/report.test.ts test/sarif.test.ts test/root-causes.test.ts test/redact.test.ts test/incomplete.test.ts test/remediation-wp9-report-redact.test.ts test/remediation-wp7-auth-spec-srv.test.ts test/p5b-docs.test.ts`: 159 of 163 passed. The 4 failures were `--stdio`/HTTP end-to-end timeouts under parallel load. Rerun with `--no-file-parallelism`: incomplete and sarif pass, cta passes with `--testTimeout=240000` (3/3). None of them uses listing inputs.
+
+## Review fixes
+
+Fixes for the adversarial review of this branch (`.claude/review-r3/p6-review.json`). Only `src/listing/**`,
+`src/rules/listing.ts` and `test/r3-p6-listings.test.ts` were changed. No error was added and no severity was raised
+against 1.0.0. Each new test failed before its fix and passes after it (the A06-08 contract test is the exception, see below).
+
+| Finding | Fix | Commit | Test (`test/r3-p6-listings.test.ts`) |
+|---|---|---|---|
+| HIGH, A06-04 moves the package root when `.codex-plugin`/`.agent-plugin` or `plugin.json` is a link | `loadOpenAiManifest` now takes the root from the path the user gave: `realRoot = realpath(packageRoot(given))`. Only the named manifest is followed to its real path. The declared `mcpServers` file, `mcp.json`/`.mcp.json`, the root listing and the icons are still read inside `realRoot` with the A06-03 guard. With `.codex-plugin -> meta` and `.codex-plugin -> ../shared/manifest` the result is the same as on 1.0.0 again: no LST-027, no LST-024, exit 0. | a456f13 | `A06-04 review …` (4 tests: link inside, link to `../shared`, linked `plugin.json`, the A06-03 guard still refuses icons through `assets -> ../elsewhere/assets`) |
+| MEDIUM, A06-07 dump misses `--header=Name: value` | `dumpArray` removes a leading `--flag=` before it checks for a `Name: value` header, as `argvSecrets` does (`--header=Authorization: [redacted]`, `--header=X-Api-Key: [redacted]`). It also masks a known-format token anywhere in an element (`--keys=ghp_…`, up to three dot pieces for a JWT), with the same scan as `argvSecrets`. Plain `--mode=fast` and `mcp-remote@1.2.3` are kept. | 89e2332 | `A06-07 review …` |
+| LOW, LST-027 says "behind a symbolic link" for `.//etc/logo.png` | New `refLeavesPackage()` in `src/rules/listing.ts` uses the same test as `examineImage`: a scheme, a leading `/` or `\` after `./`, or `..` split on `[\\/]`. When the ref itself leaves the package, LST-027 says "is not a ./ path inside the package, so it was not read" (warning). This covers icons that LST-021's own test misses (`.//etc/x.png`, `./..\x.png`) and screenshots. The "behind a symbolic link" text is kept only for a `./` ref whose real path leaves the package. | f1c8903 | `A06-05 review …` |
+| MEDIUM, A06-08 not wired end to end | `src/cli.ts` was not edited (it is the integrator's). The exported signature is `listingDump(l: Listing, esc: (s: string) => string = (s) => s): string` in `src/listing/index.ts` (re-exported from `src/listing/index.js`). A contract test calls `listingDump(snap.listing, visibleText)` with the real `visibleText` from `src/report/index.ts`. It checks the call type-checks, the output has several lines with no `\u{A}`, and a U+202E in the manifest still comes out as `\u{202E}`. It passes before and after, because it checks the interface, not a behaviour change. | 8b7f5e9 | `A06-08 review …` |
+
+Behaviour change to note: a linked `plugin.json` (for example `dir/plugin.json -> other/pkg/plugin.json`) now uses
+`dir` as the package root, not the link target's folder. 1.0.0 refused such a file ("is a symbolic link"), so this adds
+no error against 1.0.0. The earlier A06-04 test was changed to put the package's assets next to the link.
+
+Integrator step (unchanged): in `src/cli.ts` line 548 replace
+`visibleText(JSON.stringify(describeListing(snap.listing), null, 2))` with `listingDump(snap.listing, visibleText)`,
+import `listingDump` from `./listing/index.js`, and add an end-to-end `--verbose` assertion that the line after
+`[listing]` is `{`, not `{\u{A}  "plugin": …`.
+
+Verification: `npm run typecheck` pass, `npm run build` pass,
+`MCP_REVIEW_CHECK_SKIP_BUILD=1 npx vitest run test/rules/listing.test.ts test/unit-manual.test.ts test/p6-listing-offline.test.ts test/remediation-w6b-listing.test.ts test/remediation-w6f-listing-cli.test.ts test/remediation-w6h-review-fixes.test.ts test/r3-p6-listings.test.ts test/redact.test.ts`:
+8 files, 150 tests passed.
