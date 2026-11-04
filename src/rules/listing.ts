@@ -837,7 +837,7 @@ const PROBLEM_TEXT: Record<NonNullable<ListingImage['problem']>, string> = {
   link: 'is a symbolic link, so it was not read',
   'not-file': 'is not a regular file',
   missing: 'does not exist in the package',
-  'too-large': 'is over the 64 MiB read cap and was not opened',
+  'too-large': "is over this tool's 64 MiB read cap and was not opened",
   unreadable: 'could not be read',
   'unknown-format': 'is not a PNG, JPEG, WebP or SVG image (no matching file signature)',
   'no-dimensions': 'has no readable width and height',
@@ -848,19 +848,37 @@ function imagesOf(o: OpenAiListing, pick: (key: string) => boolean): ListingImag
   return (o.images ?? []).filter((im) => pick(im.key));
 }
 
-/** Findings for a file that could not be measured; undefined when it has a size. SVG without a size is only info
- *  (it scales); any other recognised file whose header could not be parsed is a warning (our reader, not a vendor rule). */
-function unmeasured(at: string, im: ListingImage, id: string): RawFinding | undefined {
+/** Whether LST-021 already reports this ref as not a ./ path inside the package. */
+const notInsidePath = (ref: string) => !ref.startsWith('./') || ref.split('/').includes('..');
+
+/** Findings for a file that could not be measured; undefined when it has a size or another rule owns the problem.
+ *  SVG without a size is only info (it scales); any other recognised file whose header could not be parsed is a
+ *  warning (our reader, not a vendor rule). A ref that is not a ./ path inside the package is a warning, as in LST-021;
+ *  for icons LST-021 reports it, and a wrong file type, itself. This tool's own read cap is a warning (not checked). */
+function unmeasured(at: string, im: ListingImage, id: string, icon: boolean): RawFinding | undefined {
   if (!im.problem) return undefined;
   const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
   const detail = im.problem === 'unreadable' && im.detail ? ` (${im.detail})` : '';
   const text = `${label} ${PROBLEM_TEXT[im.problem]}${detail}${man(id)}`;
-  if (im.problem === 'no-dimensions') {
-    return im.format === 'svg'
-      ? { severity: 'info', message: `${label} has no numeric width/height or viewBox; its size cannot be checked${man(id)}` }
-      : { severity: 'warning', message: `${label} is a ${im.format} file whose size could not be read from its header; check it by hand${man(id)}` };
+  switch (im.problem) {
+    case 'no-dimensions':
+      return im.format === 'svg'
+        ? { severity: 'info', message: `${label} has no numeric width/height or viewBox; its size cannot be checked${man(id)}` }
+        : { severity: 'warning', message: `${label} is a ${im.format} file whose size could not be read from its header; check it by hand${man(id)}` };
+    case 'not-a-path':
+      return icon ? undefined : { message: text };
+    case 'outside':
+      if (notInsidePath(im.ref)) return icon ? undefined : { severity: 'warning', message: text };
+      // A ./ path whose real path leaves the package: a folder on the way is a link.
+      return { severity: 'warning', message: `${label} is behind a symbolic link that leads out of the package, so it was not checked${man(id)}` };
+    case 'unknown-format':
+      return icon && !IMAGE.test(im.ref) ? undefined : { message: text };
+    case 'too-large':
+      // An icon this large already fails the 5 MiB limit; a screenshot has no documented size limit.
+      return icon ? undefined : { severity: 'warning', message: `${label} is over this tool's 64 MiB read cap, so it was not opened and its size was not checked${man(id)}` };
+    default:
+      return { message: text };
   }
-  return { message: text };
 }
 
 export const LST_027 = defineRule(
@@ -878,7 +896,7 @@ export const LST_027 = defineRule(
     const path = o.manifest.path;
     const out: RawFinding[] = [];
     for (const im of imagesOf(o, (k) => !k.startsWith('screenshots['))) {
-      const bad = unmeasured(at, im, 'MAN-019');
+      const bad = unmeasured(at, im, 'MAN-019', true);
       if (bad) { out.push({ path, ...bad }); }
       const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
       if (im.bytes !== undefined && im.bytes > 5 * MIB) out.push({ path, message: `${label} is ${(im.bytes / MIB).toFixed(1)} MiB, over the 5 MiB limit${man('MAN-019')}` });
@@ -907,7 +925,7 @@ export const LST_028 = defineRule(
     const shots = imagesOf(o, (k) => k.startsWith('screenshots['));
     for (const im of shots) {
       const label = `${at}.${im.key} ${q(displayUrl(im.ref))}`;
-      const bad = unmeasured(at, im, 'MAN-024');
+      const bad = unmeasured(at, im, 'MAN-024', false);
       if (bad) out.push({ path, ...bad });
       if (im.format && im.format !== 'png' && im.format !== 'jpeg') out.push({ path, message: `${label} is a ${im.format} file; screenshots must be PNG or JPEG${man('MAN-024')}` });
       if (im.width === undefined || im.height === undefined) continue;
