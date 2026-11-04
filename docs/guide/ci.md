@@ -258,8 +258,9 @@ docker run --rm ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.
 # A token from the environment (the value is not on the command line):
 docker run --rm -e MCP_REVIEW_CHECK_TOKEN ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp
 
-# A report file: mount a writable folder
-docker run --rm -v "$PWD/out:/out" ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp --format json --output /out/report.json
+# A report file: mount a folder and run as your own user (the image's user, uid 10001, cannot write a folder you own)
+mkdir -p out
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp --format json --output /out/report.json
 ```
 
 Limits: the container cannot start a `--stdio` server that lives on your host (use `npx` for that, or build your own image from this one), and `localhost` inside the container is the container; for a server on the host use `--network host` (Linux) or `http://host.docker.internal:PORT/mcp`. A host without a dot runs in [local mode](options-and-config.md#local-mode). Behind a corporate proxy pass `-e HTTPS_PROXY -e NO_PROXY` ([Troubleshooting](troubleshooting.md#corporate-proxy)). The `Dockerfile` in the repository builds the image from the published npm package: `docker build --build-arg VERSION=0.5.0 -t mcp-review-check .`.
