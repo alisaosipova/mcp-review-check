@@ -67,3 +67,35 @@ None. One part of A10-02 is outside P2's files: printing the stall line on stder
 - `npx vitest run test/r3-p2-transport.test.ts`: 1 file, 18 tests, 18 passed.
 - Existing test files that import the changed modules (25 files: auth-probe, e2e-redaction, client-caps, incomplete, lifecycle, remediation-wp4-protocol, unit-legacy, diagnostics, redaction-tiers, p5a-proxy, remediation-w4c-connect, redact, remediation-w3a-connect, remediation-w6c-spec-rules, remediation-w6d-core, remediation-w3b-probe-rules, remediation-w5c-connect, unit-wire, remediation-w6g-core-followup, remediation-w6h-review-fixes, remediation-wp2-connect, remediation-wp3-probe, remediation-wp9-report-redact, util, windows): 455 tests, 454 passed. The one failure was `remediation-wp2-connect > a message over the stdio buffer names the overflow on the failed read`: its 170 s request timeout ran out (194 s) while the 25 files ran in parallel. Run alone it passed (1 passed, 28 skipped). It is a load-sensitive 70 MB read test, and it does not use the paths these fixes changed (UI resource reads keep the full timeout).
 - "Fails before" was not rerun file by file in this session: the new test file imports exports these commits add (`PROXY_URL_VARS`, `proxyEnvUrls`, `STALLED_TIMEOUT_MS`, the exported `GroupStdioTransport`), so against the old code it does not compile. Each assertion targets the behaviour the reviewers reproduced at 1f24aba.
+
+## Review fixes
+
+Second review round on this branch: one medium finding (A10-02 only partly fixed) and one low one.
+
+| finding | what changed | test (test/r3-p2-transport.test.ts) |
+|---|---|---|
+| A10-02 follow-up (medium): HTTP wire probes still waited the full --timeout after a stall; modern-era HTTP got no short wait | buildHttp now builds the stall plan for both eras. Legacy HTTP uses the SDK lister at the short wait. 2026-07-28 HTTP uses `ModernClient.listAll(..., timeoutMs)` (new optional argument). `stalled()` also recognises the 2026-07-28 client's timeout (`This operation was aborted`, or `response body not complete after N ms`), so `onStall` fires there too. After a stall the wire probes get `STALLED_TIMEOUT_MS`: the SDK probes, the legacy HTTP probes (badVersion, Origin, challenge) and the 2026-07-28 probes (the `ModernClient.timeoutMs` default, now public, is lowered for the probe phase and restored after it). An HTTP probe that the short wait cut off is removed from `transport.probes`. Cut off means no status (the fetch timed out), or a status but no JSON-RPC response when the body read reached the short wait. Its rule is then skipped. SPEC-002/008/014 would otherwise report "got no status" for a probe that the full wait might have seen answered. Probes made before the probe phase (the discover probe) are kept. The SDK probes keep their `transportError`, which their rules already skip. | `A10-02 (follow-up): an HTTP server that answers only initialize or server/discover` (2 tests: legacy and 2026-07-28 against an in-test HTTP stall server at --timeout 4000. They check one onStall call, unrecorded later listings, the coverage reason, the short probe durations, the dropped cut-off probes, the kept answered Origin and discover probes, and a time bound for the 2026-07-28 run) |
+| Low: a 502/503/504 with a plain-text body lost the body text | describeHttpFailure keeps the body text of a non-HTML gateway answer. The text comes from the SDK message after `Error POSTing to endpoint[ (HTTP n)]:`. It is folded to one line, capped at 200 characters and appended as ` (it answered: <text>)`. An empty body and an HTML page are unchanged. | `a plain-text 503 body stays in the diagnosis, on one line and capped`; `a plain-text 502 body that echoes the token is redacted in the report` (e2e through runCli with a SYNTH bearer that the 502 body echoes: the text reaches the report, the token does not) |
+
+Patch policy: neither change adds a finding or raises a severity. The listings and probes the short wait skips are left
+out of the snapshot (their rules skip), and the gateway text only lengthens the connect diagnosis.
+
+Measured with the new tests (--timeout 4000, the server answers only initialize or server/discover): the legacy run took
+27.6 s and the 2026-07-28 run 29.0 s. Most of what remains is 2 s waits: tools/list at --timeout, three listings,
+3 to 6 RPC probes, badVersion or DELETE, and the challenge probe with its single timeout retry in src/probe/network.ts.
+At the default --timeout 30000 that comes to about 30 s plus about 26 s of short waits. Before the change it was about
+30 s plus 5 to 7 full waits.
+
+Still not fixed in P2's files: `BuildOptions.onStall` is not yet wired in src/cli.ts, which is not P2's file. The patch
+in "Integrator notes" above still applies as written. Until it is applied, the CLI prints nothing during the wait.
+
+### Proposed CHANGELOG lines (replacing the A10-02 "Changed" line above)
+- A server that answers initialize (or server/discover) but not tools/list: later listings and every wire probe, over stdio and HTTP in both protocol eras, wait at most 2 s instead of the full `--timeout`. A listing or HTTP probe without an answer in that wait is skipped, not reported as failed. (review A10-02)
+- A 502/503/504 handshake answer with a plain-text body keeps that text in the diagnosis (one line, at most 200 characters, redacted). (review A02-04)
+
+### Proposed spec paragraph (replacing the "Stalled server" one above)
+- Stalled server: "When tools/list gets no answer within --timeout after a successful initialize (or server/discover), later listings and all wire probes wait at most 2000 ms (never more than --timeout). A listing that gets no answer in that wait is not recorded, so the rules that need it are skipped. coverage.reason names those methods. An HTTP wire probe that the short wait cut off (no status, or no JSON-RPC response when the body read reached the wait) is left out of the snapshot, so its rule is skipped. UI resource reads keep the full wait."
+
+### Verification (review fixes)
+- `npm run typecheck`: clean. `npm run build`: clean.
+- `npx vitest run` on 18 files: r3-p2-transport, auth-probe, remediation-w3b-probe-rules, incomplete, diagnostics, remediation-w4c-connect, remediation-w6d-core, remediation-wp3-probe, remediation-wp4-protocol, remediation-w6h-review-fixes, remediation-w5c-connect, unit-wire, remediation-w3a-connect, client-caps, unit-legacy, lifecycle, e2e-redaction and remediation-w6c-spec-rules. Result: 320 passed. `remediation-wp2-connect` on its own: 29 passed.
