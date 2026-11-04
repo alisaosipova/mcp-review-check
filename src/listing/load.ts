@@ -251,17 +251,18 @@ function declaredMcp(realRoot: string, raw: string, listing: Listing): ListingJs
  *  or a bare mcp.json; the companion mcp.json / .mcp.json and the root's entries come from the package root. */
 export function loadOpenAiManifest(given: string): Listing {
   const listing = emptyListing();
-  // The file the user named is followed once (it may itself be a link or sit in a linked folder): its real folder
-  // gives the package root, and links inside the package are not followed.
-  let path = given;
-  try { path = realpathSync(given); } catch { /* missing or a dangling link: readJson below reports it */ }
-  const name = basename(path);
-  const inPluginDir = ['.codex-plugin', '.agent-plugin', '.claude-plugin'].includes(basename(dirname(path)));
-  const rel = inPluginDir ? `${basename(dirname(path))}/${name}` : name;
-  const root = packageRoot(path);
+  // The package root comes from the path the user gave (the parent of its .codex-plugin/.agent-plugin/.claude-plugin
+  // folder, else its folder), resolved once: a linked manifest folder or a linked plugin.json does not move it. Only the
+  // named file is then followed to its real path; every other file is read inside the real root (A06-03 guard).
+  const name = basename(given);
+  const inPluginDir = ['.codex-plugin', '.agent-plugin', '.claude-plugin'].includes(basename(dirname(given)));
+  const rel = inPluginDir ? `${basename(dirname(given))}/${name}` : name;
+  const root = packageRoot(given);
   let realRoot = root;
   try { realRoot = realpathSync(root); } catch { /* the manifest is missing too; nothing is read */ }
-  const manifest = readJson(path, rel, 'openai', listing, realRoot) ?? (listing.errors.push({ source: 'openai', path: rel, message: 'does not exist' }), { path: rel, error: 'does not exist' });
+  let path = given;
+  try { path = realpathSync(given); } catch { /* missing or a dangling link: readJson below reports it */ }
+  const manifest = readJson(path, rel, 'openai', listing, dirname(path)) ?? (listing.errors.push({ source: 'openai', path: rel, message: 'does not exist' }), { path: rel, error: 'does not exist' });
   const format = openAiFormat(manifest.json);
   let mcp: ListingJson | undefined;
   if (format === 'mcp-config') mcp = manifest;

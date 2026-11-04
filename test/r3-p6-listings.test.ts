@@ -2,7 +2,7 @@
 // linked folders are not followed out of the root and a linked input is followed once (A06-03, A06-04), icon and
 // read-cap severities (A06-05, A06-10), SVG root detection (A06-06), the --verbose dump (A06-07, A06-08) and a
 // declared mcpServers path (A06-09).
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,11 +122,67 @@ describe('A06-04 an input path that is itself a link is followed once', () => {
     expect(r.code).toBe(0);
   });
 
-  it.runIf(canLink)('--openai-manifest through a link reads the real package', async () => {
+  it.runIf(canLink)('--openai-manifest through a link reads the linked file in the folder it was named in', async () => {
+    // The root is the folder the user named (review of A06-04), so the package's assets sit next to the link.
+    cpSync(join(FIX, 'openai-valid', 'assets'), join(dir, 'assets'), { recursive: true });
+    cpSync(join(FIX, 'openai-valid', 'mcp.json'), join(dir, 'mcp.json'));
     symlinkSync(join(FIX, 'openai-valid', 'plugin.json'), join(dir, 'plugin.json'));
     const r = await run(['--openai-manifest', join(dir, 'plugin.json'), '--target', 'chatgpt', '--format', 'json']);
     expect(findings(r.stdout).filter((f) => f.ruleId === 'LST-016')).toEqual([]);
     expect(r.code).toBe(0);
+  });
+});
+
+describe('A06-04 review: a linked manifest folder keeps the package root the user named', () => {
+  /** A Codex package `dir/<name>/pkg` from openai-valid, with its `.codex-plugin` folder at `manifestDir` (relative to `dir/<name>`). */
+  function codexPkg(name: string, manifestDir: string): string {
+    const raw = JSON.parse(readFileSync(join(FIX, 'openai-valid', 'plugin.json'), 'utf8'));
+    const manifest = { ...raw, interface: raw.extensions['com.openai'].interface, mcpServers: './.mcp.json' };
+    const base = join(dir, name);
+    const root = join(base, 'pkg');
+    mkdirSync(join(base, manifestDir), { recursive: true });
+    writeFileSync(join(base, manifestDir, 'plugin.json'), JSON.stringify(manifest));
+    cpSync(join(FIX, 'openai-valid', 'assets'), join(root, 'assets'), { recursive: true });
+    cpSync(join(FIX, 'openai-valid', 'mcp.json'), join(root, '.mcp.json'));
+    return root;
+  }
+  const blockers = (f: F[]) => f.filter((x) => x.severity === 'error' || ['LST-024', 'LST-027'].includes(x.ruleId));
+
+  it.runIf(canLink)('.codex-plugin -> meta (inside the package) finds the icons and .mcp.json as 1.0.0 did', async () => {
+    const root = codexPkg('in', 'pkg/meta');
+    symlinkSync('meta', join(root, '.codex-plugin'));
+    const r = await run(['--openai-manifest', join(root, '.codex-plugin', 'plugin.json'), '--target', 'chatgpt', '--format', 'json']);
+    expect(blockers(findings(r.stdout))).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(loadOpenAiManifest(join(root, '.codex-plugin', 'plugin.json')).openai!.mcp).toMatchObject({ path: '.mcp.json', json: expect.anything() });
+  });
+
+  it.runIf(canLink)('.codex-plugin -> ../shared/manifest (outside) reads the named manifest; the root stays the package', async () => {
+    const root = codexPkg('out', 'shared/manifest');
+    symlinkSync(join('..', 'shared', 'manifest'), join(root, '.codex-plugin'));
+    const r = await run(['--openai-manifest', join(root, '.codex-plugin', 'plugin.json'), '--target', 'chatgpt', '--format', 'json']);
+    expect(blockers(findings(r.stdout))).toEqual([]);
+    expect(r.code).toBe(0);
+  });
+
+  it.runIf(canLink)('a linked plugin.json keeps the folder it was named in as the root', () => {
+    const root = codexPkg('file', 'elsewhere');
+    mkdirSync(join(root, '.codex-plugin'));
+    symlinkSync(join('..', '..', 'elsewhere', 'plugin.json'), join(root, '.codex-plugin', 'plugin.json'));
+    const l = loadOpenAiManifest(join(root, '.codex-plugin', 'plugin.json'));
+    expect(l.openai!.manifest.json).toBeDefined();
+    expect(l.openai!.files.map((f) => f.path)).toContain('assets');
+    expect(l.openai!.images!.every((im) => !im.problem)).toBe(true);
+  });
+
+  it.runIf(canLink)('an icon through a linked folder out of the package is still refused (A06-03 guard)', () => {
+    const root = codexPkg('guard', 'pkg/.codex-plugin');
+    mkdirSync(join(dir, 'guard', 'elsewhere'));
+    cpSync(join(root, 'assets'), join(dir, 'guard', 'elsewhere', 'assets'), { recursive: true });
+    rmSync(join(root, 'assets'), { recursive: true });
+    symlinkSync(join('..', 'elsewhere', 'assets'), join(root, 'assets'));
+    const l = loadOpenAiManifest(join(root, '.codex-plugin', 'plugin.json'));
+    expect(l.openai!.images!.map((im) => im.problem)).toEqual(l.openai!.images!.map(() => 'outside'));
   });
 });
 
