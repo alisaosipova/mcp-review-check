@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCli } from '../src/cli.js';
 import { imageInfo, svgSize } from '../src/listing/image.js';
 import { attachListing, describeListing, listingDump, loadOpenAiManifest, loadPluginDir, type Listing } from '../src/listing/index.js';
+import { visibleText } from '../src/report/index.js';
 import { runRules } from '../src/rules/engine.js';
 import { manualChecklist, RULES } from '../src/rules/index.js';
 import { emptySnapshot, type Snapshot } from '../src/snapshot.js';
@@ -310,6 +311,19 @@ describe('A06-08 the [listing] dump keeps its newlines', () => {
     expect(out.split('\n').length).toBeGreaterThan(3);
     expect(out).not.toContain('\\u{A}');
     expect(JSON.parse(out)).toEqual(describeListing(l));
+  });
+});
+
+describe('A06-08 review: the call the integrator puts in cli.ts', () => {
+  it('listingDump(snap.listing, visibleText) type-checks, keeps newlines and still escapes a bidi character', () => {
+    mkdirSync(join(dir, 'bidi', '.claude-plugin'), { recursive: true });
+    writeFileSync(join(dir, 'bidi', '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'acme', description: 'a\u202Eb' }));
+    const snap = attachListing(emptySnapshot({ kind: 'listing' }, { target: 'claude', active: false, activeAuth: false }), loadPluginDir(join(dir, 'bidi')));
+    const out = snap.listing ? listingDump(snap.listing, visibleText) : '';
+    expect(out.split('\n').length).toBeGreaterThan(3);
+    expect(out).not.toContain('\\u{A}');
+    expect(out).not.toContain('\u202E');
+    expect(out).toContain('\\u{202E}');
   });
 });
 
