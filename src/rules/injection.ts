@@ -113,9 +113,18 @@ export const INJ_001 = defineRule(
 // Greek letters that pass for Latin ones. μ, Ω, Δ, π and σ do not, so units such as "μs", "kΩ" and "ΔT" are fine.
 const GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u;
 
+/**
+ * Biomedical notation: Latin capitals with lowercase Greek letters after them (TNFα, NFκB, PPARγ, ERα, IκBα). A
+ * homoglyph swaps a letter inside a word of the same case ("pαypal", "PΑYPAL"); a lowercase Greek letter among capitals
+ * reads as itself.
+ */
+const GREEK_NOTATION = /^[A-Z]+(?:[α-ω]+[A-Z]*)+$/u;
+
 /** A word mixing Latin with Cyrillic, or with a Greek letter that looks Latin. */
 export function mixedScript(word: string): boolean {
-  return /\p{Script=Latin}/u.test(word) && (/\p{Script=Cyrillic}/u.test(word) || GREEK_LOOKALIKE.test(word));
+  if (!/\p{Script=Latin}/u.test(word)) return false;
+  if (/\p{Script=Cyrillic}/u.test(word)) return true;
+  return GREEK_LOOKALIKE.test(word) && !GREEK_NOTATION.test(word);
 }
 
 export const INJ_002 = defineRule(
@@ -317,7 +326,9 @@ export const INJ_007_PATTERNS: Pattern[] = [
 export function referencedIdentifiers(text: string): string[] {
   const ids: string[] = [];
   for (const m of text.matchAll(/[`'"]([^`'"\n]{1,80})[`'"]/g)) ids.push(m[1].trim());
-  for (const m of text.matchAll(/\b(?:call|invoke|use|run|using|calling)\s+(?:the\s+)?([A-Za-z0-9_.-]+)/gi)) ids.push(m[1]);
+  // The article is never the identifier: in "call the `x` tool" the optional (?:the\s+) backtracks when a quote follows,
+  // and without the lookahead 'the' would be captured as a referenced name.
+  for (const m of text.matchAll(/\b(?:call|invoke|use|run|using|calling)\s+(?:the\s+)?(?!(?:the|a|an)\b)([A-Za-z0-9_.-]+)/gi)) ids.push(m[1]);
   return ids;
 }
 
