@@ -1,11 +1,13 @@
 // 1.0.1 docs facts (review round 3, package P9): the request list in privacy-and-requests.md names every request a
 // default run sends to a 2026-07-28 server, and the config and Docker docs say what the code does.
-import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startModernServer, type ModernOptions } from './fixtures/modern-server.js';
 import type { Started } from './fixtures/http-bridge.js';
-import { cli, ROOT } from './cli-runner.js';
+import { CLI, GOOD, cli, ROOT } from './cli-runner.js';
 
 const doc = (name: string) => readFileSync(join(ROOT, 'docs', 'guide', name), 'utf8');
 /** The "What the tool sends" section, flattened to one line. */
@@ -71,4 +73,43 @@ describe('A03-04: the request list names every default request to a 2026-07-28 s
     expect(labels).toContain('delete');
     expect(sends()).toContain('without a session id');
   }, 60000);
+});
+
+describe('P9 improvement: config discovery with --cwd is worded as the code behaves', () => {
+  const run = (cwd: string, args: string[]) => new Promise<number>((resolve) => {
+    execFile(process.execPath, [CLI, ...args], { cwd, env: { ...process.env, NO_COLOR: '1' }, timeout: 60000 }, (err) => {
+      resolve(err ? (typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 1) : 0);
+    });
+  });
+
+  it('with --cwd, a config file in the working directory is not read (no fallback)', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'mrc-p9-work-'));
+    const other = mkdtempSync(join(tmpdir(), 'mrc-p9-cwd-'));
+    try {
+      // An invalid failOn makes a config that is read a usage error (exit 2).
+      writeFileSync(join(work, '.mcp-review-check.json'), '{"failOn": "nope"}');
+      expect(await run(work, ['--stdio', GOOD, '--format', 'json'])).toBe(2);
+      expect(await run(work, ['--stdio', GOOD, '--cwd', other, '--format', 'json'])).not.toBe(2);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      rmSync(other, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  it('options-and-config.md says one directory only, not "or else in the working directory"', () => {
+    const text = doc('options-and-config.md').replace(/\s+/g, ' ');
+    expect(text).not.toContain('in the `--cwd` directory, or else in the working directory');
+    expect(text).not.toContain('in the `--cwd` directory (or the working directory)');
+    expect(text).toContain('so with `--cwd` a file in the working directory is not read');
+  });
+});
+
+describe('A01-01: options-and-config.md documents the trust model of a discovered config file', () => {
+  it('a discovered file sets options only; an explicit --config can set the server, output paths and credentials', () => {
+    const text = doc('options-and-config.md').replace(/\s+/g, ' ');
+    expect(text).toContain('A discovered file sets options only, not the server, output paths or credentials');
+    const trust = /- \*\*Trust\*\*: (.*?)(?= - \*\*|$)/.exec(text)?.[1] ?? '';
+    for (const key of ['`url`', '`stdio`', '`args`', '`output`', '`jsonOutput`', '`saveBaseline`', '`header`', '`bearer`', '`activeAuth`', '`$MCP_REVIEW_CHECK_TOKEN`']) expect(trust).toContain(key);
+    expect(trust).toContain('A file you name with `--config` is trusted and can set all of these keys');
+  });
 });
