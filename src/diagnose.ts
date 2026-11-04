@@ -106,6 +106,16 @@ export interface HttpFailure {
 }
 
 const GATEWAY = new Set([502, 503, 504]);
+const GATEWAY_TEXT_CAP = 200;
+/** The body text in the SDK's handshake error ("... Error POSTing to endpoint: <body>"), one line, capped; '' when none. */
+function gatewayText(sdk: string, status: number): string {
+  const text = sdk
+    .replace(/^HTTP \d+:\s*/, '')
+    .replace(/^(?:Streamable HTTP error:\s*)?Error POSTing to endpoint(?: \(HTTP \d+\))?(?::\s*|$)/, '')
+    .replace(/\s+/g, ' ').trim();
+  if (!text || text === `HTTP ${status}`) return '';
+  return text.length > GATEWAY_TEXT_CAP ? `${text.slice(0, GATEWAY_TEXT_CAP)}…` : text;
+}
 /** A 5xx answer to the handshake: a gateway status names the hop in front of the server (the proxy, when one is used). */
 function serverError(url: URL, status: number, title: string | undefined, html: boolean, message: string | undefined): ConnectDiagnosis {
   const proxyUrl = proxyForUrl(url);
@@ -115,8 +125,10 @@ function serverError(url: URL, status: number, title: string | undefined, html: 
   const page = html ? ` (${title ? `"${title}" ` : ''}HTML page)` : '';
   if (GATEWAY.has(status)) {
     const via = proxyUrl ? `the HTTP proxy ${proxyLabel(proxyUrl)}` : 'the gateway or proxy in front of the server';
+    // A plain-text body ("upstream connect error ...", "no healthy upstream") often names the cause: keep it.
+    const said = html ? '' : gatewayText(sdk, status);
     return {
-      kind: 'http', status, summary: `HTTP ${status}${page}: ${via} could not reach ${hostPort}`,
+      kind: 'http', status, summary: `HTTP ${status}${page}: ${via} could not reach ${hostPort}${said ? ` (it answered: ${said})` : ''}`,
       hint: proxyUrl
         ? 'check that the MCP server is running and that the proxy can reach it; list hosts to reach directly in NO_PROXY'
         : 'check that the MCP server behind it is running; the URL path is not the cause',

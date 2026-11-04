@@ -167,6 +167,25 @@ describe('A02-04: a 5xx gateway page is not "not an MCP endpoint"', () => {
     expect(d.summary).toBe('HTTP 502: the HTTP proxy http://127.0.0.1:18740/ could not reach 127.0.0.1:18799');
     expect(JSON.stringify(d)).not.toContain(PASS);
   }));
+  it('a plain-text 503 body stays in the diagnosis, on one line and capped', () => withEnv({}, () => {
+    const url = new URL('http://127.0.0.1:18761/mcp');
+    const d = describeHttpFailure(url, { status: 503, contentType: 'text/plain', message: 'Streamable HTTP error: Error POSTing to endpoint: upstream connect error\nor disconnect/reset before headers' });
+    expect(d.summary).toBe('HTTP 503: the gateway or proxy in front of the server could not reach 127.0.0.1:18761 (it answered: upstream connect error or disconnect/reset before headers)');
+    const sse = describeHttpFailure(url, { status: 502, message: 'Error POSTing to endpoint (HTTP 502): no healthy upstream' });
+    expect(sse.summary).toMatch(/\(it answered: no healthy upstream\)$/);
+    const long = describeHttpFailure(url, { status: 504, message: `Error POSTing to endpoint: ${'x'.repeat(500)}` });
+    expect(long.summary).toMatch(/\(it answered: x{200}…\)$/);
+  }));
+  it('a plain-text 502 body that echoes the token is redacted in the report', async () => {
+    const token = ['sk', 'live', 'SYNTH', 'gw502body'].join('_');
+    const { port } = await serve((req, res) => {
+      res.writeHead(502, { 'content-type': 'text/plain' }).end(`upstream refused ${String(req.headers.authorization ?? '')}`);
+    });
+    const r = await runCli([`http://127.0.0.1:${port}/mcp`, '--no-config', '--format', 'json', '--timeout', '3000', '--bearer', token], {}, false);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain('it answered: upstream refused');
+    expect(out).not.toContain(token);
+  });
   it('a 404 HTML page is still not an MCP endpoint (unchanged)', () => withEnv({}, () => {
     expect(describeHttpFailure(new URL('http://h/api'), { status: 404, contentType: 'text/html', body: '<html></html>' }).kind).toBe('not-mcp');
   }));
