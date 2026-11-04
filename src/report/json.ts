@@ -3,6 +3,7 @@ import type { Finding } from '../rules/types.js';
 import { contactUrl, CTA_TEXT, DISCLAIMER } from './constants.js';
 import { authSummary, targetLabel, type Report } from './index.js';
 import { toolFingerprints } from './drift.js';
+import { VERSION } from '../version.js';
 
 const findingJson = (f: Finding) => ({
   ruleId: f.ruleId, severity: f.severity, platforms: f.platforms, severityByPlatform: f.severityByPlatform, title: f.title, message: f.message,
@@ -12,8 +13,12 @@ const findingJson = (f: Finding) => ({
 /** Bumped on any breaking change to the JSON shape (renamed or removed fields, changed types). */
 export const JSON_SCHEMA_VERSION = 1;
 
-/** The JSON Schema of the report (schema/report.schema.json, its `$id`), as published with the tag that added it. */
-export const JSON_SCHEMA_URL = 'https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v0.4.0/schema/report.schema.json';
+/**
+ * The JSON Schema of the report (schema/report.schema.json, its `$id`) at the tag of this release, so a validator that
+ * follows `$schema` gets the schema this version writes against (A10-04). The release step that bumps package.json
+ * also sets the schema file's `$id` to this URL; a test checks that they agree.
+ */
+export const JSON_SCHEMA_URL = `https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v${VERSION}/schema/report.schema.json`;
 
 export function toJson(r: Report): Record<string, unknown> {
   const snap = r.snap;
