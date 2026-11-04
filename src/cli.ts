@@ -29,8 +29,8 @@ import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
 import { attachListing, describeListing, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
-import { compareTools, driftCount, pinFingerprints, type Drift } from './report/drift.js';
-import { inputFileProblem, readInputFile } from './input-file.js';
+import { compareTools, driftCount, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
+import { INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
 import type { Finding } from './rules/types.js';
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
@@ -621,7 +621,20 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const jsonDoc = !jsonOutputs.length ? '' : format === 'json' ? body : render(report, 'json', textOpts, rerun, sarifLocation, baselined);
     const written: string[] = [];
     let writeErrors = '';
+    // --save-baseline is not written by a run that did not connect (exit 3) or was stopped (exit 4): it would replace
+    // an accepted baseline with a connect failure and no tool fingerprints (A01-02). --json-output is still written.
+    const unsaved = snap.fatal ? 'the run did not connect' : snap.limits?.stopped ? 'the run was stopped by --max-duration' : undefined;
+    const saving = jsonOutputs.some(([flag]) => flag === '--save-baseline');
+    if (saving && unsaved) stderr += `warning: --save-baseline not written: ${unsaved}; the earlier baseline, if any, is kept\n`;
+    if (saving && !unsaved) {
+      const noTools = incompleteTools(report.snap);
+      if (noTools) stderr += `warning: --save-baseline: ${noTools}, so the baseline records no tool fingerprints and --fail-on-drift cannot compare tools against it\n`;
+      // --baseline reads at most INPUT_FILE_CAP: a larger baseline would be exit 2 on every later run (A01-08).
+      const bytes = Buffer.byteLength(jsonDoc);
+      if (bytes > INPUT_FILE_CAP) stderr += `warning: --save-baseline: the report is ${(bytes / 1024 / 1024).toFixed(1)} MiB, over the ${INPUT_FILE_CAP / 1024 / 1024} MiB that --baseline reads, so a later --baseline run cannot use it\n`;
+    }
     for (const [flag, path] of jsonOutputs) {
+      if (flag === '--save-baseline' && unsaved) continue;
       try {
         writeFileSync(path, jsonDoc);
         if (!written.includes(path)) written.push(path);
