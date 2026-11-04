@@ -22,7 +22,7 @@ import type { FailOn } from './report/score.js';
 import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
-import { displayUrl, REDACTED_MARK } from './rules/util/net.js';
+import { displayUrl, isKnownToken, REDACTED_MARK } from './rules/util/net.js';
 import { isSafeToCall } from './probe/active.js';
 import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
@@ -278,6 +278,14 @@ function shownUrl(raw: string): string {
   return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
 }
 
+/** The usage error for a <url> that does not parse. An argument without "://" is not shown: it is most often a value
+ *  that lost its option (--header "X-Api-Key:" "$KEY" makes the key the <url>). A shown one has token-like pieces cut. */
+function invalidUrlMessage(raw: string): string {
+  if (!raw.includes('://')) return 'invalid URL (the value is not shown; is a value missing its option?)';
+  const cut = shownUrl(raw).replace(/[^\s/:@?#.]{16,}/g, (p) => (isKnownToken(p) || (/[a-z]/i.test(p) && /\d/.test(p)) ? '…' : p));
+  return `invalid URL: ${visibleText(cut)}`;
+}
+
 /** A line of server text for stderr that a GitHub runner cannot read as a workflow command ("::error ...",
  *  "::add-mask::", "##[group]"): the leading ':' or '#' shown as \u{3A} or \u{23}, as the text report does (F135);
  *  control and format characters (ESC, CR, bidi overrides) as \u{..} through visibleText. */
@@ -448,7 +456,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       // "host:3000/mcp" parses as scheme "host:", so a missing scheme is checked before the protocol.
       if (hint) throw new UsageError(`the URL needs a scheme: did you mean ${shownUrl(hint)}?`);
       let u: URL;
-      try { u = new URL(raw); } catch { throw new UsageError(`invalid URL: ${shownUrl(raw)}`); }
+      try { u = new URL(raw); } catch { throw new UsageError(invalidUrlMessage(raw)); }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new UsageError('URL must use http or https');
       if (values.env?.length || values.cwd !== undefined) throw new UsageError('--env and --cwd apply only to --stdio');
       spec = { kind: 'http', url: raw };
