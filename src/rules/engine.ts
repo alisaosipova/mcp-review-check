@@ -89,7 +89,8 @@ const LISTS: Record<string, string> = { tools: 'tools', resources: 'resources', 
 const ATOMIC: Record<string, string> = { toolsRelist: 'tools re-list', toolsFreshConnection: 'tools re-list', toolsWithoutUi: 'text-only tools/list', authProbe: 'auth probe' };
 /** Filled step by step: partial while their phase runs. */
 const GROWING: Record<string, string> = { active: 'active tool calls' };
-const GROWING_TRANSPORT: Record<string, string> = { observedErrors: RUN_WIDE, modernResults: RUN_WIDE, tls: 'auth probe' };
+/** notifications (SPEC-024) and stdio (SRV-018: non-JSON-RPC stdout) are collected from every exchange too (A04-02). */
+const GROWING_TRANSPORT: Record<string, string> = { observedErrors: RUN_WIDE, modernResults: RUN_WIDE, notifications: RUN_WIDE, stdio: RUN_WIDE, tls: 'auth probe' };
 
 /**
  * A read-only view of a stopped run's snapshot that notes in `hit` every unfinished phase whose data a rule reads:
