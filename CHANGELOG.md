@@ -8,6 +8,72 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 Nothing yet.
 
+## [1.0.1] - 2026-11-04
+
+Rule catalog dated 2026-11-02. Fixes the 57 patch-level findings of review round 3 ([docs/review/2026-11-04](docs/review/2026-11-04/FINDINGS.md)). As a patch release it never makes a passing run fail: no rules added, no severity raised, no new JSON report fields. Some findings now come out as skipped or "not checked" warnings, where 1.0.0 silently passed or checked the wrong file.
+
+### Security
+
+- A config file that is **discovered** (no `--config`) can now set options only. It can no longer supply the server (`url`, `stdio`, `command`, `args`), output paths, `cwd`, `env`, headers, `bearer`, `active` or `activeAuth`: those keys are ignored with a warning that names the file. So `$MCP_REVIEW_CHECK_TOKEN` is never sent to a URL that came from a file in the folder you ran in. An explicit `--config` keeps full power. Every applied config file is named on stderr (A01-01).
+- `ALL_PROXY` credentials are redacted like `HTTPS_PROXY` and `HTTP_PROXY` ones, through one shared list of proxy variables (A02-01).
+- Server text printed by `--verbose`, the fatal-error path and GitHub annotations can no longer start a workflow command (`::`, legacy `##[`), and ESC, bidi and other hidden characters are shown as `\u{..}` (A07-04, A07-05, A07-07).
+- A token-shaped `<url>` argument, or a URL without a scheme, is no longer echoed in the usage error (A01-09).
+- The `--verbose` listing dump redacts credential-named keys, `--header=Name: value`, `--flag=<token>` and known token formats (A06-07).
+- `--active` skips more read-only-annotated tools whose names say they write: more mutating verbs, inflected and glued names, and words after a conjunction (A03-01).
+- `--active-auth` prints the `client_id` and endpoint of the DCR client it registered on stderr, so you can delete it (A03-03).
+- The GitHub Action installs the npm package with scripts off, before the token is exported, uses the project's `.npmrc`, and rejects a multi-line bearer before echoing it (A08-01, A08-02, A08-06).
+- The Docker image that is pushed is the exact digest that was smoke-tested, for both platforms (A08-05).
+
+### Fixed
+
+- Baseline and drift:
+  - A run that did not connect or was stopped no longer overwrites the accepted baseline (`--save-baseline`). The GitLab recipe refreshes the baseline only after a successful job (A01-02).
+  - Fingerprints and baseline matching use the snapshot the rules saw and ignore non-secret `--env` values (A01-04, A01-05, A01-07).
+  - A listing-only run records no tool fingerprints (A07-06).
+  - Matching is linear in the number of findings (improvement).
+  - `--output` naming the `--baseline` or `--save-baseline` file is caught, including through links and case differences (A01-06).
+  - A saved baseline with no fingerprints, or larger than the read cap, gets a warning (A01-08).
+- `--fail-on-incomplete`: a failed partial check reads as failed in the Result line, JSON summary, JUnit and the GitHub annotation, and is named once (A10-01).
+- `--bearer ""` and `--tool-args ""` print a warning instead of being dropped silently (A01-10).
+- Proxy and transport:
+  - `NO_PROXY` is decided exactly as undici does (A02-02).
+  - The response is taken from an SSE or batch body, not from a server request with the same id (A02-03).
+  - A 5xx gateway page is diagnosed as the gateway failing, not as a wrong MCP path (A02-04).
+  - A TLS failure behind a proxy names the proxy and `NODE_EXTRA_CA_CERTS` (A02-05).
+  - A stdio server is closed once (A02-06).
+  - Notification methods are tallied safely (A04-04).
+- A server that stops answering after `initialize` gets a short wait instead of the full timeout per request, with a notice on stderr as it happens (A10-02). The GET and `subscriptions/listen` probes wait at most 5 s (A03-02).
+- Connect failures:
+  - Rules that need the server's answers are skipped, not counted as passed (A10-05).
+  - SPEC-024 and SRV-018 are skipped for a stopped run (A04-02).
+  - SRV-003 names the exit code or signal of a stdio server that ended before `initialize` (A10-06).
+  - No `--fail-on-spec` advice on a connect-failed run (A10-07).
+  - SRV-003 is shown as skipped in the claude and chatgpt JUnit suites (A10-05).
+- False positives:
+  - AUTH-021 reads a well-formed RFC 6749 error correctly and caps its body-text match at warning (A04-03).
+  - TOOL-015 and DATA-001/003/005 resolve a local `$ref` and `const` lists before judging a parameter (A05-04).
+  - INJ-007 no longer takes the article as a tool name, and INJ-002 exempts biomedical Greek notation (A05-03, A05-09).
+- Performance: linear-time `snakeCase` and `tokenize` on long uppercase runs, the POL-003 percent pattern, CSS `url()` scanning and the INJ-002 Greek check, and one origin pass per UI resource (A09-01, A09-02, A09-03).
+- Listings:
+  - A manual checklist item is kept unless every LST rule that covers it ran (A06-01, A06-02).
+  - Listing files behind a linked folder are refused (A06-03).
+  - The ChatGPT package root comes from the path you named, so a linked manifest folder or `plugin.json` no longer moves it (A06-04).
+  - An icon ref is reported once, at the LST-021 level (A06-05).
+  - An SVG is detected by its root element after the prologue (A06-06).
+  - The `--verbose` listing dump keeps its line breaks (A06-08).
+  - A declared `mcpServers` path is read on its own, outside or missing paths are a "not checked" warning, and the read caps for JSON and images are warnings instead of errors (A06-09, A06-10).
+- Reports:
+  - The JSON Schema accepts listing-only and snapshot-budget reports (A07-02, A07-03).
+  - `$schema` and the schema `$id` point at the tag of the installed release (A10-04).
+  - JSON and SARIF reports with more than 10 000 findings are printed compact, and a report too large to write ends with a clear error and exit 3 instead of a crash (A09-05).
+- GitHub Action: every line of a multi-line `extra-args` is now passed. Options from the second line on, such as `--fail-on-incomplete`, `--baseline` or `--ignore`, now apply where 1.0.0 dropped them (A08-01).
+
+### Docs
+
+- The privacy guide and SECURITY.md give the real request count (20 to 40), the 2026-07-28 probes, the Origin-less `initialize` and the session-closing DELETEs (A03-04).
+- The options guide describes the discovered-config trust model and config discovery with `--cwd`.
+- The CI guide's Docker recipe runs the image as the host user so a mounted output folder is writable, with rootless Docker and Podman variants (A08-04).
+
 ## [1.0.0] - 2026-11-03
 
 Rule catalog dated 2026-11-02. No rule changes. The first stable release: from 1.0.0 the CLI options, config keys, exit codes, JSON report fields and rule ids follow semantic versioning (see the README's Stability policy).
@@ -447,7 +513,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.5.0...v0.6.0

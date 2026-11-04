@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v1.0.0/schema/report.schema.json",
+  "$id": "https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v1.0.1/schema/report.schema.json",
   "title": "mcp-review-check JSON report",
   "description": "The document --format json prints and --json-output and --save-baseline write (schemaVersion 1). Fields marked 'since 0.x' are absent from reports of older releases; a consumer should accept their absence.",
   "type": "object",

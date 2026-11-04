@@ -107,7 +107,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci && npm run build
-      - uses: alisaosipova/mcp-review-check@v1.0.0
+      - uses: alisaosipova/mcp-review-check@v1.0.1
         with:
           stdio: node dist/server.js
           platform: claude
@@ -116,7 +116,7 @@ jobs:
 For a deployed server, give `target` instead of `stdio` and pass the token as a secret:
 
 ```yaml
-      - uses: alisaosipova/mcp-review-check@v1.0.0
+      - uses: alisaosipova/mcp-review-check@v1.0.1
         with:
           target: https://staging.example.com/mcp
           bearer: ${{ secrets.MCP_REVIEW_CHECK_TOKEN }}
@@ -152,7 +152,7 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
 Every output except `exit-code` and `sarif-file` is empty when no report was written (a usage error, exit 2). The outputs are set also when the check fails, so a later step with `if: always()` can use them:
 
 ```yaml
-      - uses: alisaosipova/mcp-review-check@v1.0.0
+      - uses: alisaosipova/mcp-review-check@v1.0.1
         id: review
         with:
           stdio: node dist/server.js
@@ -160,12 +160,12 @@ Every output except `exit-code` and `sarif-file` is empty when no report was wri
         run: echo "score ${{ steps.review.outputs.score }}, ${{ steps.review.outputs.verdict }}, ${{ steps.review.outputs.new-findings }} new"
 ```
 
-The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.0.0` or a commit SHA.
+The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.0.1` or a commit SHA.
 
 ## GitHub Actions
 
 
-When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. To run the check as a workflow step with a SARIF upload, use [the GitHub Action](#ci-recipes) (`uses: alisaosipova/mcp-review-check@v1.0.0`). There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
+When `GITHUB_ACTIONS=true` (GitHub sets it on every runner), each finding that is a warning or an error for the `--target` directories (and for the MCP spec with `--fail-on-spec`) is also printed on stderr as an `::error` or `::warning` workflow annotation, at the severity it has for those platforms, as for the exit code. Exit 3 and 4 add one `::error` titled `mcp-review-check` with the cause (could not connect, stopped by `--max-duration`, or an unexpected failure, secrets redacted). A partial check (no token, a rejected token, `tools/list` failed) adds one `::warning` titled `mcp-review-check` that names the reason and says that tool checks were skipped, whatever the exit code. The markdown report is appended to the job summary when `$GITHUB_STEP_SUMMARY` is set. stdout keeps the chosen format, so `--format json` and `sarif` stay a single document. To run the check as a workflow step with a SARIF upload, use [the GitHub Action](#ci-recipes) (`uses: alisaosipova/mcp-review-check@v1.0.1`). There is no separate switch: without `GITHUB_ACTIONS` (or without `GITHUB_STEP_SUMMARY`, for the summary) nothing is annotated or written. `FORCE_COLOR=1` colours the text report without a TTY (the Actions log shows ANSI colours); `FORCE_COLOR=0` and `--no-color` turn colours off.
 
 The markdown report (and so the job summary) has an Evidence column with the text a rule matched, and a `rerun: npx mcp-review-check …` line with the options of the run, secrets redacted, to reproduce it locally (`--quiet` and `--checklist` are left out: they change only the text report). On Windows the line quotes arguments with double quotes, for cmd.exe (an argument that holds both `"` and one of `& | < > ^`, such as `--stdio "node s.js --filter \"a|b\""`, can split in cmd.exe, which ignores the backslash before `"`: check such a line before you run it; in PowerShell, quote again an argument that contains `"`, `$` or a backtick: PowerShell reads `\"` and `$` inside double quotes its own way; not yet tried on a real Windows machine); elsewhere with single quotes, for `sh`.
 
@@ -199,7 +199,7 @@ A complete `.gitlab-ci.yml` for a stdio server: the JUnit report shows in the me
 stages: [review]
 
 variables:
-  MCP_REVIEW_CHECK_VERSION: "0.5"        # pin the minor, see the Stability policy in the README
+  MCP_REVIEW_CHECK_VERSION: "1.0"        # pin the minor, see the Stability policy in the README
   npm_config_cache: "$CI_PROJECT_DIR/.npm"
 
 mcp-review-check:
@@ -250,22 +250,22 @@ Notes:
 
 ## Docker
 
-The image `ghcr.io/alisaosipova/mcp-review-check` is published for every release (tags `<version>`, for example `0.5.0`, and `latest`) by `.github/workflows/docker.yml` after the npm release. It runs as a non-root user and its entrypoint is `mcp-review-check`, so everything after the image name is the usual command line:
+The image `ghcr.io/alisaosipova/mcp-review-check` is published for every release (tags `<version>`, for example `1.0.1`, and `latest`) by `.github/workflows/docker.yml` after the npm release. It runs as a non-root user and its entrypoint is `mcp-review-check`, so everything after the image name is the usual command line:
 
 ```bash
-docker run --rm ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp --target claude
+docker run --rm ghcr.io/alisaosipova/mcp-review-check:1.0.1 https://mcp.example.com/mcp --target claude
 
 # A token from the environment (the value is not on the command line):
-docker run --rm -e MCP_REVIEW_CHECK_TOKEN ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp
+docker run --rm -e MCP_REVIEW_CHECK_TOKEN ghcr.io/alisaosipova/mcp-review-check:1.0.1 https://mcp.example.com/mcp
 
 # A report file: mount a folder and run as your own user (the image's user, uid 10001, cannot write a folder you own)
 mkdir -p out
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" ghcr.io/alisaosipova/mcp-review-check:0.5.0 https://mcp.example.com/mcp --format json --output /out/report.json
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" ghcr.io/alisaosipova/mcp-review-check:1.0.1 https://mcp.example.com/mcp --format json --output /out/report.json
 ```
 
 The image's user is `reviewer` (uid 10001). On a Linux engine a bind-mounted folder keeps its host owner (your uid, or `root` when `docker run` creates a missing folder), so without `--user` uid 10001 cannot write to it and the run exits 2 with `cannot write --output ...: EACCES`. `--user "$(id -u):$(id -g)"` is enough, because the tool writes only the files you name; the alternative is a folder uid 10001 can write (`sudo chown 10001 out`). Docker Desktop on macOS and Windows shares the folder with your permissions, so the recipe works there as well. A rootless engine maps container uids to subordinate host uids, so neither uid 10001 nor `--user "$(id -u):$(id -g)"` can write your folder: with rootless Docker run as the container's root, which is your own host user (`--user 0:0`); with rootless Podman add `--userns=keep-id` to the recipe's `--user "$(id -u):$(id -g)"`, which maps your uid to the same uid in the container.
 
-Limits: the container cannot start a `--stdio` server that lives on your host (use `npx` for that, or build your own image from this one), and `localhost` inside the container is the container; for a server on the host use `--network host` (Linux) or `http://host.docker.internal:PORT/mcp`. A host without a dot runs in [local mode](options-and-config.md#local-mode). Behind a corporate proxy pass `-e HTTPS_PROXY -e NO_PROXY` ([Troubleshooting](troubleshooting.md#corporate-proxy)). The `Dockerfile` in the repository builds the image from the published npm package: `docker build --build-arg VERSION=0.5.0 -t mcp-review-check .`.
+Limits: the container cannot start a `--stdio` server that lives on your host (use `npx` for that, or build your own image from this one), and `localhost` inside the container is the container; for a server on the host use `--network host` (Linux) or `http://host.docker.internal:PORT/mcp`. A host without a dot runs in [local mode](options-and-config.md#local-mode). Behind a corporate proxy pass `-e HTTPS_PROXY -e NO_PROXY` ([Troubleshooting](troubleshooting.md#corporate-proxy)). The `Dockerfile` in the repository builds the image from the published npm package: `docker build --build-arg VERSION=1.0.1 -t mcp-review-check .`.
 
 ## pre-commit
 
@@ -274,7 +274,7 @@ The repository ships a [pre-commit](https://pre-commit.com) hook (`.pre-commit-h
 ```yaml
 repos:
   - repo: https://github.com/alisaosipova/mcp-review-check
-    rev: v0.5.0
+    rev: v1.0.1
     hooks:
       - id: mcp-review-check
         args: [--target, claude, --stdio, --, node, dist/server.js]
