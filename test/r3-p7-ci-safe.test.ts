@@ -8,14 +8,14 @@ import type { Finding } from '../src/rules/types.js';
 import { annotations, ciSafeLine, ciSafeText, neutralizeCommands } from '../src/report/github.js';
 import { buildReport } from '../src/report/index.js';
 import { renderText } from '../src/report/text.js';
-import { snap, tool } from './helpers.js';
+import { snap, tool, type SnapInput } from './helpers.js';
 
 const HIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/u;
 const at = new Date('2026-11-04T10:00:00Z');
 const finding = (over: Partial<Finding>): Finding => ({
   ruleId: 'TOOL-006', title: 't', severity: 'error', platforms: ['claude'], message: 'no title', fix: 'Add a title.', docs: ['https://x.test'], ...over,
 });
-const reportWith = (findings: Finding[], set?: Parameters<typeof snap>[0]['set']) =>
+const reportWith = (findings: Finding[], set?: SnapInput['set']) =>
   buildReport(snap({ set }), { findings, ignored: [], skipped: [], rulesRun: 1 }, [], 'error', at, 1);
 
 describe('A07-05: annotations carry no raw ESC or bidi character from the server', () => {
