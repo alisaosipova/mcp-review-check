@@ -150,4 +150,10 @@ describe('A08-04: the Docker recipe writes a report as a user that can write the
     expect(section).toContain(`(uid ${uid})`);
     expect(section).toContain('EACCES');
   });
+  it('rootless engines get their own recipe, not the claim that they map the ownership (review A08-04)', () => {
+    const flat = section.replace(/\s+/g, ' ');
+    expect(flat).not.toContain('rootless engines map the ownership');
+    expect(flat).toContain('with rootless Docker run as the container\'s root, which is your own host user (`--user 0:0`)');
+    expect(flat).toContain('with rootless Podman add `--userns=keep-id`');
+  });
 });
