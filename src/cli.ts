@@ -576,6 +576,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const started = new Date();
     stderr += staleCatalogWarning(started) ?? '';
     const t0 = performance.now();
+    // A server that answered initialize and then stopped: said at once, not with the report at the end (A10-02). The
+    // message holds no server text.
+    opts.onStall = (m) => { process.stderr.write(`mcp-review-check: ${m}\n`); };
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     const { snap, stderrTail, tracer } = listingOnly
