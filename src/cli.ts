@@ -24,6 +24,7 @@ import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import { displayUrl, isKnownToken, REDACTED_MARK } from './rules/util/net.js';
 import { isSafeToCall } from './probe/active.js';
+import { dcrClientNotice } from './probe/auth.js';
 import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
@@ -589,6 +590,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
     }
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
+    // --active-auth: the DCR client it registered, so it can be deleted (A03-03). Only client_id and the endpoint, redacted.
+    if (values['active-auth']) stderr += dcrClientNotice(snap.authProbe, redactor) ?? '';
     // The listing inputs go on the snapshot before the rules, which skip LST-* without them. Problems reading a file
     // are warnings (relative paths and codes only, never contents).
     if (values['plugin-dir'] !== undefined || values['openai-manifest'] !== undefined) {

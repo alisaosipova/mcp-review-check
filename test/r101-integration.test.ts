@@ -27,3 +27,13 @@ describe('A10-02: the stall notice reaches stderr during the run', () => {
     expect(r.stderr).not.toMatch(/stopped answering/); // not repeated at the end
   }, 90000);
 });
+
+describe('A03-03: --active-auth names the DCR client it registered', () => {
+  it('prints the registered client_id on stderr, and nothing without --active-auth', async () => {
+    server = await startAuthServer({});
+    const r = await runCli([server.url, '--active-auth', '--format', 'json', '--timeout', '5000'], {}, false);
+    expect(r.stderr).toMatch(/registered DCR client client_id=client-123 at http:\/\/127\.0\.0\.1:\d+\/register/);
+    const off = await runCli([server.url, '--format', 'json', '--timeout', '5000'], {}, false);
+    expect(off.stderr).not.toContain('client-123');
+  }, 60000);
+});
