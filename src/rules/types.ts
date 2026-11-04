@@ -9,6 +9,8 @@ export interface RuleMeta {
   id: string;
   title: string;
   severity: Partial<Record<Platform, Severity>>; // keys = platforms
+  /** A case where a finding differs from `severity` (explain prints it after the Severity line). */
+  severityNote?: string;
   needs: Need[];
   rationale: string;
   fix: string;

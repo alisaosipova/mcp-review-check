@@ -40,7 +40,9 @@ export interface Report {
 
 export function buildReport(snap: Snapshot, result: EngineResult, manual: ManualItem[], failOn: FailOn, startedAt: Date, durationMs: number, failOnSpec = false): Report {
   const f = result.findings;
-  const { failed, ...g } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
+  const { failed, ...gated } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
+  // A failed connect is exit 3 whatever the gate says: "add --fail-on-spec" would be advice for a run that already failed (A10-07).
+  const g = snap.fatal ? { ...gated, notGated: null } : gated;
   const complete = snap.coverage.toolLevel === 'ok';
   const verdicts: Report['summary']['verdicts'] = {};
   // A failed connect (exit 3) checked nothing, a --max-duration stop or an exhausted snapshot budget not everything: INCOMPLETE whatever the findings say.

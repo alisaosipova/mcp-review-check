@@ -8,6 +8,9 @@ import { AUTH_021 } from '../src/rules/auth.js';
 import type { HttpExchange, Snapshot } from '../src/snapshot.js';
 import { exchange, snap } from './helpers.js';
 import { RULES } from '../src/rules/index.js';
+import { exitNote } from '../src/connect.js';
+import { buildReport } from '../src/report/index.js';
+import { explainRule } from '../src/explain.js';
 
 const stop = (s: Snapshot) => { s.coverage = { toolLevel: 'stopped' }; s.limits = { truncated: [], stopped: { maxDurationMs: 1500, phase: 'listing', unfinished: ['listing', 'wire probes'] } }; };
 
@@ -119,6 +122,16 @@ describe('A10-06: stdio start failures get a diagnosis, and the stderr pointer o
   });
 });
 
+describe('A10-06: a stdio server that ended before initialize reports its exit code or signal', () => {
+  it('names the exit code or the signal, and nothing for a running process or a spawn that never ran', () => {
+    expect(exitNote({ exitCode: 7, signalCode: null })).toBe(' (the server process exited with code 7 before answering initialize)');
+    expect(exitNote({ exitCode: null, signalCode: 'SIGTERM' })).toBe(' (the server process exited with signal SIGTERM before answering initialize)');
+    expect(exitNote({ exitCode: null, signalCode: null })).toBe(''); // still running: a timeout, not an exit
+    expect(exitNote({ exitCode: -2, signalCode: null })).toBe(''); // spawn ENOENT leaves a negative errno
+    expect(exitNote(undefined)).toBe('');
+  });
+});
+
 describe('A10-07: the connect-failure finding of SRV-003 carries transport docs, not the directory-policy page', () => {
   it('HTTP and stdio connect failures link the transport and lifecycle pages; the SSE finding keeps the rule sources', () => {
     const http = runRules(snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.era = 'unknown'; s.fatal = 'could not complete a handshake: ECONNREFUSED'; s.coverage = { toolLevel: 'connect-failed' }; } }), [SRV_003]).findings;
@@ -131,5 +144,33 @@ describe('A10-07: the connect-failure finding of SRV-003 carries transport docs,
   });
   it('the rationale (explain, --list-rules, markdown "Why these rules") covers the connect-failure case', () => {
     expect(SRV_003.rationale).toMatch(/no transport works at all .* spec error/);
+  });
+});
+
+describe('A10-07: a connect-failed run gives no --fail-on-spec advice, and explain names the spec-error case', () => {
+  const started = new Date('2026-11-04T10:00:00Z');
+  const rep = (fatal: boolean) => {
+    const s = snap({ url: 'https://mcp.acme.test/mcp', set: (x) => {
+      x.era = fatal ? 'unknown' : 'modern';
+      if (fatal) { x.fatal = 'could not complete a handshake: ECONNREFUSED'; x.coverage = { toolLevel: 'connect-failed', reason: 'ECONNREFUSED' }; }
+      else x.transport.kind = 'sse';
+    } });
+    return buildReport(s, runRules(s, [SRV_003]), [], 'warning', started, 1);
+  };
+  it('gate.notGated is null on a connect-failed run, which already failed', () => {
+    const r = rep(true);
+    expect(r.findings.map((f) => [f.ruleId, f.severity, f.platforms])).toEqual([['SRV-003', 'error', ['spec']]]);
+    expect(r.summary.failed).toBe(true);
+    expect(r.summary.gate.notGated).toBeNull();
+  });
+  it('a run that connected still gets the not-gated note for spec findings', () => {
+    const s = snap({ url: 'https://mcp.acme.test/mcp', set: (x) => { x.era = 'modern'; } });
+    const res = { findings: [{ ruleId: 'SRV-003', title: 't', severity: 'error' as const, platforms: ['spec' as const], message: 'm', fix: 'f', docs: [] }], ignored: [], skipped: [], rulesRun: 1 };
+    const r = buildReport(s, res as never, [], 'error', started, 1);
+    expect(r.summary.gate.notGated).toBe('spec: 1 error (SRV-003) not gated; add --fail-on-spec to fail on spec findings');
+    expect(rep(false).summary.gate).toMatchObject({ notGated: null }); // SSE is a claude/chatgpt warning: counted, not a spec-only note
+  });
+  it('explain SRV-003 says a connect failure is a spec error', () => {
+    expect(explainRule('SRV-003')).toMatch(/Severity {2}claude=warning, chatgpt=warning, spec=warning\n {10}spec=error when no transport works \(connect failure, exit 3\)/);
   });
 });

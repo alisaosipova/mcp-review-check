@@ -82,6 +82,7 @@ export function stdioStartFix(snap: Snapshot): string {
 export const SRV_003 = defineRule(
   {
     id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: [],
+    severityNote: 'spec=error when no transport works (connect failure, exit 3); the directory verdicts then read INCOMPLETE.',
     rationale: 'SSE has been deprecated since 2025-03-26; both directories expect Streamable HTTP. When no transport works at all (the server could not be reached, did not start or did not complete a handshake), this rule reports that as a spec error, because nothing else could be checked.',
     fix: 'Serve Streamable HTTP at the registered URL.',
     sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy', STREAMABLE_HTTP],

@@ -27,7 +27,7 @@ export function explainRule(id: string): string | undefined {
   }
   if (!r) return undefined;
   const sev = Object.entries(r.severity).map(([p, s]) => `${p}=${s}`).join(', ');
-  return [`${r.id}  ${r.title}`, '', `Severity  ${sev}`, ...(r.needs.length ? [`Needs     ${needsText(r.needs)}`] : []), `Why       ${r.rationale}`, `Fix       ${r.fix}`, 'Sources', ...r.sources.map((s) => `  ${s}`), '',
+  return [`${r.id}  ${r.title}`, '', `Severity  ${sev}`, ...(r.severityNote ? [`          ${r.severityNote}`] : []), ...(r.needs.length ? [`Needs     ${needsText(r.needs)}`] : []), `Why       ${r.rationale}`, `Fix       ${r.fix}`, 'Sources', ...r.sources.map((s) => `  ${s}`), '',
     `To suppress it: --ignore ${r.id}`].join('\n') + '\n';
 }
 
