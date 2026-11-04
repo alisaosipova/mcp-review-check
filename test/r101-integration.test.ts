@@ -1,12 +1,15 @@
 // 1.0.1 integration: the review round 3 integrator notes that touch files outside the fix packages (src/cli.ts,
 // src/rules/data.ts, src/report/index.ts, src/report/junit.ts).
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 import { buildReport, resultLine } from '../src/report/index.js';
 import { DATA_001, DATA_003, DATA_005 } from '../src/rules/data.js';
 import { RULES, runRules } from '../src/rules/index.js';
+import { ROOT } from './cli-runner.js';
 import { startAuthServer } from './fixtures/auth-server.js';
 import type { Started } from './fixtures/http-bridge.js';
 import { evaluate, snap, tool, toolWithProps } from './helpers.js';
@@ -130,4 +133,22 @@ describe('A10-05: SRV-003 is not a passed testcase of the directory suites after
     expect(srv003(spec.stdout, 'spec')).toMatch(/<failure /);
     expect(srv003(spec.stdout, 'spec')).not.toMatch(/<skipped/);
   }, 60000);
+});
+
+describe('1.0.1 docs follow the integrated code', () => {
+  const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8').replace(/\s+/g, ' ');
+  it('SECURITY.md gives the request count of privacy-and-requests.md, the 2026-07-28 probes and the DCR client_id line', () => {
+    const sec = read('SECURITY.md');
+    expect(sec).toContain('20 to 40 requests, about 35 to a stateful 2025-11-25 server and about 25 to a stateless 2026-07-28 one');
+    expect(sec).not.toContain('about 20 requests');
+    expect(sec).toContain('two `tools/list` requests whose `Mcp-Method` header is missing or does not match');
+    expect(sec).toContain('one `DELETE` on the endpoint without a session id');
+    expect(sec).toContain('The client_id it registered and the registration endpoint are printed on stderr');
+  });
+  it('options-and-config.md: $id at the tag of the installed release, fingerprints independent of non-secret --env values', () => {
+    const doc = read('docs', 'guide', 'options-and-config.md');
+    expect(doc).not.toContain('v0.4.0/schema');
+    expect(doc).toContain('is the URL of the schema at the tag of the installed release');
+    expect(doc).toContain('adding or changing `--env WORKSPACE=…` changes no fingerprint');
+  });
 });

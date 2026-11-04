@@ -124,9 +124,10 @@ describe('A01-01: options-and-config.md documents the trust model of a discovere
     const row = text.split('| `--config <file>`')[1]?.split(' | ')[2] ?? '';
     expect(row).toContain('A discovered file sets options only, not the server, output paths, credentials');
     const trust = /- \*\*Trust\*\*: (.*?)(?= - \*\*|$)/.exec(text)?.[1] ?? '';
-    // The keys P1 (src/config.ts DISCOVERED_FORBIDDEN) ignores in a discovered file; the export, once merged, is checked too.
+    // The keys src/config.ts (DISCOVERED_FORBIDDEN) ignores in a discovered file: the copy here and the export agree.
     const config = (await import('../src/config.js')) as { DISCOVERED_FORBIDDEN?: readonly string[] };
-    const keys = new Set([...KNOWN_FORBIDDEN, ...(config.DISCOVERED_FORBIDDEN ?? [])]);
+    expect([...(config.DISCOVERED_FORBIDDEN ?? [])].sort()).toEqual([...KNOWN_FORBIDDEN].sort());
+    const keys = new Set(KNOWN_FORBIDDEN);
     for (const key of keys) expect(trust, key).toContain(`\`${key}\``);
     for (const key of ['cwd', 'env', 'active']) expect(row, key).toContain(`\`${key}\``);
     expect(trust).toContain('`$MCP_REVIEW_CHECK_TOKEN`');
