@@ -62,6 +62,16 @@ describe('A05-04: TOOL-015 reads a property through its local $ref', () => {
     expect(evaluate(TOOL_015, lookup({ host: { $ref: '#/$defs/Port' } }, { Port: { type: 'integer' } }))).toEqual([]);
   });
 
+  it('an anyOf with a free string branch, inline or through a ref, is still free-form (review P5 enumValues)', () => {
+    const mixed = { anyOf: [{ const: 'auto' }, { type: 'string' }] };
+    expect(evaluate(TOOL_015, lookup({ host: mixed }))).toHaveLength(1);
+    expect(evaluate(TOOL_015, lookup({ host: { $ref: '#/$defs/H' } }, { H: mixed }))).toHaveLength(1);
+    expect(enumValues(mixed)).toBeUndefined();
+    expect(enumValues({ oneOf: [{ enum: ['a'] }, {}] })).toBeUndefined();
+    expect(enumValues({ anyOf: [{ enum: ['a', 'b'] }, { type: 'null' }] })).toEqual(['a', 'b']);
+    expect(evaluate(TOOL_015, lookup({ host: { anyOf: [{ enum: ['eu.acme.example'] }, { type: 'null' }] } }))).toEqual([]);
+  });
+
   it('a free-form host, inline or through a ref to a plain string, is still reported', () => {
     expect(evaluate(TOOL_015, lookup({ host: { type: 'string' } }))).toHaveLength(1);
     expect(evaluate(TOOL_015, lookup({ host: { $ref: '#/$defs/Host' } }, { Host: { type: 'string' } }))).toHaveLength(1);
@@ -84,6 +94,14 @@ describe('A05-09: INJ-002 and biomedical Greek notation', () => {
 
   it('Greek letters swapped into a same-case word, uppercase Greek and Cyrillic are still mixed-script', () => {
     for (const w of ['pαypal', 'gοοgle', 'PΑYPAL', 'Tοken', 'pаypal', 'NFκBа']) expect(mixedScript(w), w).toBe(true);
+  });
+
+  it('the notation test is linear on Latin capitals with a long Greek run that fails at the end (review P5 GREEK_NOTATION)', () => {
+    const word = 'A' + 'α'.repeat(5000) + 'b';
+    expect(ms(() => expect(mixedScript(word)).toBe(true))).toBeLessThan(200);
+    expect(mixedScript('A' + 'α'.repeat(30) + 'B')).toBe(false);
+    const s = snap({ tools: [tool({ name: 'search_pubmed', description: `Search PubMed abstracts for A${'α'.repeat(30)}b signaling.` })] });
+    expect(ms(() => expect(evaluate(INJ_002, s)).toHaveLength(1))).toBeLessThan(500);
   });
 
   it('A05-09 a PubMed tool description gets no INJ-002 warning', () => {
@@ -155,6 +173,18 @@ describe('A09-03: extractOrigins CSS url() scan', () => {
     }
   });
 
+  it('the cache keeps a scan per resource, so two resources scanned in turn are not rescanned', () => {
+    const a = '<img src="https://a.example.com/a.png">';
+    const b = '<img src="https://b.example.com/b.png">';
+    expect(extractOrigins(a).map((o) => o.origin)).toEqual(['https://a.example.com']);
+    expect(extractOrigins(b).map((o) => o.origin)).toEqual(['https://b.example.com']);
+    const big = `<img src="https://c.example.com/c.png">${'url('.repeat(200_000)}`;
+    extractOrigins(big);
+    extractOrigins(a);
+    expect(ms(() => extractOrigins(big))).toBeLessThan(5);
+    expect(extractOrigins(a).map((o) => o.origin)).toEqual(['https://a.example.com']);
+  });
+
   it('A09-03 the result is cached per HTML and callers cannot corrupt it', () => {
     const html = '<img src="https://img.example.com/a.png">';
     const a = extractOrigins(html);
@@ -165,7 +195,7 @@ describe('A09-03: extractOrigins CSS url() scan', () => {
 
 describe('regex-complexity guard: every rule over large server-controlled fields', () => {
   const SIZE = 200 * 1024;
-  const UNITS = ['A', '0', 'a', 'Aa', 'A0', '-', '_', ' ', '.', '/', '%', 'url(', '<a ', '<!--', '<system', '`', '"', "'", '(', '{{', '${', 'https://', 'http://a', 'а', 'α', 'call ', 'use the ', 'always ', '0% off', '\\', '​'];
+  const UNITS = ['A', '0', 'a', 'Aa', 'A0', '-', '_', ' ', '.', '/', '%', 'url(', '<a ', '<!--', '<system', '`', '"', "'", '(', '{{', '${', 'https://', 'http://a', 'а', 'α', 'A' + 'α'.repeat(30) + 'b', 'A' + 'α'.repeat(30) + 'b ', 'call ', 'use the ', 'always ', '0% off', '\\', '​'];
 
   for (const unit of UNITS) {
     it(`unit ${JSON.stringify(unit)} in every field runs all rules in under 5 s`, () => {
