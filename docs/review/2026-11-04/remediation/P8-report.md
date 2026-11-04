@@ -37,6 +37,24 @@ All action SHAs stay pinned; the one new action, `docker/setup-qemu-action`, is 
 - Tests: `A08-05: one build for both platforms, smoke-tested per platform, handed to the push job by digest`, `A08-05: the workflow header no longer claims more than it checks`.
 - Not run: Docker and a GitHub runner are not available on this host, so the workflow was verified only statically (PyYAML parse, the repo's YAML lint, structural tests). It relies on `skopeo` being on `ubuntu-latest` (it is in the Ubuntu 22.04/24.04 runner images; both steps fail with a clear `::error::` if it is missing). The first real tag push is the end-to-end check.
 
+## Review fixes
+
+### A08-02 fix: `--prefix` made npm skip the repository's `.npmrc` (medium)
+- Confirmed (npm 11.20.0): in a project with `registry=https://mirror.example.invalid/` in `.npmrc`, `npm config get registry` gives the mirror, and `npm config get registry --prefix <other dir>` gives `https://registry.npmjs.org/`. Once `<other dir>/.npmrc` is a copy of the project file, the mirror is back. The same happens from a subfolder of the project.
+- Change (action.yml): before the install, the script creates the prefix directory and runs `npm prefix` (token unset) to find the project root the way npm does. It falls back to `$PWD` if that fails. If `<root>/.npmrc` exists, it is copied to `<prefix>/.npmrc` under `umask 077`, so the copy is mode 600: it may hold auth. It lives only in `$RUNNER_TEMP` for the job. The working directory does not change, so relative paths in the file (`cafile=./ca.pem`, `cache=./c`) resolve as they did before. Checked with `cache=./c`: npm writes its log to the same folder with and without the copy. User config (`~/.npmrc`, setup-node's `NPM_CONFIG_USERCONFIG`) and `${VAR}` expansion are unchanged. The install still runs with scripts off and without the token.
+- I did not take the `npm exec` alternative. It would install and run in one npm process with the token already in the environment, which brings back the exposure that A08-02 removed.
+- Tests: `A08-02: the project .npmrc (a registry mirror) still reaches the install, found from a subfolder as npm does` uses the real npm for `npm prefix` and `npm config get registry --prefix <install prefix>`. It checks that the mirror is resolved, that the copy is mode 600, and that the root lookup runs without the token. Against the previous action.yml it fails. `A08-02: without a project .npmrc nothing is copied and the install still runs`.
+
+### A08-04: the CI guide's Docker recipe had no `--user` (low)
+- Change (docs/guide/ci.md, Docker section): the report-file recipe is now `mkdir -p out` followed by `docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" ...`, the same as the Dockerfile header. The comment says why. This file belongs to P9, so the integrator should check for a conflict there.
+- Test: `A08-04: every Docker recipe in the CI guide that mounts an output folder runs as the host user`. It was committed with the A08-02 test changes in the same test file.
+
+### Proposed CHANGELOG addition (1.0.1, Fixed)
+- GitHub Action: the npm install still uses the registry, scoped registries, auth and proxy settings from your repository's `.npmrc`. (A08-02)
+
+### Proposed spec addition (after "...installs `mcp-review-check@<version>` into `$RUNNER_TEMP`...")
+The action copies the project's `.npmrc` (from the root that `npm prefix` reports) into that install prefix with mode 600, so the project's registry and auth settings still apply.
+
 ## Adjusted existing test
 - `test/p5b-docs.test.ts` › `docker.yml smoke test` › `runs the built image (version, listing-only run, non-root) in a job the push job needs`: it asserted `load: true`, `push: false` and a `push: true` rebuild in the push job, which is exactly the behaviour A08-05 removes. It now asserts the local-registry output, the per-platform `docker run`, and the push job's `skopeo copy --all --preserve-digests "oci-archive:`.
 
