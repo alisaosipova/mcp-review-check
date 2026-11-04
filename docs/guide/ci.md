@@ -227,8 +227,9 @@ mcp-review-check:
         npx -y "mcp-review-check@$MCP_REVIEW_CHECK_VERSION" $common --fail-on never --save-baseline .mcp-review-check/baseline.json $args
       fi
   after_script:
-    # Refresh the baseline from the default branch only (merge requests never replace the accepted state).
-    - if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && [ -f mcp-review-check.json ]; then mkdir -p .mcp-review-check && cp mcp-review-check.json .mcp-review-check/baseline.json; fi
+    # Refresh the baseline from a successful default-branch job only: merge requests never replace the accepted state,
+    # and a failed job (a new finding, drift, or exit 3 when the server did not connect) keeps it.
+    - if [ "$CI_JOB_STATUS" = success ] && [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && [ -f mcp-review-check.json ]; then mkdir -p .mcp-review-check && cp mcp-review-check.json .mcp-review-check/baseline.json; fi
   artifacts:
     when: always
     expire_in: 2 weeks
