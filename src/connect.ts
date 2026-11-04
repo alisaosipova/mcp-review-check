@@ -716,8 +716,10 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   // drops (over STDIO_MAX_MESSAGE) is not kept and not counted.
   const stdout = stdoutTap(r, (n) => { charge(progress?.budget, n); });
   const nonJson = stdout.out;
+  // Kept here because the transport forgets its process on close: a failed handshake still reports how it ended (A10-06).
+  let child: ChildProcess | undefined;
   const tap = () => {
-    const proc = (inner as unknown as { _process?: ChildProcess })._process;
+    const proc = child = (inner as unknown as { _process?: ChildProcess })._process;
     if (proc && progress?.children) {
       if (progress.stopped || ending) endTree(proc, 'SIGKILL'); // spawned while the deadline or a signal was ending the others
       // On POSIX the entry stays while the server's process group outlives its wrapper.
@@ -732,9 +734,11 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
   try {
     await withTimeout(client.connect(rec, { timeout: timeoutMs }), timeoutMs + 1000, 'initialize');
   } catch (e) {
+    // Read before client.close(), which ends a process that is still running (a timeout is not an exit).
+    const ended = exitNote(child);
     await client.close().catch(() => {});
     const err = e as Error;
-    throw Object.assign(new Error(`${err.message}${rec.overflow ? ` (${rec.overflow})` : ''}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
+    throw Object.assign(new Error(`${err.message}${rec.overflow ? ` (${rec.overflow})` : ''}${ended}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
   }
   return { client, rec, nonJson, stderr: () => stderrTail };
 }
@@ -747,6 +751,13 @@ function explainOverflow(snap: Snapshot, rec: RecordingTransport): void {
   for (const m of Object.values(snap.listMeta)) if (m.error) m.error = why(m.error);
   for (const r of Object.values(snap.resourceReads)) if (typeof r.error === 'string') r.error = why(r.error);
   if (snap.coverage.reason) snap.coverage.reason = why(snap.coverage.reason);
+}
+
+/** " (the server process exited with code 1 before answering initialize)" when the child has ended, else "". */
+export function exitNote(proc: Pick<ChildProcess, 'exitCode' | 'signalCode'> | undefined): string {
+  // A spawn that failed (ENOENT) leaves a negative errno in exitCode: that process never ran.
+  if (!proc || (proc.signalCode === null && (proc.exitCode === null || proc.exitCode < 0))) return '';
+  return ` (the server process exited with ${proc.signalCode ? `signal ${proc.signalCode}` : `code ${proc.exitCode}`} before answering initialize)`;
 }
 
 /** What a stdio server printed before a failed or stopped handshake: "; stderr: <summary>; stdout: <first non-JSON-RPC

@@ -203,6 +203,7 @@ describe('e2e stdio', () => {
     // a local launch failure is not a directory blocker and gets stdio-specific advice
     expect(srv003.platforms).toEqual(['spec']);
     expect(srv003.fix).toMatch(/exited or closed stdout before it answered initialize/); // the cause, not generic advice (review A10-06)
+    expect(srv003.message).toMatch(/the server process exited with code 1 before answering initialize/); // how it ended (review A10-06)
     expect(r.json.summary.verdicts.claude.verdict).not.toBe('BLOCKED');
     expect(r.json.manual).toEqual([]); // no manual checklist when nothing connected
   });
