@@ -278,6 +278,13 @@ function shownUrl(raw: string): string {
   return raw.replace(/\/\/.*@/s, '//…@').replace(/[?#].*$/s, (q) => (q.length > 1 ? `${q[0]}…` : q));
 }
 
+/** A line of server text for stderr that a GitHub runner cannot read as a workflow command ("::error ...",
+ *  "::add-mask::", "##[group]"): the leading ':' or '#' shown as \u{3A} or \u{23}, as the text report does (F135);
+ *  control and format characters (ESC, CR, bidi overrides) as \u{..} through visibleText. */
+export function ciSafeLine(line: string): string {
+  return visibleText(line).replace(/^(\s*):(?=:)/, '$1\\u{3A}').replace(/^(\s*)#(?=#\[)/, '$1\\u{23}');
+}
+
 /**
  * `interrupted` is aborted by SIGINT/SIGTERM (its reason the signal number): a run that still finishes in the grace
  * period writes no report, since the checks after the signal ran against servers being killed.
@@ -551,11 +558,12 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {
-      if (snap.listing) stderr += `[listing]\n${visibleText(JSON.stringify(describeListing(snap.listing), null, 2))}\n`;
+      if (snap.listing) stderr += `[listing]\n${JSON.stringify(describeListing(snap.listing), null, 2).split('\n').map(ciSafeLine).join('\n')}\n`;
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
-      // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135).
-      for (const e of tracer?.exchanges ?? []) stderr += visibleText(`[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})`) + '\n';
-      if (stderrTail) stderr += `[stdio stderr]\n${stderrTail.split(/\r?\n/).map(visibleText).join('\n')}\n`;
+      // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135), and no
+      // line of it starts a GitHub workflow command (A07-04).
+      for (const e of tracer?.exchanges ?? []) stderr += ciSafeLine(`[http] ${e.label}: ${e.method} ${e.url} -> ${e.status ?? e.error?.message} (${Math.round(e.durationMs)} ms${e.bodyMs !== undefined && e.bodyMs - e.durationMs > 1000 ? `, body ${Math.round(e.bodyMs)} ms` : ''})`) + '\n';
+      if (stderrTail) stderr += `[stdio stderr]\n${stderrTail.split(/\r?\n/).map(ciSafeLine).join('\n')}\n`;
       stderr = scrub(stderr, redactor);
     }
     // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
