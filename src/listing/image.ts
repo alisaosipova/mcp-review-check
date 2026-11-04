@@ -19,9 +19,43 @@ export function sniffFormat(b: Buffer): ImageFormat | undefined {
   if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
   if (b.length >= 12 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'webp';
-  // SVG is text: an <svg element near the start (after an optional BOM, XML declaration, doctype and comments).
+  // SVG is text: the root element is <svg, after an optional BOM, XML declaration, processing instructions, comments
+  // and doctype (a licence header may be long, so the whole header read is searched).
+  if (svgRootAt(b.toString('utf8')) !== undefined) return 'svg';
+  // 1.0.x compatibility: an <svg tag in the first 4 KiB that is not the root element (inside a comment, or in a text
+  // file) was accepted before; it is still taken as SVG, and sized from the root element only when there is one.
   if (/<svg[\s>/]/i.test(b.toString('utf8', 0, Math.min(b.length, 4096)))) return 'svg';
   return undefined;
+}
+
+/** The offset of the root `<svg` element after the prologue (BOM, whitespace, `<?...?>`, `<!--...-->`, `<!DOCTYPE ...>`
+ *  with its internal subset), or undefined when the first element is not svg. */
+export function svgRootAt(text: string): number | undefined {
+  let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  for (;;) {
+    while (i < text.length && /\s/.test(text[i])) i++;
+    if (text.startsWith('<?', i)) { const e = text.indexOf('?>', i + 2); if (e < 0) return undefined; i = e + 2; continue; }
+    if (text.startsWith('<!--', i)) { const e = text.indexOf('-->', i + 4); if (e < 0) return undefined; i = e + 3; continue; }
+    if (text.slice(i, i + 9).toUpperCase() === '<!DOCTYPE') {
+      // Up to the closing '>' outside quotes and outside the [internal subset] (which may hold '>' in its declarations).
+      let j = i + 9;
+      let quote = '';
+      let depth = 0;
+      for (; j < text.length; j++) {
+        const c = text[j];
+        if (quote) { if (c === quote) quote = ''; continue; }
+        if (text.startsWith('<!--', j)) { const e = text.indexOf('-->', j + 4); if (e < 0) return undefined; j = e + 2; continue; }
+        if (c === '"' || c === "'") quote = c;
+        else if (c === '[') depth++;
+        else if (c === ']') depth = Math.max(0, depth - 1);
+        else if (c === '>' && depth === 0) break;
+      }
+      if (j >= text.length) return undefined;
+      i = j + 1;
+      continue;
+    }
+    return /^<svg[\s>/]/i.test(text.slice(i, i + 5)) ? i : undefined;
+  }
 }
 
 function pngSize(b: Buffer): Dimensions | undefined {
@@ -72,9 +106,11 @@ function px(v: string | undefined): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-/** width and height of the root <svg>, else the viewBox size; undefined when neither gives numbers. */
+/** width and height of the root <svg>, else the viewBox size; undefined when neither gives numbers. An <svg tag in a
+ *  comment or the doctype is never the root; only text without a root svg element falls back to the first tag. */
 export function svgSize(text: string): Dimensions | undefined {
-  const tag = /<svg(?=[\s>/])([^>]*)>/i.exec(text)?.[1];
+  const root = svgRootAt(text);
+  const tag = /<svg(?=[\s>/])([^>]*)>/i.exec(root === undefined ? text : text.slice(root))?.[1];
   if (tag === undefined) return undefined;
   const attr = (name: string) => new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find((x) => x !== undefined);
   const w = px(attr('width'));
