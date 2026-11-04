@@ -56,7 +56,7 @@ inputs:
     required: false
     default: 'true'
   extra-args:
-    description: More CLI options, split on whitespace (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`.
+    description: More CLI options, split on whitespace, newlines included (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`. A YAML block scalar (`|`) may put one option per line.
     required: false
     default: ''
 
@@ -122,12 +122,15 @@ runs:
         args=(--target "$platform" --fail-on "$INPUT_FAIL_ON" --format sarif --output "$INPUT_SARIF_FILE" --json-output "$json_file")
         [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
         [ "$INPUT_ACTIVE" = true ] && args+=(--active)
-        # Split on whitespace only (read -a does no globbing or quote removal). ${x[@]+...}: under set -u, bash 3.2
-        # (macOS runners) treats an empty array as unbound.
-        if [ -n "$INPUT_EXTRA_ARGS" ]; then read -r -a extra <<< "$INPUT_EXTRA_ARGS"; args+=(${extra[@]+"${extra[@]}"}); fi
+        # Split on whitespace, newlines and CR included, so a block scalar keeps every line (read -a does no globbing
+        # or quote removal; -d '' reads to the end and returns 1 there). ${x[@]+...}: under set -u, bash 3.2 (macOS
+        # runners) treats an empty array as unbound.
+        extra=()
+        if [ -n "$INPUT_EXTRA_ARGS" ]; then IFS=$' \t\r\n' read -r -d '' -a extra <<< "$INPUT_EXTRA_ARGS" || true; args+=(${extra[@]+"${extra[@]}"}); fi
         if [ -n "$INPUT_STDIO" ]; then args+=(--stdio "$INPUT_STDIO"); else args+=("$INPUT_TARGET"); fi
-        # The token goes through the environment only, so it is not in the process list or the rerun line.
-        if [ -n "$INPUT_BEARER" ]; then echo "::add-mask::$INPUT_BEARER"; export MCP_REVIEW_CHECK_TOKEN="$INPUT_BEARER"; fi
+        # Checked before anything is echoed: ::add-mask:: masks only the first line of a value, so the rest of a
+        # multi-line token would be printed as plain text. The CLI rejects such a token anyway.
+        case "$INPUT_BEARER" in *$'\n'*|*$'\r'*) usage "bearer must not contain CR or LF (the value is not shown)";; esac
         rm -f -- "$INPUT_SARIF_FILE" "$json_file"
         if [ -n "$INPUT_CLI_PATH" ]; then
           cli=(node "$INPUT_CLI_PATH")
@@ -135,8 +138,18 @@ runs:
           # A version or range only: "npm:", "git+", a path or a URL would install another package under this name.
           version_re='^[A-Za-z0-9.^~*+<>= -]+$'
           [[ "$INPUT_VERSION" =~ $version_re ]] || usage "version must be an npm version or range, such as 0.2"
-          cli=(npx --yes "mcp-review-check@$INPUT_VERSION")
+          # Installed before the token is exported, with install scripts off and without a token the job set, so no
+          # lifecycle script of the package or a dependency runs, and none could read the token.
+          prefix="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mcp-review-check-$$-pkg"
+          if ! env -u MCP_REVIEW_CHECK_TOKEN npm_config_ignore_scripts=true \
+            npm install --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --prefix "$prefix" "mcp-review-check@$INPUT_VERSION" >&2; then
+            echo "::error title=mcp-review-check::could not install mcp-review-check@$INPUT_VERSION from the npm registry"
+            echo "exit-code=3" >> "$GITHUB_OUTPUT"; echo "sarif-file=" >> "$GITHUB_OUTPUT"; echo "report-json=" >> "$GITHUB_OUTPUT"; exit 3
+          fi
+          cli=("$prefix/node_modules/.bin/mcp-review-check")
         fi
+        # The token goes through the environment only, so it is not in the process list or the rerun line.
+        if [ -n "$INPUT_BEARER" ]; then echo "::add-mask::$INPUT_BEARER"; export MCP_REVIEW_CHECK_TOKEN="$INPUT_BEARER"; fi
         set +e
         "${cli[@]}" "${args[@]}"
         code=$?
