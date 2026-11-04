@@ -96,6 +96,42 @@ export function deref(root: unknown, node: unknown): unknown {
   return node;
 }
 
+/**
+ * A property node seen through its local `$ref`: the target's keywords, overridden by the node's own (draft 2019-09+
+ * lets siblings of `$ref` apply). The walker visits `{ $ref }` before its target, so rules that read a property's type,
+ * enum or format must use this, or a pydantic/zod `$defs` enum reads as a free-form string. `unresolved` is set for a
+ * `$ref` that does not resolve locally: its shape is unknown.
+ */
+export function resolvedNode(root: unknown, node: Obj): { node: Obj; unresolved: boolean } {
+  let cur: Obj = node;
+  const seen = new Set<Obj>([node]);
+  const layers: Obj[] = [node];
+  // Follow a short chain of local refs ($defs/A -> $defs/B), guarding against cycles.
+  for (let i = 0; i < 8 && typeof cur.$ref === 'string'; i++) {
+    const next = cur.$ref.startsWith('#') ? resolvePointer(root, cur.$ref) : undefined;
+    if (!isObj(next)) return { node: Object.assign({}, ...layers.slice().reverse()), unresolved: true };
+    if (seen.has(next)) break;
+    seen.add(next);
+    layers.push(next);
+    cur = next;
+  }
+  return { node: Object.assign({}, ...layers.slice().reverse()), unresolved: false };
+}
+
+/** The closed value list of a node: `enum`, `const`, or an anyOf/oneOf of `const`/`enum` branches. */
+export function enumValues(node: Obj): unknown[] | undefined {
+  if (Array.isArray(node.enum)) return node.enum;
+  for (const k of ['oneOf', 'anyOf']) {
+    const list = node[k];
+    if (Array.isArray(list)) {
+      const consts = list.filter(isObj).flatMap((s) => (s.const !== undefined ? [s.const] : Array.isArray(s.enum) ? s.enum : []));
+      if (consts.length) return consts;
+    }
+  }
+  if (node.const !== undefined) return [node.const];
+  return undefined;
+}
+
 /** Structural metrics without following $ref (TOOL-020). */
 export function schemaMetrics(schema: unknown): { depth: number; count: number } {
   let count = 0;

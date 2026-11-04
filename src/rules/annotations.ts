@@ -2,8 +2,8 @@
 import { HARD_DESTRUCTIVE, IRREVERSIBLE, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
-import { annotations, isObj, isStr } from './util/access.js';
-import { walkSchema } from './util/schemaWalk.js';
+import { annotations, isObj, isStr, type Obj } from './util/access.js';
+import { enumValues, resolvedNode, walkSchema } from './util/schemaWalk.js';
 import { compoundWriteVerb, firstVerb, tokenize, toolKind } from './util/text.js';
 
 const SCHEMA_TS = 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts';
@@ -149,7 +149,11 @@ export const TOOL_015 = defineRule(
     walkSchema(t.inputSchema, (v) => {
       if (prop || !v.viaProperty) return;
       const n = v.node;
-      const free = (n.type === 'string' || n.type === undefined) && n.enum === undefined && n.pattern === undefined && !(isStr(n.format) && DATE_FORMATS.has(n.format));
+      const freeForm = (x: Obj) => (x.type === 'string' || x.type === undefined) && x.enum === undefined && x.pattern === undefined && !(isStr(x.format) && DATE_FORMATS.has(x.format));
+      // The property node is visited before its `$ref` target, so it is also judged through the ref: an enum, integer or
+      // anyOf of consts kept in `$defs` is constrained, and a ref that does not resolve locally is not evidence.
+      const r = resolvedNode(t.inputSchema, n);
+      const free = freeForm(n) && !r.unresolved && freeForm(r.node) && enumValues(r.node) === undefined;
       // `to` is a recipient only on a tool that sends messages (a date range or a graph edge also has `to`).
       const target = TARGET_PROP.test(v.name) || n.format === 'uri' || (sends && (RECIPIENT_PROP.test(v.name) || n.format === 'email'));
       if (free && target) prop = v.rawName;
