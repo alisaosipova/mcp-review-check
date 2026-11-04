@@ -1,6 +1,10 @@
 # mcp-review-check image: installs the PUBLISHED npm package, not the checkout.
 #   docker build --build-arg VERSION=0.5.0 -t mcp-review-check .
 #   docker run --rm mcp-review-check https://mcp.example.com/mcp --target claude
+# The image runs as the non-root user reviewer (uid 10001), which cannot write a host folder owned by you (or one
+# Docker creates as root). To write a report into a mount, run as your own uid; the CLI writes nothing to its home:
+#   mkdir -p out && docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/out:/out" mcp-review-check \
+#     https://mcp.example.com/mcp --format json --output /out/report.json
 # Base image pinned by digest (node:22-alpine, multi-arch index, resolved 2026-11-03); refresh it with Node 22 patch releases.
 
 FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
