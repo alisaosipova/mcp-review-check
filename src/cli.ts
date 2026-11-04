@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
 import { readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { installProxy, ProxyConfigError } from './proxy.js';
@@ -286,6 +286,23 @@ function invalidUrlMessage(raw: string): string {
   return `invalid URL: ${visibleText(cut)}`;
 }
 
+/** Whether two paths name one file: the same device and inode when both exist (a symlink or hard link), otherwise
+ *  the real path of the parent directory and the base name, case-folded where file systems usually fold case. */
+function samePath(a: string, b: string): boolean {
+  const sa = statSync(a, { throwIfNoEntry: false });
+  const sb = statSync(b, { throwIfNoEntry: false });
+  if (sa && sb) return sa.dev === sb.dev && sa.ino === sb.ino && (sa.ino !== 0 || canonical(a) === canonical(b));
+  return canonical(a) === canonical(b);
+}
+
+function canonical(p: string): string {
+  const abs = resolve(p);
+  let dir = dirname(abs);
+  try { dir = realpathSync(dir); } catch { /* a missing directory: the write fails later with its own message */ }
+  const full = join(dir, basename(abs));
+  return process.platform === 'win32' || process.platform === 'darwin' ? full.toLowerCase() : full;
+}
+
 /** A line of server text for stderr that a GitHub runner cannot read as a workflow command ("::error ...",
  *  "::add-mask::", "##[group]"): the leading ':' or '#' shown as \u{3A} or \u{23}, as the text report does (F135);
  *  control and format characters (ESC, CR, bidi overrides) as \u{..} through visibleText. */
@@ -405,9 +422,12 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       const path = values[opt];
       if (path === undefined) return [];
       if (path === '') throw new UsageError(`--${opt} needs a file path`);
-      if (values.output !== undefined && format !== 'json' && resolve(path) === resolve(values.output)) throw new UsageError(`--${opt} and --output name the same file; --output gets the --format ${format} report`);
+      if (values.output !== undefined && format !== 'json' && samePath(path, values.output)) throw new UsageError(`--${opt} and --output name the same file; --output gets the --format ${format} report`);
       return [[`--${opt}`, path] as const];
     });
+    // --output in another format over the --baseline file would leave a text (or markdown, SARIF, JUnit) report that the
+    // next --baseline run rejects; --save-baseline or --output in --format json over it is the intended refresh.
+    if (values.output !== undefined && values.baseline && format !== 'json' && samePath(values.baseline, values.output)) throw new UsageError(`--baseline and --output name the same file; --output would replace the baseline with the --format ${format} report (use --save-baseline to refresh it)`);
     if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
     // "--ignore A,B" as many linters take it, besides --ignore A --ignore B.
