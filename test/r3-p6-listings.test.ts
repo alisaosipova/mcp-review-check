@@ -204,6 +204,18 @@ describe('A06-05 one finding at the LST-021 level for an icon ref', () => {
   });
 });
 
+describe('A06-05 review: LST-027 names the real cause of an outside ref', () => {
+  it('.//etc/logo.png and ./..\\x.png are "not a ./ path inside the package" warnings, not "behind a symbolic link"', async () => {
+    const m = pkg({ 'i.png': png(64, 64) }, { logo: './/etc/logo.png', composerIcon: './..\\x.png', defaultPrompt: ['a'], screenshots: ['.//etc/s.png'] });
+    const f = findings((await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json'])).stdout);
+    expect(f.filter((x) => /symbolic link/.test(x.message))).toEqual([]);
+    for (const key of ['.logo ', 'composerIcon ', 'screenshots[0] ']) {
+      const own = f.filter((x) => x.message.includes(key) && /not a \.\/ path inside the package/.test(x.message));
+      expect(own.map((x) => x.severity), key).toEqual(['warning']);
+    }
+  });
+});
+
 describe('A06-10 this tool\'s read caps are warnings (not checked), not vendor errors', () => {
   it('a 70 MiB icon has only the 5 MiB error; a 70 MiB screenshot is a warning', async () => {
     const m = pkg({ 'huge.png': png(64, 64), 'shot.png': png(706, 500) }, { logo: './assets/huge.png', composerIcon: './assets/huge.png', defaultPrompt: ['a'], screenshots: ['./assets/shot.png'] });

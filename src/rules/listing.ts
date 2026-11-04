@@ -851,6 +851,13 @@ function imagesOf(o: OpenAiListing, pick: (key: string) => boolean): ListingImag
 /** Whether LST-021 already reports this ref as not a ./ path inside the package. */
 const notInsidePath = (ref: string) => !ref.startsWith('./') || ref.split('/').includes('..');
 
+/** Whether the ref itself leaves the package, by the test examineImage uses (a scheme, a leading slash or backslash
+ *  after ./, or a '..' segment split on / or \\). An 'outside' image whose ref passes it left through a linked folder. */
+const refLeavesPackage = (ref: string) => {
+  const rel = ref.replace(/^\.\//, '');
+  return /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(rel) || rel.split(/[\\/]/).includes('..');
+};
+
 /** Findings for a file that could not be measured; undefined when it has a size or another rule owns the problem.
  *  SVG without a size is only info (it scales); any other recognised file whose header could not be parsed is a
  *  warning (our reader, not a vendor rule). A ref that is not a ./ path inside the package is a warning, as in LST-021;
@@ -868,7 +875,9 @@ function unmeasured(at: string, im: ListingImage, id: string, icon: boolean): Ra
     case 'not-a-path':
       return icon ? undefined : { message: text };
     case 'outside':
-      if (notInsidePath(im.ref)) return icon ? undefined : { severity: 'warning', message: text };
+      // LST-021 reports an icon ref its own test catches; one it misses (.//etc/x.png, ./..\\x.png) is reported here.
+      if (icon && notInsidePath(im.ref)) return undefined;
+      if (refLeavesPackage(im.ref)) return { severity: 'warning', message: text };
       // A ./ path whose real path leaves the package: a folder on the way is a link.
       return { severity: 'warning', message: `${label} is behind a symbolic link that leads out of the package, so it was not checked${man(id)}` };
     case 'unknown-format':
