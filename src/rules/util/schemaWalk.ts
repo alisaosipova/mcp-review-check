@@ -118,14 +118,25 @@ export function resolvedNode(root: unknown, node: Obj): { node: Obj; unresolved:
   return { node: Object.assign({}, ...layers.slice().reverse()), unresolved: false };
 }
 
-/** The closed value list of a node: `enum`, `const`, or an anyOf/oneOf of `const`/`enum` branches. */
+/**
+ * The closed value list of a node: `enum`, `const`, or an anyOf/oneOf whose every branch is a `const`/`enum` branch (a
+ * `{type: 'null'}` branch, as in an optional enum, adds no free value). One free branch such as `{type: 'string'}`
+ * opens the list, so the node has no closed value list.
+ */
 export function enumValues(node: Obj): unknown[] | undefined {
   if (Array.isArray(node.enum)) return node.enum;
   for (const k of ['oneOf', 'anyOf']) {
     const list = node[k];
-    if (Array.isArray(list)) {
-      const consts = list.filter(isObj).flatMap((s) => (s.const !== undefined ? [s.const] : Array.isArray(s.enum) ? s.enum : []));
-      if (consts.length) return consts;
+    if (Array.isArray(list) && list.length) {
+      const consts: unknown[] = [];
+      let closed = true;
+      for (const s of list) {
+        if (isObj(s) && s.const !== undefined) consts.push(s.const);
+        else if (isObj(s) && Array.isArray(s.enum)) consts.push(...s.enum);
+        else if (isObj(s) && s.type === 'null' && Object.keys(s).every((x) => x === 'type' || x === 'title' || x === 'description')) continue;
+        else closed = false;
+      }
+      if (closed && consts.length) return consts;
     }
   }
   if (node.const !== undefined) return [node.const];
