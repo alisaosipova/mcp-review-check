@@ -18,7 +18,9 @@ export interface SchemaVisit {
 export function snakeCase(name: string): string {
   return name
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    // A lookahead, not /([A-Z]+)([A-Z][a-z])/: that form backtracks over a long uppercase run at every start (quadratic
+    // on a 1 MB name of 'A's); this one gives the same output in linear time.
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1_')
     .replace(/[\s\-.]+/g, '_')
     .toLowerCase();
 }

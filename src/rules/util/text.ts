@@ -7,7 +7,7 @@ import { walkSchema } from './schemaWalk.js';
 export function tokenize(name: string): string[] {
   return name
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1 ') // linear form of /([A-Z]+)([A-Z][a-z])/ (see snakeCase)
     .replace(/([A-Za-z])(\d)/g, '$1 $2')
     .replace(/(\d)([A-Za-z])/g, '$1 $2')
     .split(/[_\-.\s/:]+/)
