@@ -63,17 +63,34 @@ export const SRV_002 = defineRule(
   ],
 );
 
+const STREAMABLE_HTTP = 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http';
+const STDIO_TRANSPORT = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/transports';
+const LIFECYCLE = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle';
+
+/** The next step for a stdio server that did not start or answer initialize, by the cause in snap.fatal (A10-06). */
+export function stdioStartFix(snap: Snapshot): string {
+  const fatal = snap.fatal ?? '';
+  // The stderr summary is part of snap.fatal (connect.ts startupOutput) only when the server wrote to stderr.
+  const stderr = snap.transport.stdio?.stderrTail ? ' The stderr cause is shown above; --verbose prints all of stderr.' : '';
+  const cmd = /\bspawn (.+?) (ENOENT|EACCES)\b/.exec(fatal);
+  if (cmd?.[2] === 'ENOENT') return `Command "${cmd[1]}" was not found: check PATH or use an absolute path (on Windows, npx is npx.cmd).${stderr}`;
+  if (cmd?.[2] === 'EACCES') return `Command "${cmd[1]}" is not executable: check its permissions (chmod +x) or run it through its interpreter (for example node server.js).${stderr}`;
+  if (/Connection closed/i.test(fatal)) return `The server process exited or closed stdout before it answered initialize: run the command by hand to see why it stops.${stderr}`;
+  return `Check that the command starts and speaks MCP on stdin/stdout.${stderr}`;
+}
+
 export const SRV_003 = defineRule(
   {
     id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: [],
-    rationale: 'SSE has been deprecated since 2025-03-26; both directories expect Streamable HTTP.',
+    rationale: 'SSE has been deprecated since 2025-03-26; both directories expect Streamable HTTP. When no transport works at all (the server could not be reached, did not start or did not complete a handshake), this rule reports that as a spec error, because nothing else could be checked.',
     fix: 'Serve Streamable HTTP at the registered URL.',
-    sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy', 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
+    sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy', STREAMABLE_HTTP],
   },
   (snap) => {
     if (snap.fatal && snap.target.kind === 'stdio') {
-      // A local launch failure is not a directory transport defect: spec only, with stdio-specific advice.
-      return [{ platforms: ['spec'], severity: 'error', message: `stdio server did not start: ${snap.fatal}`, fix: 'Check that the command starts and speaks MCP on stdin/stdout (the stderr cause is shown above; --verbose prints all of stderr).' }];
+      // A local launch failure is not a directory transport defect: spec only, with stdio-specific advice and the
+      // transport and lifecycle pages rather than the SSE rationale's sources (A10-07).
+      return [{ platforms: ['spec'], severity: 'error', message: `stdio server did not start: ${snap.fatal}`, fix: stdioStartFix(snap), docs: [STDIO_TRANSPORT, LIFECYCLE] }];
     }
     if (snap.fatal) {
       // Nothing could be checked: spec error only, so the directory verdicts read INCOMPLETE (as for stdio), not BLOCKED.
@@ -81,6 +98,7 @@ export const SRV_003 = defineRule(
       return [{
         platforms: ['spec'], severity: 'error', message: `No working transport: ${snap.fatal}`,
         fix: hint ? `${hint[0].toUpperCase()}${hint.slice(1)}.` : 'Check the URL and that the server answers a Streamable HTTP POST initialize there (--verbose prints the HTTP trace).',
+        docs: [STREAMABLE_HTTP, LIFECYCLE],
       }];
     }
     if (snap.transport.kind === 'sse') return [{ message: 'legacy HTTP+SSE only; Streamable HTTP POST was rejected' }];

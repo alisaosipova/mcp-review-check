@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { runRules } from '../src/rules/engine.js';
 import { SPEC_022, SPEC_024 } from '../src/rules/spec.js';
-import { SRV_013, SRV_018 } from '../src/rules/server.js';
+import { SRV_003, SRV_013, SRV_018 } from '../src/rules/server.js';
+import { buildRedactor, redactDeep } from '../src/redact.js';
 import { AUTH_021 } from '../src/rules/auth.js';
 import type { HttpExchange, Snapshot } from '../src/snapshot.js';
 import { exchange, snap } from './helpers.js';
@@ -89,5 +90,46 @@ describe('A04-01: one finding for the server/discover serverInfo, from SRV-013',
   it('SPEC-022 still reports the other 2026-07-28 results', () => {
     const s = modern({ name: 'acme', version: '1' }, [{ method: 'server/discover', result: {} }, { method: 'tools/list', result: { tools: [] } }]);
     expect(both(s)).toEqual(['SPEC-022 info tools/list result lacks _meta["io.modelcontextprotocol/serverInfo"]']);
+  });
+});
+
+describe('A10-06: stdio start failures get a diagnosis, and the stderr pointer only when there is stderr', () => {
+  const failedStdio = (fatal: string, stderrTail = '') => snap({ set: (s) => {
+    s.era = 'unknown'; s.fatal = `could not start or initialize the stdio server: ${fatal}`; s.coverage = { toolLevel: 'connect-failed', reason: fatal };
+    s.transport.stdio = { nonJsonStdout: [], nonJsonTotal: 0, stderrTail };
+  } });
+  const fix = (s: Snapshot) => runRules(s, [SRV_003]).findings.map((f) => f.fix);
+  it('ENOENT names the command and PATH, with no pointer to a stderr that is empty', () => {
+    expect(fix(failedStdio('spawn nonexistent-cmd-xyz ENOENT'))).toEqual(['Command "nonexistent-cmd-xyz" was not found: check PATH or use an absolute path (on Windows, npx is npx.cmd).']);
+  });
+  it('EACCES reads as not executable', () => {
+    expect(fix(failedStdio('spawn ./server.sh EACCES'))[0]).toMatch(/^Command "\.\/server\.sh" is not executable/);
+  });
+  it('a process that closed the connection before initialize is named as such; the stderr pointer appears when it wrote to stderr', () => {
+    expect(fix(failedStdio('MCP error -32000: Connection closed'))).toEqual(['The server process exited or closed stdout before it answered initialize: run the command by hand to see why it stops.']);
+    expect(fix(failedStdio('MCP error -32000: Connection closed; stderr: Error: boom', 'Error: boom\n'))[0]).toMatch(/before it answered initialize.*The stderr cause is shown above; --verbose prints all of stderr\.$/);
+  });
+  it('the new fix text is masked with the rest of the report: a secret in the command is not printed', () => {
+    const secret = ['sk', 'live', 'SYNTH0123456789abcdef'].join('_');
+    const findings = runRules(failedStdio(`spawn /opt/${secret}/server ENOENT`), [SRV_003]).findings;
+    expect(findings[0].fix).toContain(secret); // the rule quotes the command; the report redacts it (cli.ts redactDeep)
+    const masked = redactDeep(findings, buildRedactor({ argv: [`/opt/${secret}/server`] }));
+    expect(JSON.stringify(masked)).not.toContain(secret);
+    expect(masked[0].fix).toMatch(/^Command ".*" was not found/);
+  });
+});
+
+describe('A10-07: the connect-failure finding of SRV-003 carries transport docs, not the directory-policy page', () => {
+  it('HTTP and stdio connect failures link the transport and lifecycle pages; the SSE finding keeps the rule sources', () => {
+    const http = runRules(snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.era = 'unknown'; s.fatal = 'could not complete a handshake: ECONNREFUSED'; s.coverage = { toolLevel: 'connect-failed' }; } }), [SRV_003]).findings;
+    expect(http.map((f) => f.docs)).toEqual([['https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http', 'https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle']]);
+    const stdio = runRules(snap({ set: (s) => { s.era = 'unknown'; s.fatal = 'could not start or initialize the stdio server: spawn x ENOENT'; s.coverage = { toolLevel: 'connect-failed' }; } }), [SRV_003]).findings;
+    expect(stdio[0].docs).toEqual(['https://modelcontextprotocol.io/specification/2025-11-25/basic/transports', 'https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle']);
+    expect(stdio[0]).toMatchObject({ severity: 'error', platforms: ['spec'] });
+    const sse = runRules(snap({ url: 'https://mcp.acme.test/mcp', set: (s) => { s.transport.kind = 'sse'; } }), [SRV_003]).findings;
+    expect(sse[0].docs).toEqual(SRV_003.sources);
+  });
+  it('the rationale (explain, --list-rules, markdown "Why these rules") covers the connect-failure case', () => {
+    expect(SRV_003.rationale).toMatch(/no transport works at all .* spec error/);
   });
 });
