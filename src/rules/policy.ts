@@ -68,9 +68,11 @@ export const POL_002 = defineRule(
   },
 );
 
+// The trailing `\d+% off!` has no \b, so (?<!\d) anchors it to the start of a digit run: unanchored it is retried at
+// every digit and is quadratic on a long run of digits; the leftmost match is the same either way.
 // Promotional phrasing addressed to the user. Bare nouns (coupon, discount code, free trial) are left out: a store-admin
 // tool that creates coupons is functionality, not advertising.
-const ADS = /\b(sponsored (content|by|listings?|results?)|advertisement:|paid placement|promoted (listing|product)s?|affiliate links?|use (the |our |my )?(promo|discount|coupon) ?code|(get|save|enjoy|take) (an extra )?\d+% off|\d+% off (your|all|today|now|everything|sitewide)|start (your|a) free trial|try (it )?free for \d+|subscribe now|upgrade to (pro|premium)|sign up (now|today))\b|\d+% off!/i;
+const ADS = /\b(sponsored (content|by|listings?|results?)|advertisement:|paid placement|promoted (listing|product)s?|affiliate links?|use (the |our |my )?(promo|discount|coupon) ?code|(get|save|enjoy|take) (an extra )?\d+% off|\d+% off (your|all|today|now|everything|sitewide)|start (your|a) free trial|try (it )?free for \d+|subscribe now|upgrade to (pro|premium)|sign up (now|today))\b|(?<!\d)\d+% off!/i;
 const ENDORSE = /\b(official (chatgpt|openai|claude|anthropic)|endorsed by (openai|anthropic)|(openai|anthropic)[- ]approved)\b/i;
 
 export const POL_003 = defineRule(
