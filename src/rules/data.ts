@@ -2,13 +2,20 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, toolName } from './util/access.js';
-import { deref, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
+import { deref, resolvedNode, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
 import { corpus, locationOf, nfkc, snippet } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
 
-interface NameRule { re: RegExp; severity?: Severity; label: string; skip?: (v: SchemaVisit) => boolean }
+interface NameRule { re: RegExp; severity?: Severity; label: string; skip?: (v: SchemaVisit, root: unknown) => boolean }
+
+/**
+ * A skip tested on the node as written and, for a local $ref, on the node it resolves to (A05-04): `{$ref: '#/$defs/Hours'}`
+ * with Hours an integer is as non-text as `{type: 'integer'}`. The resolved node can only add a skip, never remove one.
+ */
+const orResolved = (test: (node: Record<string, unknown>, v: SchemaVisit) => boolean) => (v: SchemaVisit, root: unknown): boolean =>
+  test(v.node, v) || (typeof v.node.$ref === 'string' && test(resolvedNode(root, v.node).node, v));
 
 /** Match property names across all input schemas; one finding per tool+path. */
 function scanNames(snap: Snapshot, rules: NameRule[], extra?: (v: SchemaVisit, root: unknown) => RawFinding | undefined): RawFinding[] {
@@ -20,7 +27,7 @@ function scanNames(snap: Snapshot, rules: NameRule[], extra?: (v: SchemaVisit, r
       if (!v.viaProperty || v.path.endsWith('/$ref')) return;
       const key = `${tool}|${v.path}`;
       for (const r of rules) {
-        if (r.re.test(v.name) && !r.skip?.(v) && !seen.has(key)) {
+        if (r.re.test(v.name) && !r.skip?.(v, t.inputSchema) && !seen.has(key)) {
           seen.add(key);
           out.push({ tool, path: v.path, severity: r.severity, message: `parameter "${v.rawName}" ${r.label}` });
           return;
@@ -72,7 +79,7 @@ export const DATA_001 = defineRule(
       snap,
       [
         { re: STRONG_CONVO, label: 'requests conversation data' },
-        { re: WEAK_CONVO, severity: 'warning', label: 'may request conversation data (check it is not chat history)', skip: (v) => isNonText(v.node) },
+        { re: WEAK_CONVO, severity: 'warning', label: 'may request conversation data (check it is not chat history)', skip: orResolved(isNonText) },
       ],
       (v, root) => (isRoleContentArray(v, root) ? { message: `parameter "${v.rawName}" is an array of {role, content} messages` } : undefined),
     ),
@@ -114,7 +121,7 @@ export const DATA_003 = defineRule(
   (snap) => [
     ...scanNames(snap, [
       { re: SECRET_NAMES, label: 'solicits a secret' },
-      { re: SECRET_SUFFIX, severity: 'warning', label: 'may solicit a secret', skip: (v) => isNonText(v.node) || NOT_SECRET.test(v.name) },
+      { re: SECRET_SUFFIX, severity: 'warning', label: 'may solicit a secret', skip: (v, root) => NOT_SECRET.test(v.name) || orResolved(isNonText)(v, root) },
       { re: /^pin$/i, severity: 'warning', label: 'may be a PIN code' },
     ]),
     ...scanText(snap, /(provide|enter|paste|include|send) (your|the user'?s) (password|api key|token|secret|otp|one-time code|system prompt)/i, 'asks for a secret'),
@@ -139,11 +146,11 @@ export const DATA_004 = defineRule(
 // An `address` can be an e-mail, network or wallet address, and a boolean `long` is an output flag.
 const NON_PLACE_FORMATS = new Set(['email', 'idn-email', 'ipv4', 'ipv6', 'uri', 'url', 'hostname', 'idn-hostname', 'mac']);
 const NON_PLACE_ADDRESS = /\b(e-?mail|ip(v4|v6)?|mac|wallet|contract|ethereum|eth|bitcoin|btc|solana|crypto|blockchain|hex|0x[0-9a-f]*|memory|hostname|url|web)\b/i;
-const notAPlace = (v: SchemaVisit): boolean => {
-  if (v.node.type === 'boolean') return true;
-  if (typeof v.node.format === 'string' && NON_PLACE_FORMATS.has(v.node.format.toLowerCase())) return true;
-  return v.name === 'address' && typeof v.node.description === 'string' && NON_PLACE_ADDRESS.test(v.node.description);
-};
+const notAPlace = orResolved((node, v): boolean => {
+  if (node.type === 'boolean') return true;
+  if (typeof node.format === 'string' && NON_PLACE_FORMATS.has(node.format.toLowerCase())) return true;
+  return v.name === 'address' && typeof node.description === 'string' && NON_PLACE_ADDRESS.test(node.description);
+});
 
 export const DATA_005 = defineRule(
   {
