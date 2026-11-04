@@ -81,7 +81,42 @@ severity, turns a pass into a skip, or changes fix text and docs links.
 
 ## Not fixed
 
-None. A10-06 and A10-07 have parts outside P4's files; those parts are in the integrator notes.
+None. Integrator notes 1 and 2 (the A10-06 and A10-07 parts outside P4's files) were done in the review fixes below.
+
+## Review fixes
+
+The review found that A10-07 was only partly fixed and A10-06 only partly fixed. Both remaining parts are done now.
+They touch files outside P4's list, so the integrator should check them: `src/report/index.ts`, `src/explain.ts`,
+`src/rules/types.ts` and `src/connect.ts`.
+
+### A10-07: `gate.notGated` and `explain` on a connect-failed run
+- `src/report/index.ts` `buildReport`: when `snap.fatal` is set, `summary.gate.notGated` is `null`. The run already
+  fails with exit 3, so "add --fail-on-spec to fail on spec findings" was wrong advice. The text Result line already
+  read `FAIL (could not connect)` and did not change. `gate()` in `score.ts` is unchanged, because it does not know
+  about `fatal`.
+- `src/rules/types.ts`: `RuleMeta` has a new optional field, `severityNote`. SRV-003 sets it to "spec=error when no
+  transport works (connect failure, exit 3); the directory verdicts then read INCOMPLETE." `explain SRV-003` prints it
+  on the line after `Severity`. `--list-rules --format json` now shows the field for SRV-003. The new field only adds
+  data and no existing field changed.
+- Repro after the fix: `node dist/cli.js http://127.0.0.1:59999/mcp --format json | jq .summary.gate` gives
+  `{"platforms":["claude","chatgpt"],"reason":null,"notGated":null}`, with exit 3 and `summary.failed` true.
+- Tests: `A10-07: a connect-failed run gives no --fail-on-spec advice, and explain names the spec-error case` (3 cases).
+  One case checks that a run that connected still gets the not-gated note.
+
+### A10-06: exit code or signal of a stdio server that ended before initialize
+- `src/connect.ts` `connectStdio`: keeps the spawned child, because the transport forgets `_process` on close. On a
+  failed handshake it reads `exitCode` and `signalCode` before `client.close()`. If the process ended, it adds
+  ` (the server process exited with code N before answering initialize)` (or `with signal S`) to the error. That text
+  then reaches `snap.fatal`, the SRV-003 message and the "Could not connect" line. The new `exitNote()` builds the
+  text. There is no note in these cases: a process that is still running (a timeout), and a spawn that failed (ENOENT
+  leaves a negative errno in `exitCode`). The note has only a number or a signal name, so it holds nothing that needs
+  redaction.
+- `stdioStartFix` needed no change: the "Connection closed" match still applies.
+- Checked by hand: `--stdio 'node -e "process.exit(7)"'` gives "... Connection closed (the server process exited with
+  code 7 before answering initialize)". A self-SIGTERM gives "with signal SIGTERM". `nonexistent-zz` still reads
+  `spawn nonexistent-zz ENOENT` with no note.
+- Tests: `A10-06: a stdio server that ended before initialize reports its exit code or signal` (unit, 5 cases), plus
+  one assertion in `test/e2e-stdio.test.ts` (`exited with code 1`).
 
 ## Integrator notes
 
@@ -121,6 +156,12 @@ None. A10-06 and A10-07 have parts outside P4's files; those parts are in the in
 - SRV-003's connect-failure finding links the transport and lifecycle pages instead of the directory policy. The
   rule's rationale (shown by `explain`) now covers the connect-failure case (review A10-07).
 
+### Review fixes (additional CHANGELOG lines)
+- A stdio server that exits before it answers initialize is reported with its exit code or signal ("the server process
+  exited with code 1 before answering initialize") (review A10-06).
+- On a run that could not connect, JSON `summary.gate.notGated` is `null` instead of advising `--fail-on-spec`, because
+  the run already exits 3. `explain SRV-003` says that a connect failure is reported as a spec error (review A10-07).
+
 ## Proposed spec paragraphs (docs/design/spec.md)
 
 - Engine, skip rules: "In a run without a working transport (`fatal`, `coverage.toolLevel` connect-failed), a rule
@@ -130,6 +171,9 @@ None. A10-06 and A10-07 have parts outside P4's files; those parts are in the in
 - Engine, run-wide data: "`transport.notifications` and `transport.stdio` grow over the whole run, like
   `observedErrors` and `modernResults`. After a stop, a rule that reads them and finds nothing is skipped, not passed."
 - SPEC-022: "The server/discover result is SRV-013's. SPEC-022 checks the other 2026-07-28 results."
+- Report, gate: "`summary.gate.notGated` is null when the run could not connect (`fatal`): that run exits 3 anyway."
+- Connect, stdio: "When the stdio server exits before it answers initialize, the connect error names its exit code or
+  signal."
 
 ## Tests run
 
