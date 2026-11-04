@@ -6,7 +6,7 @@ import type { Finding } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import { REPOSITORY_URL } from '../version.js';
 import { DISCLAIMER } from './constants.js';
-import { targetLabel, type Report } from './index.js';
+import { stringifyReport, targetLabel, type Report } from './index.js';
 
 /** Default artifactLocation (--sarif-location): code scanning takes repository-relative paths, not the server URL. */
 export const SARIF_LOCATION = '.mcp-review-check';
@@ -79,5 +79,5 @@ export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, un
 }
 
 export function renderSarif(r: Report, location?: string): string {
-  return JSON.stringify(toSarif(r, location), null, 2) + '\n';
+  return stringifyReport(toSarif(r, location), 'sarif', r.findings.length);
 }

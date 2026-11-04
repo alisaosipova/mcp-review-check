@@ -104,6 +104,29 @@ export function ciSafeLine(s: string): string {
   return neutralizeCommands(visibleText(s));
 }
 
+/** Above this many findings a JSON or SARIF report is printed without indentation: about half the size and memory (A09-05). */
+export const COMPACT_FINDINGS = 10_000;
+
+/** A JSON or SARIF report too large for one string (V8 caps a string at about 512 MiB): a clear message, not a crash. */
+export class ReportTooLargeError extends Error {
+  override name = 'ReportTooLargeError';
+}
+
+/**
+ * A JSON document of the report (`--format json`, `--format sarif`), indented unless it has more than
+ * COMPACT_FINDINGS findings. A RangeError of JSON.stringify (a server with some 100 000 tools) becomes a
+ * ReportTooLargeError that says how to narrow the report.
+ */
+export function stringifyReport(doc: unknown, format: 'json' | 'sarif', findings: number): string {
+  try {
+    return JSON.stringify(doc, null, findings > COMPACT_FINDINGS ? undefined : 2) + '\n';
+  } catch (e) {
+    if (!(e instanceof RangeError)) throw e;
+    throw new ReportTooLargeError(`the ${format} report (${findings} findings) is too large to write as one document (${e.message}); `
+      + 'narrow it with --ignore <rule id> or --target, or use --format text, which groups repeated findings');
+  }
+}
+
 export function serverName(snap: Snapshot): string {
   const si = snap.serverInfo ?? {};
   const name = isStr(si.title) ? si.title : isStr(si.name) ? si.name : 'MCP server';

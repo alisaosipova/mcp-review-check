@@ -1,7 +1,7 @@
 // JSON report (§5.3). Findings are not collapsed.
 import type { Finding } from '../rules/types.js';
 import { contactUrl, CTA_TEXT, DISCLAIMER } from './constants.js';
-import { authSummary, targetLabel, type Report } from './index.js';
+import { authSummary, stringifyReport, targetLabel, type Report } from './index.js';
 import { toolFingerprints } from './drift.js';
 import { VERSION } from '../version.js';
 
@@ -55,5 +55,5 @@ export function toJson(r: Report): Record<string, unknown> {
 }
 
 export function renderJson(r: Report): string {
-  return JSON.stringify(toJson(r), null, 2) + '\n';
+  return stringifyReport(toJson(r), 'json', r.findings.length + r.ignored.length);
 }
