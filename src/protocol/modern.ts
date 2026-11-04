@@ -68,7 +68,9 @@ export class ModernClient {
   readonly results: Array<{ method: string; result: unknown }> = [];
 
   constructor(
-    private url: URL, private tracer: Tracer, private headers: Record<string, string>, private timeoutMs = 30000,
+    private url: URL, private tracer: Tracer, private headers: Record<string, string>,
+    /** The wait for a request without its own `timeoutMs` (the wire probes get a shorter one after a stall). */
+    public timeoutMs = 30000,
     private capabilities: Record<string, unknown> = CLIENT_CAPABILITIES,
   ) {}
 
@@ -125,10 +127,10 @@ export class ModernClient {
   }
 
   /** Follow nextCursor up to `maxPages` (see paginate: repeated or non-string cursors, non-object entries, the byte
-   *  budgets: the listing's and, with `budget`, the run's). */
-  async listAll(method: string, key: string, maxPages = 100, budget?: ByteBudget): Promise<Listing> {
+   *  budgets: the listing's and, with `budget`, the run's). Each page waits `timeoutMs` (default: the client's). */
+  async listAll(method: string, key: string, maxPages = 100, budget?: ByteBudget, timeoutMs?: number): Promise<Listing> {
     return paginate(async (cursor) => {
-      const r = await this.request(method, cursor ? { cursor } : {});
+      const r = await this.request(method, cursor ? { cursor } : {}, timeoutMs !== undefined ? { timeoutMs } : {});
       if (r.result) return { result: r.result, bytes: r.bytes ?? 0 };
       return { error: r.idMismatch ?? (r.error ? `${String(r.error.code)} ${String(r.error.message)}` : r.exchange.error?.message ?? noResponse(r.exchange.status, method)), bytes: 0 };
     }, method, key, maxPages, budget);

@@ -145,6 +145,9 @@ const TRANSPORT_ERROR = new RegExp(`Connection closed|Not connected|Request time
 
 /** The SDK's own request timeout (McpError RequestTimeout): the request got no answer within its wait. */
 const TIMED_OUT = /^MCP error -32001: Request timed out\b/;
+/** The same on the 2026-07-28 client: fetch aborted by the tracer's timer, or a body still incomplete at the deadline. */
+const MODERN_TIMED_OUT = /^(This operation was aborted|response body not complete after \d+ ms)$/;
+const timedOutListing = (error: string | undefined) => !!error && (TIMED_OUT.test(error) || MODERN_TIMED_OUT.test(error));
 /** The wait for each later request once the server has stopped answering (at most --timeout). */
 export const STALLED_TIMEOUT_MS = 2000;
 const stalledTimeout = (timeoutMs: number) => Math.min(timeoutMs, STALLED_TIMEOUT_MS);
@@ -153,7 +156,7 @@ interface StallPlan { list: Lister; timeoutMs: number; onStall?: (message: strin
 
 /** The server answered initialize but tools/list timed out: later requests get a short wait instead of the full --timeout. */
 export function stalled(snap: Snapshot): boolean {
-  return TIMED_OUT.test(snap.listMeta.tools?.error ?? '');
+  return timedOutListing(snap.listMeta.tools?.error);
 }
 
 /**
@@ -174,10 +177,10 @@ async function listEverything(snap: Snapshot, list: Lister, short?: StallPlan): 
     let r = await ls(method, key);
     // A dropped connection is the network's fault, not the server's: retry once before SPEC-020 can report it.
     if (r.error && NETWORK_ERROR.test(r.error)) r = await ls(method, key);
-    if (method === 'tools/list' && short?.onStall && TIMED_OUT.test(r.error ?? '')) {
+    if (method === 'tools/list' && short?.onStall && timedOutListing(r.error)) {
       short.onStall(`tools/list got no answer within --timeout; the server answered initialize, then stopped answering: each later request waits at most ${short.timeoutMs} ms`);
     }
-    if (quick && r.error && TIMED_OUT.test(r.error)) { unanswered.push(method); continue; }
+    if (quick && timedOutListing(r.error)) { unanswered.push(method); continue; }
     snap[field] = r.items;
     snap.listMeta[metaKey] = { pages: r.pages.length, rawPages: r.pages, error: r.error };
   }
@@ -362,6 +365,25 @@ export function collectErrors(tracer: Pick<Tracer, 'exchanges'> | undefined, rec
   return out;
 }
 
+/**
+ * After a stall, an HTTP wire probe the short wait cut off is our wait running out, not the server's answer: it is left
+ * out of the snapshot (its rule is skipped), so the short wait reports nothing the full wait would not have. Cut off:
+ * no status (the fetch timed out), or a status but no JSON-RPC response once the body read reached the short wait.
+ * Only probes made in this phase (not in `before`, such as the discover probe) are dropped.
+ */
+function dropCutOffProbes(snap: Snapshot, before: Set<string>, waitMs: number): void {
+  const probes = snap.transport.probes as Record<string, unknown>;
+  for (const [name, o] of Object.entries(probes)) {
+    if (before.has(name) || !isObj(o) || typeof o.url !== 'string') continue;
+    const ex = o as unknown as HttpExchange;
+    const err = ex.error?.name;
+    const noStatus = ex.status === undefined && (err === 'AbortError' || err === 'TimeoutError');
+    const rpcRequest = isObj(ex.requestJson) && ex.requestJson.id !== undefined;
+    const bodyCut = ex.status !== undefined && rpcRequest && !ex.jsonRpc?.length && (err === 'BodyTimeout' || (ex.bodyMs ?? 0) >= waitMs);
+    if (noStatus || bodyCut) delete probes[name];
+  }
+}
+
 async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOptions, deps: Deps, progress?: Progress): Promise<BuildResult> {
   const url = new URL(urlAsEntered);
   // fetch rejects a URL with user:pass@; its credentials go in an Authorization: Basic header instead (the rules
@@ -476,7 +498,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     const lister: Lister = conn.ok ? legacyLister(conn.client!, timeoutMs, budget) : (m, k) => modern.listAll(m, k, 100, budget);
     const reader: Reader = conn.ok ? legacyReader(conn.client!, timeoutMs, budget) : modernReader(modern);
     checkpoint(progress, 'listing');
-    await listEverything(snap, lister, conn.ok ? { list: legacyLister(conn.client!, stalledTimeout(timeoutMs), budget), timeoutMs: stalledTimeout(timeoutMs), onStall: opts.onStall } : undefined);
+    const shortWait = stalledTimeout(timeoutMs);
+    const shortLister: Lister = conn.ok ? legacyLister(conn.client!, shortWait, budget) : (m, k) => modern.listAll(m, k, 100, budget, shortWait);
+    await listEverything(snap, lister, { list: shortLister, timeoutMs: shortWait, onStall: opts.onStall });
     await tracer.flush();
     // initialize (or server/discover) can be public while the methods behind it need a token: a 401 on tools/list
     // asks for auth as much as one on initialize, and the wire probes would only collect more 401s.
@@ -490,11 +514,20 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     await readUiResources(snap, reader, deps.now);
     const useModern = snap.era === 'modern' || snap.era === 'dual';
     checkpoint(progress, 'wire probes');
+    // A server that stopped answering after initialize: the probes wait briefly, as on stdio. The SDK probes and the
+    // legacy HTTP ones without an answer are no finding; a 2026-07-28 probe the short wait cut off is dropped below.
+    const stall = stalled(snap);
+    const probeTimeout = stall ? shortWait : timeoutMs;
+    const probesBefore = new Set(Object.keys(snap.transport.probes));
+    modern.timeoutMs = probeTimeout;
     // Each probe lands in the snapshot as it finishes (next to the discover probe), so a deadline keeps the finished ones.
-    await runWireProbes({
-      snap, timeoutMs, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
-      http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion }, out: snap.transport.probes,
-    });
+    try {
+      await runWireProbes({
+        snap, timeoutMs: probeTimeout, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
+        http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion }, out: snap.transport.probes,
+      });
+    } finally { modern.timeoutMs = timeoutMs; }
+    if (stall) dropCutOffProbes(snap, probesBefore, probeTimeout);
     const fresh = (variant: ClientVariant = {}) => freshTools(conn.ok ? url : target, authHeaders, tracer, connectTimeout, timeoutMs, conn.ok ? conn.kind : undefined, variant, budget);
     if (!snap.listMeta.tools?.error) {
       checkpoint(progress, 'tools re-list');

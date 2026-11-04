@@ -258,3 +258,74 @@ describe('A10-02: a server that answers only initialize', () => {
     expect(STALLED_TIMEOUT_MS).toBeLessThan(timeoutMs);
   }, 90000);
 });
+
+describe('A10-02 (follow-up): an HTTP server that answers only initialize or server/discover', () => {
+  const timeoutMs = 4000;
+  /** Answers initialize (legacy) or server/discover (modern) and notifications; GET /mcp gets 405; anything else hangs. */
+  async function stallServer(era: 'legacy' | 'modern') {
+    return serve(async (req, res) => {
+      if (req.method === 'GET' && req.url === '/mcp') { res.writeHead(405); res.end(); return; }
+      if (req.method === 'DELETE' && era === 'legacy') { res.writeHead(200); res.end(); return; }
+      if (req.method !== 'POST') return; // no answer (the challenge probe, the modern DELETE probe)
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const msg = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { id?: unknown; method?: string };
+      if (msg.id === undefined) { res.writeHead(202); res.end(); return; }
+      const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers });
+        res.end(JSON.stringify(body));
+      };
+      const caps = { tools: {}, resources: {}, prompts: {} };
+      if (era === 'legacy' && msg.method === 'initialize') {
+        return json(200, { jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-11-25', capabilities: caps, serverInfo: { name: 'hang', version: '1' } } }, { 'mcp-session-id': 'stall-session-1' });
+      }
+      if (era === 'modern' && msg.method === 'initialize') return json(400, { jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: 'use server/discover' } });
+      if (era === 'modern' && msg.method === 'server/discover' && req.headers['mcp-protocol-version'] === '2026-07-28') {
+        return json(200, { jsonrpc: '2.0', id: msg.id, result: { supportedVersions: ['2026-07-28'], capabilities: caps, _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'hang', version: '1' } } } });
+      }
+      // anything else: no answer
+    });
+  }
+
+  it('legacy HTTP: listings and wire probes wait briefly; a cut-off HTTP probe is dropped, not reported', async () => {
+    const { port } = await stallServer('legacy');
+    const stalls: string[] = [];
+    const { snap } = await buildSnapshot({ target: { kind: 'http', url: `http://127.0.0.1:${port}/mcp` }, timeoutMs, onStall: (m) => stalls.push(m) });
+    expect(snap.era).toBe('legacy');
+    expect(stalls).toHaveLength(1);
+    expect(snap.listMeta.tools?.error).toMatch(/Request timed out/);
+    expect(snap.listMeta.resources).toBeUndefined();
+    expect(snap.coverage.reason).toMatch(/stopped answering after initialize: resources\/list, resources\/templates\/list, prompts\/list/);
+    // The SDK probes keep their transport error (their rules skip it) and waited the short wait, not --timeout.
+    for (const name of ['unknownMethod', 'unknownTool', 'resourceMissing'] as const) {
+      const p = snap.transport.probes[name] as { durationMs: number; transportError?: string };
+      expect(p.transportError, name).toMatch(/timed out/);
+      expect(p.durationMs, name).toBeLessThan(timeoutMs);
+    }
+    // The HTTP probes the short wait cut off are left out; the answered Origin probes stay.
+    expect(snap.transport.probes.badVersion).toBeUndefined();
+    expect(snap.transport.probes.challenge).toBeUndefined();
+    expect((snap.transport.probes.originNone as { status?: number }).status).toBe(200);
+  }, 90000);
+
+  it('2026-07-28 HTTP: the listings get the short wait too, and the cut-off modern probes are left out', async () => {
+    const { port } = await stallServer('modern');
+    const stalls: string[] = [];
+    const t0 = Date.now();
+    const { snap } = await buildSnapshot({ target: { kind: 'http', url: `http://127.0.0.1:${port}/mcp` }, timeoutMs, onStall: (m) => stalls.push(m) });
+    const elapsed = Date.now() - t0;
+    expect(snap.era).toBe('modern');
+    expect(stalls).toHaveLength(1);
+    expect(snap.listMeta.tools?.error).toBe('This operation was aborted');
+    expect(snap.listMeta.resources).toBeUndefined();
+    expect(snap.listMeta.prompts).toBeUndefined();
+    expect(snap.coverage.toolLevel).toBe('list-failed');
+    expect(snap.coverage.reason).toMatch(/stopped answering after initialize: resources\/list, resources\/templates\/list, prompts\/list/);
+    for (const name of ['badVersionModern', 'unknownMethodModern', 'resourceMissingModern', 'headerMismatchNone', 'headerMismatchWrong', 'unknownTool', 'delete', 'challenge'] as const) {
+      expect(snap.transport.probes[name], name).toBeUndefined();
+    }
+    expect(snap.transport.probes.discover).toBeDefined(); // made before the stall: kept
+    // tools/list at --timeout, then 3 listings and about 10 probe requests at the short wait (the full wait: about 14 x 4 s).
+    expect(elapsed).toBeLessThan(timeoutMs + 14 * (STALLED_TIMEOUT_MS + 500));
+  }, 90000);
+});
