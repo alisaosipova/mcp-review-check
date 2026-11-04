@@ -1,7 +1,7 @@
 // MAN: manual checklist (§2.10). Never affects score or exit code.
 import type { Platform, Snapshot } from '../snapshot.js';
-import { activePlatforms } from './engine.js';
-import { LISTING_MANUAL } from './listing.js';
+import { activePlatforms, unmetNeed } from './engine.js';
+import { LISTING_MANUAL, listingRuleChecked, listingRules } from './listing.js';
 import { hasUi } from './util/access.js';
 import { displayUrl } from './util/net.js';
 
@@ -69,14 +69,22 @@ export function manualChecklist(snap: Snapshot): ManualItem[] {
   const a = snap.authProbe;
   const oauth = !!a && (!!a.prm || !!a.legacyDiscovery || a.as.some((x) => !!x.json));
   // With --plugin-dir / --openai-manifest the LST rules check what these items ask: an item they cover fully is dropped,
-  // one they cover in part keeps only its manual remainder and names the rules.
-  const given = { plugin: !!snap.listing?.plugin, openai: !!snap.listing?.openai };
+  // one they cover in part keeps only its manual remainder and names the rules. A rule counts only when it ran (its
+  // needs are met, as the engine decides) and found the listing object it reads; otherwise the item stays.
+  const checked = (id: string) => {
+    const rule = listingRules.find((r) => r.id === id);
+    return !!rule && rule.needs.every((n) => unmetNeed(snap, n) === undefined) && listingRuleChecked(snap, id);
+  };
   return MANUAL_ITEMS.filter((i) => i.platforms.some((p) => active.includes(p)))
     .filter((i) => (i.feature === 'ui' ? ui : i.feature === 'oauth' ? oauth : true))
     .flatMap((i) => {
       const auto = LISTING_MANUAL[i.id];
-      if (!auto || !given[auto.input]) return [i];
-      return auto.residual ? [{ ...i, text: `${auto.residual} (the rest is checked by ${auto.rules.join(', ')})` }] : [];
+      if (!auto || !snap.listing?.[auto.input]) return [i];
+      const ran = auto.rules.filter(checked);
+      const missed = auto.rules.filter((r) => !ran.includes(r));
+      if (!ran.length || missed.some((r) => !auto.parts?.[r])) return [i];
+      const manual = [auto.residual, ...missed.map((r) => auto.parts![r])].filter(Boolean);
+      return manual.length ? [{ ...i, text: `${manual.join('; ')} (the rest is checked by ${ran.join(', ')})` }] : [];
     })
     .map((i) => (i.id === 'MAN-031' && snap.target.kind === 'http' ? { ...i, text: i.text.replace('<url>', displayUrl(snap.target.urlAsEntered)) } : i));
 }

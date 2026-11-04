@@ -925,15 +925,28 @@ export const listingRules = [
   LST_014, LST_015, LST_016, LST_017, LST_018, LST_019, LST_020, LST_021, LST_022, LST_023, LST_024, LST_025, LST_026, LST_027, LST_028,
 ];
 
-/** The manual checklist items the LST rules automate, by input: dropped, or cut to their residual manual part. */
-export const LISTING_MANUAL: Record<string, { input: 'plugin' | 'openai'; rules: string[]; residual?: string }> = {
+/** Whether an LST rule that ran could check what its manual items ask: the listing object it reads was there (a
+ *  manifest that does not parse, an MCP configuration only or a manifest without an interface object checks nothing). */
+export function listingRuleChecked(snap: Snapshot, id: string): boolean {
+  const l = snap.listing;
+  if (id === 'LST-014') return !!l?.plugin && !!pluginManifest(l.plugin);
+  if (!l?.openai) return false;
+  if (id === 'LST-023') return isObj(l.openai.manifest.json) && l.openai.format !== 'mcp-config';
+  if (id === 'LST-025') return true;
+  return !!openAiInterface(l.openai);
+}
+
+/** The manual checklist items the LST rules automate, by input: dropped, or cut to their residual manual part, when
+ *  every rule in `rules` ran and could check. `parts` is the manual text for a rule that did not (kept with the
+ *  residual); an item with a rule that did not run and has no part stays whole. */
+export const LISTING_MANUAL: Record<string, { input: 'plugin' | 'openai'; rules: string[]; residual?: string; parts?: Record<string, string> }> = {
   'MAN-002': { input: 'plugin', rules: ['LST-014'], residual: 'Listing: name ≤100, one-liner ≤200, description ≤2000, 1–5 categories, support contact; slug is permanent' },
   'MAN-015': { input: 'openai', rules: ['LST-016', 'LST-017'] },
   'MAN-016': { input: 'openai', rules: ['LST-018'], residual: 'websiteURL, supportURL, privacyPolicyURL, termsOfServiceURL are publicly accessible and identify the same publisher' },
   'MAN-017': { input: 'openai', rules: ['LST-019'] },
   'MAN-018': { input: 'openai', rules: ['LST-020'] },
   'MAN-019': { input: 'openai', rules: ['LST-021', 'LST-027'] },
-  'MAN-020': { input: 'openai', rules: ['LST-022', 'LST-025'] },
+  'MAN-020': { input: 'openai', rules: ['LST-022', 'LST-025'], parts: { 'LST-025': 'tools_triggered names exist in tools/list (run with the server as the target to check them)' } },
   'MAN-021': { input: 'openai', rules: ['LST-022'], residual: 'Demo recording covers web, iOS and Android' },
   'MAN-023': { input: 'openai', rules: ['LST-023'] },
   'MAN-024': { input: 'openai', rules: ['LST-028'], residual: 'Screenshots are optional and allowed only with custom UI' },
