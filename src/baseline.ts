@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { inputFileProblem, readInputFile } from './input-file.js';
 import { sortFindings } from './rules/engine.js';
 import type { Finding } from './rules/types.js';
+import { REDACTED_MARK } from './rules/util/net.js';
 import { JSON_SCHEMA_VERSION, toJson } from './report/json.js';
 import { artifactUri, SARIF_LOCATION, toSarif } from './report/sarif.js';
 import type { Report } from './report/index.js';
@@ -89,47 +90,93 @@ const subjectKey = (f: FindingKey) => JSON.stringify([f.ruleId, f.tool ?? null, 
 /** The message with every number as "#": "12 KB" and "13 KB" are the same wording. */
 const wording = (m: string | undefined) => (m ?? '').replace(/\d+(\.\d+)?/g, '#');
 
+/** The unused entries of one bucket, in baseline order: `first` moves only forward, past used entries. */
+type Cursor = { idx: number[]; first: number };
+/** The baseline entries of one subject with one platform set: all of them, and by wording. */
+type Group = { platforms: Set<string>; all: Cursor; byWord: Map<string, Cursor> };
+
+const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+
 /**
  * Which findings are known: each one takes an unused baseline finding with the same rule and subject whose platforms
  * include all of its own (a baseline for --target all covers a run for --target claude, not the reverse). Two findings
  * with the same subject need two baseline entries, so a repeat that appears is new; between them, the entry with the
  * same wording (numbers aside) is taken first, so the finding that appeared is the new one, and a reworded message
  * still matches a free entry. `findings` should be redacted as the baseline report was, so that a subject with a
- * secret in it compares equal; `alt`, when given, is a second form of the same findings tried for those still new. SRV-020 (the protocol era, an info note text and markdown show in their header) is never known.
+ * secret in it compares equal; `alt`, when given, is a second form of the same findings tried for those still new.
+ * Last, a baseline entry whose subject holds «redacted» (a value the baseline run redacted, such as a non-secret
+ * --env value this run does not pass or passes changed) takes a still-new finding whose subject is the same around
+ * it (A01-05). SRV-020 (the protocol era, an info note text and markdown show in their header) is never known.
  */
 export function knownFindings(findings: FindingKey[], baseline: FindingKey[], alt?: FindingKey[]): boolean[] {
-  // Per subject: the entries, a used mark each and the first unused index, so matching stays near-linear for many
-  // findings on one subject (no array copies, no splice).
-  const pool = new Map<string, { list: FindingKey[]; words: string[]; used: boolean[]; first: number }>();
-  for (const b of baseline) {
+  // Buckets by subject, then by platform set (few per subject) and by wording: a finding looks only where an entry
+  // can match, and each bucket's cursor moves only forward past used entries, so matching stays linear also for many
+  // findings on one subject that match no entry (no array copies, no splice, no rescans).
+  const pool = new Map<string, Map<string, Group>>();
+  const used = baseline.map(() => false);
+  baseline.forEach((b, i) => {
     const k = subjectKey(b);
-    const e = pool.get(k);
-    if (e) { e.list.push(b); e.words.push(wording(b.message)); e.used.push(false); }
-    else pool.set(k, { list: [b], words: [wording(b.message)], used: [false], first: 0 });
-  }
+    let groups = pool.get(k);
+    if (!groups) pool.set(k, groups = new Map());
+    const pk = [...new Set(b.platforms)].sort().join(',');
+    let g = groups.get(pk);
+    if (!g) groups.set(pk, g = { platforms: new Set(b.platforms), all: { idx: [], first: 0 }, byWord: new Map() });
+    g.all.idx.push(i);
+    const w = wording(b.message);
+    const c = g.byWord.get(w);
+    if (c) c.idx.push(i); else g.byWord.set(w, { idx: [i], first: 0 });
+  });
+  const next = (c: Cursor) => {
+    while (c.first < c.idx.length && used[c.idx[c.first]]) c.first++;
+    return c.first < c.idx.length ? c.idx[c.first] : -1;
+  };
   const known = findings.map(() => false);
+  // The first free entry in baseline order among the groups whose platforms include the finding's.
   const take = (sameWording: boolean, list = findings) => list.forEach((f, n) => {
     if (known[n] || f.ruleId === 'SRV-020') return;
-    const e = pool.get(subjectKey(f));
-    if (!e) return;
+    const groups = pool.get(subjectKey(f));
+    if (!groups) return;
     const w = sameWording ? wording(f.message) : '';
-    let i = -1;
-    for (let j = e.first; j < e.list.length; j++) {
-      if (e.used[j]) continue;
-      if (f.platforms.every((p) => e.list[j].platforms.includes(p)) && (!sameWording || e.words[j] === w)) { i = j; break; }
+    let best = -1;
+    for (const g of groups.values()) {
+      if (!f.platforms.every((p) => g.platforms.has(p))) continue;
+      const c = sameWording ? g.byWord.get(w) : g.all;
+      const j = c ? next(c) : -1;
+      if (j >= 0 && (best < 0 || j < best)) best = j;
     }
-    if (i < 0) return;
-    e.used[i] = true;
-    while (e.first < e.list.length && e.used[e.first]) e.first++;
+    if (best < 0) return;
+    used[best] = true;
     known[n] = true;
   });
   take(true);
   take(false);
   // `alt`: the same findings in another redaction (the CLI passes them as the rules wrote them, without the run's
   // --env values redacted); a finding the first form left new may still take a free entry in that form (A01-05).
-  if (alt && alt.length === findings.length) {
+  const forms = alt && alt.length === findings.length ? [findings, alt] : [findings];
+  if (alt && forms.length > 1) {
     take(true, alt);
     take(false, alt);
+  }
+  // A redacted value in a baseline subject stands for any value inside the same JSON string. Tried last, only for
+  // findings still new and against free entries, so no finding that matched before becomes new.
+  const wild = baseline.flatMap((b, i) => {
+    const k = subjectKey(b);
+    if (!k.includes(REDACTED_MARK)) return [];
+    const re = new RegExp(`^${k.split(REDACTED_MARK).map(escapeRe).join('(?:[^"\\\\]|\\\\.)+?')}$`);
+    const wordRe = new RegExp(`^${wording(b.message).split(REDACTED_MARK).map(escapeRe).join('.+?')}$`, 's');
+    return [{ i, b, re, wordRe }];
+  });
+  if (wild.length && known.includes(false)) {
+    const byRule = new Map<string, typeof wild>();
+    for (const x of wild) byRule.set(x.b.ruleId, [...(byRule.get(x.b.ruleId) ?? []), x]);
+    for (const sameWording of [true, false]) for (const list of forms) list.forEach((f, n) => {
+      if (known[n] || f.ruleId === 'SRV-020') return;
+      const k = subjectKey(f);
+      const x = byRule.get(f.ruleId)?.find((x) => !used[x.i] && f.platforms.every((p) => x.b.platforms.includes(p)) && x.re.test(k) && (!sameWording || x.wordRe.test(wording(f.message))));
+      if (!x) return;
+      used[x.i] = true;
+      known[n] = true;
+    });
   }
   return known;
 }
