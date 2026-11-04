@@ -691,9 +691,12 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     // In GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
     const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
-    const ann = first ? `::error title=mcp-review-check::${escapeCommand((redactor ? scrub(first, redactor) : first).split('\n')[0])}\n` : '';
-    const fatal = `${stderr}fatal: ${(e as Error).stack ?? e}\n`;
-    return { code: 3, stdout: '', stderr: (redactor ? scrub(fatal, redactor) : fatal) + ann };
+    // An error message can carry server text: control and format characters show as \u{..}, and no line of the stack
+    // starts a workflow command (A07-04).
+    const ann = first ? `::error title=mcp-review-check::${escapeCommand(visibleText((redactor ? scrub(first, redactor) : first).split('\n')[0]))}\n` : '';
+    const raw = `fatal: ${(e as Error).stack ?? e}`;
+    const fatal = (redactor ? scrub(raw, redactor) : raw).split('\n').map(ciSafeLine).join('\n');
+    return { code: 3, stdout: '', stderr: `${redactor ? scrub(stderr, redactor) : stderr}${fatal}\n${ann}` };
   }
 }
 
