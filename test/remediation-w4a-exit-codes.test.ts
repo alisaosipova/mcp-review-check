@@ -65,12 +65,14 @@ describe('--fail-on-incomplete and the partial-check annotation (R013)', () => {
     expect(flagJson.json.coverage.toolLevel).toBe('auth-required');
   });
 
-  it('token-rejected: exit 3 with the flag, a ::warning naming the reason in GitHub Actions, the token never shown', async () => {
+  // 1.0.1 (review A10-01): with --fail-on-incomplete the partial check is the run's failure, so it is one ::error.
+  it('token-rejected: exit 3 with the flag, a ::error naming the reason in GitHub Actions, the token never shown', async () => {
     const TOKEN = 'tok_rejected_SYNTH_4a1b2c3d';
     const s = track(await startAuthServer({ validToken: 'right-token-value', mcp: createGoodServer }));
     const r = await cli([s.url, '--bearer', TOKEN, '--fail-on', 'never', '--fail-on-incomplete', '--format', 'json'], { GITHUB_ACTIONS: 'true' });
     expect(r.code, r.stderr).toBe(3);
-    const own = commands(r.stderr).filter((l) => l.startsWith(OWN_WARNING));
+    expect(commands(r.stderr).filter((l) => l.startsWith(OWN_WARNING))).toEqual([]);
+    const own = commands(r.stderr).filter((l) => l.startsWith('::error title=mcp-review-check::'));
     expect(own, r.stderr).toHaveLength(1);
     expect(own[0]).toMatch(/Partial check: token-rejected \(token rejected \(401\)\); tool-level checks were skipped/);
     expect(r.stdout + r.stderr).not.toContain(TOKEN);
