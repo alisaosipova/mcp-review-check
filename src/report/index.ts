@@ -115,11 +115,14 @@ export class ReportTooLargeError extends Error {
 /**
  * A JSON document of the report (`--format json`, `--format sarif`), indented unless it has more than
  * COMPACT_FINDINGS findings. A RangeError of JSON.stringify (a server with some 100 000 tools) becomes a
- * ReportTooLargeError that says how to narrow the report.
+ * ReportTooLargeError that says how to narrow the report. A legacy `##[` workflow command (which the runner finds
+ * anywhere in a stdout line) can only sit inside a JSON string, so it is written `#\u0023[`: the same string to
+ * every JSON parser, but no command in a CI log.
  */
 export function stringifyReport(doc: unknown, format: 'json' | 'sarif', findings: number): string {
   try {
-    return JSON.stringify(doc, null, findings > COMPACT_FINDINGS ? undefined : 2) + '\n';
+    const out = JSON.stringify(doc, null, findings > COMPACT_FINDINGS ? undefined : 2) + '\n';
+    return out.includes('##[') ? out.replace(/##\[/g, '#\\u0023[') : out;
   } catch (e) {
     if (!(e instanceof RangeError)) throw e;
     throw new ReportTooLargeError(`the ${format} report (${findings} findings) is too large to write as one document (${e.message}); `

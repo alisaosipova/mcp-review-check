@@ -9,7 +9,7 @@ import type { Finding } from './rules/types.js';
 import { REDACTED_MARK } from './rules/util/net.js';
 import { JSON_SCHEMA_VERSION, toJson } from './report/json.js';
 import { artifactUri, SARIF_LOCATION, toSarif } from './report/sarif.js';
-import type { Report } from './report/index.js';
+import { stringifyReport, type Report } from './report/index.js';
 import { DRIFT_RULE, driftItems, driftJson, driftWhat, TOOL_FIELDS, type Drift, type ToolFingerprint } from './report/drift.js';
 
 /** What identifies a finding across runs: the rule, the platforms it applies to and its subject; the message only
@@ -194,7 +194,7 @@ export function renderJsonWithBaseline(report: Report, known: Finding[], drift?:
   doc.findings = (doc.findings as Record<string, unknown>[]).map((f, i) => ({ ...f, baselined: isKnown.has(all[i]) }));
   doc.summary = { ...(doc.summary as Record<string, unknown>), baselined: known.length };
   if (drift) doc.baseline = driftJson(drift);
-  return JSON.stringify(doc, null, 2) + '\n';
+  return stringifyReport(doc, 'json', all.length + report.ignored.length);
 }
 
 /** The SARIF rule entry for BASE-001 (not a catalog rule), added to the driver only when there is a drift result. */
@@ -237,7 +237,7 @@ export function renderSarifWithBaseline(report: Report, known: Finding[], locati
   const props = run.properties as Record<string, unknown>;
   props.summary = { ...(props.summary as Record<string, unknown>), baselined: known.length };
   if (drift) props.baseline = driftJson(drift);
-  return JSON.stringify(doc, null, 2) + '\n';
+  return stringifyReport(doc, 'sarif', (run.results as unknown[]).length);
 }
 
 /** "TOOL-011 ×2, AUTH-005": rule IDs only (no server text), most frequent first, at most 8. */

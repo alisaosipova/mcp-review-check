@@ -95,7 +95,8 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
 }
 
 /** `known` (with --baseline): the baseline's findings, which `r.findings` (the new ones) leaves out; never failures.
- *  `drift`: the tool-definition changes, listed in each suite's <system-out> (never a failure either). */
+ *  `drift`: the tool-definition changes, listed in each suite's <system-out> (never a failure either).
+ *  A legacy `##[` workflow command (found anywhere in a stdout line) is written `#&#35;[`: the same text to an XML parser. */
 export function renderJunit(r: Report, known: Finding[] = [], drift?: Drift): string {
   const suites = r.summary.gate.platforms.map((p) => suite(r, p, known, drift));
   const sum = (k: 'tests' | 'failures' | 'errors' | 'skipped') => suites.reduce((a, s) => a + s[k], 0);
@@ -105,5 +106,5 @@ export function renderJunit(r: Report, known: Finding[] = [], drift?: Drift): st
     ...suites.map((s) => s.xml),
     '</testsuites>',
     '',
-  ].join('\n');
+  ].join('\n').replace(/##\[/g, '#&#35;[');
 }

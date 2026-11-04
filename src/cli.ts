@@ -10,7 +10,7 @@ import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './expl
 import { schemeSuggestion } from './diagnose.js';
 import { redactDeep, scrub, type Redactor } from './redact.js';
 import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
-import { buildReport, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
+import { buildReport, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { renderMarkdown } from './report/markdown.js';
@@ -708,6 +708,12 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       // parseArgs names an option without its "=value"; the rest of its message is not repeated.
       const message = configNote(e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string }), cfg, fromConfig);
       return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
+    }
+    if (e instanceof ReportTooLargeError) {
+      // Not an internal bug: the server was checked but its report does not fit one string. A message with a hint, no stack.
+      const message = redactor ? scrub(e.message, redactor) : e.message;
+      const ann = env.GITHUB_ACTIONS === 'true' ? `::error title=mcp-review-check::${escapeCommand(message)}\n` : '';
+      return { code: 3, stdout: '', stderr: `${stderr}error: ${message}\n${ann}` };
     }
     // In GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
     const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
