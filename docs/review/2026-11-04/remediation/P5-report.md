@@ -33,6 +33,16 @@ Base: origin/main 5c521cb. Tests: `test/r3-p5-content-rules.test.ts`. Every chan
 ### Improvement: regex-complexity guard
 - `regex-complexity guard: every rule over large server-controlled fields`. For each of 31 units ('A', '0', 'Aa', 'url(', '<a ', '<!--', '<system', quotes, '${', 'https://', Cyrillic а, Greek α, '0% off', ZWSP, ...), the test builds a 200 KB run and puts it into the tool name, title, description, annotations.title, property name and description, resource uri/name/description, resource template, prompt name/description/arguments, instructions, and the UI resource HTML (800 KB). It applies `capSnapshot` and then runs all `RULES`, with a budget of 5 s per unit. The whole file runs in about 15 s on the fixed code. A static ReDoS linter in CI (recheck/safe-regex2) was not added because it needs a new dependency.
 
+## Review fixes
+### GREEK_NOTATION ReDoS in INJ-002 (high)
+- Confirmed: `/^[A-Z]+(?:[α-ω]+[A-Z]*)+$/u` nests quantifiers, so `mixedScript('A'+'α'.repeat(22)+'b')` took 159 ms locally and grew by about 6x for every 2 Greek letters.
+- Fix: `/^[A-Z]+[α-ω][A-Zα-ω]*$/u`. It accepts the same language (a word of Latin capitals and lowercase Greek letters that starts with capitals and has at least one Greek letter). Because the classes do not overlap, each character can match only one way. A differential check over 20 000 random words from `A B α κ b 1` found 0 mismatches. `'A'+'α'.repeat(100000)+'b'` takes 0.2 ms.
+- Tests: a direct timing test (5000 Greek letters, under 200 ms), the reviewer's PubMed repro through INJ-002, and two guard units, `'A'+'α'*30+'b'` with and without a trailing space.
+### enumValues mixed anyOf (medium)
+- Confirmed: `enumValues` returned the consts as soon as any branch had const/enum. Now it returns a list only when every branch is a const/enum branch. A bare `{type:'null'}` branch (an optional enum) is allowed, and any other branch opens the list. `host: {anyOf:[{const:'auto'},{type:'string'}]}`, inline or through `$ref`, gives TOOL-015 again, as on origin/main. The optional-enum case stays silent. Origin/main reported it, so this only removes a false positive.
+### extractOrigins single-entry cache (low)
+- Fixed: the one-entry cache is now a FIFO map of 16 entries keyed by HTML. APPS-007 and APPS-013 share one scan per UI resource on servers with up to 16 UI resources, and memory stays bounded.
+
 ## Not fixed
 - None of the items is left unfixed. One part of A05-04 is outside this package's files (`src/rules/data.ts`) and is handed over in integratorNotes.
 
@@ -48,11 +58,11 @@ Base: origin/main 5c521cb. Tests: `test/r3-p5-content-rules.test.ts`. Every chan
 ### Security
 - Removed three quadratic regex scans on server-controlled text, each of which could stall a run for minutes with no way for `--max-duration` to stop it: name splitting on long runs of capitals (property and tool names up to 1 MB), the POL-003 "N% off!" pattern on long digit runs, and the CSS `url(` scan of UI resource HTML on repeated unterminated `url(`.
 ### Changed
-- The origins of a UI resource are extracted once and shared by APPS-007 and APPS-013.
+- The origins of each UI resource are extracted once and shared by APPS-007 and APPS-013. The cache is bounded to 16 resources.
 
 ## Proposed spec paragraphs (docs/design/spec.md)
-- TOOL-015, the property bullet: "...that has no enum, const list (enum, const, or anyOf/oneOf of const) or pattern, judged on the property node and on its local `$ref` target. A `$ref` that does not resolve locally is not reported."
-- INJ-002 Detect: "...Latin together with Cyrillic, or with a Greek letter that looks Latin. Biomedical notation is exempt: Latin capitals followed by lowercase Greek letters (`/^[A-Z]+(?:[α-ω]+[A-Z]*)+$/u`, e.g. TNFα, NFκB). Units (μ, Ω, Δ, π, σ) are never look-alikes."
+- TOOL-015, the property bullet: "...that has no enum, const list (enum, const, or an anyOf/oneOf in which every branch is a const/enum, apart from an optional `{type:'null'}` branch) or pattern, judged on the property node and on its local `$ref` target. A `$ref` that does not resolve locally is not reported."
+- INJ-002 Detect: "...Latin together with Cyrillic, or with a Greek letter that looks Latin. Biomedical notation is exempt: Latin capitals followed by lowercase Greek letters (`/^[A-Z]+[α-ω][A-Zα-ω]*$/u`, linear, e.g. TNFα, NFκB). Units (μ, Ω, Δ, π, σ) are never look-alikes."
 - §1.5 helpers: "`resolvedNode(root, node)` / `enumValues(node)` in util/schemaWalk: rules that read a property's type, enum or format use the `$ref`-resolved node." Also: "Name splitting (`snakeCase`, `tokenize`) and the CSS `url()` scan are linear in the input."
 
 ## Tests run
@@ -60,4 +70,5 @@ Base: origin/main 5c521cb. Tests: `test/r3-p5-content-rules.test.ts`. Every chan
 - `npx vitest run test/r3-p5-content-rules.test.ts test/rules test/unit-rules-util.test.ts test/util.test.ts test/remediation-wp5-apps.test.ts test/remediation-wp6-inj-data-pol.test.ts test/remediation-wp8-tools-schema-rt.test.ts test/remediation-w3b-probe-rules.test.ts test/remediation-w4b-tool-names.test.ts test/remediation-w4b-tool-budget.test.ts test/redact.test.ts`: 19 files, 666 tests passed.
 - `npx vitest run test/e2e-stdio.test.ts test/compat.test.ts test/engine.test.ts test/output-modes.test.ts test/e2e-redaction.test.ts`: 5 files, 141 tests passed.
 - Fails before the fix: with the six source files reset to origin/main, `-t '^A0(?!.*takes)'` failed 8 of 16 tests, which are all the A05-03, A05-04 and A05-09 tests. The A09 timing tests and the guard did not finish within 500 s on the old code, and the run was killed. Expected: snakeCase on 1 MB of 'A' takes about 340 s on the old code, as extrapolated by the reviewer.
+- Review fixes: `npm run typecheck` and `npm run build` pass. `npx vitest run test/r3-p5-content-rules.test.ts` passes 55 of 55 tests. `test/rules/apps.test.ts test/remediation-wp5-apps.test.ts test/rules/injection.test.ts test/rules/tools.test.ts test/rules/content.test.ts test/real-servers.test.ts` pass 210 of 210 tests across 6 files.
 - Redaction: the new messages are unchanged rule messages. No new output fields.
