@@ -15,6 +15,9 @@ export interface ListingJson {
   path: string;
   json?: unknown;
   error?: string;
+  /** 'warning' when `error` is a limit or guard of this tool (read cap, a folder link out of the root) or a problem
+   *  the rules report at warning level, rather than a file the directory rejects. */
+  level?: 'warning';
 }
 
 export interface ListingText {

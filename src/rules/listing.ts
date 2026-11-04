@@ -135,7 +135,7 @@ export const LST_001 = defineRule(
         ? { severity: 'info', message: 'no .claude-plugin/plugin.json: a folder with skills/<name>/SKILL.md passes with a note and is listed for Claude Code only' }
         : { message: 'no .claude-plugin/plugin.json in the plugin folder' }];
     }
-    if (m.error) return [{ path: m.path, message: `.claude-plugin/plugin.json ${m.error}` }];
+    if (m.error) return [{ path: m.path, ...(m.level ? { severity: m.level } : {}), message: `.claude-plugin/plugin.json ${m.error}` }];
     if (!isObj(m.json)) return [{ path: m.path, message: '.claude-plugin/plugin.json is not a JSON object' }];
     if (!isStr(m.json.name) || !m.json.name.trim()) return [{ path: m.path, message: '.claude-plugin/plugin.json has no "name" (the only required key)' }];
     return [];
@@ -232,7 +232,7 @@ export const LST_006 = defineRule(
   (snap) => {
     const p = plugin(snap);
     const out: RawFinding[] = [];
-    if (p.mcp?.error) out.push({ path: p.mcp.path, message: `.mcp.json ${p.mcp.error} (blocks: .mcp.json can't be parsed)` });
+    if (p.mcp?.error) out.push(p.mcp.level ? { path: p.mcp.path, severity: p.mcp.level, message: `.mcp.json ${p.mcp.error}` } : { path: p.mcp.path, message: `.mcp.json ${p.mcp.error} (blocks: .mcp.json can't be parsed)` });
     else if (p.mcp && !serverMap(p.mcp.json)) out.push({ path: p.mcp.path, message: '.mcp.json is not an object of MCP servers ({ "mcpServers": { ... } })' });
     const map = serverMap(p.mcp?.json);
     for (const [name, cfg] of Object.entries(map ?? {})) if (!isObj(cfg)) out.push({ path: '.mcp.json', message: `server "${name}" in .mcp.json is not an object` });
@@ -509,7 +509,7 @@ export const LST_016 = defineRule(
   (snap) => {
     const o = oai(snap);
     const path = o.manifest.path;
-    if (o.manifest.error) return [{ path, message: `${path} ${o.manifest.error}${man('MAN-015')}` }];
+    if (o.manifest.error) return [{ path, ...(o.manifest.level ? { severity: o.manifest.level } : {}), message: `${path} ${o.manifest.error}${man('MAN-015')}` }];
     if (!isObj(o.manifest.json)) return [{ path, message: `${path} is not a JSON object${man('MAN-015')}` }];
     if (o.format === 'mcp-config') return [{ path, severity: 'warning', message: `${path} is an MCP configuration only; the listing fields live in plugin.json (extensions.com.openai.interface), so they were not checked${man('MAN-015')}` }];
     if (!openAiInterface(o)) return [{ path, message: `${path} has no extensions.com.openai.interface or root interface object with the listing fields${man('MAN-015')}` }];
@@ -782,7 +782,7 @@ export const LST_024 = defineRule(
     const o = oai(snap);
     const servers = openAiServers(o);
     const out: RawFinding[] = [];
-    if (o.mcp?.error) out.push({ path: o.mcp.path, severity: 'error', message: `${o.mcp.path} ${o.mcp.error}` });
+    if (o.mcp?.error) out.push({ path: o.mcp.path, severity: o.mcp.level ?? 'error', message: `${o.mcp.path} ${o.mcp.error}` });
     const tc = openAiExt(o)?.review;
     if (servers.length > 1 && isObj(tc) && tc.test_cases !== undefined) out.push({ path: o.mcp!.path, message: `${o.mcp!.path} has ${servers.length} servers; plugin-level review.test_cases requires exactly one${man('MAN-020')}` });
     for (const s of servers) {
