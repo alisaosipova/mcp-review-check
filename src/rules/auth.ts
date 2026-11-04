@@ -567,6 +567,12 @@ export const AUTH_020 = defineRule(
   }),
 );
 
+/** Error wording of a token endpoint that did not read the form body (a heuristic over the body text). */
+const FORM_NOT_PARSED = /unsupported.*(content|media)|could not parse|missing.*grant_type/i;
+/** RFC 6749 §5.2 codes an authorization server can only give after reading the form (invalid_request and
+ *  unsupported_grant_type are also what a server that saw no grant_type answers). */
+const FORM_PARSED_ERRORS = new Set(['invalid_client', 'invalid_grant', 'unauthorized_client', 'invalid_scope']);
+
 export const AUTH_021 = defineRule(
   {
     id: 'AUTH-021', title: 'Token endpoint form-encoding and error codes', severity: { claude: 'error' }, needs: ['active-auth'],
@@ -578,7 +584,12 @@ export const AUTH_021 = defineRule(
     const [code, refresh] = snap.authProbe?.active?.token ?? [];
     const out: RawFinding[] = [];
     if (code) {
-      if (code.status === 415 || /unsupported.*(content|media)|could not parse|missing.*grant_type/i.test(code.bodySnippet ?? '')) out.push({ message: `token endpoint did not parse a form-encoded body (${code.status})` });
+      // An RFC 6749 error code that needs the form's fields (the client, the grant, the scope) shows the body was parsed,
+      // whatever its error_description says (A04-03). The free-text match below is a heuristic, so it is a warning.
+      const codeErr = isObj(code.json) ? code.json.error : code.oauthError;
+      const parsed = isStr(codeErr) && FORM_PARSED_ERRORS.has(codeErr);
+      if (code.status === 415) out.push({ message: `token endpoint did not parse a form-encoded body (${code.status})` });
+      else if (!parsed && FORM_NOT_PARSED.test(code.bodySnippet ?? '')) out.push({ severity: 'warning', message: `token endpoint may not parse a form-encoded body (${code.status}): its error reads like a parse failure` });
       else if (code.json === undefined && !code.jsonParsed) out.push({ severity: 'warning', message: `token error body is not JSON (${code.status})` });
     }
     if (refresh) {

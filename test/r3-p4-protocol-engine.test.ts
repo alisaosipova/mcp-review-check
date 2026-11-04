@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { runRules } from '../src/rules/engine.js';
 import { SPEC_022, SPEC_024 } from '../src/rules/spec.js';
 import { SRV_013, SRV_018 } from '../src/rules/server.js';
-import type { Snapshot } from '../src/snapshot.js';
-import { snap } from './helpers.js';
+import { AUTH_021 } from '../src/rules/auth.js';
+import type { HttpExchange, Snapshot } from '../src/snapshot.js';
+import { exchange, snap } from './helpers.js';
 import { RULES } from '../src/rules/index.js';
 
 const stop = (s: Snapshot) => { s.coverage = { toolLevel: 'stopped' }; s.limits = { truncated: [], stopped: { maxDurationMs: 1500, phase: 'listing', unfinished: ['listing', 'wire probes'] } }; };
@@ -52,6 +53,23 @@ describe('A10-05: rules that need the server are skipped after connect-failed', 
     const r = runRules(snap({ url: 'https://mcp.acme.test/mcp' }), RULES.filter((x) => x.id === 'SRV-007'));
     expect(r.skipped).toEqual([]);
     expect(r.rulesRun).toBe(1);
+  });
+});
+
+describe('A04-03: AUTH-021 does not read a well-formed RFC 6749 error as a form-parse failure', () => {
+  const token = (code: Partial<HttpExchange>) => runRules(snap({ url: 'https://mcp.acme.test/mcp', set: (s) => {
+    s.options.activeAuth = true;
+    s.authProbe = { challenge: exchange({ status: 401 }), prmAttempts: [], as: [], active: { token: [exchange(code)] } } as unknown as Snapshot['authProbe'];
+  } }), [AUTH_021]).findings.map((f) => `${f.severity} ${f.message}`);
+  const json = (body: Record<string, string>, status = 401): Partial<HttpExchange> => ({ status, contentType: 'application/json', bodySnippet: JSON.stringify(body), json: body, jsonParsed: true });
+  it('invalid_client "missing client authentication for grant_type ..." is no finding', () => {
+    expect(token(json({ error: 'invalid_client', error_description: 'missing client authentication for grant_type authorization_code' }))).toEqual([]);
+    expect(token({ status: 400, jsonParsed: true, oauthError: 'invalid_grant', bodySnippet: '{"error":"invalid_grant","error_description":"code missing for grant_type authorization_code"}' })).toEqual([]);
+  });
+  it('the body-text heuristic is a warning; 415 stays an error', () => {
+    expect(token(json({ error: 'invalid_request', error_description: 'missing grant_type' }, 400))).toEqual(['warning token endpoint may not parse a form-encoded body (400): its error reads like a parse failure']);
+    expect(token({ status: 400, bodySnippet: 'could not parse request body' })).toEqual(['warning token endpoint may not parse a form-encoded body (400): its error reads like a parse failure']);
+    expect(token({ status: 415, bodySnippet: '' })).toEqual(['error token endpoint did not parse a form-encoded body (415)']);
   });
 });
 
