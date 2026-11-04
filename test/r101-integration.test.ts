@@ -3,10 +3,12 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
+import { buildReport, resultLine } from '../src/report/index.js';
 import { DATA_001, DATA_003, DATA_005 } from '../src/rules/data.js';
+import { RULES, runRules } from '../src/rules/index.js';
 import { startAuthServer } from './fixtures/auth-server.js';
 import type { Started } from './fixtures/http-bridge.js';
-import { evaluate, snap, tool } from './helpers.js';
+import { evaluate, snap, tool, toolWithProps } from './helpers.js';
 
 let server: Started | undefined;
 afterEach(async () => {
@@ -61,5 +63,43 @@ describe('A05-04: the DATA skips also see the node a local $ref resolves to', ()
     expect(evaluate(DATA_005, place)).toEqual([]);
     const real = snap({ tools: [withDefs({ address: { $ref: '#/$defs/Street', description: 'Street address' } }, { Street: { type: 'string' } })] });
     expect(evaluate(DATA_005, real)).toHaveLength(1);
+  });
+});
+
+describe('A10-01 follow-up: the result line of a --fail-on-incomplete failure', () => {
+  const resultOf = (out: string) => out.split('\n').find((l) => /Result/.test(l)) ?? '';
+  it('names --fail-on-incomplete when no finding reached the gate, and says the partial check once', async () => {
+    server = await startAuthServer({});
+    const base = [server.url, '--fail-on', 'never', '--fail-on-incomplete'];
+    const text = await runCli(base, {}, false);
+    expect(text.code, text.stderr).toBe(3);
+    expect(resultOf(text.stdout)).toMatch(/Result: FAIL \(--fail-on-incomplete\) · partial check: auth-required$/);
+    const quiet = await runCli([...base, '--quiet'], {}, false);
+    expect(quiet.code).toBe(3);
+    expect(resultOf(quiet.stdout)).toMatch(/Result: FAIL \(--fail-on-incomplete\) · partial check: auth-required \(server requires auth; pass --bearer <token>\)$/);
+    expect(resultOf(quiet.stdout).match(/partial check/g)).toHaveLength(1);
+    const md = await runCli([...base, '--format', 'markdown'], {}, false);
+    expect(resultOf(md.stdout)).toBe('| Result | FAIL (--fail-on-incomplete) · partial check: auth-required |');
+    // The JSON report keeps its gate.reason as before: text only.
+    const json = await runCli([...base, '--format', 'json'], {}, false);
+    expect(json.code).toBe(3);
+    expect(JSON.parse(json.stdout).summary.gate.reason).toBe('partial check: auth-required (--fail-on-incomplete)');
+  }, 60000);
+
+  it('keeps --fail-on in the head when a finding reached the gate too, with the partial cause merged once', () => {
+    // A tools/list that failed, and a DATA-001 error that reached the gate; the CLI adds the partial check to the reason.
+    const s = snap({ tools: [toolWithProps('chat', { conversation_history: { type: 'string', description: 'History' } })] });
+    s.coverage = { ...s.coverage, toolLevel: 'list-failed', reason: 'tools/list failed' };
+    const report = buildReport(s, runRules(s, RULES), [], 'error', new Date(), 1);
+    expect(report.summary.failed).toBe(true);
+    const gated = report.summary.gate.reason!;
+    report.summary.gate.reason = `${gated}; partial check: list-failed (--fail-on-incomplete)`;
+    expect(resultLine(report)).toBe(`FAIL (--fail-on error) · ${gated}; partial check: list-failed (--fail-on-incomplete)`);
+    const withCauses = resultLine(report, (x) => x, true);
+    expect(withCauses.startsWith(`FAIL (--fail-on error) · ${gated}; partial check: list-failed (`)).toBe(true);
+    expect(withCauses.match(/partial check/g)).toHaveLength(1);
+    // Without --fail-on-incomplete nothing changes: the partial check is the trailing part.
+    report.summary.gate.reason = gated;
+    expect(resultLine(report, (x) => x, true)).toMatch(new RegExp(`^FAIL \\(--fail-on error\\) · .+ · partial check: list-failed`));
   });
 });

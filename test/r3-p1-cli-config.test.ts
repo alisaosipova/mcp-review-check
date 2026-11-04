@@ -302,7 +302,7 @@ describe('A10-01: --fail-on-incomplete reads as failed in every format', () => {
     // --fail-on never: the plain 401 also has an AUTH-004 error, which must not be what fails the run here.
     const text = await run(['--no-config', '--fail-on-incomplete', '--fail-on', 'never', '--quiet', l.url]);
     expect(text.code).toBe(3);
-    expect(text.stdout).toMatch(/Result: FAIL \(--fail-on never\) · partial check: auth-required \(--fail-on-incomplete\)/);
+    expect(text.stdout).toMatch(/Result: FAIL \(--fail-on-incomplete\) · partial check: auth-required/);
     const j = await run(['--no-config', '--fail-on-incomplete', '--fail-on', 'never', '--format', 'json', l.url]);
     const doc = JSON.parse(j.stdout);
     expect(doc.summary.failed).toBe(true);
@@ -312,7 +312,7 @@ describe('A10-01: --fail-on-incomplete reads as failed in every format', () => {
     expect(x.stdout).toMatch(/<testsuites name="mcp-review-check" tests="\d+" failures="0" errors="2"/);
     expect(x.stdout).toMatch(/<testcase classname="claude" name="mcp-review-check run">\n {6}<error message="partial check: auth-required[^"]*" type="incomplete"\/>/);
     const o = await run(['--no-config', '--fail-on-incomplete', '--fail-on', 'never', '--output', at('o.txt'), l.url]);
-    expect(o.stderr).toMatch(/ · FAIL \(--fail-on never\) · partial check: auth-required \(--fail-on-incomplete\)/);
+    expect(o.stderr).toMatch(/ · FAIL \(--fail-on-incomplete\) · partial check: auth-required · report written/);
     expect(o.stderr).not.toMatch(/PASS/);
     const gh = await run(['--no-config', '--fail-on-incomplete', '--format', 'json', l.url], { GITHUB_ACTIONS: 'true' });
     expect(gh.stderr).toMatch(/^::error title=mcp-review-check::Partial check: auth-required .*--fail-on-incomplete fails the run\.$/m);

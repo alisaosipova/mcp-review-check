@@ -184,8 +184,22 @@ export function resultLine(r: Report, fail = (x: string) => x, causes = false): 
   const budget = r.snap.limits?.budgetExhausted;
   if (budget) return [`${fail('INCOMPLETE')} (snapshot budget exhausted (during ${budget.phase}))`, r.summary.failed ? r.summary.gate.reason : null, r.summary.gate.notGated].filter(Boolean).join(' · ');
   const s = r.summary;
-  const head = `${s.failed ? fail('FAIL') : 'PASS'} (--fail-on ${r.failOn}${s.gate.platforms.includes('spec') ? ', --fail-on-spec' : ''})`;
   const why = authReason(r.snap);
-  const partial = causes && cov.toolLevel !== 'ok' ? `partial check: ${cov.toolLevel}${why ? ` (${why})` : ''}` : null;
-  return [head, s.failed ? s.gate.reason : null, s.gate.notGated, partial].filter(Boolean).join(' · ');
+  // --fail-on-incomplete puts the partial check in gate.reason (A10-01): it is said there once, with its cause, and
+  // when no finding reached the gate the head names the flag that failed the run, not --fail-on.
+  const incomplete = `partial check: ${cov.toolLevel} (--fail-on-incomplete)`;
+  let reason = s.failed ? s.gate.reason : undefined;
+  const onlyIncomplete = s.failed && reason === incomplete;
+  const head = onlyIncomplete
+    ? `${fail('FAIL')} (--fail-on-incomplete)`
+    : `${s.failed ? fail('FAIL') : 'PASS'} (--fail-on ${r.failOn}${s.gate.platforms.includes('spec') ? ', --fail-on-spec' : ''})`;
+  const said = !!reason?.includes(incomplete);
+  if (said) {
+    const cause = causes && why ? why : '';
+    reason = onlyIncomplete
+      ? `partial check: ${cov.toolLevel}${cause ? ` (${cause})` : ''}`
+      : reason!.replace(incomplete, `partial check: ${cov.toolLevel} (${cause ? `${cause}; ` : ''}--fail-on-incomplete)`);
+  }
+  const partial = causes && cov.toolLevel !== 'ok' && !said ? `partial check: ${cov.toolLevel}${why ? ` (${why})` : ''}` : null;
+  return [head, reason, s.gate.notGated, partial].filter(Boolean).join(' · ');
 }
