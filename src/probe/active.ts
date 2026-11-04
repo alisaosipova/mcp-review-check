@@ -3,7 +3,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ActiveCall, Snapshot } from '../snapshot.js';
 import type { ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
-import { WRITE_VERBS } from '../rules/lexicon.js';
+import { HARD_DESTRUCTIVE, READ_VERBS, WRITE_VERBS } from '../rules/lexicon.js';
 import { CLAUDE_TOOL_TIMEOUT_MS } from '../rules/runtime.js';
 import { annotations, isObj, properties, toolName, type Obj } from '../rules/util/access.js';
 import { tokenize } from '../rules/util/text.js';
@@ -12,9 +12,44 @@ const MAX_TOOLS = 50;
 // One second past Claude's limit, so a call that would time out in Claude is seen as exceeding it.
 const MAX_CALL_MS = CLAUDE_TOOL_TIMEOUT_MS + 1000;
 
+/** Mutating verbs that only the --active name filter uses (not the rules' WRITE_VERBS, so no rule finds more). */
+const PROBE_WRITE_VERBS = new Set([
+  'exec', 'kill', 'stop', 'restart', 'reboot', 'shutdown', 'deploy', 'push', 'commit', 'apply', 'install',
+  'uninstall', 'rollback', 'clear', 'flush', 'unlink', 'rm', 'notify', 'reply', 'lock', 'unlock', 'grant', 'ban',
+  'block', 'enable', 'activate', 'subscribe', 'pause', 'resume', 'toggle',
+]);
+const isWriteVerb = (t: string) => WRITE_VERBS.has(t) || PROBE_WRITE_VERBS.has(t);
+/** Glued words that start with a hard-destructive verb but name a thing (droplet_info, dropdown_options). */
+const GLUED_NOUNS = /^drop(down|let|box|zone)/;
+
+/** Base forms a token may be inflected from: deletes, deleted, deleting, stopped, running. */
+function stems(t: string, first: boolean): string[] {
+  const out: string[] = [];
+  const undouble = (s: string) => (/([b-df-hj-np-tv-z])\1$/.test(s) ? [s, s.slice(0, -1)] : [s]);
+  // -s/-es only in verb position (deletes_file); later in the name it is usually a plural noun (recent_posts).
+  if (first && t.endsWith('es')) out.push(t.slice(0, -2));
+  if (first && t.endsWith('s')) out.push(t.slice(0, -1));
+  if (t.endsWith('ed')) out.push(t.slice(0, -1), ...undouble(t.slice(0, -2)));
+  if (t.endsWith('ing')) out.push(...undouble(t.slice(0, -3)), `${t.slice(0, -3)}e`);
+  return out.filter((s) => s.length >= 2);
+}
+
+/** A write verb in the name. A name that starts with a read verb (get_order_status, list_commits) keeps the exact
+ *  WRITE_VERBS token check of 1.0.0; every other name is also checked for the probe-only verbs, inflected forms and an
+ *  all-caps or glued name that starts with a hard-destructive verb (DELETEFILE). */
+export function hasWriteVerb(name: string): boolean {
+  const tokens = tokenize(name);
+  if (tokens.some((t) => WRITE_VERBS.has(t))) return true;
+  if (tokens.length === 0 || READ_VERBS.has(tokens[0])) return false;
+  return tokens.some((t, i) =>
+    isWriteVerb(t)
+    || stems(t, i === 0).some(isWriteVerb)
+    || (!GLUED_NOUNS.test(t) && [...HARD_DESTRUCTIVE].some((v) => t.length > v.length && t.startsWith(v))));
+}
+
 export function isSafeToCall(tool: Obj): boolean {
   const a = annotations(tool);
-  return a.readOnlyHint === true && a.destructiveHint !== true && !tokenize(toolName(tool)).some((t) => WRITE_VERBS.has(t));
+  return a.readOnlyHint === true && a.destructiveHint !== true && !hasWriteVerb(toolName(tool));
 }
 
 /** Sample values for string formats, so a format-validating server accepts the synthesized argument. */
