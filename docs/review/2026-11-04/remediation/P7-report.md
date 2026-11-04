@@ -70,3 +70,25 @@ Replace "Its `$id` is the raw GitHub URL of the file at the release tag that las
 - `npm run typecheck`: clean. `npm run build`: clean.
 - New tests: `r3-p7-schema` 6, `r3-p7-ci-safe` 8, `r3-p7-large-report` 4. All pass.
 - Existing test files for the changed modules, plus the CLI and CI-output tests that assert text or annotations (18 files): cta, incomplete, lifecycle, redact, remediation-w4a-exit-codes, remediation-w4a-package, remediation-w5a-junit, remediation-w6a-schema, remediation-w6g-core-followup, remediation-wp9-report-redact, report, root-causes, sarif, stderr-flush, ci-output, remediation-w6h-review-fixes, redaction-tiers, remediation-w4a-baseline. With the 3 new files: 21 files, 211 tests, all pass. `cta.test.ts` timed out once at the default 60 s because of host load (load average 57, one CLI run took 26 s). It passes with `--testTimeout=500000` (3/3). The timeout is not caused by this change.
+
+## Review fixes
+
+### A09-05 (medium): the --baseline renderers and the CLI message
+- `src/baseline.ts`: `renderJsonWithBaseline` and `renderSarifWithBaseline` now end with `stringifyReport` (JSON: new + known + ignored findings; SARIF: every result, BASE-001 drift notes included), so `--baseline` runs are compact above `COMPACT_FINDINGS` and a RangeError becomes a `ReportTooLargeError`. This was integrator note 3; it is now done on this branch.
+- `src/cli.ts`: the final `catch` handles `ReportTooLargeError` before the generic `fatal:` branch: exit 3, `error: <message>` on stderr with no stack, one `::error title=mcp-review-check::...` line in GitHub Actions, and the message goes through the redactor. This was integrator note 2; it is now done on this branch.
+- Both are small edits in P1 files (one import and one block each). The integrator should keep them when merging P1's `cli.ts` and `baseline.ts`.
+- Test: `test/r3-p7-review-fixes.test.ts`, "A09-05" (4 cases): the baseline renderers are indented up to the threshold and compact above it (new and known findings counted together), a RangeError becomes `ReportTooLargeError`, and the CLI prints `error:`, no `fatal:` and no stack, exit 3, with the `::error` line in Actions and a `SYNTH` `--env` value redacted from both.
+
+### Low: legacy `##[` in JSON, SARIF and JUnit on stdout
+- `stringifyReport` writes every `##[` as `##[`. In JSON, `##[` can only occur inside a string, so every parser reads the same value, and the runner (which looks for `##[` anywhere in a line) finds no command. The check runs only when the output contains `##[`.
+- `renderJunit` writes `##[` as `#&#35;[` (no CDATA or comments in the document, so it is always in text or an attribute value, where a character reference is allowed).
+- Test: `test/r3-p7-review-fixes.test.ts`: JSON, SARIF and both `--baseline` renderers contain no `##[` and parse back to the original tool names (including `###[`); JUnit has `#&#35;[` and no `##[`.
+- Stability: presentation only; parsed values are unchanged and no finding or severity changes.
+
+### Low: spec.md still has the old `$id` rule
+- Skipped: `docs/design/spec.md` is not edited by package fixers. The replacement paragraph is in "Proposed spec paragraph" above; add with it: "JSON, SARIF and JUnit write the legacy `##[` as `##[` / `#&#35;[`."
+
+### Changes to the proposals above
+- Integrator notes 2 and 3 are done (see above). Notes 1, 4 and 5 stay.
+- CHANGELOG, replace the A09-05 line with: "SARIF and JSON reports of more than 10 000 findings, with or without `--baseline`, are printed without indentation, so a server with about 80 000 tools no longer crashes the run with `RangeError: Invalid string length`. A report still too large for one string ends with exit 3 and an `error:` message with a hint, not a stack trace (review A09-05)."
+- CHANGELOG, add under Security: "JSON, SARIF and JUnit reports write the legacy `##[` workflow-command syntax as `##[` (JSON) or `#&#35;[` (XML), the same value to a parser, so a report printed to a CI log cannot start a runner command (review A07-07 follow-up)."
