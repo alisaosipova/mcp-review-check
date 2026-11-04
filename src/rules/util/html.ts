@@ -62,16 +62,19 @@ function cssUrls(html: string): Array<[string, string]> {
   return out;
 }
 
-// APPS-007 and APPS-013 both extract the origins of the same resource HTML: the last result is reused.
-let lastHtml: string | undefined;
-let lastOrigins: readonly ExtractedOrigin[] = [];
+// APPS-007 and APPS-013 both extract the origins of every UI resource: a small cache keeps one scan per resource HTML.
+// It is bounded, so a server with many UI resources costs a rescan, never unbounded memory.
+const ORIGIN_CACHE_SIZE = 16;
+const originCache = new Map<string, readonly ExtractedOrigin[]>();
 
 export function extractOrigins(html: string): ExtractedOrigin[] {
-  if (html !== lastHtml) {
-    lastOrigins = Object.freeze(scanOrigins(html).map((o) => Object.freeze(o)));
-    lastHtml = html;
+  let origins = originCache.get(html);
+  if (!origins) {
+    origins = Object.freeze(scanOrigins(html).map((o) => Object.freeze(o)));
+    if (originCache.size >= ORIGIN_CACHE_SIZE) originCache.delete(originCache.keys().next().value as string);
+    originCache.set(html, origins);
   }
-  return [...lastOrigins];
+  return [...origins];
 }
 
 function scanOrigins(html: string): ExtractedOrigin[] {
