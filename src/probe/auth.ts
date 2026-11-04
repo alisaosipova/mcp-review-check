@@ -222,8 +222,12 @@ async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown
 
 /** Server-chosen text for one stderr line: printable ASCII only (anything else as \u{..}), at most 200 characters. */
 function oneLine(s: string): string {
-  const shown = s.replace(/[^\x20-\x7e]/gu, (ch) => `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`);
-  return shown.length > 200 ? `${shown.slice(0, 199)}…` : shown;
+  const pieces = Array.from(s, (ch) => (/[\x20-\x7e]/.test(ch) ? ch : `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`));
+  if (pieces.join('').length <= 200) return pieces.join('');
+  // Cut between characters, never inside an escape: at most 199 characters before the ellipsis.
+  let out = '';
+  for (const p of pieces) { if (out.length + p.length > 199) break; out += p; }
+  return `${out}…`;
 }
 
 /**

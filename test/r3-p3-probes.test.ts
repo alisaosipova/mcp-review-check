@@ -33,6 +33,16 @@ describe('A03-01: --active skips read-only-annotated tools whose name has a muta
     }
   });
 
+  it('A03-01 a read verb first does not exempt a second action after a conjunction', () => {
+    for (const n of ['get_and_kill_process', 'fetch_then_restart_service', 'read_and_rm', 'list_and_DELETEALL', 'getAndStopJob',
+      'search_or_deletes_rows', 'show_then_clear_cache']) {
+      expect(isSafeToCall(readOnly(n)), n).toBe(false);
+    }
+    for (const n of ['get_lock_and_status', 'list_commits_and_tags', 'search_and_filter', 'get_profile_and_settings', 'list_and']) {
+      expect(isSafeToCall(readOnly(n)), n).toBe(true);
+    }
+  });
+
   it('A03-01 only narrows the 1.0.0 filter: a name 1.0.0 skipped is still skipped', () => {
     for (const n of ['delete_note', 'get_order', 'run_status', 'sendEmail']) expect(hasWriteVerb(n), n).toBe(true);
     expect(isSafeToCall(readOnly('get_weather', { destructiveHint: true }))).toBe(false);
@@ -110,5 +120,15 @@ describe('A03-03: --active-auth names the DCR client it registered', () => {
     expect(line).toContain('\\u{1B}');
     expect(line).not.toContain(secret);
     expect(line.length).toBeLessThan(400);
+  });
+
+  it('A03-03 the 200-character cut never splits an escape sequence', () => {
+    for (const pad of [193, 194, 195, 196, 197, 198]) {
+      const clientId = `${'a'.repeat(pad)}\u001b${'b'.repeat(50)}`;
+      const line = dcrClientNotice({ ...base, active: { dcr: exchange({ status: 201, url: 'https://as.test/register' }), clientId } })!;
+      const shown = /client_id=(\S+) at /.exec(line)![1];
+      expect(shown.length, String(pad)).toBeLessThanOrEqual(200);
+      expect(shown, String(pad)).toMatch(pad <= 193 ? /^a+\\u\{1B\}b*…$/ : /^a+…$/);
+    }
   });
 });
