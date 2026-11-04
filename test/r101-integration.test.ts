@@ -151,4 +151,9 @@ describe('1.0.1 docs follow the integrated code', () => {
     expect(doc).toContain('is the URL of the schema at the tag of the installed release');
     expect(doc).toContain('adding or changing `--env WORKSPACE=…` changes no fingerprint');
   });
+  it('ci.md: the pre-commit hook names the server-holding config file with --config (a discovered file cannot name it)', () => {
+    const ci = read('docs', 'guide', 'ci.md');
+    expect(ci).not.toContain('holding the server and options, `args` can be empty');
+    expect(ci).toContain('`args: [--config, mcp-review-check.config.json]`');
+  });
 });

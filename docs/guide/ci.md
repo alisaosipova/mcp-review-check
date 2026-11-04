@@ -280,7 +280,7 @@ repos:
         args: [--target, claude, --stdio, --, node, dist/server.js]
 ```
 
-The hook needs Node 22.12 or newer (pre-commit builds a Node environment for `language: node`) and a built server for `--stdio`. A config file next to the hook keeps the arguments short: with `mcp-review-check.config.json` holding the server and options, `args` can be empty. Run it on demand with `pre-commit run mcp-review-check --all-files`; it can also be set to `stages: [pre-push]` when a check on every commit is too slow. Do not give it a token on the command line: export `MCP_REVIEW_CHECK_TOKEN` in your shell.
+The hook needs Node 22.12 or newer (pre-commit builds a Node environment for `language: node`) and a built server for `--stdio`. A config file next to the hook keeps the arguments short: with `mcp-review-check.config.json` holding the server and options, `args: [--config, mcp-review-check.config.json]` is enough (a file found without `--config` sets options only, not the server: see [Trust](options-and-config.md#config-file)). Run it on demand with `pre-commit run mcp-review-check --all-files`; it can also be set to `stages: [pre-push]` when a check on every commit is too slow. Do not give it a token on the command line: export `MCP_REVIEW_CHECK_TOKEN` in your shell.
 
 pre-commit installs a `language: node` hook by packing the cloned repository, and the package builds itself in `prepack` (`tsc`), so the first run needs network access and a working `npm` toolchain. If that is a problem in your environment (an offline runner, a locked-down npm), use a local hook that runs the published package instead:
 
