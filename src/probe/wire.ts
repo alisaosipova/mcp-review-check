@@ -12,6 +12,8 @@ export const UNKNOWN_METHOD = 'mcp-review-check/nonexistent';
 export const UNKNOWN_TOOL = 'mcp_review_check_nonexistent_tool';
 export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
 export const MISSING_RESOURCE = 'mcp-review-check://does-not-exist';
+/** Longest wait for the status line of a stream probe (GET, subscriptions/listen); a lower --timeout lowers it. */
+export const STREAM_PROBE_MS = 5000;
 
 export interface WireContext {
   snap: Snapshot;
@@ -81,7 +83,7 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     }
     // subscriptions/listen is the 2026-07-28 replacement for the GET stream: open it, read the status line and headers, close.
     if (declares(snap, listens)) {
-      p.subscriptionsListen = (await modern.request('subscriptions/listen', { notifications: { toolsListChanged: true } }, { label: 'subscriptions/listen', abortAfterHeaders: true, fullBody: false, keepJson: true, timeoutMs: 5000 })).exchange;
+      p.subscriptionsListen = (await modern.request('subscriptions/listen', { notifications: { toolsListChanged: true } }, { label: 'subscriptions/listen', abortAfterHeaders: true, fullBody: false, keepJson: true, timeoutMs: Math.min(timeoutMs, STREAM_PROBE_MS) })).exchange;
     }
     if (modernOnly && hasTools) p.unknownTool = (await modern.request('tools/call', { name: UNKNOWN_TOOL, arguments: {} }, { label: 'unknownTool (modern)', fullBody: false, keepJson: true })).exchange;
   }
@@ -99,7 +101,7 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
       // one per session (the TypeScript SDK answers a second one with 409). That GET is the observation: reuse it.
       const sdkGet = http.sessionId ? sdkSessionGet(tracer.exchanges, http.sessionId) : undefined;
       p.get = sdkGet ?? (await tracer.request('get', url, {
-        method: 'GET', headers: { ...authHeaders, ...session, accept: 'text/event-stream' }, abortAfterHeaders: true, timeoutMs: 5000,
+        method: 'GET', headers: { ...authHeaders, ...session, accept: 'text/event-stream' }, abortAfterHeaders: true, timeoutMs: Math.min(timeoutMs, STREAM_PROBE_MS),
       })).exchange;
     }
     if (snap.transport.kind === 'streamable-http' && !modernOnly) {
