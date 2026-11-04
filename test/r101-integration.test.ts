@@ -1,5 +1,6 @@
 // 1.0.1 integration: the review round 3 integrator notes that touch files outside the fix packages (src/cli.ts,
 // src/rules/data.ts, src/report/index.ts, src/report/junit.ts).
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
@@ -102,4 +103,31 @@ describe('A10-01 follow-up: the result line of a --fail-on-incomplete failure', 
     report.summary.gate.reason = gated;
     expect(resultLine(report, (x) => x, true)).toMatch(new RegExp(`^FAIL \\(--fail-on error\\) · .+ · partial check: list-failed`));
   });
+});
+
+describe('A10-05: SRV-003 is not a passed testcase of the directory suites after a failed connect', () => {
+  async function closedPort(): Promise<number> {
+    const s = net.createServer();
+    await new Promise<void>((ok) => s.listen(0, '127.0.0.1', ok));
+    const { port } = s.address() as net.AddressInfo;
+    await new Promise<void>((ok) => s.close(() => ok()));
+    return port;
+  }
+  const srv003 = (xml: string, suite: string) => {
+    const body = xml.split('<testsuite ').find((x) => x.startsWith(`name="${suite}"`)) ?? '';
+    return body.match(/<testcase classname="[^"]+" name="SRV-003 [^"]*"(\/>|>[\s\S]*?<\/testcase>)/)?.[0];
+  };
+  it('shows it as skipped in claude and chatgpt, and keeps the spec error under --fail-on-spec', async () => {
+    const url = `http://127.0.0.1:${await closedPort()}/mcp`;
+    const r = await runCli([url, '--format', 'junit', '--timeout', '3000'], {}, false);
+    expect(r.code, r.stderr).toBe(3);
+    for (const suite of ['claude', 'chatgpt']) {
+      const tc = srv003(r.stdout, suite);
+      expect(tc, suite).toBeDefined();
+      expect(tc).toMatch(/<skipped message="could not connect"\/>/);
+    }
+    const spec = await runCli([url, '--format', 'junit', '--timeout', '3000', '--fail-on-spec'], {}, false);
+    expect(srv003(spec.stdout, 'spec')).toMatch(/<failure /);
+    expect(srv003(spec.stdout, 'spec')).not.toMatch(/<skipped/);
+  }, 60000);
 });

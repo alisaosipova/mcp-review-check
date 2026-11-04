@@ -6,7 +6,7 @@
 import { baselineLine } from '../baseline.js';
 import { driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
 import { RULES } from '../rules/index.js';
-import { subjectOf } from '../rules/engine.js';
+import { CONNECT_REASON, subjectOf } from '../rules/engine.js';
 import { platformSeverity, type Finding, type Platform } from '../rules/types.js';
 import type { Severity } from '../snapshot.js';
 import type { FailOn } from './score.js';
@@ -63,7 +63,9 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
       ...mine(r.ignored, id).map((f) => `ignored with --ignore: ${line(f, p)}`),
     ];
     const inner: string[] = [];
-    const reason = skippedBy.get(id);
+    // A failed connect: SRV-003 reports it as a spec error only, so in the directory suites it was not checked rather
+    // than passed (A10-05); the run's <error> case above carries the failure.
+    const reason = skippedBy.get(id) ?? (snap.fatal && id === 'SRV-003' && p !== 'spec' && !found.length ? CONNECT_REASON : undefined);
     const skipped = reason !== undefined && !found.length;
     if (skipped) inner.push(`<skipped message="${xmlText(reason)}"/>`);
     if (failing.length) {
