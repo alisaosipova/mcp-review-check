@@ -119,8 +119,8 @@ function scanOrigins(html: string): ExtractedOrigin[] {
     ['connect', new RegExp(`\\bfetch\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`new\\s+WebSocket\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`new\\s+EventSource\\(\\s*${lit}`, 'g')],
-    // XMLHttpRequest.open with any method: telemetry posts are the usual way a widget sends data out.
-    ['connect', new RegExp(`\\.open\\(\\s*["'](?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)["']\\s*,\\s*${lit}`, 'gi')],
+    // XMLHttpRequest.open with any method token (GET, POST, PROPFIND, ...): telemetry posts are the usual way a widget sends data out.
+    ['connect', new RegExp(`\\.open\\(\\s*["'][A-Za-z][A-Za-z0-9_-]*["']\\s*,\\s*${lit}`, 'gi')],
     ['connect', new RegExp(`\\bnavigator\\.sendBeacon\\(\\s*${lit}`, 'g')],
     // A worker script is fetched like a script (worker-src falls back to script-src): a resource origin.
     ['resource', new RegExp(`\\bnew\\s+(?:Shared)?Worker\\(\\s*${lit}`, 'g')],
