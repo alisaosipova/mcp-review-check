@@ -198,7 +198,8 @@ function stringLeaves(value: unknown, path: string, out: Array<[string, string]>
 /**
  * The corpus is built once per snapshot and shared by the rules that read it (up to 16 per run, which each rebuilt it
  * before 1.1.0). A captured snapshot is not changed, but a test may replace a list or the instructions between runs, so
- * the memo is keyed by the snapshot object and checked against the identity and length of what it was built from. The
+ * the memo is keyed by the snapshot object, checked against the identity and length of what it was built from, and
+ * dropped at the end of the synchronous run that built it (so an in-place edit is seen by the next run). The
  * engine gives each rule of a stopped run its own read-tracking view of the snapshot: a different key, so every such
  * rule still reads (and is tracked on) the lists itself.
  */
@@ -209,7 +210,14 @@ const corpusSig = (snap: Snapshot): unknown[] =>
 export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
   const sig = corpusSig(snap);
   let memo = CORPUS_MEMO.get(snap);
-  if (!memo || memo.sig.some((x, i) => x !== sig[i])) { memo = { sig, entries: buildCorpus(snap) }; CORPUS_MEMO.set(snap, memo); }
+  if (!memo || memo.sig.some((x, i) => x !== sig[i])) {
+    const built = { sig, entries: buildCorpus(snap) };
+    memo = built;
+    CORPUS_MEMO.set(snap, built);
+    // runRules is synchronous, so one run shares the memo; it expires after the current task, so a tool object changed
+    // in place before a later run is read afresh (review R110-Q1-06).
+    queueMicrotask(() => { if (CORPUS_MEMO.get(snap) === built) CORPUS_MEMO.delete(snap); });
+  }
   const all = memo.entries;
   const { values = true, samples = false, keys = false } = scope;
   return all.filter((e) => (values || !SCHEMA_VALUE.has(e.where)) && (samples || !SCHEMA_SAMPLE.has(e.where)) && (keys || e.where !== 'param.name'));
