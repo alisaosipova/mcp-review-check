@@ -39,6 +39,17 @@ describe('A05-05 TOOL-036 unresolvable $ref', () => {
   it('$ref-shaped data in enum, default, examples and x- extensions is not a reference', () => {
     expect(run(obj({ a: { type: 'object', default: { $ref: '#/nope' }, examples: [{ $ref: '#/nope' }], enum: [{ $ref: '#/nope' }] } }, { 'x-openapi': { $ref: '#/components/schemas/X' } }))).toEqual([]);
   });
+  it('property and $defs names that look like data keywords or x- are walked (review R110-Q1-01)', () => {
+    expect(run(obj({ default: { $anchor: 'cfg', type: 'object' }, other: { $ref: '#cfg' } }))).toEqual([]);
+    expect(run(obj({ a: { $ref: '#ex' }, b: { $ref: 'ext.json' } }, { $defs: { example: { $anchor: 'ex' }, 'x-ext': { $id: 'ext.json' } } }))).toEqual([]);
+    expect(run(obj({ default: { $ref: '#/$defs/Missing' }, enum: { $ref: '#/$defs/Missing2' } }))).toEqual([
+      'inputSchema/properties/default $ref "#/$defs/Missing" names no subschema in the document',
+      'inputSchema/properties/enum $ref "#/$defs/Missing2" names no subschema in the document',
+    ]);
+    expect(run(obj({}, { patternProperties: { 'x-.*': { $ref: '#/$defs/Gone' } }, dependentSchemas: { examples: { $ref: '#/$defs/Gone2' } } }))).toHaveLength(2);
+    // inside a named property, keyword positions still skip data
+    expect(run(obj({ default: { type: 'object', default: { $ref: '#/nope' } } }))).toEqual([]);
+  });
   it('a cyclic schema terminates', () => {
     const a: Record<string, unknown> = { type: 'object' };
     a.properties = { self: a };

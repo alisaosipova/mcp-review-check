@@ -225,7 +225,9 @@ export const TOOL_020 = defineRule(
 
 // Keywords whose values are instance data, not subschemas: a `$ref` inside an enum value or a default is data. `x-`
 // extensions are skipped too (an OpenAPI `x-` block may quote `#/components/...` refs of another document).
+// Both apply only at keyword positions: inside a name map (properties, $defs, ...) the keys are user-chosen names.
 const DATA_KEYWORDS = new Set(['enum', 'const', 'default', 'examples', 'example']);
+const NAME_MAPS = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']);
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 /** An absolute URI without its fragment, or undefined for a relative one (or one URL cannot parse). */
@@ -248,10 +250,11 @@ export function unresolvedRefs(root: Record<string, unknown>): Array<{ path: str
   const refs: Array<{ path: string; keyword: string; ref: string }> = [];
   let count = 0;
   const esc = (k: string) => k.replace(/~/g, '~0').replace(/\//g, '~1');
-  const walk = (node: unknown, path: string, depth: number) => {
+  const walk = (node: unknown, path: string, depth: number, nameMap = false) => {
     if (depth > 64 || ++count > 20000) return;
     if (Array.isArray(node)) { node.forEach((x, i) => walk(x, `${path}/${i}`, depth + 1)); return; }
     if (!isObj(node)) return;
+    if (nameMap) { for (const [k, v] of Object.entries(node)) walk(v, `${path}/${esc(k)}`, depth + 1); return; }
     const id = node === root ? undefined : isStr(node.$id) ? node.$id : undefined;
     if (id !== undefined && !id.startsWith('#')) {
       // An embedded resource: its own base and pointers. Only its $id matters here.
@@ -263,7 +266,9 @@ export function unresolvedRefs(root: Record<string, unknown>): Array<{ path: str
     for (const k of ['$anchor', '$dynamicAnchor']) if (isStr(node[k])) anchors.add(node[k] as string);
     if (isStr(node.$id) && node.$id.startsWith('#') && node.$id.length > 1) anchors.add(node.$id.slice(1)); // draft-07 plain-name $id
     for (const k of ['$ref', '$dynamicRef', '$recursiveRef']) if (isStr(node[k])) refs.push({ path, keyword: k, ref: node[k] as string });
-    for (const [k, v] of Object.entries(node)) if (!DATA_KEYWORDS.has(k) && !k.startsWith('x-')) walk(v, `${path}/${esc(k)}`, depth + 1);
+    for (const [k, v] of Object.entries(node)) {
+      if (!DATA_KEYWORDS.has(k) && !k.startsWith('x-')) walk(v, `${path}/${esc(k)}`, depth + 1, NAME_MAPS.has(k));
+    }
   };
   walk(root, '', 0);
   const fragmentMissing = (frag: string): string | undefined => {
