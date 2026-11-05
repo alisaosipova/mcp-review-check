@@ -102,3 +102,22 @@ describe('authProbe.active.clientId: the DCR client --active-auth registered (si
     expect((JSON.parse(out) as { authProbe: { active: { clientId: string } } }).authProbe.active.clientId).toBe(`id-${REDACTED}`);
   });
 });
+
+describe('annotations(): finding text through visibleText as well as escapeCommand', () => {
+  it('shows ESC, bidi overrides, line separators and a legacy ##[ in the message, fix and title', () => {
+    const f: Finding = {
+      ruleId: 'DESC-001', title: 't', severity: 'error', platforms: ['claude'], tool: 'x\u202Ey',
+      message: 'm \u001b[31mred\u001b[0m \u2028::error::own ##[group]', fix: 'fix \u200B', docs: ['https://x.test'],
+    };
+    const r = report(loadSnapshot('minimal-http'), false, [f]);
+    const lines = annotations({ ...r, summary: { ...r.summary, gate: { ...r.summary.gate, platforms: ['claude'] } } });
+    const line = lines.find((l) => l.includes('DESC-001'))!;
+    expect(line).toBeDefined();
+    expect(line).not.toMatch(/[\u001b\u202E\u2028\u200B]/);
+    expect(line).toContain('\\u{1B}[31mred');
+    expect(line).toContain('\\u{2028}::error::own #\\u{23}[group]');
+    expect(line).toContain('fix \\u{200B}');
+    expect(line).toContain('x\\u{202E}y');
+    expect(line.split('\n')).toHaveLength(1);
+  });
+});
