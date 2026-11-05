@@ -579,7 +579,7 @@ const DEPRECATED = 'https://modelcontextprotocol.io/specification/2026-07-28/dep
 const EXTENSIONS = 'https://modelcontextprotocol.io/docs/extensions/overview';
 const TASKS_EXT = 'https://github.com/modelcontextprotocol/ext-tasks/blob/main/specification/2026-07-28/tasks.md';
 const SERVER_INFO_KEY = 'io.modelcontextprotocol/serverInfo';
-const TASKS_KEY = 'io.modelcontextprotocol/tasks';
+export const TASKS_KEY = 'io.modelcontextprotocol/tasks';
 const TASK_METHODS = ['tasks/get', 'tasks/update', 'tasks/cancel'];
 
 /** A server-supplied string for a message: JSON-quoted and cut, so a long or odd key stays one readable token. */
@@ -589,7 +589,7 @@ const quote = (s: string) => JSON.stringify(s.length > 80 ? `${s.slice(0, 80)}â€
  * The capabilities the server announced, by where it announced them: the adopted `capabilities` (from initialize, or
  * server/discover on a 2026-07-28-only server) and, on a dual-era server, the other result's object when it differs.
  */
-function capabilitySources(snap: Snapshot): Array<[string, Obj]> {
+export function capabilitySources(snap: Snapshot): Array<[string, Obj]> {
   const raw: Array<[string, unknown]> = [
     ['initialize', isObj(snap.initializeRaw) ? snap.initializeRaw.capabilities : undefined],
     ['server/discover', isObj(snap.discoverRaw) ? snap.discoverRaw.capabilities : undefined],

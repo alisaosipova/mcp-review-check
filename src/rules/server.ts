@@ -8,6 +8,7 @@ import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_
 import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
 import { TEXT_CAP } from '../limits.js';
 import { isTlsCode } from '../diagnose.js';
+import { capabilitySources, TASKS_KEY } from './spec.js';
 
 /** Message prefix of a deploy-time finding made informational in local mode; the local banner lists their rules. */
 export const DEPLOY = 'Deploy-time check: ';
@@ -415,16 +416,18 @@ export const SRV_014 = defineRule(
 export const SRV_015 = defineRule(
   {
     id: 'SRV-015', title: 'Server depends on features Claude does not support', severity: { claude: 'info' }, needs: [],
-    rationale: 'Claude does not support resource subscriptions, tasks, sampling or experimental capabilities.',
+    rationale: 'Claude does not support resource subscriptions, tasks (capabilities.tasks, or the 2026-07-28 io.modelcontextprotocol/tasks extension), sampling or experimental capabilities.',
     fix: 'Make sure core functionality works without these features.',
     sources: ['https://claude.com/docs/connectors/building'],
   },
   (snap) => {
-    const caps = snap.capabilities ?? {};
+    // Every capability object the server announced (initialize, and server/discover on a dual-era server).
+    const all = capabilitySources(snap).map(([, c]) => c);
     const used: string[] = [];
-    if (isObj(caps.resources) && caps.resources.subscribe === true) used.push('resources.subscribe');
-    if (isObj(caps.experimental) && Object.keys(caps.experimental).length) used.push('experimental');
-    if (caps.tasks !== undefined) used.push('tasks');
+    if (all.some((c) => isObj(c.resources) && c.resources.subscribe === true)) used.push('resources.subscribe');
+    if (all.some((c) => isObj(c.experimental) && Object.keys(c.experimental).length)) used.push('experimental');
+    // tasks: the 2025-11-25 capabilities.tasks, or the 2026-07-28 extension (an own key, no prototype lookup).
+    if (all.some((c) => c.tasks !== undefined || (isObj(c.extensions) && Object.hasOwn(c.extensions, TASKS_KEY) && c.extensions[TASKS_KEY] !== undefined))) used.push('tasks');
     // "sampling" alone is ordinary vocabulary (audio sampling rate, statistical sampling): only MCP sampling wording.
     if (corpus(snap).some((e) => /sampling\/createMessage|\bMCP sampling\b|\bsampling (requests?|capabilit(y|ies))\b/i.test(e.text))) used.push('sampling');
     return used.length ? [{ message: `uses ${used.join(', ')}` }] : [];
