@@ -82,7 +82,7 @@ export const POL_003 = defineRule(
     fix: 'Remove promotional language and implied endorsements.',
     sources: [CLAUDE_POLICY, OAI_GUIDE],
   },
-  (snap) => corpus(snap).flatMap((e): RawFinding[] => {
+  (snap) => corpus(snap, { values: false }).flatMap((e): RawFinding[] => {
     const text = scanForm(e.text);
     const m = ADS.exec(text) ?? ENDORSE.exec(text);
     return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` }] : [];
@@ -126,7 +126,7 @@ export const POL_004 = defineRule(
   },
   (snap) => {
     const out: RawFinding[] = [];
-    for (const e of corpus(snap)) {
+    for (const e of corpus(snap, { values: false })) {
       const text = scanForm(e.text);
       const m = UPSELL.exec(text);
       if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` });

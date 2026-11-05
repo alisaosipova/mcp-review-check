@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, isStr, toolNames } from './util/access.js';
-import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanForm, snippet, type CorpusEntry } from './util/text.js';
+import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanForm, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -43,9 +43,10 @@ export function scanCorpus(
   snap: Snapshot, patterns: Pattern[],
   filter?: (e: CorpusEntry, m: RegExpExecArray, p: Pattern) => boolean,
   decorate?: (e: CorpusEntry) => Partial<RawFinding>,
+  scope?: CorpusScope,
 ): RawFinding[] {
   const out: RawFinding[] = [];
-  for (const e of corpus(snap)) {
+  for (const e of corpus(snap, scope)) {
     const text = scanForm(e.text);
     let hit: RawFinding | undefined;
     for (const p of patterns) {
@@ -108,7 +109,7 @@ export const INJ_001 = defineRule(
   },
   (snap) => {
     const out: RawFinding[] = [];
-    for (const e of corpus(snap)) {
+    for (const e of corpus(snap, { samples: true, keys: true })) {
       const { hard, soft } = hiddenChars(e.text);
       const base = { tool: e.tool, path: e.path };
       if (hard.length) out.push({ ...base, message: `${locationOf(e)}: ${hard.some((h) => /^\\u\{(FE0|E01)/.test(h)) ? 'tag, bidi control or variation selector' : 'tag or bidi control'} characters ${codeList(hard)}: "${snippet(e.text)}"` });
@@ -185,12 +186,12 @@ export const INJ_003 = defineRule(
   {
     id: 'INJ-003', title: 'Markup hidden from humans, or pseudo-system tags', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
     rationale: 'HTML comments and fake system tags are common injection carriers.',
-    fix: 'Remove comments and pseudo-system tags from descriptions.',
+    fix: 'Remove comments and pseudo-system tags from descriptions and schema text.',
     sources: [CLAUDE_POLICY],
   },
   (snap) => {
     const out: RawFinding[] = [];
-    for (const e of corpus(snap)) {
+    for (const e of corpus(snap, { samples: true })) {
       const text = scanForm(e.text);
       const comment = htmlComment(text);
       const m = comment ?? PSEUDO_TAG.exec(text);
@@ -286,7 +287,8 @@ export const INJ_005 = defineRule(
     fix: 'Describe the tool factually; never instruct the model to ignore rules or keep things from the user.',
     sources: [CLAUDE_REVIEW, OAI_GUIDE],
   },
-  (snap) => scanCorpus(snap, INJ_005_PATTERNS),
+  // Defaults and examples too (A05-01): an explicit override in a sample value still reaches the model.
+  (snap) => scanCorpus(snap, INJ_005_PATTERNS, undefined, undefined, { samples: true }),
 );
 
 const MEASURE = String.raw`\s+(the |a |an |its |their |your )?((given|specified|configured|previous|current|minimum|maximum|target|expected|required) )?((thresholds?|average|baseline|median|mean|minimum|maximum|min|max|limits?|targets?|cutoffs?|benchmarks?|scores?|ratings?|values?|expected|previous|last|before|zero|chance|random)\b|[-+<>=%$.\d])`;

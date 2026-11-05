@@ -138,6 +138,7 @@ export function snippet(text: string, index = 0, len = text.length, max = 120): 
 
 export type CorpusWhere =
   | 'tool.name' | 'tool.title' | 'tool.annotations.title' | 'tool.description' | 'param.description'
+  | 'param.title' | 'param.enum' | 'param.default' | 'param.examples' | 'param.name'
   | 'instructions' | 'prompt.description' | 'prompt.argument.description' | 'resource.description'
   | 'resourceTemplate.description';
 
@@ -149,7 +150,38 @@ export interface CorpusEntry {
   subject?: string;
 }
 
-export function corpus(snap: Snapshot): CorpusEntry[] {
+/**
+ * Which schema-carried strings a rule reads besides the descriptions and titles (A05-01). Hosts send the whole
+ * inputSchema to the model, so text in any of these reaches it:
+ * - `values`: string `enum` and `const` values (`param.enum`), on by default;
+ * - `samples`: string `default`, `examples` and `example` values, nested ones included (`param.default`,
+ *   `param.examples`). They are sample user data (a base64 body, a coupon code), so only the hidden-character, markup
+ *   and explicit-override rules read them;
+ * - `keys`: property names (`param.name`), read by INJ-001 only (TOOL-033 does not cover their characters).
+ * Schema `title`s (`param.title`) are always in.
+ */
+export interface CorpusScope { values?: boolean; samples?: boolean; keys?: boolean }
+
+const SCHEMA_VALUE: ReadonlySet<CorpusWhere> = new Set(['param.enum']);
+const SCHEMA_SAMPLE: ReadonlySet<CorpusWhere> = new Set(['param.default', 'param.examples']);
+/** String leaves taken from one `default` or `examples` value (a large object default is data, not prose). */
+const SAMPLE_LEAVES = 200;
+
+/** The string leaves of a JSON value, with their pointer suffixes, depth- and count-bounded. */
+function stringLeaves(value: unknown, path: string, out: Array<[string, string]>, depth = 0): void {
+  if (out.length >= SAMPLE_LEAVES || depth > 8) return;
+  if (isStr(value)) out.push([value, path]);
+  else if (Array.isArray(value)) value.forEach((x, i) => stringLeaves(x, `${path}/${i}`, out, depth + 1));
+  else if (isObj(value)) for (const [k, x] of Object.entries(value)) stringLeaves(x, `${path}/${k.replace(/~/g, '~0').replace(/\//g, '~1')}`, out, depth + 1);
+}
+
+export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
+  const all = buildCorpus(snap);
+  const { values = true, samples = false, keys = false } = scope;
+  return all.filter((e) => (values || !SCHEMA_VALUE.has(e.where)) && (samples || !SCHEMA_SAMPLE.has(e.where)) && (keys || e.where !== 'param.name'));
+}
+
+function buildCorpus(snap: Snapshot): CorpusEntry[] {
   const out: CorpusEntry[] = [];
   const push = (text: unknown, where: CorpusWhere, extra: Partial<CorpusEntry> = {}) => {
     if (isStr(text) && text.length > 0) out.push({ text, where, ...extra });
@@ -161,7 +193,19 @@ export function corpus(snap: Snapshot): CorpusEntry[] {
     if (isObj(t.annotations)) push(t.annotations.title, 'tool.annotations.title', { tool: name });
     push(t.description, 'tool.description', { tool: name });
     walkSchema(t.inputSchema, (v) => {
-      if (v.viaProperty) push(v.node.description, 'param.description', { tool: name, path: v.path });
+      const n = v.node;
+      const at = v.path === '/' ? '' : v.path;
+      if (v.viaProperty) push(n.description, 'param.description', { tool: name, path: v.path });
+      push(n.title, 'param.title', { tool: name, path: `${at}/title` });
+      if (Array.isArray(n.enum)) n.enum.forEach((x, i) => push(x, 'param.enum', { tool: name, path: `${at}/enum/${i}` }));
+      push(n.const, 'param.enum', { tool: name, path: `${at}/const` });
+      for (const [key, where] of [['default', 'param.default'], ['examples', 'param.examples'], ['example', 'param.examples']] as const) {
+        if (n[key] === undefined) continue;
+        const leaves: Array<[string, string]> = [];
+        stringLeaves(n[key], `${at}/${key}`, leaves);
+        for (const [text, path] of leaves) push(text, where, { tool: name, path });
+      }
+      if (isObj(n.properties)) for (const k of Object.keys(n.properties)) push(k, 'param.name', { tool: name, path: `${at}/properties/${k.replace(/~/g, '~0').replace(/\//g, '~1')}` });
     });
   }
   push(snap.instructions, 'instructions');
