@@ -22,7 +22,8 @@
     "schema",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "npm-shrinkwrap.json"
   ],
   "engines": {
     "node": ">=22.12"
@@ -36,7 +37,8 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "readme:rules": "node scripts/rules-table.mjs --write",
-    "prepack": "npm run build",
+    "prepack": "npm run build && node scripts/shrinkwrap.mjs",
+    "postpack": "node scripts/shrinkwrap.mjs --remove",
     "test:coverage": "vitest run --coverage"
   },
   "keywords": [
