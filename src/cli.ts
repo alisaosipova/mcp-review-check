@@ -415,29 +415,6 @@ function canonical(p: string): string {
   return process.platform === 'win32' || process.platform === 'darwin' ? full.toLowerCase() : full;
 }
 
-/** --fail-on-incomplete in GitHub Actions: the partial-check ::warning becomes the ::error the help promises, without
- *  the advice to add the flag that is already given (A10-01). Other annotations pass unchanged. */
-function incompleteAnnotation(a: string): string {
-  const head = '::warning title=mcp-review-check::Partial check: ';
-  if (!a.startsWith(head)) return a;
-  return `::error title=mcp-review-check::Partial check: ${a.slice(head.length).replace(/ --fail-on-incomplete fails the run on a partial check\.$/, ' --fail-on-incomplete fails the run.')}`;
-}
-
-/** --fail-on-incomplete with --format junit: one <error type="incomplete"> test case per suite, as for a failed connect,
- *  so a CI test view does not show a green run that exited 3 (A10-01). The counts of each suite and the total follow. */
-function junitIncomplete(xml: string, r: Report): string {
-  const cov = r.snap.coverage;
-  const why = M!.junit.xmlText(`partial check: ${cov.toolLevel}${cov.reason ? ` (${cov.reason})` : ''}; --fail-on-incomplete fails the run`);
-  let suites = 0;
-  const out = xml.replace(/^( {2}<testsuite name="([^"]*)" tests=")(\d+)(" failures="\d+" errors=")(\d+)(" skipped="\d+">\n {4}<properties>\n(?:.*\n)*? {4}<\/properties>\n)/gm,
-    (_m, a: string, name: string, tests: string, b: string, errors: string, c: string) => {
-      suites++;
-      return `${a}${Number(tests) + 1}${b}${Number(errors) + 1}${c}    <testcase classname="${name}" name="mcp-review-check run">\n      <error message="${why}" type="incomplete"/>\n    </testcase>\n`;
-    });
-  return out.replace(/^(<testsuites name="mcp-review-check" tests=")(\d+)(" failures="\d+" errors=")(\d+)"/m,
-    (_m, a: string, tests: string, b: string, errors: string) => `${a}${Number(tests) + suites}${b}${Number(errors) + suites}"`);
-}
-
 /** A line of server text for stderr that a GitHub runner cannot read as a workflow command ("::error ...",
  *  "::add-mask::", "##[group]"): the leading ':' or '#' shown as \u{3A} or \u{23}, as the text report does (F135);
  *  control and format characters (ESC, CR, bidi overrides) as \u{..} through visibleText. */
@@ -809,16 +786,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
     const ignoredIds = new Set(ignore.map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
-    const built = buildReport(snap, gated, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec']);
+    const built = buildReport(snap, gated, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec'], !!values['fail-on-incomplete']);
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
-    // --fail-on-incomplete: exit 3 on a partial check, and every format says the run failed, with the cause (A10-01).
+    // --fail-on-incomplete: exit 3 on a partial check; buildReport marks the report failed for every format (A10-01).
     const partial = snap.coverage.toolLevel !== 'ok';
-    const incompleteFails = !!values['fail-on-incomplete'] && partial && !snap.fatal && !snap.limits?.stopped;
-    if (incompleteFails) {
-      const why = `partial check: ${snap.coverage.toolLevel} (--fail-on-incomplete)`;
-      report.summary = { ...report.summary, failed: true, gate: { ...report.summary.gate, reason: report.summary.gate.reason ? `${report.summary.gate.reason}; ${why}` : why } };
-    }
     const baselined = knownRaw && redactDeep(knownRaw, redactor);
     // Tool fingerprints (the JSON report's and the drift's) over the snapshot the rules saw: secrets scrubbed, but not
     // the run's other --env values, so the digests do not depend on the command line (A01-05). Names stay redacted.
@@ -836,9 +808,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       drift, failOnDrift: !!values['fail-on-drift'] && changes > 0, diffOnly: !!values['diff-only'],
     };
     const rerun = rerunCommand(argv, redactor);
-    const body = format === 'junit' && incompleteFails ? junitIncomplete(render(report, format, textOpts, rerun, sarifLocation, baselined), report) : render(report, format, textOpts, rerun, sarifLocation, baselined);
+    const body = render(report, format, textOpts, rerun, sarifLocation, baselined);
     if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
-      for (const a of annotations(report)) stderr += `${incompleteFails ? incompleteAnnotation(a) : a}\n`;
+      for (const a of annotations(report)) stderr += `${a}\n`;
       if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {

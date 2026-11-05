@@ -2,7 +2,8 @@
 // One <testsuite> per gated platform (the --target directories, plus spec with --fail-on-spec), one <testcase> per rule
 // of that platform: a <failure> when its findings reach --fail-on at the platform's own severity, <skipped> for a rule
 // that did not run, lower findings, known (--baseline) and ignored ones in <system-out>. A failed connect or a
-// --max-duration stop is one <error> test case per suite, as it fails the run whatever the findings.
+// --max-duration stop is one <error> test case per suite, as it fails the run whatever the findings; so is a partial
+// check with --fail-on-incomplete (type "incomplete").
 import { baselineLine } from '../baseline.js';
 import { driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
 import { RULES } from '../rules/index.js';
@@ -48,6 +49,12 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
   if (snap.fatal || snap.limits?.stopped) {
     const why = snap.fatal ? `could not connect: ${snap.coverage.reason ?? snap.fatal}` : `stopped at --max-duration during ${snap.limits!.stopped!.phase}`;
     cases.push(testcase(p, 'mcp-review-check run', [`<error message="${xmlText(why)}" type="${snap.fatal ? 'connect' : 'max-duration'}"/>`], { failure: false, skipped: false, error: true }));
+  }
+  // --fail-on-incomplete on a partial check (exit 3): the same run case, so a CI test view does not show a green run (A10-01).
+  if (r.incompleteFails) {
+    const cov = snap.coverage;
+    const why = `partial check: ${cov.toolLevel}${cov.reason ? ` (${cov.reason})` : ''}; --fail-on-incomplete fails the run`;
+    cases.push(testcase(p, 'mcp-review-check run', [`<error message="${xmlText(why)}" type="incomplete"/>`], { failure: false, skipped: false, error: true }));
   }
   // The catalog's rules for this platform, then any other rule ID with findings here (INTERNAL: a rule that threw).
   const ids: Array<[string, string]> = RULES.filter((rule) => p in rule.severity).map((rule) => [rule.id, rule.title]);

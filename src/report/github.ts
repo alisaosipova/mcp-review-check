@@ -24,8 +24,8 @@ const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
  * One `::error` or `::warning` line per finding at its highest severity on the gated platforms (the --target
  * directories, plus spec with --fail-on-spec), as for the exit code; info and ungated findings get none.
  * Exit 3 (no connect) or 4 (a --max-duration stop) comes first as one `::error` with its cause; a partial check that
- * still finished (no or a rejected token, tools/list failed) as one `::warning`, whatever the exit code, so a green
- * job whose tool checks were skipped is visible.
+ * still finished (no or a rejected token, tools/list failed) as one `::warning`, so a green job whose tool checks
+ * were skipped is visible, or as one `::error` when --fail-on-incomplete failed the run on it.
  */
 export function annotations(r: Report): string[] {
   const stop = r.snap.limits?.stopped;
@@ -38,8 +38,10 @@ export function annotations(r: Report): string[] {
     const skipped = r.skipped.length ? ` (${r.skipped.length} rule${r.skipped.length === 1 ? '' : 's'} skipped)` : '';
     const budget = r.snap.limits?.budgetExhausted;
     const cause = budget ? `snapshot budget exhausted during ${budget.phase}, after ${budget.bytes} bytes` : authReason(r.snap) ?? level;
-    const why = `Partial check: ${level} (${cause}); tool-level checks were skipped${skipped}, so the result covers only what ran. --fail-on-incomplete fails the run on a partial check.`;
-    out.push(`::warning title=mcp-review-check::${escapeCommand(shown(why))}`);
+    // With --fail-on-incomplete the partial check failed the run (exit 3): an ::error, without the advice to add the flag (A10-01).
+    const advice = r.incompleteFails ? '--fail-on-incomplete fails the run.' : '--fail-on-incomplete fails the run on a partial check.';
+    const why = `Partial check: ${level} (${cause}); tool-level checks were skipped${skipped}, so the result covers only what ran. ${advice}`;
+    out.push(`::${r.incompleteFails ? 'error' : 'warning'} title=mcp-review-check::${escapeCommand(shown(why))}`);
   }
   for (const f of r.findings) {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))

@@ -23,6 +23,10 @@ export interface Report {
   rulesRun: number;
   manual: ManualItem[];
   failOn: FailOn;
+  /** --fail-on-incomplete took effect: a partial check (not a failed connect, not a --max-duration stop) failed the
+   *  run, so summary.failed is true, gate.reason names it, JUnit has an <error type="incomplete"> per suite and the
+   *  GitHub partial-check annotation is an ::error (A10-01). */
+  incompleteFails?: boolean;
   summary: {
     errors: number;
     warnings: number;
@@ -38,7 +42,7 @@ export interface Report {
   };
 }
 
-export function buildReport(snap: Snapshot, result: EngineResult, manual: ManualItem[], failOn: FailOn, startedAt: Date, durationMs: number, failOnSpec = false): Report {
+export function buildReport(snap: Snapshot, result: EngineResult, manual: ManualItem[], failOn: FailOn, startedAt: Date, durationMs: number, failOnSpec = false, failOnIncomplete = false): Report {
   const f = result.findings;
   const { failed, ...gated } = gate(f, failOn, gatedPlatforms(snap.options.target, failOnSpec));
   // A failed connect is exit 3 whatever the gate says: "add --fail-on-spec" would be advice for a run that already failed (A10-07).
@@ -47,17 +51,24 @@ export function buildReport(snap: Snapshot, result: EngineResult, manual: Manual
   const verdicts: Report['summary']['verdicts'] = {};
   // A failed connect (exit 3) checked nothing, a --max-duration stop or an exhausted snapshot budget not everything: INCOMPLETE whatever the findings say.
   for (const p of activePlatforms(snap.options.target)) if (p !== 'spec') verdicts[p] = verdict(f, p, complete, !!snap.fatal || !!snap.limits?.stopped || !!snap.limits?.budgetExhausted);
+  // --fail-on-incomplete: a partial check that still finished fails the run, and the gate says why (A10-01). Exit 3
+  // (no connect) and exit 4 (a stop) already fail it with their own cause.
+  const incompleteFails = failOnIncomplete && !complete && !snap.fatal && !snap.limits?.stopped;
+  if (incompleteFails) {
+    const why = `partial check: ${snap.coverage.toolLevel} (--fail-on-incomplete)`;
+    g.reason = g.reason ? `${g.reason}; ${why}` : why;
+  }
   return {
     tool: { name: 'mcp-review-check', version: VERSION, catalogDate: CATALOG_DATE, catalogAgeDays: catalogAgeDays(startedAt) },
     startedAt: startedAt.toISOString(), durationMs, snap,
-    findings: f, ignored: result.ignored, rootCauses: rootCauses(result.scored ?? f), skipped: result.skipped, rulesRun: result.rulesRun, manual, failOn,
+    findings: f, ignored: result.ignored, rootCauses: rootCauses(result.scored ?? f), skipped: result.skipped, rulesRun: result.rulesRun, manual, failOn, incompleteFails,
     summary: {
       errors: f.filter((x) => x.severity === 'error').length,
       warnings: f.filter((x) => x.severity === 'warning').length,
       info: f.filter((x) => x.severity === 'info').length,
       // Exit 3 (no connect) and exit 4 (a --max-duration stop) are failed runs whatever the gate says. An exhausted snapshot
       // budget is a partial check like a missing token: `failed` follows the --fail-on gate (--fail-on-incomplete is the CLI's).
-      score: complete && snap.target.kind !== 'listing' ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || !!snap.fatal || !!snap.limits?.stopped, gate: g,
+      score: complete && snap.target.kind !== 'listing' ? score(result.scored ?? f) : null, scoreVersion: SCORE_VERSION, verdicts, failed: failed || incompleteFails || !!snap.fatal || !!snap.limits?.stopped, gate: g,
     },
   };
 }
