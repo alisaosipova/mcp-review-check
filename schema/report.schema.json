@@ -113,6 +113,22 @@
         }
       }
     },
+    "authProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active"],
+      "description": "Since 1.1: present only when --active-auth ran its probes (an HTTP server with OAuth metadata); absent otherwise.",
+      "properties": {
+        "active": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clientId"],
+          "properties": {
+            "clientId": { "type": ["string", "null"], "description": "Since 1.1: the client_id of the DCR client --active-auth registered, so it can be deleted; null when no registration endpoint was offered or the answer held no client_id. Never a client_secret or registration_access_token. Redacted like every report string." }
+          }
+        }
+      }
+    },
     "summary": {
       "type": "object",
       "additionalProperties": false,

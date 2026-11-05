@@ -1,9 +1,14 @@
 // mcp-review-check 1.1.0, package Q5 (reports): --fail-on-incomplete is native to buildReport, so JUnit and the GitHub
 // annotations say the run failed without CLI post-processing (A10-01 native); the JSON report names the DCR client
 // --active-auth registered (authProbe.active.clientId, since 1.1); finding text in annotations goes through visibleText.
+import { readFileSync } from 'node:fs';
+import _Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
+import { REDACTED } from '../src/protocol/trace.js';
+import { buildRedactor, redactDeep } from '../src/redact.js';
 import { annotations } from '../src/report/github.js';
 import { buildReport } from '../src/report/index.js';
+import { renderJson, toJson } from '../src/report/json.js';
 import { renderJunit } from '../src/report/junit.js';
 import { RULES } from '../src/rules/index.js';
 import { runRules } from '../src/rules/engine.js';
@@ -58,3 +63,42 @@ describe('A10-01 native: buildReport takes --fail-on-incomplete', () => {
   });
 });
 
+describe('authProbe.active.clientId: the DCR client --active-auth registered (since 1.1)', () => {
+  const SCHEMA = JSON.parse(readFileSync(new URL('../schema/report.schema.json', import.meta.url), 'utf8'));
+  const Ajv = ((_Ajv2020 as unknown as { default?: unknown }).default ?? _Ajv2020) as new (o: object) => any;
+  const ajv = new Ajv({ strict: true, strictRequired: false, allErrors: true });
+  ajv.addFormat('uri', (x: string) => /^[a-z][a-z0-9+.-]*:[^\s<>"{}|\\^`]*$/i.test(x));
+  ajv.addFormat('date-time', (x: string) => !Number.isNaN(Date.parse(x)));
+  const validate = ajv.compile(SCHEMA);
+  const withActive = (active: NonNullable<Snapshot['authProbe']>['active']): Snapshot => {
+    const s = loadSnapshot('minimal-http');
+    s.authProbe = { as: [], active } as unknown as Snapshot['authProbe'];
+    return s;
+  };
+
+  it('is in the JSON report, valid against the schema, null when no client_id came back, absent without --active-auth', () => {
+    const doc = toJson(report(withActive({ clientId: 'mrc-client-42' }), false, [])) as { authProbe?: unknown };
+    expect(doc.authProbe).toEqual({ active: { clientId: 'mrc-client-42' } });
+    expect(validate(JSON.parse(JSON.stringify(doc))), JSON.stringify(validate.errors)).toBe(true);
+    const none = toJson(report(withActive({}), false, [])) as { authProbe?: unknown };
+    expect(none.authProbe).toEqual({ active: { clientId: null } });
+    expect(validate(JSON.parse(JSON.stringify(none))), JSON.stringify(validate.errors)).toBe(true);
+    expect('authProbe' in toJson(report(loadSnapshot('minimal-http'), false))).toBe(false);
+  });
+
+  it('documents the field as since 1.1 and never carries a client_secret', () => {
+    expect(SCHEMA.properties.authProbe.description).toMatch(/^Since 1\.1/);
+    expect(SCHEMA.properties.authProbe.properties.active.properties.clientId.description).toMatch(/^Since 1\.1/);
+    const secret = ['sk', 'live', 'SYNTH0client0secret0value'].join('_');
+    const s = withActive({ clientId: 'c-1', clientSecret: secret } as never);
+    expect(renderJson(report(s, false))).not.toContain(secret);
+  });
+
+  it('is redacted like every report string', () => {
+    const bearer = ['sk', 'live', 'SYNTH0bearer0in0client0id'].join('_');
+    const built = report(withActive({ clientId: `id-${bearer}` }), false);
+    const out = renderJson(redactDeep(built, buildRedactor({ bearer })));
+    expect(out).not.toContain(bearer);
+    expect((JSON.parse(out) as { authProbe: { active: { clientId: string } } }).authProbe.active.clientId).toBe(`id-${REDACTED}`);
+  });
+});

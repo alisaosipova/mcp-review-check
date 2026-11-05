@@ -41,6 +41,9 @@ export function toJson(r: Report): Record<string, unknown> {
     },
     coverage: snap.connectDiagnosis ? { ...snap.coverage, diagnosis: snap.connectDiagnosis } : snap.coverage,
     limits: snap.limits ?? null,
+    // Since 1.1, only with --active-auth: the DCR client the run registered, so the user can delete it (A03-03). A
+    // client_id is not a secret; client_secret and registration_access_token are never kept.
+    ...(snap.authProbe?.active ? { authProbe: { active: { clientId: snap.authProbe.active.clientId ?? null } } } : {}),
     // rootCauses: the basis of summary.score (every platform, whatever --target), so the score can be explained from the JSON.
     summary: { ...r.summary, rootCauses: r.rootCauses },
     findings: r.findings.map(findingJson),
