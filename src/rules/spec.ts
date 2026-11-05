@@ -317,18 +317,22 @@ const CACHEABLE = new Set(['server/discover', 'tools/list', 'prompts/list', 'res
 export const SPEC_013 = defineRule(
   {
     id: 'SPEC-013', title: 'Caching hints on cacheable results', severity: { spec: 'error' }, needs: ['modern'],
-    rationale: 'Cacheable results must carry ttlMs and cacheScope.',
-    fix: 'Add ttlMs (number >= 0) and cacheScope ("public" | "private") consistently across pages.',
+    rationale: 'Cacheable results must carry ttlMs and cacheScope. The caching page defines ttlMs as an integer value in milliseconds and requires it to be >= 0.',
+    severityNote: 'A ttlMs that is a number >= 0 but not an integer (1.5) is a warning; a missing, negative or non-number ttlMs is an error.',
+    fix: 'Add ttlMs (an integer >= 0) and cacheScope ("public" | "private") consistently across pages.',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching'],
   },
   (snap) => {
     const out: RawFinding[] = [];
     const scopes = new Map<string, Set<unknown>>();
     const seen = new Set<string>();
-    const add = (m: string) => { if (!seen.has(m)) { seen.add(m); out.push({ message: m }); } };
+    const add = (m: string, extra: Partial<RawFinding> = {}) => { if (!seen.has(m)) { seen.add(m); out.push({ ...extra, message: m }); } };
     for (const { method, result } of snap.transport.modernResults ?? []) {
       if (!CACHEABLE.has(method) || !isObj(result) || result.resultType !== 'complete') continue;
       if (typeof result.ttlMs !== 'number' || !Number.isFinite(result.ttlMs) || result.ttlMs < 0) add(`${method}: ttlMs is not a finite number >= 0`);
+      // The caching page defines ttlMs as "an integer value in milliseconds"; the MUST itself is only >= 0, so a
+      // fractional value is a warning, not the error of a missing or negative one.
+      else if (!Number.isInteger(result.ttlMs)) add(`${method}: ttlMs is not an integer number of milliseconds`, { severity: 'warning' });
       if (result.cacheScope !== 'public' && result.cacheScope !== 'private') add(`${method}: cacheScope is not "public" or "private"`);
       if (!scopes.has(method)) scopes.set(method, new Set());
       scopes.get(method)!.add(result.cacheScope);

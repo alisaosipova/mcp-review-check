@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SRV_015 } from '../src/rules/server.js';
+import { SPEC_013 } from '../src/rules/spec.js';
 import type { Snapshot } from '../src/snapshot.js';
 import { evaluate, snap } from './helpers.js';
 
@@ -43,5 +44,27 @@ describe('A04-05 SRV-015 reads the 2026-07-28 tasks extension', () => {
     const inherited = Object.create({ [TASKS]: {} }) as Record<string, unknown>;
     expect(evaluate(SRV_015, modern((s) => setCaps(s, { tools: {}, extensions: inherited })))).toEqual([]);
     expect(evaluate(SRV_015, modern())).toEqual([]);
+  });
+});
+
+describe('A04-06 SPEC-013 ttlMs is an integer number of milliseconds', () => {
+  const page = (ttlMs: unknown) => modern((s) => {
+    s.transport.modernResults = [
+      { method: 'server/discover', result: s.discoverRaw },
+      { method: 'tools/list', result: { resultType: 'complete', tools: [], ttlMs, cacheScope: 'public' } },
+    ];
+  });
+
+  it('a fractional ttlMs is a warning', () => {
+    const f = evaluate(SPEC_013, page(1.5));
+    expect(f).toHaveLength(1);
+    expect(f[0]).toMatchObject({ severity: 'warning', message: 'tools/list: ttlMs is not an integer number of milliseconds' });
+  });
+
+  it('a negative or missing ttlMs stays an error, and an integer passes', () => {
+    expect(evaluate(SPEC_013, page(-1))[0]).toMatchObject({ severity: 'error', message: 'tools/list: ttlMs is not a finite number >= 0' });
+    expect(evaluate(SPEC_013, page(undefined))[0]).toMatchObject({ severity: 'error' });
+    expect(evaluate(SPEC_013, page(0))).toEqual([]);
+    expect(evaluate(SPEC_013, page(300000))).toEqual([]);
   });
 });
