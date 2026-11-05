@@ -86,7 +86,10 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
         INPUT_TARGET: '', INPUT_STDIO: 'node x.mjs', INPUT_PLATFORM: 'all', INPUT_FAIL_ON: 'error', INPUT_FAIL_ON_SPEC: 'false', INPUT_ACTIVE: 'false',
         INPUT_BEARER: '', INPUT_VERSION: '1.0', INPUT_CLI_PATH: fakeCli, INPUT_SARIF_FILE: join(dir, 'r.sarif'), INPUT_EXTRA_ARGS: '', ...env,
       };
-      const r = spawnSync('bash', ['-c', actionScript()], {
+      // macOS runners: bash 3.2 puts the image's own PATH (Homebrew, the toolcache npm) in front of the one it was
+      // given, so the stubs are put first again inside the script.
+      const script = opts.fakeNpm ? `PATH=${JSON.stringify(bin)}${delimiter}"$PATH"\n${actionScript()}` : actionScript();
+      const r = spawnSync('bash', ['-c', script], {
         cwd, encoding: 'utf8', timeout: 60000,
         env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: process.env.HOME, GITHUB_OUTPUT: out, GITHUB_ACTIONS: 'true', RUNNER_TEMP: dir, ...inputs },
       });
