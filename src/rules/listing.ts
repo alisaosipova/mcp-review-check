@@ -370,10 +370,36 @@ export const LST_008 = defineRule(
 
 /** A package-manager configuration line that sets a registry, index, proxy or other package source. */
 const PACKAGE_SOURCE = /^\s*(\[\[?\s*(index|install\.scopes|install\.registry)[^\]]*\]\]?|(@[^\s:=]+:)?registry\s*[=:]|(https?-|no-)?proxy\s*[=:]|(extra-)?index(-url)?\s*[=:]|default-index\s*[=:]|find-links\s*[=:]|npmRegistryServer\s*:|npmScopes\s*:|httpsProxy\s*:|httpProxy\s*:)/im;
+/** A uv package-source key (the same keys uv.toml takes, at the top of [tool.uv] or [tool.uv.pip]). */
+const UV_SOURCE_KEY = /^\s*((extra-)?index(-url)?|default-index|find-links)\s*=/i;
+
+/** Whether a pyproject.toml sets a uv package source: an [[tool.uv.index]] table, or an index / index-url /
+ *  extra-index-url / default-index / find-links key in [tool.uv] or [tool.uv.pip], also as a dotted key. Other tools'
+ *  tables ([tool.pdm], [[tool.poetry.source]]) are not read. */
+export function pyprojectSetsUvSource(text: string): boolean {
+  let table = '';
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\s+/, '');
+    const h = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
+    if (h) {
+      table = h[1].replace(/\s*\.\s*/g, '.').replace(/["']/g, '').toLowerCase();
+      if (table === 'tool.uv.index') return true;
+      continue;
+    }
+    // The key as seen from [tool.uv]: a dotted key is resolved against the table it is in.
+    const full = `${table ? `${table}.` : ''}${line}`.replace(/^(tool\.uv)(\.pip)?\./i, '');
+    if (full === `${table ? `${table}.` : ''}${line}`) continue; // not inside tool.uv or tool.uv.pip
+    if (UV_SOURCE_KEY.test(full)) return true;
+  }
+  return false;
+}
+const setsPackageSource = (c: { path: string; text: string }) =>
+  (c.path.split('/').pop() === 'pyproject.toml' ? pyprojectSetsUvSource(c.text) : PACKAGE_SOURCE.test(c.text));
+
 export const LST_009 = defineRule(
   {
     id: 'LST-009', title: 'No package-manager source configuration next to a launcher', severity: { claude: 'error' }, needs: ['plugin-dir'],
-    rationale: 'In a plugin that uses a package launcher, the directory blocks a package-manager configuration file (.npmrc, bunfig.toml, uv.toml, ...) that sets a registry, index, proxy or other package source.',
+    rationale: 'In a plugin that uses a package launcher, the directory blocks a package-manager configuration file (.npmrc, bunfig.toml, uv.toml, the [tool.uv] tables of pyproject.toml, ...) that sets a registry, index, proxy or other package source.',
     fix: 'Remove the registry, index or proxy settings (or the file) from the plugin folder; publish the package to the public registry or bundle it.',
     sources: [C_PSC],
   },
@@ -381,7 +407,7 @@ export const LST_009 = defineRule(
     const p = plugin(snap);
     const launcher = pluginServers(p).some((s) => launcherOf(argvOf(s.cfg)));
     if (!launcher) return [];
-    return p.packageConfigs.filter((c) => PACKAGE_SOURCE.test(c.text)).map((c) => ({
+    return p.packageConfigs.filter(setsPackageSource).map((c) => ({
       path: c.path, message: `${c.path} sets a package source (registry, index or proxy) in a plugin that uses a package launcher`,
     }));
   },

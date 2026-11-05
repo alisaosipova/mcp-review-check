@@ -37,7 +37,7 @@ export interface PluginListing {
   readme?: ListingText;
   /** The LICENSE (or LICENCE, COPYING) file at the plugin root. */
   license?: string;
-  /** Package-manager configuration files anywhere in the folder (.npmrc, bunfig.toml, uv.toml, ...), with their text. */
+  /** Package-manager configuration files anywhere in the folder (.npmrc, bunfig.toml, uv.toml, a pyproject.toml with uv settings, ...), with their text. */
   packageConfigs: ListingText[];
   /** Every entry of the folder (links are listed, not followed; `.git` is skipped), up to LISTING_FILES_CAP. */
   files: ListingEntry[];

@@ -20,7 +20,9 @@ export const LISTING_FILES_CAP = 10_000;
 const MAX_DEPTH = 32;
 
 /** Package-manager configuration files that can set a registry, index or proxy (pre-submission checklist). */
-export const PACKAGE_CONFIG_FILES = new Set(['.npmrc', '.yarnrc', '.yarnrc.yml', 'bunfig.toml', 'uv.toml', 'pip.conf', 'pip.ini']);
+export const PACKAGE_CONFIG_FILES = new Set(['.npmrc', '.yarnrc', '.yarnrc.yml', 'bunfig.toml', 'uv.toml', 'pip.conf', 'pip.ini', 'pyproject.toml']);
+/** A pyproject.toml is a package-manager configuration only when it has uv settings ([tool.uv], tool.uv.* keys). */
+const isPackageConfig = (path: string, text: string) => basename(path) !== 'pyproject.toml' || /\buv\b/.test(text);
 
 const README = /^readme(\.[a-z0-9]+)?$/i;
 const LICENSE = /^(licen[cs]e|copying)([.-][a-z0-9.-]+)?$/i;
@@ -190,7 +192,8 @@ export function loadPluginDir(given: string): Listing {
     license: rootFiles.find((f) => LICENSE.test(f.path))?.path,
     packageConfigs: files
       .filter((f) => f.kind === 'file' && PACKAGE_CONFIG_FILES.has(basename(f.path)))
-      .flatMap((f) => readText(join(dir, f.path), f.path, 'plugin', errors, dir) ?? []),
+      .flatMap((f) => readText(join(dir, f.path), f.path, 'plugin', errors, dir) ?? [])
+      .filter((c) => isPackageConfig(c.path, c.text)),
     files,
     ...(truncated ? { filesTruncated: true } : {}),
   };
