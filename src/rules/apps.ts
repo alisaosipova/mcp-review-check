@@ -131,10 +131,11 @@ const SHARED_CLOUD_SUFFIXES = [
 /**
  * `*.<rest>` covers hosts anyone can register: rest is a public suffix (`com`, `co.uk`, `com.au`), a shared hosting
  * suffix (`vercel.app`) or a shared cloud host. registrableDomain keeps one label under each of these, so a probe
- * label that stays its own registrable domain means rest has no owner of its own.
+ * label that stays its own registrable domain means rest has no owner of its own. The port and path are ignored (A05-06).
  */
 function broadWildcard(rest: string): boolean {
-  const r = rest.toLowerCase().replace(/\.$/, '');
+  // The host part only: an explicit port or a path (`*.vercel.app:443`, `*.co.uk/x`) does not narrow who owns the hosts.
+  const r = rest.toLowerCase().split(/[:/?#]/)[0].replace(/\.$/, '');
   if (!r.includes('.') || SHARED_CLOUD_SUFFIXES.includes(r)) return true;
   const probe = `x.${r}`;
   return registrableDomain(probe) === probe;
