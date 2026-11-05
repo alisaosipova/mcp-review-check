@@ -3,7 +3,7 @@ import type { Snapshot } from '../snapshot.js';
 import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
-import { deref, walkSchema } from './util/schemaWalk.js';
+import { deref, enumValues, resolvedNode, walkSchema } from './util/schemaWalk.js';
 import { firstVerb, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
 import { TEXT_CAP, TOOL_LIST_MAX_BYTES, TOOL_LIST_MAX_COUNT } from '../limits.js';
 
@@ -239,27 +239,17 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 const HTTP_TOOL_NAME = /(api|http|rest|raw)_?(request|call|query)|^request$|^call_api$|^fetch_api$/i;
 
-function enumValues(node: Obj): unknown[] | undefined {
-  if (Array.isArray(node.enum)) return node.enum;
-  for (const k of ['oneOf', 'anyOf']) {
-    const list = node[k];
-    if (Array.isArray(list)) {
-      const consts = list.filter(isObj).flatMap((s) => (s.const !== undefined ? [s.const] : Array.isArray(s.enum) ? s.enum : []));
-      if (consts.length) return consts;
-    }
-  }
-  if (node.const !== undefined) return [node.const];
-  return undefined;
-}
+/** The values a mode or method switch lists, a free branch beside them aside (util/schemaWalk.ts). */
+const listedValues = (node: Obj) => enumValues(node, { open: true });
 
 function isFreeString(node: Obj): boolean {
   // A `$ref` that did not resolve locally has an unknown shape: not evidence of a free-form string.
-  return (node.type === 'string' || node.type === undefined) && typeof node.$ref !== 'string' && enumValues(node) === undefined && node.pattern === undefined && node.format === undefined;
+  return (node.type === 'string' || node.type === undefined) && typeof node.$ref !== 'string' && listedValues(node) === undefined && node.pattern === undefined && node.format === undefined;
 }
 
 /** Top-level input properties with each local `$ref` resolved, so an enum kept in `$defs` still counts. */
 function resolvedProperties(schema: unknown): Obj {
-  return Object.fromEntries(Object.entries(properties(schema)).map(([k, v]) => [k, deref(schema, v)]));
+  return Object.fromEntries(Object.entries(properties(schema)).map(([k, v]) => [k, isObj(v) ? resolvedNode(schema, v).node : v]));
 }
 
 export const TOOL_023 = defineRule(
@@ -275,12 +265,11 @@ export const TOOL_023 = defineRule(
     let methodPath = '';
     walkSchema(t.inputSchema, (v) => {
       if (methodProp || !v.viaProperty || !/^(method|http_?method|verb|request_?method)$/i.test(v.name)) return;
-      const target = deref(t.inputSchema, v.node);
-      methodProp = isObj(target) ? target : v.node;
+      methodProp = resolvedNode(t.inputSchema, v.node).node;
       methodPath = v.path;
     });
     if (methodProp) {
-      const vals = (enumValues(methodProp) ?? []).filter(isStr).map((s) => s.toUpperCase());
+      const vals = (listedValues(methodProp) ?? []).filter(isStr).map((s) => s.toUpperCase());
       if (vals.some((v) => SAFE_METHODS.includes(v)) && vals.some((v) => UNSAFE_METHODS.includes(v))) {
         return { path: methodPath, message: `method parameter allows both safe and unsafe HTTP methods (${vals.join(', ')})` };
       }
@@ -306,7 +295,7 @@ export const TOOL_024 = defineRule(
     walkSchema(t.inputSchema, (v) => {
       // `type` is left out: it usually names a data type (Redis "list", "set"), not an operation.
       if (!v.viaProperty || !/^(action|operation|op|mode|command)$/i.test(v.name)) return;
-      const vals = (enumValues(v.node) ?? []).filter(isStr);
+      const vals = (listedValues(v.node) ?? []).filter(isStr);
       const verbs = vals.map((x) => tokenize(x)[0]).filter((x): x is string => !!x && ALL_VERBS.has(x));
       if (!verbs.length) return; // entity-type enums are fine
       // A `mode` value is often a noun; there, verbs that double as common nouns do not count.
@@ -579,7 +568,7 @@ export const TOOL_034 = defineRule(
   {
     id: 'TOOL-034', title: 'Tool list budget', severity: { claude: 'info', chatgpt: 'info' }, needs: ['tools'],
     rationale: `Every tool definition is sent to the model as input tokens on each turn, and tool selection degrades with many tools: Anthropic notes it once a model has more than 30-50 tools, OpenAI suggests fewer than 20 functions. Linter-defined budget: ${TOOL_LIST_MAX_COUNT} tools or ${TOOL_LIST_MAX_BYTES / 1024} KiB of tools/list JSON.`,
-    fix: 'Consolidate related operations into fewer tools (for example one tool with an `action` parameter), shorten long descriptions and schemas, or hide rarely used tools behind a separate server or a search tool.',
+    fix: 'Merge tools that differ only by a filter or an entity type into one tool with an enum parameter, keeping reads and writes in separate tools (an `action` enum that mixes them is TOOL-024), shorten long descriptions and schemas, or hide rarely used tools behind a separate server or a search tool.',
     sources: ['https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool', CLAUDE_DEFINE_TOOLS, 'https://developers.openai.com/api/docs/guides/function-calling'],
   },
   (snap) => {

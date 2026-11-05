@@ -36,7 +36,8 @@ function safeDecode(seg: string): string {
   }
 }
 
-function resolvePointer(root: unknown, ref: string): unknown {
+/** The node a local `#/...` JSON pointer names in `root`, or undefined. `#` is the root. */
+export function resolvePointer(root: unknown, ref: string): unknown {
   if (!ref.startsWith('#')) return undefined;
   const parts = ref.slice(1).split('/').filter((p, i) => !(i === 0 && p === ''));
   let cur: unknown = root;
@@ -122,8 +123,11 @@ export function resolvedNode(root: unknown, node: Obj): { node: Obj; unresolved:
  * The closed value list of a node: `enum`, `const`, or an anyOf/oneOf whose every branch is a `const`/`enum` branch (a
  * `{type: 'null'}` branch, as in an optional enum, adds no free value). One free branch such as `{type: 'string'}`
  * opens the list, so the node has no closed value list.
+ *
+ * `open: true` returns the listed values even when a free branch sits beside them: the values a mode or method switch
+ * names ("GET" and "POST" next to `{type: 'string'}` still mix safe and unsafe methods, TOOL-023/024).
  */
-export function enumValues(node: Obj): unknown[] | undefined {
+export function enumValues(node: Obj, opts: { open?: boolean } = {}): unknown[] | undefined {
   if (Array.isArray(node.enum)) return node.enum;
   for (const k of ['oneOf', 'anyOf']) {
     const list = node[k];
@@ -136,7 +140,7 @@ export function enumValues(node: Obj): unknown[] | undefined {
         else if (isObj(s) && s.type === 'null' && Object.keys(s).every((x) => x === 'type' || x === 'title' || x === 'description')) continue;
         else closed = false;
       }
-      if (closed && consts.length) return consts;
+      if ((closed || opts.open) && consts.length) return consts;
     }
   }
   if (node.const !== undefined) return [node.const];
