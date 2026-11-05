@@ -87,3 +87,29 @@ describe('CHANGELOG: the 1.1.0 section', () => {
     expect(JSON.parse(read('package.json')).version).toBe('1.0.1');
   });
 });
+
+describe('docs/design/spec.md: the 1.1.0 paragraphs of the Q reports', () => {
+  const spec = read('docs/design/spec.md');
+  it.each([
+    ['§1.5 corpus scope and scanForm', /Regex scans run on `scanForm\(text\)` \(1\.1\.0\)/],
+    ['§1.5 extractOrigins', /`navigator\.sendBeacon\(`/],
+    ['§1.5 enumValues open', /With `\{open: true\}` \(1\.1\.0\)/],
+    ['§2.1 SRV-015 tasks extension', /`io\.modelcontextprotocol\/tasks` in `capabilities\.extensions`/],
+    ['§2.2 SPEC-013 integer ttlMs', /`ttlMs` is a number ≥ 0 but not an integer → warning/],
+    ['§2.3 TOOL-036', /\*\*TOOL-036 Every \$ref resolves inside the schema\.\*\* Severity: spec=warning/],
+    ['§2.4 INJ-001 variation selectors', /A run of two or more variation selectors/],
+    ['§2.4 INJ-002 fullwidth', /fullwidth Latin \(U\+FF21–FF5A\)/],
+    ['§2.7 APPS-006 port', /a port or path does not narrow it/],
+    ['§2.13 LST-008 forms', /`npm exec`\/`npm x`, `pnpx`, `bun x` and `uv tool run`/],
+    ['§2.13 LST-009 pyproject', /`pyproject\.toml` \(`\[\[tool\.uv\.index\]\]`/],
+    ['§2.13 SVG root element', /an SVG is recognised only by its root element/],
+    ['§3.1 --max-duration rules', /`RULES_GRACE_MS` \(1000 ms\)/],
+    ['§3.2 --fail-on-incomplete in buildReport', /since 1\.1\.0 `buildReport` applies it/],
+    ['§3.7 config precedence', /`OPPOSITES` in cli\.ts/],
+    ['§4.3 session end on a stop', /Session end on a stop \(1\.1\.0\)/],
+    ['§4.3 no timeout retry after a stall', /a timed-out HTTP wire probe \(the Origin probes and the domain challenge\) is not retried/],
+    ['§4.4 shrinkwrap', /the tarball carries `npm-shrinkwrap\.json`/],
+    ['§4.4 lazy startup', /`loadCheckModules`/],
+    ['§5.3 authProbe.active.clientId', /`authProbe\.active\.clientId` is the `client_id`/],
+  ])('%s', (_name, re) => { expect(spec).toMatch(re); });
+});

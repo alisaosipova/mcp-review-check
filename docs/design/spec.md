@@ -77,17 +77,19 @@ These live in `src/rules/util/*` and are used by many rules. Each is defined onc
   - `WRITE_VERBS` = create, add, insert, update, edit, modify, set, patch, put, post, publish, send, upload, write, save, submit, book, reserve, order, pay, purchase, transfer, enqueue, queue, schedule, start, run, trigger, execute, invite, share, move, rename, import, sync, reset, archive, cancel, revoke, delete, remove, drop, destroy, purge, wipe, overwrite, replace, disable, deactivate, unsubscribe, refund, close, terminate, erase, truncate, merge, approve, reject, assign.
   - `HARD_DESTRUCTIVE` = delete, remove, drop, destroy, purge, wipe, overwrite, erase, truncate.
   - `IRREVERSIBLE` = HARD_DESTRUCTIVE ∪ {replace, cancel, revoke, disable, deactivate, unsubscribe, send, pay, transfer, refund, close, terminate, reset}.
-- **`corpus(snap)`**: a list of `{text, where, tool?, path?}` entries. `where` is one of `tool.name`, `tool.title`, `tool.annotations.title`, `tool.description`, `param.description` (with a JSON pointer), `instructions`, `prompt.description`, `prompt.argument.description`, `resource.description`, or `resourceTemplate.description`. Hidden-character scans run on the raw text. Regex scans run on the NFKC-normalized text.
+- **`corpus(snap)`**: a list of `{text, where, tool?, path?}` entries. `where` is one of `tool.name`, `tool.title`, `tool.annotations.title`, `tool.description`, `param.description` (with a JSON pointer), `instructions`, `prompt.description`, `prompt.argument.description`, `resource.description`, or `resourceTemplate.description`. Since 1.1.0 also `param.title` (every schema node), `param.enum` (string `enum` values and a string `const`), `param.default` and `param.examples` (string leaves of `default`, `examples`, `example`, at most 200 per keyword) and `param.name` (property keys), with JSON pointers to the string. A scope selects them: `values` (enum/const, on by default), `samples` (default/examples) and `keys` (property names); INJ-001 reads all, INJ-003 and INJ-005 add samples, POL-003/004 read neither enum nor samples. Hidden-character scans run on the raw text. Regex scans run on `scanForm(text)` (1.1.0): NFKC, then format characters, controls other than tab/LF/VT/FF/CR/space (so U+FEFF too), CGJ, U+17B4/17B5 and variation selectors removed and Hangul fillers and U+2800 replaced by a space; a message whose match needed the fold names the folded code points. The corpus is built once per snapshot.Since 1.1.0 also `param.title` (every schema node), `param.enum` (string `enum` values and a string `const`), `param.default` and `param.examples` (string leaves of `default`, `examples`, `example`, at most 200 per keyword) and `param.name` (property keys), with JSON pointers to the string. A scope selects them: `values` (enum/const, on by default), `samples` (default/examples) and `keys` (property names); INJ-001 reads all, INJ-003 and INJ-005 add samples, POL-003/004 read neither enum nor samples. Hidden-character scans run on the raw text. Regex scans run on `scanForm(text)` (1.1.0): NFKC, then format characters, controls other than tab/LF/VT/FF/CR/space (so U+FEFF too), CGJ, U+17B4/17B5 and variation selectors removed and Hangul fillers and U+2800 replaced by a space; a message whose match needed the fold names the folded code points. The corpus is built once per snapshot.
 - **`walkSchema(schema, visit)`**: recursive walk through `properties`, `items`, `prefixItems`, `additionalProperties` (when it is an object), `anyOf/oneOf/allOf/not/if/then/else`, `$defs/definitions`, and local `$ref` targets (`#/...`). It yields `{path, name, node}` with cycle protection and a depth cap of 64. Property names are normalized to lowercase snake_case for name matching.
-- **`resolvedNode(root, node)` / `enumValues(node)`** (`util/schemaWalk.ts`, 1.0.1): a property's local `$ref` chain merged into one node, and its closed value list (`enum`, `const`, or an anyOf/oneOf whose every branch is a const/enum, an optional `{type:'null'}` branch aside). Rules that read a property's type, enum or format judge the resolved node too: TOOL-015, and the DATA-001/003/005 name skips, where the resolved node can only add a skip. Name splitting (`snakeCase`, `tokenize`) and the CSS `url()` scan are linear in the input.
+- **`resolvedNode(root, node)` / `enumValues(node)`** (`util/schemaWalk.ts`, 1.0.1): a property's local `$ref` chain merged into one node, and its closed value list (`enum`, `const`, or an anyOf/oneOf whose every branch is a const/enum, an optional `{type:'null'}` branch aside). Rules that read a property's type, enum or format judge the resolved node too: TOOL-015, and the DATA-001/003/005 name skips, where the resolved node can only add a skip. With `{open: true}` (1.1.0) the const/enum values of an anyOf/oneOf are returned even beside a free branch (TOOL-023/024); a resolved node drops its `$ref`, so the target's shape is judged. Name splitting (`snakeCase`, `tokenize`) and the CSS `url()` scan are linear in the input.
 - **`extractOrigins(html)`**: regex-based, no DOM dependency.
   - Returns `{kind: 'resource'|'connect'|'frame'|'base'|'navigate', origin, evidence, confidence: 'tag'|'js'}`.
   - `tag` confidence (the URL sits in a tag attribute):
     - `<script src>`, `<link href rel=stylesheet|preload|icon|modulepreload>`, `<img src/srcset>`, `<source src>`, `<video|audio src>`, `@import`, CSS `url()`, `@font-face src` → resource
     - `<iframe src>` → frame
+    - `<video poster>`, `<embed src>`, `<object data>` → resource (1.1.0)
     - `<base href>` → base
   - `js` confidence (literal https/wss URL as the first argument):
-    - `fetch(`, `new WebSocket(`, `new EventSource(`, `.open('GET', ...)`, `axios.*(` / `ky(` → connect
+    - `fetch(`, `new WebSocket(`, `new EventSource(`, `.open('<any method>', ...)`, `navigator.sendBeacon(`, `axios.*(` / `ky(` → connect
+    - `new Worker(`, `new SharedWorker(` → resource (1.1.0)
     - `openExternal(` and `ui/open-link` → navigate
   - `data:`, `blob:` and relative URLs are ignored.
 - **`originMatches(origin, entry)`**: exact match on scheme, host and port, plus `https://*.example.com` wildcard subdomains.
@@ -234,7 +236,7 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
 - Detect any of:
   - `capabilities.resources.subscribe === true`
   - `capabilities.experimental` is non-empty
-  - `capabilities.tasks` is present
+  - `capabilities.tasks` (2025-11-25), or an own key `io.modelcontextprotocol/tasks` in `capabilities.extensions` (2026-07-28, 1.1.0), in every capability object the server announced (initialize, and server/discover on a dual-era server)
   - the corpus mentions `sampling/createMessage` or "sampling"
 - Source: https://claude.com/docs/connectors/building
 
@@ -343,6 +345,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
 - Applies to results with `resultType: complete` from server/discover, tools/list, prompts/list, resources/list, resources/templates/list, and resources/read.
 - Detect:
   - `ttlMs` is not a finite number ≥ 0 → error.
+  - `ttlMs` is a number ≥ 0 but not an integer → warning (1.1.0; the caching page defines it as integer milliseconds, the MUST covers only ≥ 0).
   - `cacheScope` is not in {public, private} → error.
   - `cacheScope` differs between pages of the same list → error.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching
@@ -624,6 +627,12 @@ All TOOL rules need `tools`. The message names `tool.name`.
   - (c) a string `format` outside JSON Schema 2020-12 §7.3, the draft-03/04 legacy names and the OpenAPI format registry.
 - Source: https://json-schema.org/draft/2020-12/json-schema-validation, https://json-schema.org/draft/2020-12/json-schema-core, https://spec.openapis.org/registry/format/, https://modelcontextprotocol.io/specification/2026-07-28/basic#json-schema-usage
 
+**TOOL-036 Every $ref resolves inside the schema.** Severity: spec=warning. (1.1.0)
+- Detect, for `inputSchema` and `outputSchema`: a `$ref`, `$dynamicRef` or `$recursiveRef` whose `#/...` pointer names nothing, whose `#name` fragment names no `$anchor`/`$dynamicAnchor` (or draft-07 `$id: '#name'`), or that is relative while the root has no absolute `$id` and no embedded resource has that `$id`.
+- References inside an embedded resource (own `$id`) and data keywords (`enum`, `const`, `default`, `examples`, `example`, `x-`) are skipped at keyword positions; inside `properties`, `patternProperties`, `$defs`, `definitions` and `dependentSchemas` every key is a name and is walked. Absolute references to other documents are TOOL-019.
+- Warning, not error: detection is deterministic, but no source makes an unresolvable reference a MUST-level rejection.
+- Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#ref-resolution, https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
+
 ### 2.4 INJ: prompt injection and model manipulation
 Scope: the `corpus(snap)` from §1.5. Every INJ finding quotes the matched snippet (up to 120 characters, with hidden characters escaped as `\u{...}`) and its location.
 
@@ -632,10 +641,13 @@ Scope: the `corpus(snap)` from §1.5. Every INJ finding quotes the matched snipp
   - Unicode tag characters U+E0000–U+E007F, or bidi controls U+202A–U+202E and U+2066–U+2069 → error.
   - U+200B, U+200C, U+200E, U+200F, U+2060–U+2064, U+FEFF, U+00AD, or any other `\p{Cf}` → **warning**.
   - U+200D between two `\p{Extended_Pictographic}` characters (emoji ZWJ sequences) is exempt.
+  - A run of two or more variation selectors (U+FE00–FE0F, U+E0100–E01EF) → error (1.1.0).
+  - A single variation selector on a base it is not defined for, U+3164, U+FFA0, U+115F/U+1160 outside a conjoining-jamo syllable, U+2800 outside Braille text, U+034F, U+17B4, U+17B5 → **warning** (1.1.0).
+  - Property names, schema titles, enum/const, default and examples are scanned too (1.1.0).
 - Source: https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy, https://developers.openai.com/plugins/plugin-guidelines
 
 **INJ-002 Mixed-script words (homoglyphs).** Severity: claude=warning, chatgpt=warning.
-- Detect: a single word (`\p{L}+`) that contains Latin together with Cyrillic or Greek letters. Text written entirely in one non-Latin script is fine. Biomedical notation is exempt (1.0.1): Latin capitals followed by lowercase Greek letters (`/^[A-Z]+[α-ω][A-Zα-ω]*$/u`, linear; TNFα, NFκB).
+- Detect: a single word (`\p{L}+`) that contains Latin together with Cyrillic or Greek letters. Since 1.1.0 also Latin with Armenian or Cherokee, and ASCII letters with fullwidth Latin (U+FF21–FF5A) or Mathematical Alphanumeric Latin letters (U+1D400–1D6A5); invisible characters are removed before words are split. Text written entirely in one non-Latin script is fine. Biomedical notation is exempt (1.0.1): Latin capitals followed by lowercase Greek letters (`/^[A-Z]+[α-ω][A-Zα-ω]*$/u`, linear; TNFα, NFκB).
 - Source: same as INJ-001.
 
 **INJ-003 Markup hidden from humans, or pseudo-system tags.** Severity: claude=warning, chatgpt=warning.
@@ -794,6 +806,7 @@ UI tools are found through `uri = _meta.ui.resourceUri ?? _meta["ui/resourceUri"
 **APPS-006 CSP entries narrow and well-formed.** Severity: chatgpt=warning, spec=warning. Needs: ui.
 - Detect, for each entry:
   - it is `*`, `https:`, `http:` or `https://*`, or a wildcard on a public or shared suffix (`https://*.com`, `https://*.vercel.app`)
+    - a wildcard's host part decides breadth: a port or path does not narrow it (`https://*.vercel.app:443` is broad, 1.1.0)
   - it uses `http://` on a non-localhost host
   - it has a path, query, fragment or trailing slash
   - it contains `'unsafe-*'`
@@ -1169,8 +1182,8 @@ Platform `claude` for the plugin folder (`--plugin-dir`, LST-001..LST-015) and `
 | LST-005 | No LICENSE file and no `license` field | claude: error | C-PSC |
 | LST-006 | `.mcp.json` invalid or a server entry with neither `command` nor `url` | claude: error | C-PSC, https://code.claude.com/docs/en/mcp |
 | LST-007 | Remote server without `type` http, sse or ws, or a `url` that is not absolute `https://`/`wss://`, `${user_config.KEY}` or `""` | claude: error | C-PSC |
-| LST-008 | `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx`, `pipx run`, `uv run` without an exact version pin (`@latest` and ranges fail; `uv run` needs `--locked`/`--frozen`) | claude: error | C-PSC |
-| LST-009 | `.npmrc`, `bunfig.toml` or `uv.toml` that sets a registry, index or proxy next to a launcher | claude: error | C-PSC |
+| LST-008 | `npx`, `bunx`, `pnpm dlx`, `yarn dlx`, `uvx`, `pipx run`, `uv run` without an exact version pin (`@latest` and ranges fail; `uv run` needs `--locked`/`--frozen` among its options before the script or `--`). Since 1.1.0 also `npm exec`/`npm x`, `pnpx`, `bun x` and `uv tool run`, behind `env [K=V ...]` (also `-S`), `cmd /c` and `sh -c` wrappers | claude: error | C-PSC |
+| LST-009 | `.npmrc`, `bunfig.toml`, `uv.toml` or (1.1.0) a `pyproject.toml` (`[[tool.uv.index]]`, the index keys of `[tool.uv]`/`[tool.uv.pip]`) that sets a registry, index or proxy next to a launcher | claude: error | C-PSC |
 | LST-010 | `.mcpb`/`.dxt` bundle instead of `command`/`url` (error when fetched from a URL) | claude: warning / error | C-PSC, C-REF#mcpservers |
 | LST-011 | Credentials in headers or env: a known token format is an error; a literal under a credential name, or `${ENV}` read from the user's machine, a warning | claude: error / warning | C-PSC, C-REF#user-configuration |
 | LST-012 | `.DS_Store`, `Thumbs.db`, `desktop.ini`, `__MACOSX` | claude: error | C-PSC |
@@ -1190,6 +1203,8 @@ Platform `claude` for the plugin folder (`--plugin-dir`, LST-001..LST-015) and `
 | LST-026 | Package MCP server URL host differs from the checked server | chatgpt: warning | O-SUB |
 
 Not checked (deferred): image dimensions and size (MAN-019, MAN-024; needs image decoding), `mcpServers` paths other than `.mcp.json` and scripts that start launchers, repository-level checks (`.gitattributes` filters, archive size), translations.
+
+Image formats (1.1.0): an SVG is recognised only by its root element after the prologue; an `<svg` tag elsewhere (a comment, a text file) is not an SVG (A06-06; the 1.0.x compatibility branch is gone). LST-014 accepts only a PNG, JPEG, GIF, WebP or SVG path as the plugin icon, not a font file.
 
 ---
 
@@ -1211,7 +1226,7 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 | `--json-output <file>` | — | Also writes the JSON report (§5.3 json, with `baselined` marks under `--baseline`) to the file, whatever `--format`, from the same redacted report. A write failure is exit 2; the primary report is still emitted. Naming the `--output` file with a non-json `--format` is a usage error. New in 0.3.0. |
 | `--save-baseline <file>` | — | The same document under the baseline name (§3.5); may be given with `--json-output`. New in 0.3.0. |
 | `--timeout <ms>` | `30000` | Per request, at most 2^31−1−1000 ms (Node clamps larger timers to 1 ms). Connect uses `min(timeout, 15000)`, `--active` calls `min(timeout, 240000)`. 2026-07-28 JSON-RPC calls read the response body within the request's own timeout; probes cap the body at 256 KB and 10 s. The GET probe uses 5 s and the TLS check 10 s. |
-| `--max-duration <ms>` | no limit | Overall deadline for the whole check; a stop after the handshake keeps the partial results (§3.3) and exits 4 (§3.2). |
+| `--max-duration <ms>` | no limit | Overall deadline for the whole check; a stop after the handshake keeps the partial results (§3.3) and exits 4 (§3.2). Since 1.1.0 it also bounds the rules: the engine checks it between rules (`EngineOptions.deadline`), the rules not started by then are skipped with `stopped by --max-duration`, and `limits.stopped` gets `phase: "rules"`, `unfinished: ["rules"]` and in `completed` the phases the run went through. The rules get at least `RULES_GRACE_MS` (1000 ms) after they start; a running rule is not interrupted. |
 | `--fail-on error\|warning\|never` | `error` | Controls exit code 1. |
 | `--fail-on-incomplete` | off | Exit 3 on a partial check (`coverage.toolLevel` `auth-required`, `token-rejected` or `list-failed`), §3.2. |
 | `--baseline <file>` | — | A JSON report of an earlier run; its findings are known and only new findings count (§3.5). |
@@ -1244,7 +1259,7 @@ npx mcp-review-check --stdio "<command> [args...]" [options]
 
 Precedence: fatal (3) → stopped (4) → partial with `--fail-on-incomplete` (3) → gate or `--fail-on-drift` (1) → 0.
 
-With `--fail-on-incomplete` a partial check fails the report too (1.0.1): `summary.failed` is true and `gate.reason` names `partial check: <level> (--fail-on-incomplete)`; JUnit adds one `<error type="incomplete">` per suite, and the GitHub partial-check annotation is an `::error`. The Result line says the partial check once; when no finding reached the gate its head reads `FAIL (--fail-on-incomplete)`.
+With `--fail-on-incomplete` a partial check fails the report too (1.0.1; since 1.1.0 `buildReport` applies it, for every format): `summary.failed` is true and `gate.reason` names `partial check: <level> (--fail-on-incomplete)`; JUnit adds one `<error type="incomplete">` per suite, and the GitHub partial-check annotation is an `::error`. The Result line says the partial check once; when no finding reached the gate its head reads `FAIL (--fail-on-incomplete)`.
 
 A run that spent the snapshot byte budget (§4.2) is a partial check, not a `--max-duration` stop: `limits.stopped` is unset, so the exit code is never 4; with `--fail-on-incomplete` it is 3, and otherwise it follows `--fail-on` (the verdict reads INCOMPLETE, and `summary.failed` is true only when the gate is reached).
 
@@ -1319,6 +1334,7 @@ Since 1.0.1 the action splits `extra-args` on spaces, tabs, CR and LF (one optio
   - Each value becomes the string or list the flag would give and then goes through the flag's validation.
   - A flag on the command line overrides the key, and a list flag (`--ignore`, `--header`, `--env`) replaces the file's list instead of adding to it.
   - The file's server is used only when the command line names neither a `<url>` nor `--stdio`.
+  - (1.1.0) A switch on the command line replaces the key of that switch and of its opposite (`OPPOSITES` in cli.ts). Every boolean key has a command-line opposite (`--no-<switch>`, `--color` for `noColor`, `--local` and `--no-local` for each other). When the command line names the server, the file's keys of the other transport are not used (a `<url>`: `env`, `cwd`; `--stdio`: `header`, `bearer`, `activeAuth`), and `--bearer` replaces the file's `Authorization` header, each with one note on stderr. Two conflicting values from one source are a usage error.
   - parseArgs has no defaults for `target`, `format`, `timeout` and `fail-on`; the defaults are applied after the merge, so an option absent from the command line can be told from its default.
 - **Relative paths.** `output`, `jsonOutput`, `saveBaseline`, `baseline`, `toolArgs`, `cwd`, `pluginDir` and `openaiManifest` are resolved relative to the config file's directory, as tsconfig and eslint do. `sarifLocation` stays repository-relative.
 - **Validation.** Errors (exit 2) name the file and the key and never a value:
@@ -1490,10 +1506,12 @@ interface Limits {                                // snap.limits, also in the JS
 | challenge | GET `/.well-known/openai-apps-challenge` | SRV-016 |
 | close session | one best-effort DELETE with `Mcp-Session-Id` (no retries, at most 5 s) for a session a stateful server minted for a raw initialize (preflight, initialize-mode Origin probes, invalid token); the SDK connections end theirs the same way | none (kept out of rule evidence) |
 
+Session end on a stop (1.1.0): when a run is stopped (deadline, byte budget, signal), every Streamable HTTP session for which the server returned an `Mcp-Session-Id` is ended with one DELETE carrying that id, the negotiated `MCP-Protocol-Version` and the run's request headers, without following redirects, in parallel, within 1500 ms (`SESSION_END_TIMEOUT_MS`); the response is ignored and not recorded. A session receives at most one DELETE.
+
 That totals 20 to 40 requests per run with no writes: about 35 to a stateful 2025-11-25 server, about 25 to a stateless 2026-07-28 one. When the preflight gets a redirect to another path on the same host (no https→http downgrade), the get, badVersion, delete and Origin probes go to the redirect target, as the SDK client does; SRV-006 still reports the redirect. The get probe reuses the SDK session's own standalone GET when the client already opened one, because servers that allow one SSE stream per session answer a second GET with 409. Legacy probes reuse the SDK session id via `transport.sessionId` and `transport.protocolVersion`, which are instance getters and not part of the Transport interface type.
 
 Transport notes (1.0.1):
-- **Stalled server.** When tools/list gets no answer within --timeout after a successful initialize (or server/discover), later listings and all wire probes wait at most 2000 ms (`STALLED_TIMEOUT_MS`, never more than --timeout), and the CLI says so on stderr at once. A listing without an answer in that wait is not recorded, so the rules that need it are skipped, and `coverage.reason` names those methods; an HTTP wire probe the short wait cut off is left out of the snapshot. UI resource reads keep the full wait.
+- **Stalled server.** When tools/list gets no answer within --timeout after a successful initialize (or server/discover), later listings and all wire probes wait at most 2000 ms (`STALLED_TIMEOUT_MS`, never more than --timeout), and the CLI says so on stderr at once. A listing without an answer in that wait is not recorded, so the rules that need it are skipped, and `coverage.reason` names those methods; an HTTP wire probe the short wait cut off is left out of the snapshot. UI resource reads keep the full wait. After a stall, a timed-out HTTP wire probe (the Origin probes and the domain challenge) is not retried (1.1.0); other transient failures still are. connect.ts passes the stall to `runWireProbes` (`stalled`), and both decide it with `listingTimedOut` in `probe/wire.ts`.
 - **Proxy.** The proxy variables are HTTPS_PROXY, HTTP_PROXY and ALL_PROXY, in either case (`PROXY_URL_VARS` in `src/proxy.ts`); routing and redaction read the same list. NO_PROXY follows undici's EnvHttpProxyAgent: comma or whitespace separated entries, `*` only as the whole value, `.example.com` and `*.example.com` match the domain and its subdomains, `host:port` limits the entry to that port, IPv6 in brackets.
 - **Diagnosis.** A 5xx handshake answer is kind `http`: 502/503/504 name the proxy (when one is used) or the gateway, with a plain-text body kept in one redacted line of at most 200 characters. Only 404/405/410, or an HTML page below 500, is `not-mcp`. A TLS error with a proxy in use names the proxy and NODE_EXTRA_CA_CERTS. When a stdio server exits before it answers initialize, the connect error names its exit code or signal.
 
@@ -1503,6 +1521,8 @@ The plan targeted Node 18; the implementation requires **Node 22.12 or newer** (
 - Dev dependencies: vitest 4, `@types/node` 22 (it tracks the oldest supported Node; Dependabot ignores its semver-major updates), TypeScript `~5.9`.
 - `lib: ["ES2022"]` without DOM: `@types/node` types `fetch`, `Response`, `Headers` and `AbortSignal.timeout`, and the DOM globals (`name`, `status`, `close`, …) would hide typos in Node code.
 - Releases are published to npm only from CI (`.github/workflows/release.yml`, see CONTRIBUTING.md); the "no publishing in this phase" note below is historical.
+- Packaging (1.1.0): the tarball carries `npm-shrinkwrap.json`, generated by `prepack` from `package-lock.json` (production packages only) and removed by `postpack`; it is never committed.
+- CLI startup (1.1.0): cli.ts loads the transport, rules and renderers on the first check (`loadCheckModules`); the proxy is installed then, before the first connect, and `proxy.ts` loads undici only inside `installProxy`.
 
 The original Node 18 plan:
 - **Runtime dependencies:**
@@ -1603,7 +1623,7 @@ mcp-review-check is independent and not affiliated with Anthropic or OpenAI.
     skipped: [{ruleId, reason}], ignored: [...], manual: [{id, platforms, text, docs}],
     disclaimer, contact: {text, url} | null }
   ```
-  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3). `--json-output` and `--save-baseline` (0.3.0) write this document besides any `--format`. From 0.4.0 `toolFingerprints` is always present (§3.5), `baseline` only with `--baseline`, and `$schema` is the second key.
+  Findings are not collapsed. `baselined` and `summary.baselined` are present only with `--baseline` (§3.5); `limits.stopped.completed` and `limits.stopped.unfinished` only on a run stopped by `--max-duration` (§3.3). `authProbe` (1.1.0) is present only when `--active-auth` ran its probes: `authProbe.active.clientId` is the `client_id` from the dynamic client registration answer, or `null`; client secrets and registration access tokens are never in the report. `--json-output` and `--save-baseline` (0.3.0) write this document besides any `--format`. From 0.4.0 `toolFingerprints` is always present (§3.5), `baseline` only with `--baseline`, and `$schema` is the second key.
   **Report schema.** `schema/report.schema.json` (JSON Schema draft 2020-12, shipped in the npm package through `files`) describes `schemaVersion` 1. Its `$id` is the raw GitHub URL of the file at the tag of the release (`JSON_SCHEMA_URL` in `src/report/json.ts`, built from the package version; the release step updates `$id` with the version and a test checks that they agree), and the report repeats it in `$schema`; the URL answers 404 until that tag is pushed. Objects are closed (`additionalProperties: false`; the server's own `serverInfo` stays open), and a test validates the fixture reports with ajv (already a runtime dependency, `ajv/dist/2020.js`), so it fails when the report gains a field the schema lacks. `server` is exactly one of `url`, `command` (with `argv`) or `listingOnly`; `limits.budgetExhausted` records a snapshot budget stop. JSON and SARIF reports with more than 10 000 findings (also with `--baseline`) are printed without indentation; a report too large for one string ends the run with `error: the <format> report … is too large` (exit 3, no stack). No stdout or stderr line built from server text may start a workflow command: `visibleText`, a leading `::` and the legacy `##[` anywhere are neutralised (`ciSafeLine`); JSON and SARIF write `##[` as `#\u0023[` and JUnit as `#&#35;[`, the same value to a parser. `summary.gate.notGated` is null when the run could not connect.
 - **markdown:** an H1 with the server name, a summary table, then one H2 per severity with a table (`Rule | Platforms | Subject | Message | Fix | Docs`), then, with `--baseline`, `## Changed tool definitions (N since baseline)` (a Tool | Change table, or a `>` note when not compared), then a manual checklist as `- [ ]` items, then the CTA (when due) and the disclaimer. Pipes inside cells are escaped.
 - **sarif:** SARIF 2.1.0.
