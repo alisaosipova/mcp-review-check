@@ -390,25 +390,76 @@ export const LST_008 = defineRule(
 /** A package-manager configuration line that sets a registry, index, proxy or other package source. */
 const PACKAGE_SOURCE = /^\s*(\[\[?\s*(index|install\.scopes|install\.registry)[^\]]*\]\]?|(@[^\s:=]+:)?registry\s*[=:]|(https?-|no-)?proxy\s*[=:]|(extra-)?index(-url)?\s*[=:]|default-index\s*[=:]|find-links\s*[=:]|npmRegistryServer\s*:|npmScopes\s*:|httpsProxy\s*:|httpProxy\s*:)/im;
 /** A uv package-source key (the same keys uv.toml takes, at the top of [tool.uv] or [tool.uv.pip]). */
-const UV_SOURCE_KEY = /^\s*((extra-)?index(-url)?|default-index|find-links)\s*=/i;
+const UV_SOURCE_KEY = /^((extra-)?index(-url)?|default-index|find-links)$/i;
 
-/** Whether a pyproject.toml sets a uv package source: an [[tool.uv.index]] table, or an index / index-url /
- *  extra-index-url / default-index / find-links key in [tool.uv] or [tool.uv.pip], also as a dotted key. Other tools'
- *  tables ([tool.pdm], [[tool.poetry.source]]) are not read. */
-export function pyprojectSetsUvSource(text: string): boolean {
-  let table = '';
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/^\s+/, '');
-    const h = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
-    if (h) {
-      table = h[1].replace(/\s*\.\s*/g, '.').replace(/["']/g, '').toLowerCase();
-      if (table === 'tool.uv.index') return true;
+/** A TOML key as its dotted parts: whitespace around the dots and the quotes of quoted parts removed. */
+const tomlKeyParts = (key: string) =>
+  (key.match(/"(?:[^"\\]|\\.)*"|'[^']*'|[^.]+/g) ?? []).map((p) => p.trim().replace(/^(["'])(.*)\1$/, '$2').toLowerCase()).filter(Boolean);
+
+/** The index of the first `ch` in s outside strings and outside nested [] / {}, or -1. */
+function topLevelIndex(s: string, ch: string, from = 0): number {
+  let depth = 0;
+  for (let i = from; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"' || c === "'") {
+      for (i++; i < s.length && s[i] !== c; i++) if (c === '"' && s[i] === '\\') i++;
       continue;
     }
-    // The key as seen from [tool.uv]: a dotted key is resolved against the table it is in.
-    const full = `${table ? `${table}.` : ''}${line}`.replace(/^(tool\.uv)(\.pip)?\./i, '');
-    if (full === `${table ? `${table}.` : ''}${line}`) continue; // not inside tool.uv or tool.uv.pip
-    if (UV_SOURCE_KEY.test(full)) return true;
+    if (depth === 0 && c === ch) return i;
+    if (c === '[' || c === '{') depth++;
+    else if (c === ']' || c === '}') depth--;
+    if (depth < 0) return -1;
+  }
+  return -1;
+}
+
+/** The key = value entries of an inline table `{ ... }`, one level deep (the values are left as text). */
+function inlineEntries(value: string): Array<[string[], string]> {
+  const body = value.trim();
+  if (!body.startsWith('{')) return [];
+  const close = topLevelIndex(body, '}', 1);
+  const inner = body.slice(1, close < 0 ? body.length : close);
+  const out: Array<[string[], string]> = [];
+  for (let at = 0; at <= inner.length;) {
+    const comma = topLevelIndex(inner, ',', at);
+    const entry = inner.slice(at, comma < 0 ? inner.length : comma);
+    const eq = topLevelIndex(entry, '=');
+    if (eq > 0) out.push([tomlKeyParts(entry.slice(0, eq)), entry.slice(eq + 1)]);
+    if (comma < 0) break;
+    at = comma + 1;
+  }
+  return out;
+}
+
+/** Whether the key at `path` (its parts from the document root) with this value sets a uv package source. */
+function uvSourceAt(path: string[], value: string): boolean {
+  if (path[0] !== 'tool' || (path.length > 1 && path[1] !== 'uv')) return false;
+  const rel = path.slice(2);
+  if (rel.length === 1 && UV_SOURCE_KEY.test(rel[0])) return true;
+  if (rel.length === 2 && rel[0] === 'pip' && UV_SOURCE_KEY.test(rel[1])) return true;
+  // tool, tool.uv and tool.uv.pip may be written as inline tables: read their keys.
+  const container = rel.length === 0 || (rel.length === 1 && rel[0] === 'pip');
+  return container && inlineEntries(value).some(([k, v]) => uvSourceAt([...path, ...k], v));
+}
+
+/** Whether a pyproject.toml sets a uv package source: an [[tool.uv.index]] table, or an index / index-url /
+ *  extra-index-url / default-index / find-links key in [tool.uv] or [tool.uv.pip], also as a dotted or quoted key or
+ *  in an inline table (`uv = { index-url = ... }`). Other tools' tables ([tool.pdm], [[tool.poetry.source]]) are not
+ *  read. */
+export function pyprojectSetsUvSource(text: string): boolean {
+  let table: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\s+/, '');
+    if (!line || line.startsWith('#')) continue;
+    const h = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
+    if (h) {
+      table = tomlKeyParts(h[1]);
+      if (table.join('.') === 'tool.uv.index') return true;
+      continue;
+    }
+    // A dotted key is resolved against the table it is in.
+    const eq = topLevelIndex(line, '=');
+    if (eq > 0 && uvSourceAt([...table, ...tomlKeyParts(line.slice(0, eq))], line.slice(eq + 1))) return true;
   }
   return false;
 }
