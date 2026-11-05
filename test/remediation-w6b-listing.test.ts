@@ -198,7 +198,7 @@ describe('W6B loader limits and errors', () => {
 
 describe('W6B helpers', () => {
   it('launcherOf finds the package and whether it is pinned', () => {
-    expect(launcherOf(['npx', '-y', '@acme/notes-mcp@1.4.2'])).toEqual({ launcher: 'npx', spec: '@acme/notes-mcp@1.4.2', pinned: true });
+    expect(launcherOf(['npx', '-y', '@acme/notes-mcp@1.4.2'])).toEqual({ launcher: 'npx', kind: 'npx', spec: '@acme/notes-mcp@1.4.2', pinned: true });
     expect(launcherOf(['npx', '-y', '@acme/notes-mcp'])?.pinned).toBe(false);
     expect(launcherOf(['npx', '-y', 'notes-mcp@^1.4.0'])?.pinned).toBe(false);
     expect(launcherOf(['npx', '--package=notes-mcp@1.0.0', 'notes'])?.pinned).toBe(true);
@@ -208,7 +208,7 @@ describe('W6B helpers', () => {
     expect(launcherOf(['uvx', '-p', '3.12', 'acme-notes@1.2.3'])?.pinned).toBe(true);
     expect(launcherOf(['uvx', 'acme-notes>=1.2'])?.pinned).toBe(false);
     expect(launcherOf(['pipx', 'run', '--spec', 'acme-notes==1.0.0', 'acme'])?.pinned).toBe(true);
-    expect(launcherOf(['uv', 'run', 'server.py'])).toEqual({ launcher: 'uv run', pinned: false });
+    expect(launcherOf(['uv', 'run', 'server.py'])).toEqual({ launcher: 'uv run', kind: 'uv run', pinned: false });
     expect(launcherOf(['uv', 'run', '--frozen', 'server.py'])?.pinned).toBe(true);
     expect(launcherOf(['node', '${CLAUDE_PLUGIN_ROOT}/server.js'])).toBeUndefined();
     expect(launcherOf(['npx', '${CLAUDE_PLUGIN_ROOT}/server.js'])).toBeUndefined();

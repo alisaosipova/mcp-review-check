@@ -73,21 +73,100 @@ const VALUE_FLAGS = new Set([
 ]);
 const launcherBase = (s: string) => s.split(/[\\/]/).pop()!.toLowerCase().replace(/\.(cmd|exe|ps1)$/, '');
 
-export interface Launcher { launcher: string; spec?: string; pinned: boolean }
+export interface Launcher {
+  /** The launcher as written (npx, npm exec, bun x, uv tool run, ...). */
+  launcher: string;
+  /** The launcher it is the same as: npx, bunx, pnpm dlx, yarn dlx, uvx, pipx run or uv run. */
+  kind: string;
+  spec?: string;
+  pinned: boolean;
+}
 
-/** A package launcher in argv (npx, bunx, pnpm dlx, yarn dlx, uvx, pipx run, uv run) and whether it pins its package. */
-export function launcherOf(argv: string[]): Launcher | undefined {
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ash', 'ksh']);
+/** env options that take a separate value. */
+const ENV_VALUE_FLAGS = new Set(['-u', '--unset', '-C', '--chdir']);
+/** uv run options that take a separate value (the value is not the script). */
+const UV_RUN_VALUE_FLAGS = new Set([
+  '--with', '--with-editable', '--with-requirements', '--python', '-p', '--project', '--directory', '--package',
+  '--env-file', '--extra', '--group', '--only-group', '--no-group', '--index', '--default-index', '--index-url',
+  '--extra-index-url', '--find-links', '-f', '--cache-dir', '--config-file', '--color', '--index-strategy',
+  '--keyring-provider', '--resolution', '--prerelease', '--exclude-newer', '--link-mode', '--refresh-package',
+  '--reinstall-package', '--upgrade-package', '-P', '--no-binary-package', '--no-build-package', '--python-platform',
+]);
+/** A shell or cmd command string as words (quotes around a word removed; a leading `exec` dropped). */
+const words = (cmd: string) => {
+  const w = cmd.trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^(["'])(.*)\1$/, '$2').replace(/^["']|["']$/g, ''));
+  return w[0] === 'exec' ? w.slice(1) : w;
+};
+
+/** argv without the wrappers in front of the launcher: `env [K=V ...]`, `cmd /c`, `cmd.exe /c` and `sh -c` / `bash -c`
+ *  (the one command string is split into words). At most four wrappers are removed. */
+export function unwrapArgv(argv: string[]): string[] {
+  let a = argv;
+  for (let n = 0; n < 4 && a.length; n++) {
+    const b0 = launcherBase(a[0]);
+    if (b0 === 'env') {
+      let i = 1;
+      for (; i < a.length; i++) {
+        const w = a[i];
+        if (w === '-S' || w === '--split-string') { a = [...words(a[i + 1] ?? ''), ...a.slice(i + 2)]; i = -1; break; }
+        if (w.startsWith('-S') && w.length > 2) { a = [...words(w.slice(2)), ...a.slice(i + 1)]; i = -1; break; }
+        if (w === '--') { i++; break; }
+        if (w.startsWith('-')) { if (ENV_VALUE_FLAGS.has(w)) i++; continue; }
+        if (/^[A-Za-z_][\w]*=/.test(w)) continue;
+        break;
+      }
+      if (i >= 0) a = a.slice(i);
+      continue;
+    }
+    if (b0 === 'cmd') {
+      const c = a.findIndex((w, i) => i > 0 && /^\/[ck]$/i.test(w));
+      if (c < 0 || a.slice(1, c).some((w) => !w.startsWith('/'))) return a;
+      const rest = a.slice(c + 1);
+      a = rest.length === 1 ? words(rest[0]) : rest;
+      continue;
+    }
+    if (SHELLS.has(b0)) {
+      // sh -c 'cmd', sh -lc 'cmd', bash -l -c 'cmd': the options before the command string are single-dash letters.
+      let i = 1;
+      while (i < a.length && /^-[a-z]+$/i.test(a[i]) && !a[i].includes('c')) i++;
+      if (!/^-[a-z]*c[a-z]*$/i.test(a[i] ?? '')) return a;
+      a = words(a[i + 1] ?? '');
+      continue;
+    }
+    return a;
+  }
+  return a;
+}
+
+/** A package launcher in argv (npx, npm exec / npm x, pnpx, bunx, bun x, pnpm dlx, yarn dlx, uvx, uv tool run,
+ *  pipx run, uv run), also behind env, cmd /c or sh -c, and whether it pins its package. */
+export function launcherOf(given: string[]): Launcher | undefined {
+  const argv = unwrapArgv(given);
   const b0 = launcherBase(argv[0] ?? '');
   let launcher: string | undefined;
+  let kind = '';
   let rest: string[] = [];
-  if (['npx', 'bunx', 'uvx'].includes(b0)) { launcher = b0; rest = argv.slice(1); }
-  else if ((b0 === 'pnpm' || b0 === 'yarn') && argv[1] === 'dlx') { launcher = `${b0} dlx`; rest = argv.slice(2); }
-  else if (b0 === 'pipx' && argv[1] === 'run') { launcher = 'pipx run'; rest = argv.slice(2); }
+  if (['npx', 'bunx', 'uvx'].includes(b0)) { launcher = kind = b0; rest = argv.slice(1); }
+  else if (b0 === 'pnpx') { launcher = 'pnpx'; kind = 'pnpm dlx'; rest = argv.slice(1); }
+  else if (b0 === 'npm' && (argv[1] === 'exec' || argv[1] === 'x')) { launcher = `npm ${argv[1]}`; kind = 'npx'; rest = argv.slice(2); }
+  else if (b0 === 'bun' && argv[1] === 'x') { launcher = 'bun x'; kind = 'bunx'; rest = argv.slice(2); }
+  else if (b0 === 'uv' && argv[1] === 'tool' && argv[2] === 'run') { launcher = 'uv tool run'; kind = 'uvx'; rest = argv.slice(3); }
+  else if ((b0 === 'pnpm' || b0 === 'yarn') && argv[1] === 'dlx') { launcher = kind = `${b0} dlx`; rest = argv.slice(2); }
+  else if (b0 === 'pipx' && argv[1] === 'run') { launcher = kind = 'pipx run'; rest = argv.slice(2); }
   else if (b0 === 'uv' && argv[1] === 'run') {
-    return { launcher: 'uv run', pinned: argv.includes('--locked') || argv.includes('--frozen') };
+    // --locked / --frozen count only among uv's own options: after the script (or `--`) they belong to the server.
+    let pinned = false;
+    for (let i = 2; i < argv.length; i++) {
+      const a = argv[i];
+      if (a === '--' || !a.startsWith('-')) break;
+      if (a === '--locked' || a === '--frozen') pinned = true;
+      else if (UV_RUN_VALUE_FLAGS.has(a)) i++;
+    }
+    return { launcher: 'uv run', kind: 'uv run', pinned };
   }
   if (!launcher) return undefined;
-  const python = launcher === 'uvx' || launcher === 'pipx run';
+  const python = kind === 'uvx' || kind === 'pipx run';
   // An explicit package option names the package; otherwise the first positional argument does.
   let spec: string | undefined;
   for (let i = 0; i < rest.length; i++) {
@@ -101,7 +180,7 @@ export function launcherOf(argv: string[]): Launcher | undefined {
   if (!spec) return undefined;
   // A file in the plugin, a path or a variable is not a registry package.
   if (/^(\.{0,2}[\\/]|\$\{|[A-Za-z]:[\\/]|file:|https?:|git\+)/.test(spec)) return undefined;
-  return { launcher, spec, pinned: python ? PY_EXACT.test(spec) : NPM_EXACT.test(spec) };
+  return { launcher, kind, spec, pinned: python ? PY_EXACT.test(spec) : NPM_EXACT.test(spec) };
 }
 
 const REF = /\$\{([^}]*)\}/g;
@@ -277,7 +356,7 @@ export const LST_007 = defineRule(
 export const LST_008 = defineRule(
   {
     id: 'LST-008', title: 'Package launchers pin an exact version', severity: { claude: 'error' }, needs: ['plugin-dir'],
-    rationale: 'The directory blocks a plugin whose MCP server runs a package through a launcher (npx, bunx, pnpm dlx, yarn dlx, uvx, pipx run) without an exact version, or uv run without --locked or --frozen.',
+    rationale: 'The directory blocks a plugin whose MCP server runs a package through a launcher (npx, bunx, pnpm dlx, yarn dlx, uvx, pipx run, and the same launchers written npm exec, npm x, pnpx, bun x or uv tool run, also behind env, cmd /c or sh -c) without an exact version, or uv run without --locked or --frozen before the script.',
     fix: 'Pin the package exactly: npx <package>@1.2.3, uvx <package>==1.2.3; run uv run with --locked or --frozen. Or bundle the server in the plugin.',
     sources: [C_PSC],
   },
@@ -285,13 +364,12 @@ export const LST_008 = defineRule(
     const l = launcherOf(argvOf(s.cfg));
     if (!l || l.pinned) return [];
     if (l.launcher === 'uv run') return [{ path: s.where, message: `${subject(s)} runs uv run without --locked or --frozen` }];
-    return [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.launcher === 'npx' || l.launcher === 'uvx' ? ` (blocks: Unpinned ${l.launcher} launcher)` : ''}` }];
+    return [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.kind === 'npx' || l.kind === 'uvx' ? ` (blocks: Unpinned ${l.kind} launcher)` : ''}` }];
   }),
 );
 
 /** A package-manager configuration line that sets a registry, index, proxy or other package source. */
 const PACKAGE_SOURCE = /^\s*(\[\[?\s*(index|install\.scopes|install\.registry)[^\]]*\]\]?|(@[^\s:=]+:)?registry\s*[=:]|(https?-|no-)?proxy\s*[=:]|(extra-)?index(-url)?\s*[=:]|default-index\s*[=:]|find-links\s*[=:]|npmRegistryServer\s*:|npmScopes\s*:|httpsProxy\s*:|httpProxy\s*:)/im;
-
 export const LST_009 = defineRule(
   {
     id: 'LST-009', title: 'No package-manager source configuration next to a launcher', severity: { claude: 'error' }, needs: ['plugin-dir'],
