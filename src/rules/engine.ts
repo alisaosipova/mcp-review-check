@@ -146,10 +146,17 @@ export interface EngineResult {
   rulesRun: number;
   /** Findings (not ignored) over every platform whatever --target: the score basis, one number per server. */
   scored?: Finding[];
+  /** Set when `deadline` passed during the rules (A09-04): the first rule not run and how many were not run. */
+  stopped?: { atRule: string; rulesNotRun: number };
 }
 
 export interface EngineOptions {
   ignore?: string[];
+  /** --max-duration (A09-04): a time on the `now` clock; the rules not started by then are skipped with STOPPED_REASON.
+   *  Checked between rules, so a rule that is running when it passes runs to its end. */
+  deadline?: number;
+  /** The clock of `deadline` (default performance.now, the clock the CLI starts the run on). */
+  now?: () => number;
 }
 
 /** The finding a rule that throws becomes, with the text SARIF gives its rule entry. */
@@ -184,12 +191,21 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
   const skipped: EngineResult['skipped'] = [];
   let rulesRun = 0;
   const unfinished = unfinishedPhases(snap);
+  const now = opts.now ?? (() => performance.now());
+  let stopped: EngineResult['stopped'];
 
   for (const rule of rules) {
     const rulePlatforms = Object.keys(rule.severity) as Platform[];
     // A rule outside --target still runs for the score, but is reported as skipped and lists no findings.
     const applies = rulePlatforms.some((p) => active.includes(p));
     if (!applies) skipped.push({ ruleId: rule.id, reason: `not applicable to --target ${snap.options.target}` });
+    // --max-duration ran out during the rules (A09-04): this rule and every later one did not run.
+    if (!stopped && opts.deadline !== undefined && now() >= opts.deadline) stopped = { atRule: rule.id, rulesNotRun: 0 };
+    if (stopped) {
+      stopped.rulesNotRun++;
+      if (applies) skipped.push({ ruleId: rule.id, reason: STOPPED_REASON });
+      continue;
+    }
     let reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);
     // A rule without a listing need reads the server: nothing to judge in a listing-only run.
     if (!reason && snap.target.kind === 'listing' && !rule.needs.some((n) => n === 'plugin-dir' || n === 'openai-manifest')) reason = LISTING_ONLY_REASON;
@@ -240,5 +256,5 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       (ignore.has(rule.id) ? ignored : findings).push({ ...finding, platforms: mine, severityByPlatform: own, severity: maxSeverity(Object.values(own)) ?? 'info' });
     }
   }
-  return { findings: sortFindings(findings), ignored, skipped, rulesRun, scored };
+  return { findings: sortFindings(findings), ignored, skipped, rulesRun, scored, ...(stopped ? { stopped } : {}) };
 }

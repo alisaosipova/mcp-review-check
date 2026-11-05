@@ -25,7 +25,7 @@ import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js
 import { displayUrl, isKnownToken, REDACTED_MARK } from './rules/util/net.js';
 import { isSafeToCall } from './probe/active.js';
 import { dcrClientNotice } from './probe/auth.js';
-import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
+import { emptySnapshot, PHASES, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
@@ -53,7 +53,8 @@ Options:
   --save-baseline <file>  The same, under the baseline name: write it now, pass it to --baseline on later runs.
   --sarif-location <path> Repository-relative path the SARIF results point at (default: .mcp-review-check).
   --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
-  --max-duration <ms>     Stop the whole check after this long and report what ran, exit 4 (default: no limit).
+  --max-duration <ms>     Stop the whole check after this long and report what ran, exit 4 (default: no limit). Also
+                          bounds the rules: those not started by then are skipped (they get at least 1 s).
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
   --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed), so a
@@ -181,6 +182,25 @@ function usageMessage(e: Error & { code?: string }): string {
     return /does not take an argument/.test(e.message) ? `${option} takes no value` : `${option} needs a value`;
   }
   return e.message.split('\n')[0];
+}
+
+/** The least time the rules get under --max-duration, also when the deadline passed before they started (A09-04). */
+export const RULES_GRACE_MS = 1000;
+
+/** The phase name of a --max-duration stop during rule evaluation (limits.stopped.phase, the Result line). */
+export const RULES_PHASE = 'rules';
+
+/**
+ * A --max-duration stop during the rules (A09-04), on a snapshot the deadline had not stopped already: limits.stopped
+ * names the "rules" phase, so the run is INCOMPLETE and exits 4, as for a stop during the connect phases. A snapshot
+ * stopped before keeps its stop (the phase the deadline cut short); its rules not run are skipped all the same.
+ */
+export function markRulesStopped(snap: Snapshot, maxDurationMs: number): void {
+  if (snap.limits?.stopped) return;
+  // Every phase the run needed had finished; a listing-only run has none.
+  const completed = snap.target.kind === 'listing' ? [] : [...PHASES];
+  snap.limits = { ...snap.limits, truncated: [...(snap.limits?.truncated ?? [])], stopped: { maxDurationMs, phase: RULES_PHASE, completed, unfinished: [RULES_PHASE] } };
+  if (snap.coverage.toolLevel === 'ok') snap.coverage = { toolLevel: 'stopped', reason: `stopped by --max-duration (${maxDurationMs} ms) during ${RULES_PHASE}` };
 }
 
 /** Largest --timeout: 2^31-1 ms (the setTimeout limit) minus the 1000 ms margin used in withTimeout. */
@@ -602,7 +622,12 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       attachListing(snap, listing);
       for (const e of listing.errors) stderr += `warning: ${e.source === 'plugin' ? '--plugin-dir' : '--openai-manifest'} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}\n`;
     }
-    const result = runRules(snap, RULES, { ignore });
+    // --max-duration bounds the rules too (A09-04): the ones not started by the deadline are skipped and the run is
+    // stopped during "rules" (exit 4). They get at least RULES_GRACE_MS, so a run whose connect phases used up the time
+    // (or whose deadline fell while connections closed) still reports what it observed.
+    const deadline = maxDurationMs === undefined ? undefined : Math.max(t0 + maxDurationMs, performance.now() + RULES_GRACE_MS);
+    const result = runRules(snap, RULES, { ignore, deadline });
+    if (result.stopped && maxDurationMs !== undefined) markRulesStopped(snap, maxDurationMs);
     // --baseline: the known findings leave the report (the gate, the verdicts and the counts see only new ones) and are
     // added back by each format. They are compared redacted, as the baseline report was written; the score keeps every finding.
     let gated = result;
