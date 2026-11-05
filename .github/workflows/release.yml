@@ -5,6 +5,7 @@ name: Release
 # repository, workflow file "release.yml" and environment "npm" (0.3.0 was the first release published that way).
 # No npm token is stored or read anywhere; provenance is attached automatically (publishConfig.provenance is also set).
 # The guard job runs first: the tagged commit must be on main and have a green CI run (scripts/release-guard.mjs).
+# After the publish, the provenance job checks the attestation's content (scripts/verify-provenance.mjs).
 # Only the publish job can mint the OIDC token and only gh-release can write to the repository; neither installs
 # dependencies, builds or runs tests: the build job does that without write permissions and hands over the tarball.
 on:
@@ -106,8 +107,30 @@ jobs:
           echo "::error::mcp-review-check@$version has no dist.attestations on the registry: it was published without provenance"
           exit 1
 
-  gh-release:
+  # What the provenance says, not only that it exists: the repository, release.yml, the tag, the commit and this run,
+  # and the sha512 of the tarball the build job made. A job of its own, so the OIDC job runs no repository code.
+  provenance:
     needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: package
+          path: ${{ runner.temp }}/package
+      - name: Provenance names this repository, workflow, commit and run
+        run: node scripts/verify-provenance.mjs "$RUNNER_TEMP"/package/mcp-review-check-*.tgz
+
+  gh-release:
+    needs: provenance
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
