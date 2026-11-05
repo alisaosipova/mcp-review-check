@@ -23,11 +23,14 @@ interface Opts {
   hangList?: boolean;
   /** The DELETE of an SDK session (one with the protocol version header) is never answered. */
   hangDelete?: boolean;
+  /** Issue a new session id `<prefix>-<n>` on every initialize instead of `session`, recorded in `issued`. */
+  sessionPerInit?: string;
 }
 
 /** A 2025-11-25 Streamable HTTP server on 127.0.0.1 that records every request's method and session headers. */
-async function serve(o: Opts): Promise<{ url: string; seen: Seen[]; listed: Promise<void> }> {
+async function serve(o: Opts): Promise<{ url: string; seen: Seen[]; listed: Promise<void>; issued: string[] }> {
   const seen: Seen[] = [];
+  const issued: string[] = [];
   let onList: () => void = () => {};
   const listed = new Promise<void>((r) => { onList = r; });
   const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -47,8 +50,10 @@ async function serve(o: Opts): Promise<{ url: string; seen: Seen[]; listed: Prom
       if (m.id === undefined) { res.writeHead(202); res.end(); return; }
       if (m.method === 'server/discover') return json(res, 400, { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'Method not found' } });
       if (m.method === 'initialize') {
+        const session = o.sessionPerInit ? `${o.sessionPerInit}-${issued.length + 1}` : o.session;
+        if (o.sessionPerInit) issued.push(session!);
         return json(res, 200, { jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'q4', version: '1.0.0' } } },
-          o.session ? { 'mcp-session-id': o.session } : {});
+          session ? { 'mcp-session-id': session } : {});
       }
       if (m.method === 'tools/list') {
         onList();
@@ -60,7 +65,7 @@ async function serve(o: Opts): Promise<{ url: string; seen: Seen[]; listed: Prom
   });
   await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
   servers.push(() => new Promise<void>((r) => { srv.closeAllConnections(); srv.close(() => r()); }));
-  return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/mcp`, seen, listed };
+  return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/mcp`, seen, listed, issued };
 }
 
 /** The DELETEs of the SDK connections' sessions. The preflight ends the probe session it opened itself (a DELETE
@@ -95,16 +100,16 @@ describe('a --max-duration stop ends the Streamable HTTP session (Q4-SESSION)', 
     expect(took).toBeLessThan(1500 + SESSION_END_TIMEOUT_MS + 3000);
   }, 30000);
 
-  it('a run that finishes ends its session once (the regular path), the stop path sends nothing more', async () => {
-    const { url, seen } = await serve({ session: 'sess-q4-done' });
+  it('a run that finishes ends each session it opened exactly once (the regular path), the stop path sends nothing more', async () => {
+    const { url, seen, issued } = await serve({ sessionPerInit: 'sess-q4-done' });
     const { snap } = await buildSnapshot({ target: { kind: 'http', url }, timeoutMs: 20000, maxDurationMs: 60000 });
     expect(snap.limits?.stopped).toBeUndefined();
-    const sessionDeletes = deletes(seen).filter((d) => d.session === 'sess-q4-done');
-    // Every connection the run opened (main and fresh) got its own session id from this server: one DELETE each, and
-    // never more DELETEs than initializes.
-    const inits = seen.filter((s) => s.method === 'POST' && s.session === undefined).length;
-    expect(sessionDeletes.length).toBeGreaterThanOrEqual(1);
-    expect(sessionDeletes.length).toBeLessThanOrEqual(inits);
+    // The server issued a distinct id on every initialize (the preflight probe, the main connection, the fresh ones):
+    // each gets exactly one DELETE, and no DELETE names an id the server never issued.
+    expect(issued.length).toBeGreaterThanOrEqual(2);
+    const perSession = new Map<string | undefined, number>();
+    for (const d of seen.filter((s) => s.method === 'DELETE')) perSession.set(d.session, (perSession.get(d.session) ?? 0) + 1);
+    expect(Object.fromEntries(perSession)).toEqual(Object.fromEntries(issued.map((id) => [id, 1])));
   }, 30000);
 });
 
