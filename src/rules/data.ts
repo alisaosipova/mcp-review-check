@@ -3,7 +3,7 @@ import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, toolName } from './util/access.js';
 import { deref, resolvedNode, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
-import { corpus, locationOf, scanEntry, snippet } from './util/text.js';
+import { corpus, foldNote, locationOf, scanEntry, snippet } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -45,7 +45,7 @@ function scanText(snap: Snapshot, re: RegExp, label: string, severity?: Severity
   for (const e of corpus(snap)) {
     const text = scanEntry(e);
     const m = re.exec(text);
-    if (m) out.push({ tool: e.tool, path: e.path, severity, message: `${locationOf(e)} ${label}: "${snippet(text, m.index, m[0].length)}"` });
+    if (m) out.push({ tool: e.tool, path: e.path, severity, message: `${locationOf(e)} ${label}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` });
   }
   return out;
 }

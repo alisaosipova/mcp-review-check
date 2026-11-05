@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, isStr, toolNames } from './util/access.js';
-import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanEntry, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
+import { corpus, foldInvisible, foldNote, invisibleOutsideCf, locationOf, scanEntry, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -35,7 +35,7 @@ export function matchPattern(p: Pattern, text: string): RegExpExecArray | null {
 }
 
 function finding(e: CorpusEntry, text: string, m: RegExpExecArray, extra: Partial<RawFinding> = {}): RawFinding {
-  return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"`, evidence: m[0].slice(0, 120), ...extra };
+  return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}`, evidence: m[0].slice(0, 120), ...extra };
 }
 
 /**

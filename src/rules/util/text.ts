@@ -110,10 +110,22 @@ export function scanEntry(e: CorpusEntry): string {
 }
 
 /** scanForm without NFKC: for INJ-002, where NFKC would erase the fullwidth and mathematical letters it looks for. */
+// U+FEFF is \s in JavaScript but invisible, so only real whitespace is kept (review R110-Q1-02).
+const FOLD_BLANK = /[\u3164\uFFA0\u115F\u1160\u2800]/gu;
+const FOLD_DROP = /(?![\t\n\v\f\r ])[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu;
 export function foldInvisible(text: string): string {
-  return text
-    .replace(/[\u3164\uFFA0\u115F\u1160\u2800]/gu, ' ')
-    .replace(/(?![\t\n\v\f\r ])[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '');
+  return text.replace(FOLD_BLANK, ' ').replace(FOLD_DROP, '');
+}
+
+/**
+ * The note a regex finding adds when its snippet quotes the folded text: the hidden characters the scan form removed
+ * or turned into spaces, as \u{...} codes, so the evidence still shows them (review R110-Q1-04). Empty when none.
+ */
+export function foldNote(raw: string): string {
+  // From the raw text: NFKC rewrites some of them (U+3164 becomes U+1160), and the note should name what the server sent.
+  const codes = [...new Set([...raw.matchAll(FOLD_BLANK), ...raw.matchAll(FOLD_DROP)].map((m) => `\\u{${m[0].codePointAt(0)!.toString(16).toUpperCase()}}`))];
+  if (!codes.length) return '';
+  return ` (matched with hidden characters folded: ${codes.length > 8 ? `${codes.slice(0, 8).join(' ')} … (+${codes.length - 8} more)` : codes.join(' ')})`;
 }
 
 /** Escape invisible / control characters as \u{...} for display. A zero-width joiner inside an emoji sequence (👨‍💻) is kept. */

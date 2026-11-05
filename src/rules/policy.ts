@@ -2,7 +2,7 @@
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isStr, toolName } from './util/access.js';
 import { extractLinks } from './util/html.js';
-import { corpus, locationOf, scanEntry, scanForm, snippet, tokenize } from './util/text.js';
+import { corpus, foldNote, locationOf, scanEntry, scanForm, snippet, tokenize } from './util/text.js';
 import { uiResources } from './util/ui.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -62,7 +62,7 @@ export const POL_002 = defineRule(
       const m = MEDIA.exec(n) ?? MEDIA2.exec(n);
       if (!m) continue;
       const design = DESIGN.test(n);
-      out.push({ tool, severity: design ? 'info' : undefined, message: `${where}: AI media generation${design ? ' (design-tool exemption likely applies)' : ''}: "${snippet(n, m.index, m[0].length)}"` });
+      out.push({ tool, severity: design ? 'info' : undefined, message: `${where}: AI media generation${design ? ' (design-tool exemption likely applies)' : ''}: "${snippet(n, m.index, m[0].length)}"${n === text ? '' : foldNote(text)}` });
     }
     return out;
   },
@@ -85,7 +85,7 @@ export const POL_003 = defineRule(
   (snap) => corpus(snap, { values: false }).flatMap((e): RawFinding[] => {
     const text = scanEntry(e);
     const m = ADS.exec(text) ?? ENDORSE.exec(text);
-    return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` }] : [];
+    return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` }] : [];
   }),
 );
 
@@ -129,7 +129,7 @@ export const POL_004 = defineRule(
     for (const e of corpus(snap, { values: false })) {
       const text = scanEntry(e);
       const m = UPSELL.exec(text);
-      if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` });
+      if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` });
     }
     for (const r of uiResources(snap)) {
       if (!r.html) continue;
