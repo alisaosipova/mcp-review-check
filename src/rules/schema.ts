@@ -5,7 +5,7 @@ import _AjvDraft7 from 'ajv';
 import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr } from './util/access.js';
-import { deref, schemaMetrics, walkSchema } from './util/schemaWalk.js';
+import { deref, resolvePointer, schemaMetrics, walkSchema } from './util/schemaWalk.js';
 
 type AjvLike = {
   validateSchema(s: unknown): boolean | Promise<unknown>;
@@ -138,7 +138,7 @@ export const TOOL_017 = defineRule(
         if (bad) out.push({ path: key, message: `${key} does not compile: ${bad.slice(0, 200)}` });
       } catch (e) {
         const err = e as Error & { missingRef?: string };
-        if (err.missingRef !== undefined || /can't resolve reference/i.test(err.message)) continue; // TOOL-019
+        if (err.missingRef !== undefined || /can't resolve reference/i.test(err.message)) continue; // TOOL-036 (local), TOOL-019 (network)
         out.push({ path: key, message: `${key} does not compile: ${err.message.slice(0, 200)}` });
       }
     }
@@ -218,6 +218,99 @@ export const TOOL_020 = defineRule(
     for (const key of ['inputSchema', 'outputSchema'] as const) {
       const { depth, count } = schemaMetrics(t[key]);
       if (depth > 10 || count > 200) out.push({ message: `${key} depth ${depth}, ${count} subschemas` });
+    }
+    return out;
+  }),
+);
+
+// Keywords whose values are instance data, not subschemas: a `$ref` inside an enum value or a default is data. `x-`
+// extensions are skipped too (an OpenAPI `x-` block may quote `#/components/...` refs of another document).
+const DATA_KEYWORDS = new Set(['enum', 'const', 'default', 'examples', 'example']);
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+/** An absolute URI without its fragment, or undefined for a relative one (or one URL cannot parse). */
+function absDoc(ref: string, base?: string): string | undefined {
+  try { return new URL(ref, base).href.split('#')[0]; } catch { return undefined; }
+}
+
+/**
+ * The references of one schema document that cannot resolve inside it (A05-05): a local pointer (`#/$defs/Missing`) or
+ * anchor (`#item`) with no target, and a relative reference (`common.json#/$defs/Item`) when no base `$id` makes it
+ * absolute and no embedded resource carries that `$id`. References inside an embedded resource (a subschema with its
+ * own `$id`) resolve against that resource and are not judged; absolute references to other documents are TOOL-019's.
+ */
+export function unresolvedRefs(root: Record<string, unknown>): Array<{ path: string; keyword: string; ref: string; why: string }> {
+  const out: Array<{ path: string; keyword: string; ref: string; why: string }> = [];
+  const base = isStr(root.$id) && SCHEME.test(root.$id) ? root.$id : undefined;
+  const rootDoc = base ? absDoc(base) : undefined;
+  const anchors = new Set<string>();
+  const embeddedIds = new Set<string>();
+  const refs: Array<{ path: string; keyword: string; ref: string }> = [];
+  let count = 0;
+  const esc = (k: string) => k.replace(/~/g, '~0').replace(/\//g, '~1');
+  const walk = (node: unknown, path: string, depth: number) => {
+    if (depth > 64 || ++count > 20000) return;
+    if (Array.isArray(node)) { node.forEach((x, i) => walk(x, `${path}/${i}`, depth + 1)); return; }
+    if (!isObj(node)) return;
+    const id = node === root ? undefined : isStr(node.$id) ? node.$id : undefined;
+    if (id !== undefined && !id.startsWith('#')) {
+      // An embedded resource: its own base and pointers. Only its $id matters here.
+      embeddedIds.add(id.split('#')[0]);
+      const abs = absDoc(id, base);
+      if (abs) embeddedIds.add(abs);
+      return;
+    }
+    for (const k of ['$anchor', '$dynamicAnchor']) if (isStr(node[k])) anchors.add(node[k] as string);
+    if (isStr(node.$id) && node.$id.startsWith('#') && node.$id.length > 1) anchors.add(node.$id.slice(1)); // draft-07 plain-name $id
+    for (const k of ['$ref', '$dynamicRef', '$recursiveRef']) if (isStr(node[k])) refs.push({ path, keyword: k, ref: node[k] as string });
+    for (const [k, v] of Object.entries(node)) if (!DATA_KEYWORDS.has(k) && !k.startsWith('x-')) walk(v, `${path}/${esc(k)}`, depth + 1);
+  };
+  walk(root, '', 0);
+  const fragmentMissing = (frag: string): string | undefined => {
+    if (frag === '' || frag === '#') return undefined;
+    if (frag.startsWith('#/')) return resolvePointer(root, frag) === undefined ? 'names no subschema in the document' : undefined;
+    let name = frag.slice(1);
+    try { name = decodeURIComponent(name); } catch { /* keep */ }
+    return anchors.has(name) ? undefined : 'names no $anchor in the document';
+  };
+  for (const r of refs) {
+    const hash = r.ref.indexOf('#');
+    const docPart = hash < 0 ? r.ref : r.ref.slice(0, hash);
+    const frag = hash < 0 ? '' : r.ref.slice(hash);
+    let why: string | undefined;
+    if (docPart === '') why = fragmentMissing(frag);
+    else if (embeddedIds.has(docPart)) why = undefined;
+    else {
+      const abs = absDoc(docPart, base);
+      if (abs && (abs === rootDoc)) why = fragmentMissing(frag);
+      else if (abs && embeddedIds.has(abs)) why = undefined;
+      else if (!abs && !SCHEME.test(docPart)) why = 'is relative, and the schema has no absolute $id to resolve it against';
+      // else: an absolute reference to another document (TOOL-019)
+    }
+    if (why) out.push({ ...r, why });
+  }
+  return out;
+}
+
+export const TOOL_036 = defineRule(
+  {
+    id: 'TOOL-036', title: 'Every $ref resolves inside the schema', severity: { spec: 'warning' }, needs: ['tools'],
+    rationale: 'MCP schemas must be self-contained: a $ref to a missing $defs entry or anchor, or a relative file reference with no base, '
+      + 'cannot be resolved, and hosts that compile the schema (Ajv: "can\'t resolve reference") reject the tool.',
+    fix: 'Point the $ref at an existing $defs entry or $anchor, or inline the referenced schema into $defs.',
+    sources: [
+      'https://modelcontextprotocol.io/specification/2026-07-28/basic#ref-resolution',
+      'https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1',
+    ],
+  },
+  (snap) => perTool(snap, (t) => {
+    const out: RawFinding[] = [];
+    for (const key of ['inputSchema', 'outputSchema'] as const) {
+      const root = t[key];
+      if (!isObj(root)) continue;
+      for (const r of unresolvedRefs(root)) {
+        out.push({ path: `${key}${r.path}`, message: `${key}${r.path} ${r.keyword} ${JSON.stringify(r.ref.slice(0, 200))} ${r.why}` });
+      }
     }
     return out;
   }),
@@ -382,4 +475,4 @@ export const TOOL_035 = defineRule(
   }),
 );
 
-export const schemaRules = [TOOL_016, TOOL_017, TOOL_018, TOOL_019, TOOL_020, TOOL_021, TOOL_022, TOOL_035];
+export const schemaRules = [TOOL_016, TOOL_017, TOOL_018, TOOL_019, TOOL_020, TOOL_021, TOOL_022, TOOL_035, TOOL_036];

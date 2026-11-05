@@ -140,6 +140,11 @@ const cases: Record<string, Case> = {
     pos: one(tool({ inputSchema: { type: 'object', properties: { query: prop() }, require: ['query'] } })), match: /misspelling of "required"/,
     neg: one(tool({ inputSchema: { type: 'object', properties: { query: prop(), require: { type: 'boolean', description: 'Require a match' } }, required: ['query'] } })), severity: 'info',
   },
+  // a pydantic $defs reference that exists is fine (1.1.0, review A05-05)
+  'TOOL-036': {
+    pos: one(tool({ inputSchema: { type: 'object', properties: { item: { $ref: '#/$defs/Missing' } } } })), match: /names no subschema/,
+    neg: one(tool({ inputSchema: { type: 'object', properties: { item: { $ref: '#/$defs/Item' } }, $defs: { Item: { type: 'string' } } } })), severity: 'warning',
+  },
 };
 
 describe('TOOL rules', () => {
