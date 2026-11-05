@@ -15,7 +15,7 @@ import { annotations, appendStepSummary, escapeCommand } from './report/github.j
 import type { FailOn } from './report/score.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
 import { displayUrl, isKnownToken, REDACTED_MARK } from './rules/util/net.js';
-import { emptySnapshot, PHASES, type Snapshot, type TargetOpt } from './snapshot.js';
+import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { attachListing, listingDump, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
@@ -260,10 +260,10 @@ export const RULES_PHASE = 'rules';
  * names the "rules" phase, so the run is INCOMPLETE and exits 4, as for a stop during the connect phases. A snapshot
  * stopped before keeps its stop (the phase the deadline cut short); its rules not run are skipped all the same.
  */
-export function markRulesStopped(snap: Snapshot, maxDurationMs: number): void {
+export function markRulesStopped(snap: Snapshot, maxDurationMs: number, ran: readonly string[] = []): void {
   if (snap.limits?.stopped) return;
-  // Every phase the run needed had finished; a listing-only run has none.
-  const completed = snap.target.kind === 'listing' ? [] : [...PHASES];
+  // The phases the connect side really went through (BuildResult.completed); a listing-only run has none.
+  const completed = snap.target.kind === 'listing' ? [] : [...ran];
   snap.limits = { ...snap.limits, truncated: [...(snap.limits?.truncated ?? [])], stopped: { maxDurationMs, phase: RULES_PHASE, completed, unfinished: [RULES_PHASE] } };
   if (snap.coverage.toolLevel === 'ok') snap.coverage = { toolLevel: 'stopped', reason: `stopped by --max-duration (${maxDurationMs} ms) during ${RULES_PHASE}` };
 }
@@ -796,7 +796,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // (or whose deadline fell while connections closed) still reports what it observed.
     const deadline = maxDurationMs === undefined ? undefined : Math.max(t0 + maxDurationMs, performance.now() + RULES_GRACE_MS);
     const result = runRules(snap, RULES, { ignore, deadline });
-    if (result.stopped && maxDurationMs !== undefined) markRulesStopped(snap, maxDurationMs);
+    if (result.stopped && maxDurationMs !== undefined) markRulesStopped(snap, maxDurationMs, built0?.completed);
     // --baseline: the known findings leave the report (the gate, the verdicts and the counts see only new ones) and are
     // added back by each format. They are compared redacted, as the baseline report was written; the score keeps every finding.
     let gated = result;

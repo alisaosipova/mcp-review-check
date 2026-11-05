@@ -111,6 +111,12 @@ function checkpoint(p: Progress | undefined, phase: string): void {
   advance(p, phase);
 }
 
+/** The phases a finished run went through: the ones it moved on from, and the one it returned in unless that is closing
+ *  (a run that ends early, as on a failed connect, returns in the phase it ended). */
+function ranPhases(p: Progress): string[] {
+  return [...(p.completed ?? []), ...(p.phase === CLOSING ? [] : [p.phase])].filter((x) => x !== CLOSING);
+}
+
 /** Every check has run; a deadline from here on finds a complete snapshot. */
 function closing(p: Progress | undefined): void {
   if (p && !p.stopped) advance(p, CLOSING);
@@ -120,6 +126,9 @@ export interface BuildResult {
   snap: Snapshot;
   stderrTail?: string;
   tracer?: Tracer;
+  /** The phases this run went through to their end, in order (a run skips the ones it does not need); set when no
+   *  deadline or budget stopped it. A --max-duration stop during the rules reports them as limits.stopped.completed. */
+  completed?: string[];
 }
 
 type Lister = (method: string, key: string) => Promise<{ items: Record<string, unknown>[]; pages: unknown[]; error?: string }>;
@@ -862,6 +871,7 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
   } finally {
     await endChildren(progress.children); // a failed initialize leaves its child to the SDK's unawaited close()
   }
+  if (!progress.stopped) result = { ...result, completed: ranPhases(progress) };
   dropExchangeBodies(result.snap);
   // Secrets are masked before the input caps: a cut through an echoed secret leaves a prefix no scrub recognises.
   // The target stays as entered (rules parse and hash it).

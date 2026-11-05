@@ -42,9 +42,9 @@ describe('A09-04 runRules stops between rules at the deadline', () => {
   it('markRulesStopped makes the report INCOMPLETE during rules; a snapshot stopped earlier keeps its own stop', () => {
     const s = snap({ tools: [tool()] });
     const r = runRules(s, [fakeRule('FAKE-001', () => {})], { deadline: 0, now: () => 1 });
-    markRulesStopped(s, 3000);
+    markRulesStopped(s, 3000, ['connect', 'listing']);
     expect(s.limits?.stopped).toMatchObject({ maxDurationMs: 3000, phase: 'rules', unfinished: ['rules'] });
-    expect(s.limits?.stopped?.completed).toContain('listing');
+    expect(s.limits?.stopped?.completed).toEqual(['connect', 'listing']);
     expect(s.coverage).toEqual({ toolLevel: 'stopped', reason: 'stopped by --max-duration (3000 ms) during rules' });
     const report = buildReport(s, r, [], 'error', new Date(), 1);
     expect(resultLine(report)).toMatch(/^INCOMPLETE \(stopped at --max-duration during rules\)/);
@@ -70,6 +70,11 @@ describe('A09-04 the CLI: a slow rule phase is exit 4, not 0 or 1', () => {
     expect(r.code, r.stderr).toBe(4);
     const json = JSON.parse(r.stdout);
     expect(json.limits.stopped).toMatchObject({ maxDurationMs: 60000, phase: 'rules', unfinished: ['rules'] });
+    // Only the phases this run went through (review Q3 fix): stdio without --active has no auth probe, no active calls.
+    expect(json.limits.stopped.completed).toContain('listing');
+    expect(json.limits.stopped.completed).toContain('connect');
+    expect(json.limits.stopped.completed).not.toContain('auth probe');
+    expect(json.limits.stopped.completed).not.toContain('active tool calls');
     expect(json.coverage.toolLevel).toBe('stopped');
     expect(json.skipped.filter((s: { reason: string }) => s.reason === STOPPED_REASON).length).toBeGreaterThan(10);
   }, 60000);
@@ -79,6 +84,13 @@ describe('A09-04 the CLI: a slow rule phase is exit 4, not 0 or 1', () => {
     const r = await runCli(['--max-duration', '60000', '--plugin-dir', PLUGIN], {}, false);
     expect(r.code, r.stderr).toBe(4);
     expect(r.stdout).toMatch(/INCOMPLETE \(stopped at --max-duration during rules\)/);
+  });
+
+  it('a listing-only run reports no connect phase as completed', async () => {
+    rulesPastDeadline();
+    const r = await runCli(['--format', 'json', '--max-duration', '60000', '--plugin-dir', PLUGIN], {}, false);
+    expect(r.code, r.stderr).toBe(4);
+    expect(JSON.parse(r.stdout).limits.stopped.completed).toEqual([]);
   });
 
   it('without --max-duration the same run is not stopped', async () => {
