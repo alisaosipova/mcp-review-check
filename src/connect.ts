@@ -16,7 +16,7 @@ import { BUDGET_ERROR, createRedactor, createTracer, FULL_READ_CAP, scrub, summa
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
 import { defaultDeps, lookupHost, preflight, sameHostRedirect, tlsCheckWithRetry, type Deps } from './probe/network.js';
-import { runWireProbes } from './probe/wire.js';
+import { listingTimedOut, runWireProbes } from './probe/wire.js';
 import { buildRedactor, redactDeep } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
 import { isLocalTarget } from './rules/util/net.js';
@@ -158,11 +158,6 @@ const NETWORK_ERROR = /fetch failed|ECONNRESET|ETIMEDOUT|EPIPE|socket hang up|UN
 /** The request got no answer from the server (the SDK's closed connection or timeout, or a network error). */
 const TRANSPORT_ERROR = new RegExp(`Connection closed|Not connected|Request timed out|timed out after|${NETWORK_ERROR.source}`, 'i');
 
-/** The SDK's own request timeout (McpError RequestTimeout): the request got no answer within its wait. */
-const TIMED_OUT = /^MCP error -32001: Request timed out\b/;
-/** The same on the 2026-07-28 client: fetch aborted by the tracer's timer, or a body still incomplete at the deadline. */
-const MODERN_TIMED_OUT = /^(This operation was aborted|response body not complete after \d+ ms)$/;
-const timedOutListing = (error: string | undefined) => !!error && (TIMED_OUT.test(error) || MODERN_TIMED_OUT.test(error));
 /** The wait for each later request once the server has stopped answering (at most --timeout). */
 export const STALLED_TIMEOUT_MS = 2000;
 const stalledTimeout = (timeoutMs: number) => Math.min(timeoutMs, STALLED_TIMEOUT_MS);
@@ -171,7 +166,7 @@ interface StallPlan { list: Lister; timeoutMs: number; onStall?: (message: strin
 
 /** The server answered initialize but tools/list timed out: later requests get a short wait instead of the full --timeout. */
 export function stalled(snap: Snapshot): boolean {
-  return timedOutListing(snap.listMeta.tools?.error);
+  return listingTimedOut(snap.listMeta.tools?.error);
 }
 
 /**
@@ -192,10 +187,10 @@ async function listEverything(snap: Snapshot, list: Lister, short?: StallPlan): 
     let r = await ls(method, key);
     // A dropped connection is the network's fault, not the server's: retry once before SPEC-020 can report it.
     if (r.error && NETWORK_ERROR.test(r.error)) r = await ls(method, key);
-    if (method === 'tools/list' && short?.onStall && timedOutListing(r.error)) {
+    if (method === 'tools/list' && short?.onStall && listingTimedOut(r.error)) {
       short.onStall(`tools/list got no answer within --timeout; the server answered initialize, then stopped answering: each later request waits at most ${short.timeoutMs} ms`);
     }
-    if (quick && timedOutListing(r.error)) { unanswered.push(method); continue; }
+    if (quick && listingTimedOut(r.error)) { unanswered.push(method); continue; }
     snap[field] = r.items;
     snap.listMeta[metaKey] = { pages: r.pages.length, rawPages: r.pages, error: r.error };
   }
@@ -542,7 +537,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     // Each probe lands in the snapshot as it finishes (next to the discover probe), so a deadline keeps the finished ones.
     try {
       await runWireProbes({
-        snap, timeoutMs: probeTimeout, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
+        snap, timeoutMs: probeTimeout, stalled: stall, now: deps.now, client: conn.client, modern: useModern ? modern : undefined, sleep: deps.sleep,
         http: { tracer, url, authHeaders, sessionId: conn.sessionId, protocolVersion: conn.protocolVersion }, out: snap.transport.probes,
       });
     } finally { modern.timeoutMs = timeoutMs; }
@@ -887,11 +882,12 @@ async function buildStdio(snap: Snapshot, t: Extract<TargetSpec, { kind: 'stdio'
   checkpoint(progress, 'listing');
   await listEverything(snap, lister, { list: legacyLister(conn.client, stalledTimeout(timeoutMs), budget), timeoutMs: stalledTimeout(timeoutMs), onStall: opts.onStall });
   // A server that stopped answering after initialize: the probes wait briefly (a probe without an answer is no finding).
-  const probeTimeout = stalled(snap) ? stalledTimeout(timeoutMs) : timeoutMs;
+  const stall = stalled(snap);
+  const probeTimeout = stall ? stalledTimeout(timeoutMs) : timeoutMs;
   checkpoint(progress, 'UI resource reads');
   await readUiResources(snap, legacyReader(conn.client, timeoutMs, budget), deps.now); // a read cut short could fail a UI rule
   checkpoint(progress, 'wire probes');
-  await runWireProbes({ snap, timeoutMs: probeTimeout, now: deps.now, client: conn.client, out: snap.transport.probes });
+  await runWireProbes({ snap, timeoutMs: probeTimeout, stalled: stall, now: deps.now, client: conn.client, out: snap.transport.probes });
   const fresh = async (variant: ClientVariant = {}) => {
     if (budget?.exhausted) return undefined;
     try {
