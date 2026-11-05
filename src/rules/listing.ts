@@ -85,14 +85,29 @@ export interface Launcher {
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ash', 'ksh']);
 /** env options that take a separate value. */
 const ENV_VALUE_FLAGS = new Set(['-u', '--unset', '-C', '--chdir']);
-/** uv run options that take a separate value (the value is not the script). */
+/** uv run options that take a separate value (the value is not the script), as `uv run --help` lists them. */
 const UV_RUN_VALUE_FLAGS = new Set([
-  '--with', '--with-editable', '--with-requirements', '--python', '-p', '--project', '--directory', '--package',
-  '--env-file', '--extra', '--group', '--only-group', '--no-group', '--index', '--default-index', '--index-url',
-  '--extra-index-url', '--find-links', '-f', '--cache-dir', '--config-file', '--color', '--index-strategy',
-  '--keyring-provider', '--resolution', '--prerelease', '--exclude-newer', '--link-mode', '--refresh-package',
-  '--reinstall-package', '--upgrade-package', '-P', '--no-binary-package', '--no-build-package', '--python-platform',
+  '--extra', '--no-extra', '--group', '--no-group', '--only-group', '--no-editable-package', '--env-file', '-w', '--with',
+  '--with-editable', '--with-requirements', '--package', '--python-platform', '--index', '--default-index', '-i',
+  '--index-url', '--extra-index-url', '-f', '--find-links', '--index-strategy', '--keyring-provider', '-P',
+  '--upgrade-package', '--upgrade-group', '--resolution', '--prerelease', '--prerelease-package', '--fork-strategy',
+  '--exclude-newer', '--exclude-newer-package', '--no-sources-package', '--reinstall-package', '--link-mode', '-C',
+  '--config-setting', '--config-settings-package', '--no-build-isolation-package', '--no-build-package',
+  '--no-binary-package', '--cache-dir', '--refresh-package', '-p', '--python', '--color', '--allow-insecure-host',
+  '--directory', '--project', '--config-file', '--python-version', '--build-constraint', '--constraint', '--override',
 ]);
+/** uv run options that take no value. An option in neither set may take one: the word after it is not taken as
+ *  the script, so a --locked further on is still seen (as 1.0.x saw it). */
+const UV_RUN_BOOL_FLAGS = new Set([
+  '--all-extras', '--no-dev', '--only-dev', '--dev', '--no-default-groups', '--all-groups', '-m', '--module',
+  '--no-editable', '--exact', '--no-env-file', '--isolated', '--active', '--no-active', '--no-sync', '--locked',
+  '--frozen', '-s', '--script', '--gui-script', '--all-packages', '--no-project', '--no-index', '-U', '--upgrade',
+  '--no-sources', '--reinstall', '--compile-bytecode', '--no-build-isolation', '--no-build', '--no-binary',
+  '--require-build-hashes', '--no-require-build-hashes', '-n', '--no-cache', '--refresh', '--managed-python',
+  '--no-managed-python', '--no-python-downloads', '-q', '--quiet', '-v', '--verbose', '--system-certs', '--native-tls',
+  '--offline', '--no-progress', '--no-config', '--preview', '--no-preview',
+]);
+const uvRunBool = (a: string) => UV_RUN_BOOL_FLAGS.has(a) || /^-[qvnUsm]+$/.test(a);
 /** A shell or cmd command string as words (quotes around a word removed; a leading `exec` dropped). */
 const words = (cmd: string) => {
   const w = cmd.trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^(["'])(.*)\1$/, '$2').replace(/^["']|["']$/g, ''));
@@ -162,6 +177,8 @@ export function launcherOf(given: string[]): Launcher | undefined {
       if (a === '--' || !a.startsWith('-')) break;
       if (a === '--locked' || a === '--frozen') pinned = true;
       else if (UV_RUN_VALUE_FLAGS.has(a)) i++;
+      // An unknown option, maybe with a value: its next word is not taken as the script.
+      else if (!a.includes('=') && !uvRunBool(a) && !/^-[A-Za-z]./.test(a) && argv[i + 1] && !argv[i + 1].startsWith('-')) i++;
     }
     return { launcher: 'uv run', kind: 'uv run', pinned };
   }
