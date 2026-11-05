@@ -160,7 +160,7 @@ Every output except `exit-code` and `sarif-file` is empty when no report was wri
         run: echo "score ${{ steps.review.outputs.score }}, ${{ steps.review.outputs.verdict }}, ${{ steps.review.outputs.new-findings }} new"
 ```
 
-The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.0.1` or a commit SHA.
+The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.0.1` or a commit SHA. Since 1.1.0 the npm package ships npm-shrinkwrap.json, so each release installs the dependency tree it was tested with, but the action's `version` input is still a range that takes new 1.x.y patches unless you pin it exactly (`version: 1.1.0`).
 
 ## GitHub Actions
 
