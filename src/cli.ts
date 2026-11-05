@@ -445,11 +445,39 @@ export function ciSafeLine(line: string): string {
   return visibleText(line).replace(/^(\s*):(?=:)/, '$1\\u{3A}').replace(/^(\s*)#(?=#\[)/, '$1\\u{23}');
 }
 
+/** The status line while a check connects and probes: `phase()` names the phase, `clear()` takes the line off before
+ *  other stderr output, `stop()` ends it. A no-op when not enabled. */
+export interface PhaseLine { phase(name: string): void; clear(): void; stop(): void }
+
+/**
+ * A one-line status on a terminal's stderr while the check connects and probes ("mcp-review-check: listing… 3 s"),
+ * redrawn every second and cleared before anything else is printed. It names a phase, never the server or a value.
+ * Enabled only for a TTY stderr outside CI (CI, GITHUB_ACTIONS) and without --quiet: see runCli.
+ */
+export function phaseLine(enabled: boolean, write: (s: string) => void, now: () => number = () => performance.now()): PhaseLine {
+  if (!enabled) return { phase() {}, clear() {}, stop() {} };
+  const t0 = now();
+  let name = 'connecting';
+  let done = false;
+  const draw = () => { if (!done) write(`\r\x1b[2Kmcp-review-check: ${visibleText(name)}… ${Math.floor((now() - t0) / 1000)} s`); };
+  const timer = setInterval(draw, 1000);
+  timer.unref();
+  draw();
+  return {
+    phase(p) { name = p; draw(); },
+    clear() { if (!done) write('\r\x1b[2K'); },
+    stop() { if (done) return; clearInterval(timer); write('\r\x1b[2K'); done = true; },
+  };
+}
+
+/** Whether runCli shows the phase line: stderr is a terminal and the run is not in CI. */
+export const phaseLineWanted = (stderrTty: boolean, env: NodeJS.ProcessEnv) => stderrTty && !env.CI && env.GITHUB_ACTIONS !== 'true';
+
 /**
  * `interrupted` is aborted by SIGINT/SIGTERM (its reason the signal number): a run that still finishes in the grace
  * period writes no report, since the checks after the signal ran against servers being killed.
  */
-export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY, interrupted?: AbortSignal): Promise<CliResult> {
+export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY, interrupted?: AbortSignal, stderrTty = false): Promise<CliResult> {
   let stderr = '';
   let redactor: Redactor | undefined;
   let cfg: LoadedConfig | undefined;
@@ -731,12 +759,21 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const t0 = performance.now();
     // A server that answered initialize and then stopped: said at once, not with the report at the end (A10-02). The
     // message holds no server text.
-    opts.onStall = (m) => { process.stderr.write(`mcp-review-check: ${m}\n`); };
+    // On a terminal (not in CI, not with --quiet): one status line with the phase while it connects and probes.
+    const status = phaseLine(!listingOnly && !values.quiet && phaseLineWanted(stderrTty, env), (x) => { process.stderr.write(x); });
+    opts.onStall = (m) => { status.clear(); process.stderr.write(`mcp-review-check: ${m}\n`); };
+    // Read by a connect.ts that reports its phases (its checkpoints); without it the line says "connecting".
+    (opts as BuildOptions & { onPhase?: (phase: string) => void }).onPhase = (p) => status.phase(p);
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
-    const { snap, stderrTail, tracer } = listingOnly
-      ? { snap: emptySnapshot({ kind: 'listing' }, { target, active: false, activeAuth: false }), stderrTail: undefined, tracer: undefined }
-      : await buildSnapshot(opts);
+    let built0: Awaited<ReturnType<typeof buildSnapshot>> | undefined;
+    try {
+      built0 = listingOnly ? undefined : await buildSnapshot(opts);
+    } finally {
+      status.stop();
+    }
+    const { snap, stderrTail, tracer } = built0
+      ?? { snap: emptySnapshot({ kind: 'listing' }, { target, active: false, activeAuth: false }), stderrTail: undefined, tracer: undefined };
     if (interrupted?.aborted) {
       const n = typeof interrupted.reason === 'number' ? interrupted.reason : 2;
       return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
@@ -911,6 +948,7 @@ if (isMain) {
   const interrupted = new AbortController();
   for (const [signal, n] of Object.entries(signals)) {
     process.on(signal, () => {
+      if (process.stderr.isTTY) process.stderr.write('\r\x1b[2K'); // the phase line, if one is shown
       // No check modules loaded yet (a signal during --help): no server was started.
       void (M ? M.connect.endAllNow(signalled) : Promise.resolve()).finally(() => process.exit());
       if (signalled) return;
@@ -923,7 +961,7 @@ if (isMain) {
       });
     });
   }
-  runCli(process.argv.slice(2), process.env, !!process.stdout.isTTY, interrupted.signal).then(({ code, stdout, stderr }) => {
+  runCli(process.argv.slice(2), process.env, !!process.stdout.isTTY, interrupted.signal, !!process.stderr.isTTY).then(({ code, stdout, stderr }) => {
     // Both streams may be async pipes: exit only after each one is flushed, or stderr is cut at 64 KB.
     process.stderr.write(stderr, () => process.stdout.write(stdout, () => process.exit(code)));
   });
