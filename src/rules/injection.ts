@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, isStr, toolNames } from './util/access.js';
-import { corpus, locationOf, nfkc, snippet, type CorpusEntry } from './util/text.js';
+import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanForm, snippet, type CorpusEntry } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -46,7 +46,7 @@ export function scanCorpus(
 ): RawFinding[] {
   const out: RawFinding[] = [];
   for (const e of corpus(snap)) {
-    const text = nfkc(e.text);
+    const text = scanForm(e.text);
     let hit: RawFinding | undefined;
     for (const p of patterns) {
       const m = matchPattern(p, text);
@@ -86,16 +86,24 @@ export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
     else if (/\p{Cf}/u.test(ch)) {
       if (cp === 0x200d && PICTO.test(emojiNeighbor(cps, i, -1)) && PICTO.test(emojiNeighbor(cps, i, 1))) return; // emoji ZWJ sequence
       soft.push(hex);
+    } else {
+      // Variation-selector runs, Hangul fillers, the Braille blank, CGJ (A05-02).
+      const kind = invisibleOutsideCf(cps, i);
+      if (kind === 'hard') hard.push(hex);
+      else if (kind === 'soft') soft.push(hex);
     }
   });
   return { hard: [...new Set(hard)], soft: [...new Set(soft)] };
 }
 
+/** At most 16 code points in a message: a smuggled run can hold hundreds of distinct variation selectors. */
+const codeList = (xs: string[]) => (xs.length > 16 ? `${xs.slice(0, 16).join(' ')} … (+${xs.length - 16} more)` : xs.join(' '));
+
 export const INJ_001 = defineRule(
   {
     id: 'INJ-001', title: 'Hidden or invisible characters', severity: { claude: 'error', chatgpt: 'error' }, needs: ['tools'],
     rationale: 'Invisible characters can smuggle instructions past human reviewers.',
-    fix: 'Remove invisible and bidi control characters from names and descriptions.',
+    fix: 'Remove invisible, bidi control and stray variation-selector characters from names, descriptions and schema text.',
     sources: [CLAUDE_POLICY, OAI_GUIDE],
   },
   (snap) => {
@@ -103,8 +111,8 @@ export const INJ_001 = defineRule(
     for (const e of corpus(snap)) {
       const { hard, soft } = hiddenChars(e.text);
       const base = { tool: e.tool, path: e.path };
-      if (hard.length) out.push({ ...base, message: `${locationOf(e)}: tag or bidi control characters ${hard.join(' ')}: "${snippet(e.text)}"` });
-      if (soft.length) out.push({ ...base, severity: 'warning', message: `${locationOf(e)}: invisible format characters ${soft.join(' ')}` });
+      if (hard.length) out.push({ ...base, message: `${locationOf(e)}: ${hard.some((h) => /^\\u\{(FE0|E01)/.test(h)) ? 'tag, bidi control or variation selector' : 'tag or bidi control'} characters ${codeList(hard)}: "${snippet(e.text)}"` });
+      if (soft.length) out.push({ ...base, severity: 'warning', message: `${locationOf(e)}: invisible format characters ${codeList(soft)}` });
     }
     return out;
   },
@@ -121,24 +129,33 @@ const GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u;
  */
 const GREEK_NOTATION = /^[A-Z]+[α-ω][A-Zα-ω]*$/u;
 
-/** A word mixing Latin with Cyrillic, or with a Greek letter that looks Latin. */
+/** Fullwidth Latin letters (Script=Latin) and Mathematical Alphanumeric letters (Script=Common): "Ｇoogle", "𝐏aypal" (A05-10). */
+const FULLWIDTH_OR_MATH = /[\uFF21-\uFF3A\uFF41-\uFF5A\u{1D400}-\u{1D6A5}]/u;
+
+/**
+ * A word mixing Latin with Cyrillic, Armenian or Cherokee (whose letters pass for Latin: Armenian "օ" is "o", Cherokee
+ * "Ꮪ" is "S"), with a Greek letter that looks Latin, or ASCII letters with fullwidth or mathematical ones. A word
+ * written wholly in fullwidth letters ("ＰＤＦ" in Japanese text) is one style, not a mix.
+ */
 export function mixedScript(word: string): boolean {
+  if (/[A-Za-z]/.test(word) && FULLWIDTH_OR_MATH.test(word)) return true;
   if (!/\p{Script=Latin}/u.test(word)) return false;
-  if (/\p{Script=Cyrillic}/u.test(word)) return true;
+  if (/[\p{Script=Cyrillic}\p{Script=Armenian}\p{Script=Cherokee}]/u.test(word)) return true;
   return GREEK_LOOKALIKE.test(word) && !GREEK_NOTATION.test(word);
 }
 
 export const INJ_002 = defineRule(
   {
     id: 'INJ-002', title: 'Mixed-script words (homoglyphs)', severity: { claude: 'warning', chatgpt: 'warning' }, needs: ['tools'],
-    rationale: 'Words mixing Latin with Cyrillic or Greek letters are a homoglyph-spoofing signal.',
+    rationale: 'Words mixing Latin with Cyrillic, Greek, Armenian or Cherokee letters, or with fullwidth or mathematical letters, are a homoglyph-spoofing signal.',
     fix: 'Use a single script per word.',
     sources: [CLAUDE_POLICY, OAI_GUIDE],
   },
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
-      for (const m of e.text.matchAll(/\p{L}+/gu)) {
+      // Invisible characters removed first: a zero-width space must not split "Gо\u200Bogle" into two clean words.
+      for (const m of foldInvisible(e.text).matchAll(/\p{L}+/gu)) {
         const w = m[0];
         if (mixedScript(w)) {
           out.push({ tool: e.tool, path: e.path, message: `${locationOf(e)}: mixed-script word "${w}"` });
@@ -174,7 +191,7 @@ export const INJ_003 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
-      const text = nfkc(e.text);
+      const text = scanForm(e.text);
       const comment = htmlComment(text);
       const m = comment ?? PSEUDO_TAG.exec(text);
       if (!m) continue;
@@ -226,7 +243,7 @@ export const INJ_004 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
-      const text = nfkc(e.text);
+      const text = scanForm(e.text);
       let hit: RegExpExecArray | null = null;
       for (const m of text.matchAll(/[A-Za-z0-9+/]{40,}={0,2}/g)) {
         if (encodedPayload(m[0])) { hit = m as RegExpExecArray; break; }

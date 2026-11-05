@@ -2,7 +2,7 @@
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isStr, toolName } from './util/access.js';
 import { extractLinks } from './util/html.js';
-import { corpus, locationOf, nfkc, snippet, tokenize } from './util/text.js';
+import { corpus, locationOf, scanForm, snippet, tokenize } from './util/text.js';
 import { uiResources } from './util/ui.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -58,7 +58,7 @@ export const POL_002 = defineRule(
     }));
     if (isStr(snap.instructions)) texts.push({ text: snap.instructions, where: 'instructions' });
     for (const { text, tool, where } of texts) {
-      const n = nfkc(text);
+      const n = scanForm(text);
       const m = MEDIA.exec(n) ?? MEDIA2.exec(n);
       if (!m) continue;
       const design = DESIGN.test(n);
@@ -83,7 +83,7 @@ export const POL_003 = defineRule(
     sources: [CLAUDE_POLICY, OAI_GUIDE],
   },
   (snap) => corpus(snap).flatMap((e): RawFinding[] => {
-    const text = nfkc(e.text);
+    const text = scanForm(e.text);
     const m = ADS.exec(text) ?? ENDORSE.exec(text);
     return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` }] : [];
   }),
@@ -127,7 +127,7 @@ export const POL_004 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
-      const text = nfkc(e.text);
+      const text = scanForm(e.text);
       const m = UPSELL.exec(text);
       if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"` });
     }

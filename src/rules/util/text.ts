@@ -56,6 +56,58 @@ const EMOJI = /\p{Extended_Pictographic}/u;
 // What may end the emoji before a joiner: the pictograph, a skin-tone modifier or the emoji presentation selector.
 const EMOJI_END = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F]/u;
 
+const cpAt = (cps: string[], i: number): number => cps[i]?.codePointAt(0) ?? -1;
+const isVariationSelector = (cp: number) => (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+/** Bases a standardized or emoji variation sequence (U+FE00–FE0F) is defined on: emoji, keycap bases, symbols, CJK, Mongolian. */
+const VS_BASE = /[\p{Emoji}\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Sm}\p{So}\p{Script=Han}\p{Script=Mongolian}\p{Script=Phags_Pa}\p{Script=Myanmar}]/u;
+/** Bases of an ideographic variation sequence (U+E0100–E01EF): CJK ideographs. */
+const IVS_BASE = /\p{Script=Han}/u;
+const inRange = (cp: number, ...ranges: Array<[number, number]>) => ranges.some(([a, b]) => cp >= a && cp <= b);
+
+/**
+ * Invisible code points outside \p{Cf} (A05-02), by severity, or undefined for a visible or legitimate use:
+ * - a run of two or more variation selectors (U+FE00–FE0F, U+E0100–E01EF) carries data after a base, the
+ *   "emoji smuggling" form of tag characters → hard;
+ * - a single variation selector on a base it is not defined for (a Latin letter) → soft; on its own base (❤️, 1️⃣,
+ *   a CJK ideograph) it is fine;
+ * - Hangul fillers U+3164 and U+FFA0, U+115F/U+1160 outside a conjoining-jamo syllable, the Braille blank U+2800 outside
+ *   Braille text, the combining grapheme joiner U+034F and the Khmer inherent vowels U+17B4/U+17B5 → soft. They render
+ *   as blanks or nothing and split words for the regex rules.
+ */
+export function invisibleOutsideCf(cps: string[], i: number): 'hard' | 'soft' | undefined {
+  const cp = cpAt(cps, i);
+  if (isVariationSelector(cp)) {
+    if (isVariationSelector(cpAt(cps, i - 1)) || isVariationSelector(cpAt(cps, i + 1))) return 'hard';
+    const base = cps[i - 1] ?? '';
+    if (cp <= 0xfe0f ? VS_BASE.test(base) : IVS_BASE.test(base)) return undefined;
+    return 'soft';
+  }
+  if (cp === 0x3164 || cp === 0xffa0 || cp === 0x034f || cp === 0x17b4 || cp === 0x17b5) return 'soft';
+  // Conjoining jamo: the choseong filler before a real vowel, the jungseong filler after a real initial consonant.
+  if (cp === 0x115f) return inRange(cpAt(cps, i + 1), [0x1161, 0x11a7], [0xd7b0, 0xd7c6]) ? undefined : 'soft';
+  if (cp === 0x1160) return inRange(cpAt(cps, i - 1), [0x1100, 0x115e], [0xa960, 0xa97c]) ? undefined : 'soft';
+  // The Braille blank is the word space of Braille text.
+  if (cp === 0x2800) return inRange(cpAt(cps, i - 1), [0x2801, 0x28ff]) || inRange(cpAt(cps, i + 1), [0x2801, 0x28ff]) ? undefined : 'soft';
+  return undefined;
+}
+
+/**
+ * The form the regex rules scan (INJ-003..010, DATA, POL): NFKC, then invisible characters folded so they cannot split
+ * a keyword (A05-02). Format characters, control characters other than whitespace, combining joiners and variation
+ * selectors are removed ("ig\u200Bnore" reads "ignore"; whitespace stays); blanks that render as a space (Hangul fillers, the Braille blank)
+ * become a space ("Ignore\u3164previous" reads "Ignore previous"). INJ-001 still reports each of them on the raw text.
+ */
+export function scanForm(text: string): string {
+  return foldInvisible(nfkc(text));
+}
+
+/** scanForm without NFKC: for INJ-002, where NFKC would erase the fullwidth and mathematical letters it looks for. */
+export function foldInvisible(text: string): string {
+  return text
+    .replace(/[\u3164\uFFA0\u115F\u1160\u2800]/gu, ' ')
+    .replace(/(?!\s)[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '');
+}
+
 /** Escape invisible / control characters as \u{...} for display. A zero-width joiner inside an emoji sequence (👨‍💻) is kept. */
 export function escapeHidden(text: string): string {
   const chars = [...text];
@@ -63,7 +115,7 @@ export function escapeHidden(text: string): string {
   chars.forEach((ch, i) => {
     const cp = ch.codePointAt(0)!;
     const emojiJoiner = cp === 0x200d && i > 0 && EMOJI_END.test(chars[i - 1]) && EMOJI.test(chars[i + 1] ?? '');
-    if (/[\p{Cf}\p{Cc}]/u.test(ch) && ch !== '\n' && ch !== '\t' && !emojiJoiner) out += `\\u{${cp.toString(16).toUpperCase()}}`;
+    if ((/[\p{Cf}\p{Cc}]/u.test(ch) && ch !== '\n' && ch !== '\t' && !emojiJoiner) || invisibleOutsideCf(chars, i)) out += `\\u{${cp.toString(16).toUpperCase()}}`;
     else out += ch;
   });
   return out;
