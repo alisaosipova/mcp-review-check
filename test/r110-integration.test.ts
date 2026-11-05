@@ -38,7 +38,20 @@ describe('Q4 lows: CONTRIBUTING release steps and the guard comment', () => {
   });
 });
 
-describe('Q3 note 5:the CI pack smoke checks where npm-shrinkwrap.json is', () => {
+describe('Q5 notes and lows: docs of authProbe.active.clientId and of the stall retry', () => {
+  it('the --active-auth row names authProbe.active.clientId', () => {
+    const row = read('docs/guide/options-and-config.md').split('\n').find((l) => l.startsWith('| `--active-auth` |'));
+    expect(row).toContain('authProbe.active.clientId');
+  });
+  it('SECURITY.md says the JSON report holds the registered client_id', () => {
+    expect(flat('SECURITY.md')).toMatch(/JSON report[^.]*`authProbe\.active\.clientId`/);
+  });
+  it('privacy-and-requests.md says a timed-out probe is not retried after a stall', () => {
+    expect(flat('docs/guide/privacy-and-requests.md')).toMatch(/stopped answering[^.]*timed-out (Origin or challenge )?probe is not retried/i);
+  });
+});
+
+describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () => {
   const ci = read('.github/workflows/ci.yml');
   const step = ci.slice(ci.indexOf('- name: Pack, install the tarball and run it'));
   const run = step.slice(0, step.indexOf('\n\n'));
