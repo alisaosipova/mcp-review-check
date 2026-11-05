@@ -91,6 +91,16 @@ Options:
                           working directory (read when --config is not given). Command-line options override the file.
                           A found file only sets options: its url, stdio, args, output, jsonOutput, saveBaseline, cwd,
                           env, header, bearer, active and activeAuth keys are ignored with a warning; use --config.
+  --no-fail-on-spec       Turn off the config file's failOnSpec.
+  --no-fail-on-incomplete Turn off the config file's failOnIncomplete.
+  --no-fail-on-drift      Turn off the config file's failOnDrift.
+  --no-diff-only          Turn off the config file's diffOnly.
+  --no-active             Turn off the config file's active.
+  --no-active-auth        Turn off the config file's activeAuth.
+  --no-verbose            Turn off the config file's verbose.
+  --no-quiet              Turn off the config file's quiet.
+  --no-checklist          Turn off the config file's checklist.
+  --color                 Turn off the config file's noColor (colours then follow the TTY, NO_COLOR and FORCE_COLOR).
   -h, --help              Show this help.
   -v, --version           Show the version.
 
@@ -108,7 +118,9 @@ also inside double quotes, except before a ": there, as on Windows, \\\\" is one
 The "-- <command> [args...]" form passes arguments verbatim, with options before --.
 A --config file may also name the server: {"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}.
 Its paths are relative to the file; a list option given on the command line (--ignore, --header, --env) replaces
-the file's list. Secrets belong in $MCP_REVIEW_CHECK_TOKEN, not in the file (header and bearer keys get a warning).
+the file's list, and a switch its key and its opposite's (--local wins over noLocal, --no-quiet over quiet). A <url>
+on the command line does not use the file's env and cwd, a --stdio command not its header, bearer and activeAuth, and
+--bearer replaces the file's Authorization header (each with a note). Secrets belong in $MCP_REVIEW_CHECK_TOKEN, not in the file (header and bearer keys get a warning).
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
@@ -151,8 +163,44 @@ const OPTIONS = {
   env: { type: 'string', multiple: true }, cwd: { type: 'string' }, ignore: { type: 'string', multiple: true },
   'list-rules': { type: 'boolean' }, 'no-color': { type: 'boolean' }, verbose: { type: 'boolean' },
   quiet: { type: 'boolean' }, checklist: { type: 'boolean' }, local: { type: 'boolean' }, 'no-local': { type: 'boolean' },
+  // The opposite of each boolean config key, so a command line can turn off what a config file turns on (A01-03).
+  'no-fail-on-spec': { type: 'boolean' }, 'no-fail-on-incomplete': { type: 'boolean' }, 'no-fail-on-drift': { type: 'boolean' },
+  'no-diff-only': { type: 'boolean' }, 'no-active': { type: 'boolean' }, 'no-active-auth': { type: 'boolean' },
+  'no-verbose': { type: 'boolean' }, 'no-quiet': { type: 'boolean' }, 'no-checklist': { type: 'boolean' }, color: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
 } as const;
+
+/**
+ * Pairs of opposite switches: [option, opposite]. Given on the command line, either one replaces the config file's key
+ * for both (A01-03). Each opposite but --no-local (strict deploy-time checks) only turns its option off.
+ */
+export const OPPOSITES: ReadonlyArray<readonly [string, string]> = [
+  ['local', 'no-local'], ['no-color', 'color'], ['fail-on-spec', 'no-fail-on-spec'], ['fail-on-incomplete', 'no-fail-on-incomplete'],
+  ['fail-on-drift', 'no-fail-on-drift'], ['diff-only', 'no-diff-only'], ['active', 'no-active'], ['active-auth', 'no-active-auth'],
+  ['verbose', 'no-verbose'], ['quiet', 'no-quiet'], ['checklist', 'no-checklist'],
+];
+
+/**
+ * One warning per switch on the command line that the chosen --format does not use, so the user does not think it took
+ * effect: --quiet and --checklist (text only), --diff-only (text and markdown; also the GitHub job summary). A key from
+ * the config file gets none: one file serves runs in several formats.
+ */
+export function formatWarnings(format: string, given: Set<string>, values: Record<string, unknown>, env: NodeJS.ProcessEnv): string {
+  const summary = env.GITHUB_ACTIONS === 'true' && !!env.GITHUB_STEP_SUMMARY; // the job summary is a markdown report
+  const ignoredBy: Array<[string, boolean, string]> = [
+    ['quiet', format !== 'text', 'text'],
+    ['checklist', format !== 'text', 'text'],
+    ['diff-only', format !== 'text' && format !== 'markdown' && !summary, 'text and markdown'],
+  ];
+  return ignoredBy.filter(([opt, ignored]) => ignored && given.has(opt) && values[opt])
+    .map(([opt, , formats]) => `warning: --${opt} applies only to --format ${formats}; --format ${format} does not use it\n`).join('');
+}
+
+/** The config keys of one transport, which a server named on the command line for the other one does not use (A01-03). */
+const STDIO_ONLY = ['env', 'cwd'] as const;
+const HTTP_ONLY = ['header', 'bearer', 'active-auth'] as const;
+
+const isAuthorization = (h: string) => h.slice(0, Math.max(0, h.indexOf(':'))).trim().toLowerCase() === 'authorization';
 
 /** The known option nearest to an unknown one (Levenshtein distance at most 2), for "did you mean". */
 function closestOption(name: string): string | undefined {
@@ -389,6 +437,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       args: split.args, allowPositionals: true, strict: true, options: OPTIONS,
     });
     const values = { ...parsed.values };
+    /** The options given on the command line (not from the config file). */
+    const cliGiven = new Set(Object.keys(parsed.values).filter((k) => (parsed.values as Record<string, unknown>)[k] !== undefined));
     let positionals = parsed.positionals;
     // Keywords in any case, as --ignore and explain take IDs in any case: --format JSON, --target Claude, --fail-on Warning.
     let format = (values.format ?? 'text').toLowerCase();
@@ -431,20 +481,61 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       }
       stderr += cfg.warnings.join('');
       const merged = values as Record<string, unknown>;
+      // A switch on the command line also replaces the file's key for its opposite (--local over noLocal, --no-quiet
+      // over quiet): only two values from one source conflict (A01-03).
+      const opposite = new Map(OPPOSITES.flatMap(([a, b]) => [[a, b], [b, a]] as const));
       for (const [opt, v] of Object.entries(cfg.options)) {
         if (merged[opt] !== undefined) continue;
+        const other = opposite.get(opt);
+        if (other !== undefined && cliGiven.has(other)) continue;
         merged[opt] = v;
         fromConfig[opt] = cfg.keys[opt];
       }
+      const unused: string[] = [];
+      const drop = (opt: string, why: string) => {
+        if (!Object.hasOwn(fromConfig, opt)) return;
+        unused.push(`key "${fromConfig[opt]}" (${why})`);
+        delete merged[opt];
+        delete fromConfig[opt];
+      };
+      // --bearer on the command line replaces the file's Authorization header, and an Authorization --header the
+      // file's bearer, rather than failing as "both given".
+      if (cliGiven.has('bearer') && fromConfig.header) {
+        const kept = values.header!.filter((h) => !isAuthorization(h));
+        if (kept.length < values.header!.length) {
+          unused.push(`the Authorization entry of key "${fromConfig.header}" (--bearer given)`);
+          if (kept.length) values.header = kept;
+          else drop('header', '--bearer given');
+        }
+      }
+      if (cliGiven.has('header') && values.header!.some(isAuthorization)) drop('bearer', 'an Authorization --header given');
+      const serverOnCli = positionals.length > 0 || values.stdio !== undefined || !!command;
       // Only an explicit --config names the server (loadConfig drops it from a discovered file, with a warning).
-      if (!positionals.length && values.stdio === undefined && !command) {
+      if (!serverOnCli) {
         if (cfg.url !== undefined) { positionals = [cfg.url]; fromConfig.url = 'url'; }
         if (cfg.stdio !== undefined) { values.stdio = cfg.stdio; fromConfig.stdio = 'stdio'; }
         if (cfg.command) { command = cfg.command; fromConfig.stdio = 'stdio'; }
+      } else if (positionals.length) {
+        // A <url> on the command line replaces a file written for a stdio server: its stdio-only keys are not used.
+        for (const opt of STDIO_ONLY) drop(opt, 'the <url> on the command line is not a --stdio server');
+      } else {
+        for (const opt of HTTP_ONLY) drop(opt, 'the --stdio server on the command line is not a <url>');
       }
+      if (unused.length) stderr += `${visibleText(`mcp-review-check: not used from ${cfg.file}: ${unused.join(', ')}`)}\n`;
       // One line names the file applied, and the key the server came from, so a file's effect is never silent.
       const server = fromConfig.url ? ' (the server from its key "url")' : fromConfig.stdio ? ' (the server from its key "stdio")' : '';
       stderr += `${visibleText(`mcp-review-check: options from ${cfg.given ? '--config' : 'config file'} ${cfg.file}${server}`)}\n`;
+    }
+    // Two opposite switches on the command line; or from the file, where --no-local and --local are both settings.
+    for (const [a, b] of OPPOSITES) {
+      const v = values as Record<string, unknown>;
+      if (v[a] && v[b]) throw new UsageError(`give either --${a} or --${b}, not both`);
+    }
+    // Each opposite but --no-local only turns its option off.
+    for (const [a, b] of OPPOSITES) {
+      if (a === 'local') continue;
+      const v = values as Record<string, unknown>;
+      if (v[b]) delete v[a];
     }
     format = (values.format ?? 'text').toLowerCase();
     values.target ??= 'all';
@@ -492,7 +583,6 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // --output in another format over the --baseline file would leave a text (or markdown, SARIF, JUnit) report that the
     // next --baseline run rejects; --save-baseline or --output in --format json over it is the intended refresh.
     if (values.output !== undefined && values.baseline && format !== 'json' && samePath(values.baseline, values.output)) throw new UsageError(`--baseline and --output name the same file; --output would replace the baseline with the --format ${format} report (use --save-baseline to refresh it)`);
-    if (values.local && values['no-local']) throw new UsageError('give either --local or --no-local, not both');
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
     // "--ignore A,B" as many linters take it, besides --ignore A --ignore B.
     const ignore = (values.ignore ?? []).flatMap((v) => v.split(',')).map((v) => v.trim());
@@ -583,6 +673,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // Accepted for scripts that share one option set, but said: the user should not think they took effect.
     if (toolArgs && !values.active) stderr += 'warning: --tool-args has no effect without --active\n';
     if (values['sarif-location'] !== undefined && format !== 'sarif') stderr += 'warning: --sarif-location applies only to --format sarif\n';
+    stderr += formatWarnings(format, cliGiven, values as Record<string, unknown>, env);
 
     const opts: BuildOptions = {
       target: spec, headers, bearer, timeoutMs, platforms: target, maxDurationMs,
