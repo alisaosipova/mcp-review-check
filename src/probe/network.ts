@@ -48,22 +48,33 @@ export function retryDelayMs(ex: HttpExchange, attempt: number, nowMs = Date.now
   return 250 * 3 ** attempt;
 }
 
+/** How a request is retried. */
+export interface RetryOptions {
+  /** Retry a timed-out attempt once (default true). False after a stall: each attempt already waits the short
+   *  STALLED_TIMEOUT_MS for a server that stopped answering, and a second wait would only double it. */
+  retryTimeout?: boolean;
+}
+
 /** tracer.request with retries on transient failures. Returns every attempt; the last one is the result. */
 export async function requestWithRetry(
   tracer: Tracer, label: string, url: string | URL, init: Parameters<Tracer['request']>[2], wait: (ms: number) => Promise<void> = sleep,
+  opts: RetryOptions = {},
 ): Promise<HttpExchange[]> {
   const out: HttpExchange[] = [];
+  const timeoutRetries = opts.retryTimeout === false ? 0 : 1;
   for (let i = 0; ; i++) {
     const { exchange } = await tracer.request(i ? `${label} (retry ${i})` : label, url, init);
     out.push(exchange);
-    if (!isTransient(exchange) || i + 1 >= MAX_ATTEMPTS || (timedOut(exchange) && i >= 1)) return out;
+    if (!isTransient(exchange) || i + 1 >= MAX_ATTEMPTS || (timedOut(exchange) && i >= timeoutRetries)) return out;
     await wait(retryDelayMs(exchange, i));
   }
 }
 
 /** The last attempt of a retried request. */
-export async function requestRetried(tracer: Tracer, label: string, url: string | URL, init: Parameters<Tracer['request']>[2], wait?: (ms: number) => Promise<void>): Promise<HttpExchange> {
-  const all = await requestWithRetry(tracer, label, url, init, wait);
+export async function requestRetried(
+  tracer: Tracer, label: string, url: string | URL, init: Parameters<Tracer['request']>[2], wait?: (ms: number) => Promise<void>, opts?: RetryOptions,
+): Promise<HttpExchange> {
+  const all = await requestWithRetry(tracer, label, url, init, wait, opts);
   return all[all.length - 1];
 }
 
@@ -167,7 +178,7 @@ export type OriginProbeName = 'originNone' | 'originClaude' | 'originChatgpt' | 
  */
 export async function originProbes(
   tracer: Tracer, url: URL, headers: Record<string, string>, mode: OriginProbeMode, timeoutMs: number, wait?: (ms: number) => Promise<void>,
-  out: Partial<Record<OriginProbeName, ProbeObservation>> = {},
+  out: Partial<Record<OriginProbeName, ProbeObservation>> = {}, retry?: RetryOptions,
 ): Promise<Partial<Record<OriginProbeName, ProbeObservation>>> {
   const init = (origin?: string): Parameters<Tracer['request']>[2] => {
     const o: Record<string, string> = origin ? { origin } : {};
@@ -179,7 +190,7 @@ export async function originProbes(
     return { method: 'POST', headers: { ...headers, ...JSON_HEADERS, ...extra, ...o }, body: JSON.stringify(body), timeoutMs };
   };
   const send = async (name: OriginProbeName, label: string, origin?: string) => {
-    const ex = await requestRetried(tracer, label, url, init(origin), wait);
+    const ex = await requestRetried(tracer, label, url, init(origin), wait, retry);
     out[name] = ex; // published before the session close: the probe itself is done
     if (mode === 'initialize') await closeProbeSession(tracer, url, ex, headers, timeoutMs);
   };
@@ -190,8 +201,9 @@ export async function originProbes(
   return out;
 }
 
-export async function challengeProbe(tracer: Tracer, url: URL, timeoutMs: number, wait?: (ms: number) => Promise<void>): Promise<HttpExchange> {
-  return requestRetried(tracer, 'challenge', new URL('/.well-known/openai-apps-challenge', url.origin), { method: 'GET', timeoutMs }, wait);
+/** The domain-challenge GET. `retry.retryTimeout: false` after a stall: one short wait, not two. */
+export async function challengeProbe(tracer: Tracer, url: URL, timeoutMs: number, wait?: (ms: number) => Promise<void>, retry?: RetryOptions): Promise<HttpExchange> {
+  return requestRetried(tracer, 'challenge', new URL('/.well-known/openai-apps-challenge', url.origin), { method: 'GET', timeoutMs }, wait, retry);
 }
 
 export interface TlsResult {

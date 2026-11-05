@@ -30,6 +30,9 @@ export interface WireContext {
     sessionId?: string;
     protocolVersion?: string;
   };
+  /** The server stopped answering after initialize (tools/list timed out), so `timeoutMs` is the short stall wait: a
+   *  timed-out Origin or challenge probe is not retried (one short wait, not two). Default: read from snap.listMeta. */
+  stalled?: boolean;
   /** Where each probe lands as soon as it finishes (and the return value): a --max-duration stop keeps the finished
    *  probes. Default: a new object. */
   out?: Probes;
@@ -52,6 +55,14 @@ function declares(snap: Snapshot, test: (caps: Obj) => boolean): boolean {
 }
 /** A capability that makes subscriptions/listen worth opening: list_changed or resource subscriptions. */
 const listens = (c: Obj) => ['tools', 'prompts', 'resources'].some((k) => isObj(c[k]) && (c[k] as Obj).listChanged === true) || (isObj(c.resources) && c.resources.subscribe === true);
+
+/** The SDK's request timeout (-32001), or the 2026-07-28 client's (an aborted fetch, a body incomplete at the deadline). */
+const LISTING_TIMED_OUT = /^(MCP error -32001: Request timed out\b|This operation was aborted$|response body not complete after \d+ ms$)/;
+
+/** A listing error that is a timeout: after initialize, the server stopped answering (connect.ts `stalled`). */
+export function listingTimedOut(error: string | undefined): boolean {
+  return !!error && LISTING_TIMED_OUT.test(error);
+}
 
 export async function runWireProbes(ctx: WireContext): Promise<Probes> {
   const { snap, timeoutMs, client, modern, http } = ctx;
@@ -115,8 +126,10 @@ export async function runWireProbes(ctx: WireContext): Promise<Probes> {
     }
     const originMode = snap.transport.kind === 'sse' ? 'sse' : modernOnly ? 'discover' : 'initialize';
     // Into `p` probe by probe: a stop between two Origin probes keeps the ones already made.
-    await originProbes(tracer, url, authHeaders, originMode, timeoutMs, ctx.sleep, p);
-    p.challenge = await challengeProbe(tracer, url, timeoutMs, ctx.sleep);
+    // After a stall each attempt already waits the short stall wait: a timed-out one is not retried.
+    const retry = { retryTimeout: !(ctx.stalled ?? listingTimedOut(snap.listMeta.tools?.error)) };
+    await originProbes(tracer, url, authHeaders, originMode, timeoutMs, ctx.sleep, p, retry);
+    p.challenge = await challengeProbe(tracer, url, timeoutMs, ctx.sleep, retry);
   }
   return p;
 }
