@@ -377,7 +377,10 @@ export const LST_012 = defineRule(
   },
 );
 
+/** Media and fonts: exempt from the 256 KiB rule. */
 const MEDIA = /\.(png|jpe?g|gif|webp|svg|ttf|otf|woff2?|eot)$/i;
+/** An image a plugin icon can be (a font is media but not an icon). */
+const ICON_IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
 const BINARY = /\.(ico|pdf|zip|gz|tgz|tar|7z|rar|jar|class|exe|dll|so|dylib|bin|wasm|node|pyc|o|a|dmg|pkg|deb|rpm|docx?|xlsx?|pptx?)$/i;
 
 export const LST_013 = defineRule(
@@ -426,7 +429,7 @@ export const LST_014 = defineRule(
     }
     const icon = m.icon;
     if (icon === undefined) out.push({ path, severity: 'info', message: `plugin.json has no icon for the directory listing${man('MAN-002')}` });
-    else if (!isStr(icon) || !MEDIA.test(icon)) out.push({ path, message: `icon ${JSON.stringify(icon)} is not an image file path${man('MAN-002')}` });
+    else if (!isStr(icon) || !ICON_IMAGE.test(icon)) out.push({ path, message: `icon ${JSON.stringify(icon)} is not an image file path${man('MAN-002')}` });
     else if (!p.files.some((f) => f.kind === 'file' && f.path === icon.replace(/^\.\//, ''))) out.push({ path, message: `icon ${q(icon)} is not a file in the plugin folder${man('MAN-002')}` });
     return out;
   },
