@@ -1,0 +1,129 @@
+{
+ "area": "A04",
+ "name": "protocol, auth, server and runtime rules and the engine",
+ "coverage": "Read at bc7090d in a detached worktree (npm ci --ignore-scripts and npm run build; the worktree is removed). Read in full: src/rules/engine.ts, spec.ts, auth.ts, server.ts and runtime.ts. Read in part: src/probe/network.ts (lookupHost, preflight), src/probe/auth.ts (activeAuth), src/probe/wire.ts (the modern probes), src/protocol/trace.ts (noteNotifications, abortAfterHeaders), src/connect.ts (readUiResources, buildHttp, probe wiring), src/rules/util/obs.ts, util/ui.ts, util/access.ts and util/net.ts (isLocalTarget). Checked against the round-1 and round-3 FINDINGS and REMEDIATION and the CHANGELOG sections for 1.0.1 and 1.1.0; none of the findings above are listed there. Read with WebFetch: the MCP 2026-07-28 caching page, the 2026-07-28 and 2025-11-25 resources pages, and the 2026-07-28 authorization page. Repros I ran against the built CLI, with servers on 127.0.0.1 only: a raw stdio server in empty-contents and prototype-URI modes, a loopback OAuth stub (CIMD-only, /authorize -> 400 invalid_client) with --active-auth and with a challenge without resource_metadata (JSON and JUnit output), a closed port, and 303 vs 307 cross-host redirects. I also ran a node script against dist/rules/server.js and dist/probe/network.js with fake DNS deps. Checked with no defect found: prototype-key lookups in these files (SPEC-021 uses a Map, SRV-015 uses hasOwn, other keys are fixed; a tool resourceUri of 'constructor' only produced the correct APPS-001 finding), the tracked proxy for stopped runs, and the SPEC-005 listen probe body handling (JSON bodies are read). Not done: the 2026-07-28 streamable-http and subscriptions pages (SPEC-005/007/008/014/015 not checked against the spec text), modern-server.ts runs, runtime rules (--active) beyond reading the code, the AUTH-010 TLS paths, and the --max-duration deadline path in the engine beyond reading it.",
+ "improvements": [
+  {
+   "title": "Record stdio server notifications so SPEC-024 also runs for stdio servers",
+   "dimension": "engine",
+   "detail": "Only the HTTP tracer tallies notifications/message (src/protocol/trace.ts noteNotifications), so SPEC-024 has needs ['http'] and every stdio server gets 'stdio target'. The 2025-11-25 logging page also says servers that emit log notifications MUST declare the logging capability. Tally the notifications that arrive in the stdio transport's onmessage (null-prototype table, same cap) and drop the 'http' need. The 'unrequested' check applies to 2026-07-28 requests only.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging"
+  },
+  {
+   "title": "Check that a 403 insufficient_scope challenge carries resource_metadata",
+   "dimension": "feature",
+   "detail": "The 2026-07-28 runtime-insufficient-scope section lists resource_metadata as a parameter of the 403 challenge 'for consistency with 401 responses'. AUTH-003 already parses the 403 challenge but checks only error= and scope=. Add a spec info or warning when resource_metadata is missing (it is a SHOULD).",
+   "value": "low",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#runtime-insufficient-scope-errors"
+  },
+  {
+   "title": "An explicit 'server answered' need instead of the engine's catch-all skip",
+   "dimension": "engine",
+   "detail": "Today the engine decides 'found nothing because it saw nothing' after the rule runs, from the URL_ONLY allowlist plus fatal or connect-failed (and, per A04-03, auth-required). A declared need, for example 'handshake' (initializeRaw or discoverRaw present), on SPEC-002/008/016..023 and SRV-011..015 would give correct skip reasons up front. It would also stop findings that rules emit from partial data (such as a preflight) from slipping through, and keep the URL_ONLY list from drifting as rules are added.",
+   "value": "medium",
+   "effort": "M",
+   "release": "patch"
+  },
+  {
+   "title": "Show 'inconclusive' active-auth results in the report when no client_id was obtained",
+   "dimension": "ux",
+   "detail": "When --active-auth cannot register (no registration_endpoint, as with CIMD-only or pre-registered authorization servers, or a DCR failure), AUTH-020 and AUTH-021 probe with a placeholder client_id. Tell the user once (stderr notice or an AUTH-019 info) that the /authorize and /token checks ran with a placeholder client and that their results only show whether the endpoint parses the request. As a follow-up, accept --client-id <id> so the redirect check is meaningful for pre-registered or CIMD setups.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://claude.com/docs/connectors/building/authentication"
+  },
+  {
+   "title": "Name the resolver used in SRV-004 messages and record the resolv.conf servers",
+   "dimension": "ux",
+   "detail": "SRV-004 says '(system resolver)' and 'public DNS', but dns.resolve4 uses the resolv.conf servers, which may be split-horizon corporate DNS. Recording which resolver answered (dns.getServers()) in the DnsResult and showing it in the message would let users tell an environment problem from a real DNS defect. This complements A04-02.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A04-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/auth.ts",
+   "line": "562",
+   "title": "AUTH-020 turns any HTTP 400 from /authorize into a Claude error saying redirect_uri was rejected, even when the bogus client_id is the real cause",
+   "claim": "The active probe sends client_id='mcp-review-check' whenever no DCR client was registered: a CIMD-only or pre-registered authorization server, or a DCR attempt that failed. Such an authorization server answers /authorize with 400 invalid_client (or invalid_request, for example when scope is required). AUTH-020 treats `ex.status === 400` alone as 'rejected redirect_uri' and gives a Claude error for each of the three callbacks, so the run exits 1. The status code alone is a heuristic, and the project's severity principle caps heuristics at warning.",
+   "repro": "Ran it. Started a loopback OAuth stub: PRM, RFC 8414 metadata with client_id_metadata_document_supported=true and no registration_endpoint, and /authorize -> 400 {\"error\":\"invalid_client\"}. Ran `node dist/cli.js http://127.0.0.1:47811/mcp --active-auth --format json`. Result: exit 1 with three `AUTH-020 error claude /authorize rejected redirect_uri ... (400)` findings (http://127.0.0.1:3118/callback, http://localhost:3118/callback, https://claude.ai/api/mcp/auth_callback).",
+   "fix": "Count a 400 as a redirect rejection only when the body names the redirect (REDIRECT_REJECTED, or an error/error_description that mentions redirect). For a 400 whose OAuth error is invalid_client, unauthorized_client or invalid_request with no redirect wording, or for any 400 when no DCR client_id was obtained (authProbe.active.clientId is missing), report an info: 'inconclusive: /authorize refused the probe's client_id (...); redirect_uri not verified'. This lowers a severity, so it fits a patch release."
+  },
+  {
+   "id": "A04-02",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/server.ts",
+   "line": "124",
+   "title": "SRV-004 reports a public host as 'resolves only locally, not in public DNS' (error) when the DNS resolver itself fails",
+   "claim": "lookupHost sets d.error whenever both resolve4 and resolve6 reject, whatever the code. SRV-004 then builds `local` with `(d.lookup ?? []).filter((ip) => isIP(ip) === 4 || !!d.error)` before it looks at the error code. A resolver failure (ECONNREFUSED, ETIMEOUT, ESERVFAIL: blocked UDP/53, a sandbox, a flaky corporate resolver) combined with a working system lookup therefore becomes an error for Claude and ChatGPT that names a public IP as local. The INCONCLUSIVE branch at line 132 cannot be reached in that case. dns.resolve* also does not query 'public DNS': it asks the resolvers in resolv.conf.",
+   "repro": "Ran it. A node script fed fake deps into dist/probe/network.js lookupHost: resolve4 and resolve6 reject with code ECONNREFUSED, ETIMEOUT or ESERVFAIL, and lookup returns ['93.184.215.14']. It then ran SRV_004.check on {target:{kind:'http'},transport:{dns:d},localMode:false}. All three codes gave `[{\"message\":\"mcp.example.com resolves only locally (93.184.215.14), not in public DNS\"}]`, which takes the rule severity: error for claude and chatgpt.",
+   "fix": "Treat the 'resolves only locally' case as proven only when the resolver returned an authoritative 'no records' answer (d.code ENOTFOUND or ENODATA, or a fulfilled empty answer). For any other d.code (ECONNREFUSED, ETIMEOUT, ESERVFAIL, EREFUSED, ...) return the INCONCLUSIVE info and include the system-lookup addresses in the message. Also say 'configured resolver' instead of 'public DNS'. Patch release."
+  },
+  {
+   "id": "A04-03",
+   "dimension": "engine",
+   "severity": "medium",
+   "file": "src/rules/engine.ts",
+   "line": "236",
+   "title": "In an auth-required (or token-rejected) run, rules that need nothing count as passed: SRV-013, SPEC-002, SPEC-020, SRV-011, SRV-015 and others show as passed in JUnit",
+   "claim": "The A10-05 fix skips empty results only when `snap.fatal || toolLevel === 'connect-failed'`. When the server answers 401 and no --bearer is given, there is no initialize result, no lists and no probes. Even so, every rule with `needs: []` (SPEC-002/008/016/017/018/020/021/023 and SRV-011..015) finds nothing and is counted in rulesRun. JUnit lists them as passed testcases, for example `SPEC-020 List methods for declared capabilities succeed` and `SRV-011`, although tools/list never ran. The verdict says INCOMPLETE, but per-rule outputs (JUnit, SARIF rule list, rulesRun) claim checks that never happened. This is the usual CI case of a job without a token.",
+   "repro": "Ran it. The loopback OAuth stub answers 401 to every MCP request. `node dist/cli.js http://127.0.0.1:47812/mcp --format json`: coverage is auth-required, and SRV-011, SRV-012, SRV-013, SRV-014, SRV-015, SPEC-002, SPEC-008, SPEC-016, SPEC-017, SPEC-018, SPEC-020, SPEC-021 and SPEC-023 appear neither in findings nor in skipped, so they passed. The same run with `--format junit` contains `<testcase classname=\"claude\" name=\"SPEC-020 List methods for declared capabilities succeed\"/>` and `SRV-015`/`SRV-011` testcases with no <skipped/>.",
+   "fix": "Extend the line-236 condition to toolLevel 'auth-required' and 'token-rejected' when the rule is not URL_ONLY and not an auth rule (needs 'auth', 'active-auth' or 'http' alone with URL-only data). Use authReason(snap) as the skip reason. An alternative is to give these rules an explicit 'server' need that unmetNeed fails unless initializeRaw or discoverRaw is set. Add a test with an auth-required snapshot. Rules that were wrongly passing become skipped, so this is a patch release, as A10-05 was in 1.0.1."
+  },
+  {
+   "id": "A04-04",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/spec.ts",
+   "line": "240",
+   "title": "SPEC-010 gives a spec error for empty contents on a 2025-11-25 (legacy) request, where the spec has only a SHOULD",
+   "claim": "check(resourceMissing, modern=false) reports `resources/read of a missing URI returned empty contents` as an error on every era. The 'MUST NOT return an empty contents array' exists only on the 2026-07-28 resources page. The 2025-11-25 page says only 'Servers SHOULD return standard JSON-RPC errors' (-32002). A legacy-only server, or the legacy probe on a dual server, is therefore judged against a MUST from a revision it did not negotiate. This breaks the severity principle (error only for a documented MUST).",
+   "repro": "Ran it. A raw stdio 2025-11-25 server (scratch raw-server.mjs, mode 'empty') answers resources/read of an unknown URI with {contents: []}. `node dist/cli.js --format json --stdio -- node raw-server.mjs empty` gives `SPEC-010 error spec resources/read of a missing URI returned empty contents instead of an error` with era legacy.",
+   "fix": "In check(), when modern === false, emit the empty-contents finding as severity 'warning' (SHOULD), cite https://modelcontextprotocol.io/specification/2025-11-25/server/resources#error-handling, and keep error only for the modern path (resourceMissingModern). Document this in severityNote. Patch release, because it lowers a severity."
+  },
+  {
+   "id": "A04-05",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/auth.ts",
+   "line": "480",
+   "title": "AUTH-016 warns spec and ChatGPT about a missing resource_metadata that AUTH-002 accepts when a well-known PRM resolves",
+   "claim": "AUTH-002 (lines 84-88) holds that the spec needs only one discovery mechanism: with a well-known PRM, a missing resource_metadata is only a Claude warning. AUTH-016 adds a spec+chatgpt warning '401 for an invalid token lacks a WWW-Authenticate resource_metadata' without checking a.prm. One root cause (a header without resource_metadata) gives two findings, and they contradict each other on the spec verdict. The cited token-handling section requires only HTTP 401 for invalid tokens.",
+   "repro": "Ran it. Loopback stub whose 401s carry `WWW-Authenticate: Bearer scope=\"notes.read\"` and which serves /.well-known/oauth-protected-resource/mcp. `node dist/cli.js http://127.0.0.1:47812/mcp --format json` gives `AUTH-002 warning {claude:warning} Bearer challenge has no resource_metadata parameter (a well-known PRM still resolves)` and also `AUTH-016 warning {spec:warning,chatgpt:warning} 401 for an invalid token lacks a WWW-Authenticate resource_metadata`.",
+   "fix": "In AUTH-016, return [] for a missing resource_metadata when snap.authProbe.prm exists (AUTH-002 owns it). Otherwise limit the finding to the platform AUTH-002 would report, or report it only when the invalid-token challenge differs from the unauthenticated one (for example, a resource_metadata that is present unauthenticated but dropped for invalid tokens). Patch release."
+  },
+  {
+   "id": "A04-06",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/engine.ts",
+   "line": "55",
+   "title": "On a connect failure, AUTH and era-dependent rules are skipped as 'server did not request auth' or 'era unknown' instead of 'could not connect'",
+   "claim": "unmetNeed gives the need-specific reason before the connect-failed handling at line 236 is reached. When nothing answered (ECONNREFUSED), 16 AUTH rules read 'server did not request auth', SPEC-001/004 read 'era unknown', and SPEC-011..015/022 read 'era unknown (not 2026-07-28)'. The first two claims are false, because the server was never reached, and the reasons differ from the 105 other rules marked 'could not connect'.",
+   "repro": "Ran it. `node dist/cli.js http://127.0.0.1:47899/mcp --format json --timeout 3000` (nothing listening) exits 3 with these skipped reasons: 'could not connect' 105, 'server did not request auth' 16 (AUTH-002, AUTH-004..010, ...), 'era unknown' 2 (SPEC-001, SPEC-004), 'era unknown (not 2026-07-28)' 6.",
+   "fix": "At the top of unmetNeed, for needs 'auth', 'legacy', 'modern', 'ui', 'tools', 'resources' and 'prompts', return authReason(snap) ?? CONNECT_REASON when `snap.fatal || snap.coverage.toolLevel === 'connect-failed'`. URL_ONLY rules keep running. Only skip texts change, so this is a patch release."
+  },
+  {
+   "id": "A04-07",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "164",
+   "title": "SRV-006 ignores a 303 redirect, so a cross-host 303 at the registered URL is reported only as an unexplained connect failure",
+   "claim": "REDIRECTS is {301, 302, 307, 308}, but sameHostRedirect in probe/network.ts treats 303 as a redirect. When the POST to the registered URL gets a 303 to another host, the handshake fails, SRV-006 finds nothing and is skipped as 'could not connect', and the report never names the redirect. A 307 gives `SRV-006 error POST redirects (307) to another host`.",
+   "repro": "Ran it. A loopback server answers every request with a 303 (or 307) to http://localhost:<port+1>/mcp. `node dist/cli.js http://127.0.0.1:47820/mcp --format json`: with 303 there is no SRV-006 finding and skipped holds {SRV-006: 'could not connect'}. With 307 the run reports `SRV-006 error POST redirects (307) to another host: http://localhost:47821/mcp`.",
+   "fix": "Add 303 to REDIRECTS. For a 303 on POST, add that the method becomes GET, so the MCP handshake cannot follow it. SRV-006 would report more than before, which is a minor release under the stability policy. The message fix could ship as a patch if the severity stays warning."
+  }
+ ]
+}

@@ -1,0 +1,188 @@
+{
+ "area": "A06",
+ "name": "listings",
+ "coverage": "Worked read-only at bc7090d in the detached worktree .claude/review-r4/scratch/find-A06 (npm ci --ignore-scripts, npm run build OK). The worktree is now removed, and so are the scratch fixtures under the session scratchpad. Read in full: src/listing/load.ts, image.ts, index.ts, src/rules/listing.ts (LST-001..028, LISTING_MANUAL, listingRuleChecked), src/rules/manual.ts. Grepped src/listing/types.ts, src/limits.ts (TEXT_CAP = 16 KiB, so the 4000-character limits are not cut) and the listing paths of src/cli.ts. Checked against round-3 FINDINGS (A06-01..11, C-01, C-02, the A06/A10 improvement rows) and the 1.0.1/1.1.0 CHANGELOG entries, and did not re-report any of them. The mcpServers-missing-is-a-warning decision (A06-09) and the MAN-031/'server' subject improvements are left alone. Fetched the cited docs: code.claude.com plugins-reference, claude.com pre-submission-checklist, developers.openai.com submission and submission-errors. Repros run against dist/cli.js with crafted copies of test/fixtures/listing/*: A06-01 (mcpServers file path and ../ path, PASS), A06-02 (Codex inline object and non-root path), A06-03/04/05 (SVG viewBox-only, '>' in an attribute, 8192/5000 SVG), A06-06 (node_modules .npmrc plus 600 files), A06-07 (broken mcp.json with --checklist, compared against a valid one), A06-08 (--verbose dump), A06-09 (skills-only plus a screenshot), A06-10 (mcp-for-claude plus displayName with ZWSP/Cyrillic). Also called svgSize directly from dist. Reviewed by reading without finding a defect: readCapped (lstat/realpath/O_NOFOLLOW/O_NONBLOCK, strict UTF-8, BOM), jsonErrorPosition, the PNG/JPEG/WebP header parsers (bounds checks), svgRootAt prologue scanning (linear), declaredMcp and examineImage traversal guards, and the LST-021/027 overlap logic. Not done: no vitest files run, no fuzzing of the image parsers, no Windows path behaviour tested, LST-008/009 launcher and TOML parsing not re-reviewed (covered by C-01/C-02 in 1.1.0), and LST-015/025/026 not run with a live server target.",
+ "improvements": [
+  {
+   "title": "Check the per-file 5 MiB repository limit and 'Validation stops' layout rules in LST-013",
+   "dimension": "feature",
+   "detail": "The pre-submission checklist stops validation for any plugin file over 5 MiB, file names invalid on Windows/macOS (colon, trailing dot/space, con/prn, case-only duplicates) and export-ignore/filter in .gitattributes. The walk already has sizes and names, so these are cheap deterministic checks (error).",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://claude.com/docs/plugins/pre-submission-checklist"
+  },
+  {
+   "title": "Flag MCP server commands the validator cannot read (sh -c, inline -c programs, npm run) and lockfile installs",
+   "dimension": "feature",
+   "detail": "unwrapArgv already recognises sh -c / cmd /c wrappers, but nothing reports them. The checklist holds such commands for a reviewer ('MCP server command wasn't read') and holds package.json next to a lockfile at the plugin root ('Dependencies install from a lockfile'). Report both as warnings (held, not blocked).",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://claude.com/docs/plugins/pre-submission-checklist"
+  },
+  {
+   "title": "Validate hooks/hooks.json and plugin.json component paths",
+   "dimension": "feature",
+   "detail": "The checklist Blocks invalid hooks/hooks.json and component paths outside the plugin folder. The plugins reference requires every component path to start with ./ and to exist. These checks reuse readJson and the declaredMcp path test.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://code.claude.com/docs/en/plugins-reference#path-rules"
+  },
+  {
+   "title": "Warn about a top-level bin/ folder for claude.ai/Cowork",
+   "dimension": "feature",
+   "detail": "The plugins reference says 'claude.ai and Cowork don't install a plugin that has this directory'. A one-line info or warning in LST-013 would help plugins meant for claude.ai.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://code.claude.com/docs/en/plugins-reference#standard-layout"
+  },
+  {
+   "title": "Validate homepage parses as a URL",
+   "dimension": "feature",
+   "detail": "The plugins reference says homepage 'Must parse as a URL, or the plugin fails to load'. Add it to LST-014 or LST-001 as an error.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://code.claude.com/docs/en/plugins-reference#fields"
+  },
+  {
+   "title": "Honour EXIF orientation for JPEG screenshots",
+   "dimension": "engine",
+   "detail": "jpegSize reports stored dimensions. A 706x500 screenshot saved rotated with Orientation 6/8 reads as 500x706, which gives a false LST-028 error, or the reverse. Parse the APP1 Exif orientation tag and swap width and height for 5-8 (or downgrade to a warning when an orientation tag is present).",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Avoid reading whole huge directories before the 10,000-entry cap",
+   "dimension": "perf",
+   "detail": "walk() calls readdirSync(...).sort() on each folder before checking the cap, so a single folder with millions of entries is read and sorted in full. Use opendirSync and stop at the cap. A sorted listing is not needed for correctness: sort the collected entries at the end.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Explain in the listings guide which files --plugin-dir reads",
+   "dimension": "ux",
+   "detail": "State that the whole folder is walked (including untracked folders, until A06-06 is fixed), that only the root .mcp.json is read (until A06-01 is fixed) and which package-config files count. This sets correct expectations for a local run compared with the portal.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A06-01",
+   "dimension": "engine",
+   "severity": "high",
+   "file": "src/listing/load.ts",
+   "line": "172-202 (loadPluginDir reads only .mcp.json); src/rules/listing.ts:39-54 (pluginServers / pluginServerRefs)",
+   "title": "Claude plugin: MCP config files named by plugin.json mcpServers are never read, so LST-006..011 skip their servers and paths outside the plugin are not reported",
+   "claim": "The plugins reference says mcpServers takes 'a .json file path, an MCP bundle path or URL, an inline map, or an array mixing them' and that Claude Code 'Reads the file as an mcpServers map'. loadPluginDir reads only the root .mcp.json. pluginServerRefs is used only by LST-010 for .mcpb/.dxt. A server declared in a referenced .json file is invisible to LST-006 (schema), LST-007 (https), LST-008 (unpinned launcher, Blocks), LST-009 (registry config) and LST-011 (literal credential, Blocks). No warning says the file was not checked. A path such as '../outside.json' is also not reported, although the pre-submission checklist Blocks 'a plugin.json path that points outside the plugin folder'.",
+   "repro": "Ran against the built CLI: copy test/fixtures/listing/plugin-valid, delete .mcp.json, set plugin.json \"mcpServers\": \"./servers.json\", and write servers.json = {\"mcpServers\":{\"x\":{\"command\":\"npx\",\"args\":[\"some-unpinned-pkg\"],\"env\":{\"API_TOKEN\":\"ghp_<36 chars>\"}}}}. `node dist/cli.js --plugin-dir <dir> --target claude` prints 0 errors, 0 warnings, PASS, exit 0. With \"mcpServers\": [\"../outside.json\"] the result is also PASS with nothing reported.",
+   "fix": "In loadPluginDir, for each string (or array element) in plugin.json mcpServers that ends in .json, read it with the declaredMcp logic, which already exists for ChatGPT (./ path, no '..', readJson inside realRoot). Store the results as plugin.mcpFiles[] and let pluginServers() merge them in load order, with a later name replacing an earlier one. For a path that does not start with ./, contains '..', or does not exist, emit an LST-006 error ('path escapes plugin folder' / 'Path not found'; claude plugin validate and the checklist both treat these as failures). Use a warning only for this tool's own guards (read cap, linked folder)."
+  },
+  {
+   "id": "A06-02",
+   "dimension": "engine",
+   "severity": "medium",
+   "file": "src/listing/load.ts",
+   "line": "237-251, 271-278 (declaredMcp / fallback); src/rules/listing.ts:959-980 (LST-024)",
+   "title": "ChatGPT/Codex: an inline mcpServers object, or a mcpServers path other than the root .mcp.json, is accepted silently",
+   "claim": "The OpenAI submission-errors page says '`mcpServers` must be a string path for the root `.mcp.json`'. When the manifest has an inline mcpServers object, loadOpenAiManifest falls through to the root mcp.json/.mcp.json, and the inline servers are never checked: LST-023 headers, LST-024 url/https and LST-022 test cases are all skipped. No finding is raised. A string such as './cfg/servers.json' is read and accepted, although the portal accepts only the root .mcp.json.",
+   "repro": "Ran: a Codex package (.codex-plugin/plugin.json with the openai-valid interface moved to the root 'interface'), (a) with \"mcpServers\": {\"a\":{\"url\":\"https://h.test/mcp\"}} and no mcp.json, and (b) with \"mcpServers\": \"./cfg/servers.json\". `node dist/cli.js --openai-manifest <dir>/.codex-plugin/plugin.json --target chatgpt` prints no LST-016/023/024 finding and PASS for both.",
+   "fix": "In loadOpenAiManifest, record the mcpServers shape. In LST-024 (or LST-016), report an error when mcpServers is present and is not a string, and an error when it is a string other than './.mcp.json' / '.mcp.json' (both are deterministic, documented rejections). Still read an inline object as the server map so that LST-023/024 check its headers and URLs."
+  },
+  {
+   "id": "A06-03",
+   "dimension": "engine",
+   "severity": "medium",
+   "file": "src/rules/listing.ts",
+   "line": "1056-1059 (unmeasured 'no-dimensions' for svg)",
+   "title": "An SVG icon without a numeric viewBox or width/height is 'info', but the portal rejects it",
+   "claim": "The submission-errors page lists 'SVG must define a numeric `viewBox` or numeric `width` and `height`' as a submission error, and the submission page says 'For SVG icons, provide square numeric dimensions or a square viewBox of at least 48 by 48'. unmeasured() returns severity info ('it scales'). An SVG logo with no size passes, and MAN-019 is dropped from the checklist because LST-021 and LST-027 'ran'. The requirement is deterministic, so the documented MUST should be an error. Do this together with A06-04 so that a parser miss does not become a false error.",
+   "repro": "Ran: openai-valid with logo/composerIcon pointing at '<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0h24v24H0z\"/></svg>'. Output: 'i LST-027 ... has no numeric width/height or viewBox; its size cannot be checked', then 'ChatGPT: NO AUTOMATED BLOCKERS · Result: PASS'.",
+   "fix": "For an icon whose format is svg, make 'no-dimensions' an error with the documented wording ('SVG must define a numeric viewBox or numeric width and height'). Keep info/warning only where the parser bailed out (see A06-04). For screenshots, SVG is already a format error."
+  },
+  {
+   "id": "A06-06",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/listing/load.ts",
+   "line": "141-168 (walk), 193-196 (packageConfigs)",
+   "title": "--plugin-dir walks untracked/ignored folders (node_modules, .venv): a dependency's .npmrc gives a false LST-009 Blocks error and LST-013 counts dependency files",
+   "claim": "The directory validates the committed repository ('runs every check ... against your repository'). walk() skips only the root .git and reads PACKAGE_CONFIG_FILES at any depth. A normal working checkout with node_modules/ (listed in .gitignore) gets an LST-009 error for node_modules/<dep>/.npmrc, a file npm never reads for the plugin's launcher. It also gets LST-013 'over 512 files' and over-256-KiB or binary (.node) warnings that the portal would not raise.",
+   "repro": "Ran: plugin-valid plus .gitignore 'node_modules/', node_modules/dep/f1..f600.js and node_modules/dep/.npmrc containing 'registry=https://registry.npmjs.org/'. Output: 'x LST-009 ... node_modules/dep/.npmrc sets a package source ...', '! LST-013 ... the plugin has 607 files; over 512 is held for a reviewer', 'Result: FAIL'.",
+   "fix": "When the folder is in a git work tree, list files with `git ls-files -z --cached --others --exclude-standard` (read-only, no network). Otherwise skip node_modules/, .venv/, venv/, __pycache__/, dist caches by default and say so in a note. At minimum, never read package configs under node_modules/ or site-packages/. Name the excluded folders in the --verbose dump and the listings guide."
+  },
+  {
+   "id": "A06-04",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/listing/image.ts",
+   "line": "395-397 (svgSize tag regex)",
+   "title": "svgSize stops the root tag at the first '>', so a '>' inside an attribute value hides width/height",
+   "claim": "/<svg(?=[\\s>/])([^>]*)>/ ends the tag at any '>', including one inside a quoted attribute value, which XML allows. Attributes after it (width, height, viewBox) are lost and the icon is reported as having no dimensions. Today that is only an info. Once A06-03 makes it an error, it becomes a false error.",
+   "repro": "Ran: node -e \"import('./dist/listing/image.js').then(m=>console.log(m.svgSize('<svg xmlns=\\\"x\\\" aria-label=\\\"a>b\\\" width=\\\"64\\\" height=\\\"64\\\"></svg>')))\" prints undefined. End to end, a logo with aria-label=\"Acme > Notes\" width=\"64\" height=\"64\" gives 'i LST-027 ... has no numeric width/height or viewBox'.",
+   "fix": "Scan the start tag with a quote-aware loop, like the DOCTYPE scanner in svgRootAt, up to the first '>' outside quotes, then run the attribute regexes on that slice."
+  },
+  {
+   "id": "A06-05",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/listing.ts",
+   "line": "1099 (LST-027 max 4096 applied to SVG)",
+   "title": "LST-027 applies the 4096 px maximum to SVG icons; the cited submission page limits only raster images",
+   "claim": "O_SUBMIT says 'Raster images can be at most 4096 pixels in either dimension' and gives SVG only a minimum (square, at least 48). LST-027 reports an error for an SVG with viewBox 0 0 8192 8192 or width/height 5000. The submission-errors page has a generic 'must not exceed 4,096×4,096 pixels' line, so the two sources disagree. Under the project's severity principle (error only for a documented MUST with deterministic detection), an SVG over 4096 should be at most a warning that names the conflict.",
+   "repro": "Ran: openai-valid with composerIcon = <svg viewBox=\"0 0 8192 8192\"> and logo = <svg width=\"5000\" height=\"5000\"/>. Output: 'x LST-027 ... is 8192x8192 px; icons must be 48 to 4096 px on a side' (twice), 'ChatGPT: BLOCKED'.",
+   "fix": "Apply the max only when im.format !== 'svg'. For SVG over 4096, emit a warning that cites both pages, or nothing. Adjust the MAN-019 text ('48–4096 px raster; SVG ≥48 square')."
+  },
+  {
+   "id": "A06-07",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/manual.ts",
+   "line": "80-87; src/rules/listing.ts:897, 1142-1149 (listingRuleChecked)",
+   "title": "Checklist says MAN-020/MAN-021 'the rest is checked by LST-022' when LST-022 checked nothing (mcp.json broken or missing)",
+   "claim": "LST-022 returns [] when openAiServers(o) is empty, which treats the package as skills-only. That also happens when mcp.json does not parse, or a declared mcpServers file is missing or outside the package. listingRuleChecked('LST-022') only tests for an interface object, so MAN-020 and MAN-021 are shortened to their residual and claim that test cases, demo URL and release notes were checked automatically.",
+   "repro": "Ran: openai-valid with review and publication.release_notes removed and mcp.json = '{ \"mcpServers\": { \"a\": { \"url\": \"https://x.test/mcp\" }, }'. `--checklist` shows only 'x LST-024 mcp.json is not valid JSON' and '[ ] MAN-020 ... tools_triggered names exist in tools/list (the rest is checked by LST-022)' / '[ ] MAN-021 Demo recording covers web, iOS and Android (the rest is checked by LST-022)'. No test-case or release-notes finding appears. With a valid mcp.json, the three LST-022 warnings appear.",
+   "fix": "In listingRuleChecked, for LST-022 also require that the MCP configuration parsed (`!o.mcp?.error`) and that openAiServers(o).length > 0. Alternatively, have LST-022 report test_cases/release_notes when mcp.json exists but failed to parse, instead of treating the package as skills-only."
+  },
+  {
+   "id": "A06-08",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/listing/index.ts",
+   "line": "494-521 (dumpArray / dumpValue)",
+   "title": "--verbose [listing] dump prints a credential in a single-string \"command\" and URL userinfo after a --flag=",
+   "claim": "dumpValue masks only strings that start with a scheme (displayUrl) and runs maskKnownTokens only on array elements. A server 'command' written as one string (which argvOf/LST-008 support) is printed verbatim, including '--api-key <value>' and '--password=<value>'. An args element '--db=postgres://admin:pw@host/x' keeps its userinfo because it does not start with a scheme and '--db' is not secret-named. The report redactor did not catch either in the CLI output. The 1.0.1 CHANGELOG says the dump redacts '--flag=<token>'.",
+   "repro": "Ran: plugin-valid with .mcp.json servers a = {\"command\":\"node server.js --api-key sk-live-abcdefgh12345678XYZ --password=hunter2hunter2\"} and b = {\"command\":\"node\",\"args\":[\"server.js\",\"--db=postgres://admin:pw123456@db.internal/x\"]}. `node dist/cli.js --plugin-dir <dir> --verbose 2>&1 >/dev/null` prints both values in clear under [listing]. --pass <value>, headers and env were redacted correctly.",
+   "fix": "In dumpValue, run a string 'command' through the same word split as argvOf and then dumpArray, then join it back. In dumpArray and dumpValue, apply displayUrl to any '://' URL embedded after '=' or inside the string (replace each /[a-z][a-z0-9+.-]*:\\/\\/\\S+/i match with displayUrl(match)), and run maskKnownTokens on all strings, not only array elements. Add tests for both shapes."
+  },
+  {
+   "id": "A06-09",
+   "dimension": "engine",
+   "severity": "low",
+   "file": "src/rules/listing.ts",
+   "line": "1105-1133 (LST-028)",
+   "title": "LST-028 does not report screenshots in a package without MCP servers (or, with a server target, without a UI template)",
+   "claim": "The submission-errors page says 'Skills-only ZIP uploads must not include `interface.screenshots`; screenshots require **With MCP** and custom UI' and 'Screenshots are allowed only when the current MCP tool scan reports a UI output template.' LST-028 checks only format and size. A skills-only package (no mcp.json) with a valid 706x500 screenshot passes. The same holds for a server run where hasUi(snap) is false.",
+   "repro": "Ran: openai-valid with mcp.json deleted and interface.screenshots = ['./assets/s1.png'] (a 706x500 PNG). Output: 'ChatGPT: NO AUTOMATED BLOCKERS · Result: PASS', with no LST-028 finding.",
+   "fix": "In LST-028, when screenshots is non-empty and openAiServers(o) is empty and o.mcp has no error, report an error ('skills-only packages must not include interface.screenshots'). When a server was checked (needs 'tools' met) and !hasUi(snap), report an error too. Without a server target, keep the residual MAN-024 text."
+  },
+  {
+   "id": "A06-10",
+   "dimension": "engine",
+   "severity": "low",
+   "file": "src/rules/listing.ts",
+   "line": "261-274 (LST-002)",
+   "title": "LST-002 misses the documented warning for 'claude'/'anthropic' as a whole word, and does not check displayName/author.name",
+   "claim": "The cited plugins reference (C_PREF#name) gives a Warning for a name that 'Has claude, anthropic, or anthropics as a whole word anywhere else, such as mcp-for-claude'. The pre-submission checklist Blocks a 'displayName and author.name' with mixed writing systems, look-alike letters or invisible characters. LST-002 checks neither.",
+   "repro": "Ran: plugin-valid with name 'mcp-for-claude' and displayName 'Acme N​otеs' (a zero-width space and a Cyrillic 'е'). Output: 'Claude: NO AUTOMATED BLOCKERS · Result: PASS' with no LST-002 finding.",
+   "fix": "Add a warning when /(^|-)(claude|anthropic|anthropics)(-|$)/ matches norm after the error checks. For displayName and author.name, report an error for format/invisible characters (reuse the hidden-character detector added in 1.1.0) and for mixed scripts (Unicode script property per letter: more than one script other than Common/Inherited)."
+  }
+ ]
+}

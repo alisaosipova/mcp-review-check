@@ -1,0 +1,13 @@
+{
+ "id": "A03-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-04",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, src/cli.ts unusedToolArgs, the line that builds `why`, uses one string for every `!isSafeToCall(tool)` case: 'the tool is not read-only (readOnlyHint: true), so --active does not call it'. In src/probe/active.ts:61-64, isSafeToCall is also false when destructiveHint is true or when hasWriteVerb(name) matches. test/fixtures/bad-server.mjs annotates delete_x with `readOnlyHint: true, destructiveHint: false`, so it is skipped only by the name filter, and the message contradicts its own annotation. snap.tools.find returns only the first entry with that name. If that entry is safe and a duplicate is not, callableTools (active.ts:222-229, `entries.every(isSafeToCall)`) drops the tool, and the message falls through to the 'past the cap' reason. A --max-duration stop (calls made so far are kept via ctx.into) also ends in that 'cap' branch. Low severity: the warning text is wrong, the behaviour is not. I checked this by reading the code and did not run it."
+  }
+ ],
+ "arbiter": null
+}

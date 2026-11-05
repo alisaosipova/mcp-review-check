@@ -1,0 +1,13 @@
+{
+ "id": "A01-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-03",
+   "verdict": "confirmed",
+   "evidence": "Reproduced against a local 127.0.0.1:18765 server that always answers 401 with WWW-Authenticate Bearer. The command `--fail-on-incomplete --save-baseline b2.json` exits 3. stderr shows the partial-check warning, then 'JSON report written to s/b2.json'. b2.json now has coverage.toolLevel auth-required and toolFingerprints null, and the good-server baseline is gone. The cause is in cli.ts:849: `unsaved` covers only snap.fatal and limits.stopped, which contradicts the A01-02 rationale for exit 3. One part of the claim is overstated: the documented GitLab recipe (ci.md:229-232) refreshes the baseline only through an after_script cp on CI_JOB_STATUS=success. That job would keep the baseline. The harm applies to direct `--save-baseline` refreshes, as in the ci.md:47-57 recipe."
+  }
+ ],
+ "arbiter": null
+}

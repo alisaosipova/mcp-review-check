@@ -1,0 +1,162 @@
+{
+ "coverage": "Worked read-only at bc7090d in my own detached worktree .claude/review-r4/scratch/critic (npm ci --ignore-scripts and npm run build OK). The worktree is removed (git worktree list shows no critic entry), its leftover scratch files are deleted, and the local fixture servers are stopped. I made no network requests except one WebFetch of the 2026-07-28 streamable-http spec page. Servers ran on 127.0.0.1 only. Scratch scripts are in /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/critic/ (sse-server.mjs, origin400.mjs, errflood.mjs).\n\nWHY THESE TARGETS: no finder ran the legacy HTTP+SSE transport, read util/wwwAuth.ts, util/net.ts or protocol/recording.ts, checked SPEC-005/007/008/014/015 and SRV-008 against the spec text (A04 left this undone), ran --diff-only end to end (A10 left it undone), or produced feature-dimension items.\n\nREAD: src/rules/util/wwwAuth.ts, net.ts and obs.ts; src/input-file.ts; src/protocol/stdioArgs.ts, modern.ts and recording.ts; src/explain.ts; src/report/score.ts; SPEC-005..008, 014, 015 and 016 in src/rules/spec.ts; SRV-008 in src/rules/server.ts; collectErrors and the stdio env in src/connect.ts; usageMessage and closestOption in src/cli.ts; the CHANGELOG 1.0.1 and 1.1.0 sections; the trust-model sections of docs/guide/listings.md and options-and-config.md.\n\nRAN:\n- docs/RULES.md against --list-rules --format markdown: in sync, 213 rows.\n- Every --flag named in README and docs/guide/*.md against --help: none missing.\n- The new 1.1.0 --no-*/--color opposites: conflicts give exit 2 as documented.\n- A legacy HTTP+SSE server built on SDK SSEServerTransport: it connects, the era is sse-legacy, and the rules are sensible. This gave the docs-link improvement.\n- A discovered config with a baseline outside the folder and ignore [\"*\"]: no content echoed, and the behaviour matches the documented trust model, so not reported.\n- --baseline and --diff-only in text and markdown (C-06).\n- An unsolicited-response flood (C-02).\n- A foreign Origin rejected with 400 and with 403 plus an id-less body (C-01, C-03).\n- isNonPublicIp and isLoopbackHost over special IPv6 and IPv4 forms (C-04).\n- An option and its value as one argv word (C-05).\n\nCHECKED, NO DEFECT: the WWW-Authenticate parser (a __proto__ param is a harmless no-op, the scanning is linear, token68 and param disambiguation are right); readInputFile; the tokenizeCommand and cmdQuote shapes; the explain and list-rules output; score and gate logic (the score includes spec-only findings by design); the stdio child env (getDefaultEnvironment allowlist, so MCP_REVIEW_CHECK_TOKEN does not leak to the child); Mcp-Name control characters are encoded (the non-ASCII form is already A03-03).\n\nGAPS NOT CLOSED:\n- modern-server.ts was not run: no tsx, and I ran no vitest files. So no end-to-end 2026-07-28 run, and the SPEC-007/008/014/015 judgments were checked against the spec text only.\n- No Windows or macOS paths (cmd /c quoting, taskkill, case folding).\n- No Docker image build, no GitHub code-scanning or job-summary rendering, no real Action run.\n- No https or TLS fixture, no proxy with a self-signed certificate.\n- --active and --active-auth with many calls.\n- The subscriptions and tasks extension pages, and the 2024-11-05 HTTP+SSE page, were not fetched.\n- The HTTP-path variant of A13-01 (object tool name) was not run.\n- C-03 assumes the spec's 403 MUST also binds 2025-11-25 Streamable HTTP servers. The 2026-07-28 text is explicit; the earlier revision was not re-read.",
+ "improvements": [
+  {
+   "title": "Probe the missing and mismatched MCP-Protocol-Version header and the Mcp-Name check on 2026-07-28 servers",
+   "dimension": "feature",
+   "detail": "The streamable-http page has these MUSTs: a header that differs from _meta io.modelcontextprotocol/protocolVersion gets 400/-32020; a modern-only server that does not support pre-2025-06-18 clients rejects a POST without the header; a missing or wrong Mcp-Name on tools/call, resources/read or prompts/get gets 400/-32020. wire.ts probes only a missing or wrong Mcp-Method (headerMismatchNone/Wrong). A version-mismatch probe on tools/list is read-only and safe. A Mcp-Name mismatch can be probed safely on resources/read of a listed URI, or prompts/get, with a mismatched header. Avoid tools/call, because a non-validating server would execute it. Feed the results to SPEC-014 (deterministic MUST, so error).",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "critic, spec text https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http"
+  },
+  {
+   "title": "Check that a notification POST gets 202 with no body",
+   "dimension": "feature",
+   "detail": "Both the 2025-11-25 and the 2026-07-28 transports say an accepted notification MUST get 202 Accepted with no body. The SDK sends notifications/initialized, and the tracer sees that exchange, but no rule reads it. A server that answers 200 with a body, or 204, breaks strict clients. Read the existing sdk notification exchange; this adds no new request. Error severity on spec only.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "critic"
+  },
+  {
+   "title": "Surface stdio and SDK transport errors that are collected but never used",
+   "dimension": "engine",
+   "detail": "RecordingTransport.transportErrors (the first 20 messages) and transportErrorCount are filled on every run but no rule, report field or --verbose line reads them. They hold the SDK's 'unknown message ID' and parse-failure messages: evidence for SPEC-016 (C-02) and for stdout pollution. Report the count in JSON (limits or transport) and in --verbose.",
+   "value": "low",
+   "effort": "S",
+   "release": "minor",
+   "source": "critic"
+  },
+  {
+   "title": "Cite the HTTP+SSE (2024-11-05) transport page in SRV-008 and SPEC-005 findings on sse-legacy servers",
+   "dimension": "ux",
+   "detail": "Against a legacy HTTP+SSE server (SDK SSEServerTransport), SRV-008's error links only the 2026-07-28 streamable-http page. The 2024-11-05 transports page has its own Origin MUST, and that page is the one the server owner implements.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "critic, local SSE fixture run"
+  }
+ ],
+ "findings": [
+  {
+   "id": "C-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/spec.ts",
+   "line": "SPEC-016 id check (e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null); fed by collectErrors in src/connect.ts:365",
+   "title": "SPEC-016 warns when a server rejects a foreign Origin with 403 and a JSON-RPC error body that has no id, which the spec explicitly allows",
+   "claim": "The 2026-07-28 Streamable HTTP page says an invalid Origin MUST get HTTP 403 and the body MAY be a JSON-RPC error response that has no id. The same applies to a rejected notification (400). collectErrors records such a body with responseId undefined. SPEC-016 exempts only id null, so the textbook-correct response produces 'origin evil: response id undefined does not match request id 0' (spec warning). So a server that follows the spec gets penalised on SRV-008's own probe.",
+   "repro": "A raw 127.0.0.1 server that answers any request whose Origin contains 'evil' with 403 and {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Origin not allowed\"}} and otherwise serves 2025-11-25 JSON (initialize, tools/list, 202 for notifications). `node dist/cli.js http://127.0.0.1:58503/mcp` gives '! SPEC-016 [spec] server: origin evil: response id undefined does not match request id 0'. The same happens with a 400 status.",
+   "fix": "For an error response, treat a missing id the same as id null. At least do this when the HTTP status is 4xx, or when the exchange is an Origin, notification or header-validation probe, where the spec permits an id-less error. Keep the mismatch warning only for a present, non-null id that differs from the request id.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "verdict": "confirmed",
+     "severity": "medium",
+     "evidence": "Code path at bc7090d: src/probe/network.ts:200 sends the 'origin evil' probe (initialize, id 0, Origin https://evil.mcp-review-check.invalid) through the tracer. Its label does not start with 'sdk ', so src/connect.ts collectErrors reads it. summarizeJsonRpc (src/protocol/trace.ts:264) sets s.id only when 'id' in o, so an error body with no id gives responseId undefined, and collectErrors pushes {requestId: 0, responseId: undefined}. In src/rules/spec.ts:413 the check `e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null` exempts only null, not a missing id, and nothing earlier guards against it (no status check, no origin-probe exclusion). Ran it: I built a worktree at bc7090d and started a 127.0.0.1:58503 server that answers Origin *evil* with 403 and {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Origin not allowed\"}} and otherwise serves 2025-11-25 JSON. `node dist/cli.js http://127.0.0.1:58503/mcp` printed \"! SPEC-016 [spec] server: origin evil: response id undefined does not match request id 0\", the exact message from the claim. The Streamable HTTP spec text (\"HTTP response body MAY comprise a JSON-RPC error response that has no id\") allows this response for an invalid Origin (403) and for a rejected notification (400). So a server that follows the spec gets a spec warning. Neither FINDINGS.md (round 1 and round 3) nor CHANGELOG 1.0.1/1.1.0 covers it: they cover only the result-id case and the code-range policy. Severity: the false positive is only a warning, but it hits exactly the server behaviour that SRV-008 recommends, so medium. Fix: also skip responseId === undefined when the response is an error (or when the HTTP status is 4xx). Worktree removed."
+    },
+    {
+     "verdict": "confirmed",
+     "severity": "medium",
+     "evidence": "Code at bc7090d. In src/connect.ts the collectErrors function sets responseId to m.id for every error message, so a body with no id gives undefined. In src/rules/spec.ts:413 SPEC-016 checks `e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null`. Only null is exempt, not undefined (an id that is absent).\n\nRepro: I built the CLI in a detached worktree. The test server bound to 127.0.0.1:58503 and answered any request whose Origin contained 'evil' with {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Origin not allowed\"}}, which has no id. Other requests got normal 2025-11-25 JSON and 202 for notifications. `node dist/cli.js http://127.0.0.1:58503/mcp` printed '! SPEC-016 [spec] server: origin evil: response id undefined does not match request id 0' with status 403. It printed the same line with status 400.\n\nSpec check: the 2025-11-25 transports page says \"If the Origin header is present and invalid, servers MUST respond with HTTP 403 Forbidden. The HTTP response body MAY comprise a JSON-RPC error response that has no id\". It allows the same id-less body for a rejected notification (400). The claim cites the 2026-07-28 page, which I did not fetch; the 2025-11-25 text alone is enough.\n\nSo a server that follows the spec gets a spec warning from SRV-008's own Origin probe. It is a false positive that every correct server answering this way will hit, so it is more than cosmetic, but it is only a warning and not an error. Suggested fix: also exempt responseId === undefined (or skip the id check when the response has no id and the HTTP status is 4xx). The worktree has been removed."
+    }
+   ]
+  },
+  {
+   "id": "C-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/protocol/recording.ts",
+   "line": "record() lines 67-79; SPEC-016 in src/rules/spec.ts",
+   "title": "JSON-RPC responses whose id matches no request (unsolicited responses) are never reported",
+   "claim": "RecordingTransport.record() ignores a result whose id is not pending. It does store an error with requestId undefined, but SPEC-016 runs its id check only when requestId is defined. MCP and JSON-RPC require every response to carry the id of the request it answers, so a stream of responses to requests that were never sent is a deterministic protocol violation. It passes silently. The SDK's 'unknown message ID' onerror messages go into transportErrors and transportErrorCount, which no rule or report reads (grep finds no consumer outside recording.ts).",
+   "repro": "A stdio server (scratchpad critic/errflood.mjs) that, after initialize, writes N error responses with ids 100000+i that the client never sent. `node dist/cli.js --stdio \"node errflood.mjs 20000\" --format json` gives the same findings as N=2000 or a clean server (TOOL-006/011/012/018/028 and SRV-002 only), with no SPEC-016 and no mention of the 20000 stray messages. The run took 0.7 s.",
+   "fix": "In record(), when m.id is not in pending, record an 'unsolicited response' observation (count plus the first few ids), also for results. SPEC-016 should then warn once ('N responses answered no request'). Either surface transportErrorCount in the report and --verbose, or drop the dead field.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-02",
+     "verdict": "confirmed",
+     "evidence": "At bc7090d, recording.ts record() (lines 67-79) adds nothing for a result whose id is not pending. For an error it pushes requestId undefined. SPEC-016 (spec.ts:395-416) then runs only the integer and reserved-range code checks, and checks the id only when e.requestId !== undefined. transportErrors and transportErrorCount are written only in recording.ts; grep finds no reader in rules or report. Runtime check: a raw stdio server (scratchpad errflood.mjs) sent 2000 unsolicited error responses (ids 100000+, code -32603) plus a stray result. It produced exactly the same findings as N=0 (TOOL-006/011/012 error, SRV-002 info x2, TOOL-005 info), with no SPEC-016. JSON-RPC requires the response id to equal the request id, so this violation goes unreported. Low severity, as filed."
+    }
+   ]
+  },
+  {
+   "id": "C-03",
+   "dimension": "engine",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "SRV-008, lines 233-237",
+   "title": "SRV-008 accepts any non-2xx answer to a foreign Origin, although the spec requires exactly 403",
+   "claim": "The spec text is: 'If the Origin header is present and invalid, servers MUST respond with HTTP 403 Forbidden.' SRV-008 reports only when originEvil gets a 2xx. A server that rejects the foreign Origin with 400, 404 or 500 gets no finding at all, not even info, although clients and intermediaries cannot tell such a rejection from other failures.",
+   "repro": "The same raw server as in C-01, but with status 400 for the evil Origin. `node dist/cli.js http://127.0.0.1:58502/mcp --format json` gives no SRV-008 finding. It gives only SPEC-007 (my server ignores the version header) and the C-01 SPEC-016 false positive.",
+   "fix": "When originEvil gets a 4xx other than 403 and 401 (auth may run before the Origin check), and originNone gets 2xx, report a spec warning: 'foreign Origin rejected with <status>; the spec requires 403'. It is a warning, not an error, because the status could come from another validation.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-03",
+     "verdict": "confirmed",
+     "evidence": "server.ts SRV-008 (lines ~233-237) emits a finding for originEvil only when is2xx(evil). A 400, 404 or 500 to the foreign Origin yields no finding, even when originNone is 2xx, so the deviation from 'MUST respond with HTTP 403' is detectable by comparison. The rule's own rationale says 'The spec requires a 403 for an invalid Origin.' originEvil is not read anywhere else (only snapshot.ts type, network.ts probe send). I did not reproduce at runtime because the C-01 server was not available; the gap is clear from the code. It is a conformance-only gap: the foreign Origin is still rejected, so no DNS-rebinding exposure."
+    }
+   ]
+  },
+  {
+   "id": "C-04",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/util/net.ts",
+   "line": "isNonPublicIPv6 lines 46-57, V4_RANGES lines 9-13",
+   "title": "Non-public IPv6 forms that embed IPv4 and a few reserved ranges count as public",
+   "claim": "isNonPublicIp returns false for the IPv4-compatible '::127.0.0.1', NAT64 '64:ff9b::a00:1' (10.0.0.1), 6to4 '2002:a00:1::1', the IPv4-translated '::ffff:0:a00:1', discard-only '100::1', deprecated site-local 'fec0::1', Teredo 2001::/32 and 192.88.99.0/24. isLoopbackHost also misses '::127.0.0.1'. These helpers drive SRV-004 (private addresses in public DNS), APPS-005 (CSP naming localhost or a private IP) and the AUTH local-URL checks, so such an AAAA record or CSP origin is not flagged.",
+   "repro": "node -e \"import('./dist/rules/util/net.js').then(m=>['::127.0.0.1','64:ff9b::a00:1','2002:a00:1::1','::ffff:0:a00:1','100::1','fec0::1','192.88.99.1'].forEach(ip=>console.log(ip,m.isNonPublicIp(ip),m.isLoopbackHost(ip))))\" prints false false for every address.",
+   "fix": "Unwrap the embedded IPv4 for ::/96 (compatible), ::ffff:0:0/96, 64:ff9b::/96 and 2002::/16 (bits 16-47), and check it with isNonPublicIPv4. Add 100::/64, fec0::/10, 2001::/32 (Teredo, as non-public) and 192.88.99.0/24.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-04",
+     "verdict": "confirmed",
+     "evidence": "net.ts isNonPublicIPv6 recognizes only the IPv4-mapped prefix (::ffff:0:0/96), plus ::, ::1, fc00::/7, fe80::/10, ff00::/8 and 2001:db8::/32. V4_RANGES lacks 192.88.99.0/24. Running the claimed command against the built dist printed 'false false' for ::127.0.0.1, 64:ff9b::a00:1, 2002:a00:1::1, ::ffff:0:a00:1, 100::1, fec0::1 and 192.88.99.1 (the control ::ffff:a00:1 gave true). Consumers: server.ts:139 (SRV-004), apps.ts:179/181 (APPS-005), auth.ts:36 and isLocalTarget. In auth.ts the miss makes the check stricter (the URL counts as non-local), not laxer. Round 1 fixed the IPv4-mapped notation only; these forms are new. Low severity: deprecated or rare forms in heuristic, info/warning-level checks."
+    }
+   ]
+  },
+  {
+   "id": "C-05",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "usageMessage / closestOption, lines 222-244",
+   "title": "An option and its value given as one argv word reads 'unknown option --stdio; did you mean --stdio?'",
+   "claim": "When a script, Dockerfile CMD exec form or package.json passes '--stdio node server.js' as a single argument, parseArgs reports the whole word as unknown. usageMessage cuts the name at the first whitespace (so it does not echo values) and then suggests the same name it just called unknown, which tells the user nothing.",
+   "repro": "In zsh: S='--stdio node test/fixtures/good-server.mjs'; node dist/cli.js $S (zsh does not split $S) gives 'error: unknown option --stdio; did you mean --stdio?' and exit 2. The same happens with '--quiet --no-quiet' passed as one word.",
+   "fix": "If the raw unknown token contains whitespace and its first word is a known option, say '--stdio and its value were passed as one argument; pass them as two arguments or write --stdio=<value>'. Never suggest an option equal to the name shown.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-05",
+     "verdict": "confirmed",
+     "evidence": "Reproduced at bc7090d. node dist/cli.js '--stdio node test/fixtures/good-server.mjs' prints 'error: unknown option --stdio; did you mean --stdio?' with exit 2. '--quiet --no-quiet' as one word gives 'unknown option --quiet; did you mean --quiet?'. Cause: usageMessage's regex /'(?:-\\w, )?(-[^'=\\s,]*)/ cuts the option at the first whitespace. closestOption then finds the exact option at distance 0 and suggests it. A true typo (--stdoi) still gets a correct suggestion. This is a UX issue only."
+    }
+   ]
+  },
+  {
+   "id": "C-06",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/report/index.ts",
+   "line": "line 64 rootCauses(result.scored ?? f) and line 71 score(result.scored ?? f), against counts and verdicts over new findings only; text and markdown with --diff-only",
+   "title": "With --baseline, the summary mixes a score over all findings with counts and verdicts over new ones; --diff-only removes the only line that explains it",
+   "claim": "With a baseline that holds every finding, the text report reads 'Score 0/100 · 32 root causes · 0 errors · 0 warnings · 0 info' and 'Claude: NO AUTOMATED BLOCKERS'. The score and root causes include the 50 baselined findings; the counts and verdicts do not. Without --diff-only, one '50 known finding(s) from baseline' line hints at the gap. With --diff-only (the recipe in docs/guide/ci.md) that line is removed, the markdown table shows Score 0/100 next to 0 errors, and the summary nowhere says that findings were baselined. A reader of the job summary sees a contradictory score and a clean verdict for a server with 19 error root causes.",
+   "repro": "node dist/cli.js --stdio 'node test/fixtures/bad-server.mjs' --save-baseline b.json; then node dist/cli.js --stdio 'node test/fixtures/bad-server.mjs' --baseline b.json --diff-only (text or --format markdown). The JSON summary has score 0, errors 0, rootCauses {errors:19, warnings:13}, baselined 50.",
+   "fix": "When baselined > 0, label the parts in every format: 'Score 0/100 (all findings, 50 known) · 0 new errors ...' and 'Claude: NO NEW AUTOMATED BLOCKERS'. Keep a one-line '50 known from baseline' count even under --diff-only; the help text says it drops the list, not the count.",
+   "status": "confirmed",
+   "votes": [
+    {
+     "id": "C-06",
+     "verdict": "confirmed",
+     "evidence": "Reproduced. With a baseline saved from bad-server.mjs, `--baseline b.json --diff-only` prints text 'Score 0/100 · 32 root causes · 0 errors · 0 warnings · 0 info' and 'Claude: NO AUTOMATED BLOCKERS · ChatGPT: NO AUTOMATED BLOCKERS · Result: PASS'. The markdown table shows 'Score | 0/100 · 32 root causes' next to 'Findings | 0 errors · 0 warnings · 0 info'. Neither output mentions baselined findings. Source: report/index.ts:64,71 uses result.scored ?? f, and cli.ts:785 sets scored to all findings. Caveat: this split is documented and intended. options-and-config.md line 22 says 'The score still counts every finding', and line 24 says --diff-only drops the 'N known finding(s)' line. So it is not a logic bug. The confirmed defect is presentation: the --diff-only text and markdown summary (the docs/guide/ci.md:62 recipe) shows a contradictory score and counts with no hint that findings were baselined. Low severity, UX."
+    }
+   ]
+  }
+ ]
+}

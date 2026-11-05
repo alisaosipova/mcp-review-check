@@ -1,0 +1,13 @@
+{
+ "id": "A06-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-08",
+   "verdict": "confirmed",
+   "evidence": "In src/listing/index.ts:40-67 (not 494-521), dumpValue changes a string only when it starts with a scheme (displayUrl). Only array elements get the flag and known-token masking. For '--db=postgres://...', dumpArray finds that '--db' is not a secret name and skips the header check because the value contains '://'. maskKnownTokens leaves it alone, and dumpValue does not start with a scheme, so the value passes through. Reproduced: `--plugin-dir <dir> --verbose` printed '\"command\": \"node server.js --api-key sk-live-abcdefgh12345678XYZ --password=hunter2hunter2\"' and '\"--db=postgres://admin:pw123456@db.internal/x\"' in clear text on stderr. This is not the round-3 A06-07 case (secret-named keys and flags inside args)."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,18 @@
+{
+ "id": "A09-07",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at bc7090d: src/rules/util/ui.ts:36-66. For every URI in byUri that comes from a tool (uiUriOf: _meta.ui.resourceUri / ui/resourceUri / openai/outputTemplate) and has no ui:// list entry, line 49 `r.listEntry ??= snap.resources.find(...)` does a linear scan of snap.resources, so the cost is O(tool UI URIs x resources). Tool-derived URIs have no cap: UI_READS_CAP=50 in src/limits.ts limits only reads. Listings are bounded only by maxPages=100 (src/protocol/legacy.ts:45) and the 64 MiB SNAPSHOT_BUDGET, and one page can carry everything, so 40k+ entries fit easily. There is no memoization: `git grep memo|WeakMap` finds none for uiResources. It is called at 14 sites in src/rules/apps.ts plus policy.ts:134, and again in counts() at src/report/index.ts:164 during rendering, which runs after the rules deadline. Round 3 listed it as an improvement marked 'Not measured' (FINDINGS 2026-11-04 line 146). Q4 'memoized per-snapshot data' is not implemented at bc7090d. RAN in my own worktree of bc7090d, after build, with a direct uiResources call on N tools with unique ui:// URIs and N non-UI resources: 5000 took 232 ms, 10000 took 505 ms and 20000 took 1778 ms. That is clearly quadratic and matches the reported scaling (roughly 7-10 s per call at 40k). Multiplied across about 16 calls per run, it makes the rules hit --max-duration, and the counts() call is not covered by that deadline. Impact is limited to the linter's own run time on a huge or hostile listing, with no wrong results, so medium perf. The fix is a Map from uri to resource built once, plus a per-snapshot WeakMap memo. Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at bc7090d, src/rules/util/ui.ts:49: `r.listEntry ??= snap.resources.find((x) => x.uri === r.uri)` runs a linear scan of snap.resources for every ui:// URI that comes from a tool and is not in resources/list. Nothing caps the number of URIs taken from tools; the cap of 50 applies only to reads. uiResources is not memoized. It is called from 14 places in src/rules/apps.ts, 1 in policy.ts and 1 in report/index.ts:164 (counts(), which runs after the rules deadline).\n\nIn-process test (built dist, ui-bench.mjs): N tools, each with a unique _meta.ui.resourceUri, plus N non-UI resources. One uiResources call took 345 ms at N=5k, 918 ms at 10k, 2071 ms at 20k and 18399 ms at 40k, so the cost grows quadratically.\n\nEnd-to-end test (local stdio fixture uisrv.mjs): N=2000 took 2.0 s (exit 1). N=10000 took 9.3 s (exit 1). N=20000 with --max-duration 8000 took 19.2 s wall time (exit 4) and printed \"75 stopped by --max-duration\". The run overshot the 8 s budget by more than 2x. That fits the rule that was running at the deadline plus counts() during report rendering, both outside the deadline.\n\nThe claim holds. Severity is medium, not higher: it needs a pathological or hostile server with about 10k or more UI tools (realistic servers are far below that), but it does weaken the --max-duration guarantee. The fix is cheap: build a Map from resource uri to entry once, and memoize uiResources per snapshot."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,18 @@
+{
+ "id": "A09-04",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read bc7090d:src/rules/listing.ts:121-160. In unwrapArgv the env branch handles '-S' / '--split-string' with `a = ['env', ...words(a[i+1] ?? ''), ...a.slice(i+2)]; i = 0; continue`. The `n < 4` wrapper cap applies only to the outer loop. The inner loop restarts with no limit on how many times '-S' can appear. For args ['-S','-S',...], words('-S') returns ['-S'], so each pass drops one element and copies the rest of the array, which makes the work O(n^2). No length guard on args exists in argvOf (line 59-63) or in its callers, launcherOf at line 391 (per server) and line 486. The only input bound is LISTING_JSON_CAP = 1 MiB (src/listing/load.ts:14), which allows about 200k '-S' items. I built bc7090d in a detached worktree and ran launcherOf(['env', ...Array(n).fill('-S'), 'npx', 'x']) in-process: 914 ms at n=8000, 1652 ms at 16000, 6780 ms at 32000. The result was still correct ({launcher:'npx', spec:'x'}). The growth matches the claim. Because the work is synchronous it blocks the event loop, so --max-duration can only fire after it finishes. The reported end-to-end run (exit 4 after 11.3 s with a 5 s limit) is consistent with this; I did not re-run it. At the full 1 MiB cap the run would take minutes of CPU on a crafted plugin. Severity: medium as a robustness/DoS issue for a linter run on untrusted plugins (it defeats --max-duration). No security boundary is crossed. Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read bc7090d:src/rules/listing.ts unwrapArgv (lines ~127-131). On every '-S' or '--split-string' it runs `a = ['env', ...words(a[i+1] ?? ''), ...a.slice(i+2)]; i = 0; continue;`. That copies the rest of argv and restarts the inner loop. The loop does not count these restarts (the n<4 wrapper limit only counts outer passes), so each '-S' eats one element and the work is O(n^2). launcherOf calls it at line 391 (LST-008) and line 486 (LST-009). LISTING_JSON_CAP is 1 MiB (src/listing/load.ts:14).\n\nRan in a bc7090d worktree after a build, in-process: launcherOf(['env', ...Array(n).fill('-S'), 'npx', 'x']) took 140 ms at n=4000, 317 ms at 8000, 1203 ms at 16000 and 11388 ms at 32000. That growth is quadratic or worse.\n\nRan end to end: a plugin dir with plugin-valid/.claude-plugin/plugin.json and a .mcp.json of {command:'env', args: 30000 x '-S' + 'npx','some-pkg'} (150 KB). `node dist/cli.js --plugin-dir <dir> --max-duration 5000` exited 4 after 7.8 s wall. Its output said \"INCOMPLETE (stopped at --max-duration during rules)\". The work is synchronous, so the time limit could not stop it; the run went past the 5 s budget.\n\nExtrapolating (not run): a 1 MiB file has about 200k '-S', so one call would take minutes and the run more, since two rules call it. A crafted plugin can stall the linter, for example in CI. Medium fits: it is a CPU denial of service from untrusted input, with no wrong verdict and no security bypass. The fix is cheap: process -S in place without restarting from 0, or cap the number of -S expansions."
+  }
+ ],
+ "arbiter": null
+}

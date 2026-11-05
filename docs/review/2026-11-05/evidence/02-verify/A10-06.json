@@ -1,0 +1,13 @@
+{
+ "id": "A10-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-06",
+   "verdict": "confirmed",
+   "evidence": "src/rules/server.ts: у SRV_003 `needs: []`. Для stdio-цели без fatal и без SSE правило возвращает [], поэтому в JUnit выходит пройденный тест. Воспроизведено: `--stdio bad-server --format junit` дал строку 16 `<testcase classname=\"claude\" name=\"SRV-003 Streamable HTTP transport available\"/>` без skipped, при этом SRV-001/004/005/006 записаны как развёрнутые testcase со skipped. Так stdio-сервер получает «пройдено» по проверке, которая к нему не применима."
+  }
+ ],
+ "arbiter": null
+}

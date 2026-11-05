@@ -1,0 +1,13 @@
+{
+ "id": "A06-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-07",
+   "verdict": "confirmed",
+   "evidence": "LST-022 (src/rules/listing.ts:897) returns [] when openAiServers(o) is empty. openAiServers reads serverMap(o.mcp?.json), which is empty when mcp.json does not parse. listingRuleChecked (1142-1149) only checks for openAiInterface, so manualChecklist cuts MAN-020/021 down to their residual. Reproduced on the built CLI with openai-valid, review and release_notes removed, and a broken mcp.json: the output shows only 'x LST-024 ... mcp.json is not valid JSON' plus 'MAN-020 ... (the rest is checked by LST-022)' and 'MAN-021 Demo recording covers web, iOS and Android (the rest is checked by LST-022)'. With a valid mcp.json, the three LST-022 warnings appear."
+  }
+ ],
+ "arbiter": null
+}

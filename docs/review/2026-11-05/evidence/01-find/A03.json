@@ -1,0 +1,102 @@
+{
+ "area": "A03",
+ "name": "probes",
+ "coverage": "Read at bc7090d in a detached worktree (npm ci --ignore-scripts, npm run build; removed afterwards, fixture servers stopped): src/probe/active.ts, auth.ts, network.ts and wire.ts in full. Also read the probe wiring in src/connect.ts:400-600 (buildHttp, probeAuth, runWireProbes and runActive calls, freshTools), ModernClient.request and mcpNameOf in src/protocol/modern.ts, tokenize in src/rules/util/text.ts, the lexicon, src/rules/runtime.ts RT-001..006, cli.ts unusedToolArgs and readToolArgs, docs/guide/privacy-and-requests.md, CHANGELOG 1.0.1 and 1.1.0, the round 3 FINDINGS and REMEDIATION (A03 items and improvements), and the round 1 refuted SSRF items F026/F140 (not re-reported). Spec pages fetched: 2026-07-28 streamable-http, transports overview, subscriptions. Ran: buildSnapshot with --active against good-server.mjs and bad-server.mjs (stdio); hasWriteVerb over about 130 names plus tokenize edge cases; CLI --active against a spec-validating modern-only server I wrote (A03-01, A03-03); CLI --bearer --active-auth against a legacy server whose tools/list returns 401 (A03-02); the --tool-args warning against bad-server (A03-04); --verbose request list of a modern-only run. Not done: TLS-check behaviour against a real certificate or an https fixture; SSE-mode Origin probes against a legacy HTTP+SSE server; a --max-duration stop during the auth probe or --active-auth (the improvement is from the code only); the tasks/get parameter shape against the tasks extension page; vitest files were not run.",
+ "improvements": [
+  {
+   "title": "Wider write-verb coverage and token splitting in the --active name filter",
+   "dimension": "security",
+   "detail": "These names, all annotated readOnlyHint: true, still pass hasWriteVerb at 1.1.0 (ran it against dist/probe/active.js): upsert_*, append_*, restore_*, migrate_*, unpublish_*, charge_card, sign, vote, follow/unfollow, retweet, launch, scale, resize, mount/unmount, format_disk, encrypt/decrypt, rotate_key, configure, store, attach/detach, broadcast, alert, escalate, acknowledge, resolve_incident ('resolve' is a READ verb). tokenize splits only on _-./: and whitespace, so read+delete, read&delete and a zero-width-space join (get​delete) are one token. NFKC folding and splitting on any non-alphanumeric character would close those cases. Checking annotations.title and title with the same filter would add defence in depth. Calling fewer tools is patch-safe, as A03-01 of round 3 was.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "An explicit --active allowlist (--active-tools <name|glob>) and a dry-run listing of the planned calls",
+   "dimension": "feature",
+   "detail": "Today the only way to narrow --active is to rely on annotations and the name heuristic. An allowlist, together with a mode that prints which tools would be called with which synthesized arguments without sending anything, would let a reviewer approve the side effects before running against a production server. This matches the tool's read-only, side-effect-free promise.",
+   "value": "high",
+   "effort": "M",
+   "release": "minor"
+  },
+  {
+   "title": "Publish clientInfo variants as they finish",
+   "dimension": "engine",
+   "detail": "runActive assigns result.clientInfoVariants only after all three fresh connections (active.ts:251-258). A --max-duration stop during the third listing loses the two that finished. Write into ctx.into after each variant, as the calls already are.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Better argument synthesis for common generator shapes, and a coverage note when synthetic calls fail validation",
+   "dimension": "engine",
+   "detail": "placeholder() ignores prefixItems (pydantic Tuple[float,float] becomes prefixItems + minItems) and returns strings for each item. It also ignores required/properties inside allOf when a sibling type: 'object' exists, and a top-level $ref or allOf in inputSchema (synthesizeArgs calls objectPlaceholder directly). Synthetic calls that fail only because of the linter's arguments hide RT-004 and RT-006. Support prefixItems, merge allOf object branches and resolve a root $ref. In the report, say how many synthetic calls returned a validation error and suggest --tool-args for those tools.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Report the request count per run",
+   "dimension": "ux",
+   "detail": "The privacy guide states '20 to 40 requests'. A JSON field such as limits.requests ({total, byLabel}) and a one-line stderr summary would back that claim for each run and make duplicate probing visible (see A03-02).",
+   "value": "low",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Print the DCR notice even when the run stops after registration",
+   "dimension": "security",
+   "detail": "This is related to the known round-3 improvement 'publish partial auth-probe results'. Since 1.1.0 the DCR client_id notice depends on snap.authProbe, which is assigned only after the whole probe returns. A --max-duration stop between the DCR POST and the end of /authorize and /token loses the only record of the client that was created. Recording the DCR exchange into the snapshot right away would keep the A03-03 promise. This was read from the code, not run.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch",
+   "source": "SECURITY.md (--active-auth clean-up advice)"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A03-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/probe/active.ts",
+   "line": "211 (call(), modern path); header building in src/protocol/modern.ts:96-102",
+   "title": "--active tools/call on a 2026-07-28 server leaves out the Mcp-Param-* headers for x-mcp-header parameters, so a conforming server rejects the call and RT-003 reports a false positive",
+   "claim": "For a modern-only server, runActive sends tools/call through ModernClient.request. That method sets only Mcp-Method and Mcp-Name. The streamable-http page of 2026-07-28 says clients MUST mirror x-mcp-header parameters into Mcp-Param-{Name}, and servers MUST reject a request with 400 / -32020 HeaderMismatch when the value is in the body but the header is missing. As a result: (1) the synthetic or valid call to any tool with an x-mcp-header parameter that has a value gets -32020, so RT-004 and RT-006 never see a result (lost coverage); (2) the invalid-type call keeps the other synthetic arguments, gets -32020 too, and RT-003 (spec: warning) reports 'invalid-type input returned a JSON-RPC error instead of isError' against a compliant server. Dual-era servers are not affected because they go through the legacy SDK client.",
+   "repro": "Ran it: a standalone 2026-07-28 server (scratchpad a03-modern-hdr.mjs on 127.0.0.1:38431) with tool get_forecast {region: string with x-mcp-header 'Region', city}, both required, readOnlyHint true. It validates headers as the spec requires. `node dist/cli.js http://127.0.0.1:38431/mcp --active --format json` gave `RT-003 warning get_forecast invalid-type input returned a JSON-RPC error instead of isError`, and the server logged `REJECT missing Mcp-Param-Region for get_forecast args={\"region\":\"mcp-review-check\",...}` for both the synthetic and the invalid-type call.",
+   "fix": "In active.ts call(), for the modern path, walk the tool's inputSchema along the plain properties chain (as TOOL-021 does) and pass headers Mcp-Param-{x-mcp-header} built from the argument values: string as is, integer as decimal, boolean lowercase, and the =?base64?…?= form for non-ASCII, control characters, leading or trailing whitespace, or a value that looks like the sentinel. Omit the header for null or absent values. Add an extraHeaders option to ModernRequestOptions. Skip tools that TOOL-021 finds invalid, because a client drops them. As a safety net, RT-003 should not count a -32020 error as 'JSON-RPC error instead of isError'. This is a patch: it removes a false positive."
+  },
+  {
+   "id": "A03-02",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/connect.ts",
+   "line": "498 (if (trigger) await probeAuth()) and 517-519 (second probeAuth after tools/list 401); src/probe/auth.ts:165,175-188",
+   "title": "The auth probe can run twice in one run; with --active-auth that registers two DCR clients, and only the second client_id is reported",
+   "claim": "probeAuth runs once when the unauthenticated preflight gets 401, even when credentials are supplied. It runs a second time when the authenticated tools/list later gets 401 (an expired token, or a server that accepts any bearer for initialize). Each run repeats all PRM and AS GETs plus timing samples, the invalid-token probe, the AS TLS handshakes (pushed twice into transport.tls) and, with --active-auth, the whole active sequence: a second DCR registration, 3 more /authorize GETs and 2 more /token POSTs. snap.authProbe is overwritten, so dcrClientNotice and authProbe.active.clientId name only the second client. The first DCR client is left on the user's authorization server and never disclosed, which undoes the 1.0.1/1.1.0 A03-03 fix ('so you can delete it'). The request count also goes beyond what privacy-and-requests.md describes.",
+   "repro": "Ran it: scratchpad a03-auth2.mjs on 127.0.0.1:38432 is a stateless 2025-11-25 server. initialize returns 401 without a bearer and 200 with any bearer; tools/list returns 401 with a resource_metadata challenge; it also serves PRM/AS metadata with registration_endpoint. `node dist/cli.js http://127.0.0.1:38432/mcp --bearer sometoken-abcdef --active-auth --format json`. stderr printed only `registered DCR client client_id=client-2`. Server counters: POST /register 2, GET /authorize 6, POST /token 4, GET PRM 6, GET AS metadata 6.",
+   "fix": "Run the auth probe at most once per run. If it already ran from the preflight trigger, the tools/list 401 path should only call rejected() and reuse snap.authProbe (or, if the second challenge differs, re-read just the challenge without the metadata, TLS and --active-auth steps). Separately, collect every DCR exchange and print one notice per accepted registration, so no client is left undisclosed. Also dedupe transport.tls by host and role. This is a patch."
+  },
+  {
+   "id": "A03-03",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/protocol/modern.ts",
+   "line": "57-64 (mcpNameOf), used by active.ts:211 and the modern resources/read path",
+   "title": "Mcp-Name is percent-encoded instead of the spec's =?base64?…?= form, so active calls to non-ASCII tool names are rejected with HeaderMismatch",
+   "claim": "mcpNameOf replaces characters outside visible ASCII with encodeURIComponent output. The 2026-07-28 streamable-http page says that a name or URI outside the safe set (non-ASCII, control characters, leading or trailing whitespace, or a value matching the sentinel) MUST be sent as `=?base64?…?=`, and that servers MUST decode it before comparing it with the body. A conforming server compares 'm%C3%A9t%C3%A9o' with 'météo' and returns 400 -32020. The synthetic call for that tool then gets no result, and its invalid-missing and invalid-type calls produce false RT-003 warnings. The same applies to modern resources/read of a UI resource whose URI is non-ASCII. Tool names outside [A-Za-z0-9_.-] are only a SHOULD violation, so the tool still has to handle them. This file belongs to area A02; it is listed here because --active is the main consumer.",
+   "repro": "Ran it: same server as A03-01, with tool 'météo' (readOnlyHint true). The server logged `REJECT Mcp-Name \"m%C3%A9t%C3%A9o\" for météo` three times, and the report showed `RT-003 warning météo invalid-missing input returned a JSON-RPC error instead of isError` and `... invalid-type ...`.",
+   "fix": "Encode the value as `=?base64?${Buffer.from(v,'utf8').toString('base64')}?=` when it has characters outside 0x20-0x7E or a tab, has leading or trailing whitespace, or matches /^=\\?base64\\?.*\\?=$/. Otherwise send it unchanged. Share the encoder with the Mcp-Param-* headers from A03-01. This is a patch."
+  },
+  {
+   "id": "A03-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "352 (unusedToolArgs reason)",
+   "title": "The --tool-args 'not used' warning blames readOnlyHint for tools that are annotated read-only, and says 'past the cap' for duplicate names",
+   "claim": "isSafeToCall is false in three cases: readOnlyHint is not true, destructiveHint is true, or the name contains a write verb. The warning always says 'the tool is not read-only (readOnlyHint: true)'. A tool annotated readOnlyHint: true that the name filter skipped (delete_x) or that is also destructiveHint: true (archive_items) therefore gets a message that contradicts its own annotations. The user cannot tell that the 1.0.1 name filter caused the skip, or how to get the call made. Separately, a name listed twice where one entry is unsafe passes isSafeToCall on the first entry and gets 'the tool was past the cap on --active calls'. That reason is wrong too: callableTools rejected it for the duplicate. A --max-duration stop before the call gets the same wrong 'cap' reason. The duplicate and stop cases were read from the code, not run.",
+   "repro": "Ran it: `echo '{\"delete_x\":{},\"archive_items\":{}}' > a.json; node dist/cli.js --stdio \"node test/fixtures/bad-server.mjs\" --active --tool-args a.json --format json` printed `--tool-args entry \"delete_x\" was not used: the tool is not read-only (readOnlyHint: true)`, although bad-server.mjs:80 annotates delete_x with readOnlyHint: true, destructiveHint: false.",
+   "fix": "Have active.ts export a function that returns the skip reason ('readOnlyHint is not true', 'destructiveHint is true', 'the name contains the write verb \"delete\"', 'the name is listed more than once and not every entry is read-only'), plus 'the run stopped before this call' when limits.stopped is set. Use it in unusedToolArgs. This is a patch (message text only)."
+  }
+ ]
+}

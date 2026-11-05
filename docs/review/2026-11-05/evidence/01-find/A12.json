@@ -1,0 +1,191 @@
+{
+ "area": "A12",
+ "name": "usability for CI integrators and power users (cross-cutting)",
+ "coverage": "Read at bc7090d in a detached worktree (npm ci --ignore-scripts and npm run build OK; the worktree is removed): action.yml in full, src/config.ts in full, src/cli.ts in full, src/baseline.ts in full, src/report/sarif.ts, junit.ts, github.ts and index.ts in full, the drift.ts exports, docs/guide/ci.md and options-and-config.md in full, the README Stability policy, CHANGELOG 1.1.0, and grep of round-3 FINDINGS/REMEDIATION for drift/config items (none of the above re-reports them). Ran against the built CLI with test/fixtures/good-server.mjs, bad-server.mjs and listing/*: the baseline save and synthetic drift in 4 formats under GITHUB_ACTIONS (A12-01), the Action-equivalent command line with a discovered config (A12-02), the SARIF automationDetails ids (A12-03), the documented first-baseline recipe in a fresh dir (A12-04), the SARIF level vs gated annotation counts with --target claude (A12-05), a listing-only run (A12-06), the config sarifLocation warning (A12-08), duplicate --format (A12-09), and $schema in the config. Not run: the real GitHub Action and the code-scanning/upload-sarif behaviour (A12-03 and A12-05 rely on GitHub's documented category and threshold semantics), a GitLab pipeline (A12-07 is reasoned from the recipe plus the verified drift exit code), Windows and macOS runners (the action's bash was only read: the bash 3.2 empty-array guard and the IFS split look right), upgrading with a 1.0.x baseline (no older report at hand), the vitest suites, and the markdown/text renderers beyond the Result line. No network access other than local fixtures.",
+ "improvements": [
+  {
+   "title": "Per-finding suppression with a justification (and SARIF suppressions)",
+   "dimension": "feature",
+   "detail": "--ignore is rule-wide only and has no reason. Add a config key such as \"suppress\": [{\"rule\": \"TOOL-013\", \"tool\": \"search\", \"path\": \"/properties/q\", \"reason\": \"...\", \"expires\": \"2027-01-01\"}]. Matching should use the baseline subject key (rule, tool or resource, path). Suppressed findings go to JSON `ignored` with the reason, and to SARIF as results with suppressions[{kind:'external', justification}] (today ignored findings are missing from SARIF, so code-scanning alerts close as 'fixed'). JUnit and text should show the reason. Warn when a suppression or an --ignore matched nothing (stale), and fail when one has expired.",
+   "value": "high",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html#_Toc34317790"
+  },
+  {
+   "title": "Several servers in one config / one run (monorepo)",
+   "dimension": "feature",
+   "detail": "A config file can name a single server only. Add \"servers\": {\"a\": {\"stdio\": ..., \"cwd\": ...}, \"b\": {\"url\": ...}} with per-server overrides and per-server baseline paths, plus --server <name> to pick one. Output would be one SARIF run per server, each with its own automationDetails category (fixes A12-03 by construction), one JUnit testsuite per server and platform, and an aggregated exit code. The Action would then need only one step.",
+   "value": "high",
+   "effort": "L",
+   "release": "minor"
+  },
+  {
+   "title": "`mcp-review-check init`",
+   "dimension": "ux",
+   "detail": "Write a commented starter mcp-review-check.config.json (server detected from package.json bin/main or .mcp.json), mkdir .mcp-review-check, write the first baseline with --fail-on never, and print the matching GitHub Action / GitLab snippet. This removes the first-run friction found in A12-04 and the guesswork about which keys exist.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor"
+  },
+  {
+   "title": "JSON Schema for the config file, and accept a \"$schema\" key",
+   "dimension": "ux",
+   "detail": "\"$schema\" in the config is a usage error today ('unknown key \"$schema\"'), so editors cannot offer completion or validation. Ship schema/config.schema.json, generated from KEYS in src/config.ts, in the package. Accept and ignore \"$schema\" (and perhaps keys starting with \"//\" for comments). Verified: --config with {\"$schema\":\"x\",\"failOn\":\"warning\"} gives exit 2.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://json-schema.org/understanding-json-schema/reference/schema"
+  },
+  {
+   "title": "Rule catalog: addedIn / changedIn and deterministic-vs-heuristic in --list-rules --format json",
+   "dimension": "feature",
+   "detail": "Before upgrading a minor, an integrator wants 'what can newly fail my gate'. Add addedIn and severityRaisedIn (version) and kind: deterministic|heuristic to each rule in the JSON catalog and to SARIF rule properties. Add --list-rules --since 1.0 to print only the rules added or raised since that version. This fits the stability policy's 'read CHANGELOG before upgrading a minor'.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor"
+  },
+  {
+   "title": "SARIF rule metadata for GitHub: help.markdown, tags, security-severity",
+   "dimension": "ux",
+   "detail": "Rules carry only help.text. Add help.markdown (the fix with code formatting and the source links), tags ['security'] for the INJ/AUTH/DATA rules with properties['security-severity'], so they show as security alerts with a severity, plus defaultConfiguration.level. Code scanning renders these in the alert view.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning#reportingdescriptor-object"
+  },
+  {
+   "title": "Action inputs: working-directory, sarif-location/category, baseline, fail-on-incomplete, fail-on-drift; outputs: tool-changes",
+   "dimension": "ux",
+   "detail": "Common CI needs go through untyped extra-args today. Add first-class inputs: working-directory (passed as --cwd and used for config discovery), sarif-location plus upload category (A12-03), baseline, fail-on-incomplete and fail-on-drift. Add a `tool-changes` output so a later step can tell a drift failure from a finding failure (both are exit 1).",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Cache the npm install in the Action",
+   "dimension": "perf",
+   "detail": "Each Action run does `npm install mcp-review-check@<range>` into RUNNER_TEMP with no cache. Use actions/cache keyed on the resolved version (from npm view), or document `cli-path` with a cached global install. Every job saves a few seconds plus one registry round-trip.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "JUnit suite naming for several servers",
+   "dimension": "ux",
+   "detail": "Testsuites are named only by platform ('claude') with classname 'claude'. Two JUnit files from two servers in one GitLab pipeline or dorny report get identical suite and case names. Add the server name (serverInfo.name or --sarif-location) to the suite name and classname (e.g. 'claude · acme-notes'), or add a --report-name option.",
+   "value": "low",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Check that output directories exist before connecting",
+   "dimension": "ux",
+   "detail": "Besides creating parent directories (A12-04), validate that --output, --json-output and --save-baseline are writable during argument validation. A typo then costs a usage error instead of a full run (which, with --active, includes tool calls) followed by exit 2.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A12-01",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "719 (code), 754 (summaryLine/resultLine); src/report/junit.ts:4,101; src/report/github.ts:41; action.yml:178",
+   "title": "A --fail-on-drift failure exits 1 while every artifact says PASS: Result line, summary.failed, JUnit, annotations and the Action's verdict output",
+   "claim": "When --fail-on-drift fails the run (a changed tool or 'not compared'), the exit code is 1, but resultLine() still prints 'Result: PASS (--fail-on error)', JSON summary.failed is false, the JUnit report has failures=\"0\" (drift goes only to <system-out>), no ::error annotation is printed, and the Action's `verdict` output (computed from summary.failed) is PASS next to exit-code=1. A GitLab test view and the GitHub job show a red job with an all-green report and nothing that names the cause. The 'verdicts and summary.failed stay about findings' sentence in options-and-config.md documents the JSON part, but the Result line, JUnit, the annotations and the Action verdict have no drift signal at all. This is the same gap A10-01 closed for --fail-on-incomplete.",
+   "repro": "Ran: node dist/cli.js --no-config --fail-on never --save-baseline .r/base.json --stdio -- node test/fixtures/good-server.mjs; changed toolFingerprints[0].sha256 and fields.description in a copy (.r/drift.json); then for f in text json junit sarif: GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=.r/sum.md node dist/cli.js --no-config --baseline .r/drift.json --fail-on-drift --format $f --output .r/out.$f --stdio -- node test/fixtures/good-server.mjs. Every run gave exit=1, 0 lines starting with '::', the stderr summary '... 1 tool change (--fail-on-drift) · PASS (--fail-on error)', JSON summary.failed=false with gate.reason=null, JUnit failures=\"0\", and the text report 'Result: PASS (--fail-on error)'.",
+   "fix": "Handle a drift failure like A10-01: when failOnDrift && (changes>0 || notCompared), have the head of resultLine read 'FAIL (--fail-on-drift)' (or add '· N tool changes (--fail-on-drift)' to a FAIL head); in JUnit add one '<testcase name=\"tool-definition drift\">' with a <failure type=\"drift\"> per suite; in annotations() add one ::error titled mcp-review-check naming the changed tools, or the not-compared reason; add a JSON field (e.g. summary.driftFailed or baseline.failed, which is additive and fine for a minor) and have the Action derive verdict FAIL from it and expose a `tool-changes` output. Keep summary.failed about findings if that contract matters, but no human-facing line should say PASS on exit 1."
+  },
+  {
+   "id": "A12-02",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "action.yml",
+   "line": "22-29 (platform/fail-on defaults), 130 (args=(--target ... --fail-on ...))",
+   "title": "The Action always passes --target and --fail-on, silently overriding the project's config file",
+   "claim": "The `platform` and `fail-on` inputs default to 'all' and 'error', and the run step always puts `--target \"$platform\" --fail-on \"$INPUT_FAIL_ON\"` on the command line. Command-line options win over the config file, so a repository's mcp-review-check.config.json with \"target\": \"claude\" and \"failOn\": \"warning\" is ignored under the Action without any note. The same file does apply locally and in the npx recipes, so the Action gates differently from a developer's run. fail-on-spec and active, which are passed only when true, do follow the file, so the inputs are inconsistent with one another.",
+   "repro": "Ran in a directory holding mcp-review-check.config.json = {\"failOn\":\"warning\",\"target\":\"claude\",\"failOnSpec\":true} the Action's command line: node dist/cli.js --target all --fail-on error --format sarif --output x.sarif --json-output j.json --stdio \"node test/fixtures/bad-server.mjs\". The JSON gate.platforms is ['claude','chatgpt','spec'] and the Result line is 'FAIL (--fail-on error, --fail-on-spec)', so the file's target and failOn were dropped and its failOnSpec was kept.",
+   "fix": "Default `platform` and `fail-on` to '' and append --target/--fail-on only when the input is non-empty (the CLI defaults then apply, or the config file's values). Document in ci.md that an input overrides the config key. This changes the behaviour only for users who have a config file, which is the intended effect; state it in the CHANGELOG as a minor change."
+  },
+  {
+   "id": "A12-03",
+   "dimension": "ux",
+   "severity": "medium",
+   "file": "src/report/sarif.ts",
+   "line": "76 (automationDetails.id); action.yml inputs (no sarif-location/category input)",
+   "title": "Several servers in one repository share a code-scanning category, so each SARIF upload replaces the other's alerts",
+   "claim": "The SARIF category is derived from --sarif-location only (automationDetails.id 'mcp-review-check/<location>/<startedAt>'). With the default location, every server checked in a repository uploads under category 'mcp-review-check/.mcp-review-check/'. In a monorepo with two Action steps (or a matrix), code scanning treats the second upload as a new analysis of the same category: the first server's alerts are shown as fixed and reappear on the next run. The Action has no `sarif-location` or `category` input, and ci.md does not tell a multi-server user to vary --sarif-location through extra-args.",
+   "repro": "Ran twice: node dist/cli.js --no-config --format sarif --stdio \"node test/fixtures/good-server.mjs\" | jq .runs[0].automationDetails.id gave 'mcp-review-check/.mcp-review-check/2026-11-05T02:24:05.034Z' and '.../2026-11-05T02:24:06.335Z'. Only the run part after the last '/' differs, so a run for a second server gets the same category. GitHub's upload behaviour per category: https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/sarif-support-for-code-scanning#runautomationdetails-object",
+   "fix": "Add a `sarif-location` input (passed as --sarif-location) and/or a `category` input forwarded to upload-sarif's `category`. Add a 'Several servers in one repository' recipe to ci.md (a matrix with sarif-location: servers/a, servers/b). Optionally default the location for a stdio target to something derived from the command or --cwd, in a minor release."
+  },
+  {
+   "id": "A12-04",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "781-787 (writeFileSync for --save-baseline/--json-output), 793 (--output)",
+   "title": "The documented first-baseline command exits 2 in a fresh repository: the parent directory of --save-baseline is not created",
+   "claim": "ci.md:50 and walkthrough.md:62 tell the user to run `--save-baseline .mcp-review-check/baseline.json` as the first step. In a repository without a .mcp-review-check directory, writeFileSync fails with ENOENT after the whole check has run, and the run exits 2. Only the GitLab recipe has `mkdir -p`. The same applies to --output and --json-output, and so to the Action's `sarif-file: reports/x.sarif`.",
+   "repro": "Ran in an empty directory: node dist/cli.js --no-config --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node test/fixtures/good-server.mjs, which gave exit=2 and \"error: cannot write --save-baseline .mcp-review-check/baseline.json: ENOENT: no such file or directory, open '.mcp-review-check/baseline.json'\".",
+   "fix": "Create the parent directory (mkdirSync(dirname(path), {recursive:true})) before writing --save-baseline, --json-output and --output, as most report writers do. Otherwise check that the parent exists during validation, so the error comes as a usage error before connecting, and add `mkdir -p .mcp-review-check` to the two docs recipes (docs proposal)."
+  },
+  {
+   "id": "A12-05",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/report/sarif.ts",
+   "line": "51 (level: LEVEL[f.severity])",
+   "title": "SARIF levels ignore the gate: ungated spec findings become code-scanning 'error' alerts while the annotations and exit code pass them",
+   "claim": "Annotations and the exit code use each finding's severity on the gated platforms (--target, plus spec only with --fail-on-spec). SARIF uses the finding's top severity whatever was gated. With --target claude and no --fail-on-spec, spec-only errors (APPS-001, SRV-018, TOOL-016 on bad-server) are uploaded as level 'error'. GitHub's code-scanning check fails a PR on error-level alerts by default (the 'Check runs failure threshold' setting), so the PR goes red on findings that the Action's own gate intentionally let pass.",
+   "repro": "Ran: GITHUB_ACTIONS=true node dist/cli.js --no-config --target claude --format sarif --stdio \"node test/fixtures/bad-server.mjs\". The output has 8 ::error annotations, but the SARIF has 11 results at level error. The 3 extra are spec-only (platforms: ['spec']), and 3 more spec-only results are at level warning.",
+   "fix": "Map each result's level from its severity on the gated platforms (as annotations() does), and use 'note' for findings that no gated platform counts. Keep the original severity in properties (severityByPlatform already has it, plus a properties.gated flag). As a less invasive alternative, add a --sarif-level gated|max switch with the default changing in a minor release. Docs: say in the SARIF row which severity code scanning sees. Source: https://docs.github.com/en/code-security/code-scanning/managing-your-code-scanning-configuration/editing-your-configuration-of-default-setup"
+  },
+  {
+   "id": "A12-06",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "docs/guide/ci.md",
+   "line": "135; also docs/guide/options-and-config.md --plugin-dir/--openai-manifest rows, --fail-on-drift row, Local mode paragraph",
+   "title": "Docs contradict the CLI and action.yml in four places",
+   "claim": "(1) The ci.md input table gives `version` default `1.0`, but action.yml:46 has default '1.1'. (2) options-and-config.md says --plugin-dir and --openai-manifest 'need a <url> or --stdio target', but --help and the code allow them alone as a listing-only run. (3) The --fail-on-drift row quotes the stderr message as always ending 're-save the baseline with --save-baseline', but since A01-07 the CLI says 'fix this run (see the coverage line) before saving a baseline from it' when the run is the side that failed. (4) Local mode says the banner goes to stderr 'for json and sarif', but the code (cli.ts banner line) also does this for junit.",
+   "repro": "Ran: node dist/cli.js --no-config --plugin-dir test/fixtures/listing/openai-invalid --quiet, which gave exit 0 as a listing-only run (contradicting (2)). For (1), compare action.yml:46 `default: '1.1'` with ci.md:135. For (3) and (4), read src/cli.ts (advice for notComparedBy==='run'; banner condition includes junit).",
+   "fix": "Docs proposals (another session owns docs): set the table default to `1.1` and generate the input table from action.yml in CI to prevent drift; reword the two rows to 'with a <url> or --stdio target it is added to the check; alone it runs listing-only'; quote both advice variants; say 'json, sarif and junit'."
+  },
+  {
+   "id": "A12-07",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "docs/guide/ci.md",
+   "line": "200-245 (GitLab recipe)",
+   "title": "GitLab recipe: an intended tool change makes the default branch fail on drift forever, and the cached baseline can never be refreshed",
+   "claim": "The recipe passes --fail-on-drift on the default branch too, and refreshes the cached baseline only from a successful default-branch job. After an intended tool change is merged, every default-branch job exits 1 on drift, so after_script never copies the new report, and the cached baseline (which the notes say not to commit) keeps the old fingerprints. The only way out is to clear the runner cache by hand or edit the CI file, and the guide mentions neither.",
+   "repro": "Followed the recipe's logic: on the default branch, `--baseline ... --fail-on-drift` gives exit 1 on any tool change (verified in A12-01: exit=1 with a changed fingerprint). after_script requires CI_JOB_STATUS=success, so the cache is never updated.",
+   "fix": "Docs proposal: pass --fail-on-drift only for merge_request_event pipelines (the default branch records the accepted state), or document 'CI/CD > Pipelines > Clear runner caches' as the way to accept a change. A cleaner fix is a dedicated refresh job (when: manual) that runs with --save-baseline."
+  },
+  {
+   "id": "A12-08",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "688 (sarif-location warning) vs formatWarnings 239-249",
+   "title": "A config file's sarifLocation warns on every non-SARIF run, unlike quiet/checklist/diffOnly",
+   "claim": "formatWarnings deliberately warns only for switches given on the command line ('one file serves runs in several formats'). The --sarif-location warning instead tests the merged values, so a shared config file with sarifLocation (needed for the monorepo case in A12-03) prints 'warning: --sarif-location applies only to --format sarif' on every text, JSON or markdown run, and names a flag the user never typed.",
+   "repro": "Ran with mcp-review-check.config.json = {\"sarifLocation\":\"servers/a\",\"quiet\":true}: node dist/cli.js --stdio \"node test/fixtures/good-server.mjs\" --format json. stderr has 'warning: --sarif-location applies only to --format sarif', and nothing for quiet.",
+   "fix": "Use cliGiven.has('sarif-location') for this warning, as formatWarnings does, or move the check into formatWarnings. Consider the same for the 'tool-args has no effect without --active' warning when both come from the file."
+  },
+  {
+   "id": "A12-09",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "action.yml",
+   "line": "130-137 (args, then extra-args appended)",
+   "title": "`extra-args: --format json` or `--output x` silently replaces the Action's SARIF file, and the upload then fails",
+   "claim": "The Action puts --format sarif --output <sarif-file> before the extra-args. parseArgs keeps the last value of a string option, so `--format markdown` in extra-args writes markdown into mcp-review-check.sarif, and `--output other` sends the SARIF elsewhere while the step reports sarif-file as the old path, which then does not exist or is stale. upload-sarif then fails or uploads nothing, with an error message that does not point at the cause.",
+   "repro": "Ran: node dist/cli.js --no-config --format sarif --output x.sarif --format markdown --stdio \"node test/fixtures/good-server.mjs\". x.sarif begins with '# Acme Notes 1.4.2' (a markdown report).",
+   "fix": "In the run step, reject (usage(), exit 2) extra-args that contain --format, --output, --json-output or --save-baseline=... for the reserved ones (--format/--output/--json-output), with a message that points at the `sarif-file` input. Alternatively, place the reserved options after the extra-args so they win, and print a ::warning."
+  }
+ ]
+}

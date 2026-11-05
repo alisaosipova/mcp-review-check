@@ -1,0 +1,13 @@
+{
+ "id": "A07-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-05",
+   "verdict": "confirmed",
+   "evidence": "engine.ts:224 emits ruleId INTERNAL.id = 'INTERNAL' (engine.ts:163). json.ts:9 copies f.ruleId unchanged. In schema/report.schema.json, $defs.finding.ruleId has the pattern ^[A-Z]+-\\d{3}$ (line 261 at bc7090d). I took a valid report, set findings[0].ruleId='INTERNAL' and ran Ajv 2020: `/findings/0/ruleId must match pattern \"^[A-Z]+-\\\\d{3}$\"`. The schema has no other mention of INTERNAL. Round-1 F123 was about the SARIF driver.rules entry, not the JSON schema, so this is new."
+  }
+ ],
+ "arbiter": null
+}

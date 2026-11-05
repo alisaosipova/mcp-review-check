@@ -1,0 +1,13 @@
+{
+ "id": "C-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-04",
+   "verdict": "confirmed",
+   "evidence": "net.ts isNonPublicIPv6 recognizes only the IPv4-mapped prefix (::ffff:0:0/96), plus ::, ::1, fc00::/7, fe80::/10, ff00::/8 and 2001:db8::/32. V4_RANGES lacks 192.88.99.0/24. Running the claimed command against the built dist printed 'false false' for ::127.0.0.1, 64:ff9b::a00:1, 2002:a00:1::1, ::ffff:0:a00:1, 100::1, fec0::1 and 192.88.99.1 (the control ::ffff:a00:1 gave true). Consumers: server.ts:139 (SRV-004), apps.ts:179/181 (APPS-005), auth.ts:36 and isLocalTarget. In auth.ts the miss makes the check stricter (the URL counts as non-local), not laxer. Round 1 fixed the IPv4-mapped notation only; these forms are new. Low severity: deprecated or rare forms in heuristic, info/warning-level checks."
+  }
+ ],
+ "arbiter": null
+}

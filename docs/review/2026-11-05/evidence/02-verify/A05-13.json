@@ -1,0 +1,13 @@
+{
+ "id": "A05-13",
+ "status": "disputed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-13",
+   "verdict": "uncertain",
+   "evidence": "The code matches the claim. TOOL-021 (src/rules/schema.ts ~348) takes String(type) for ['string','null'] and reports 'a [\"string\",\"null\"] property'. For anyOf [string, null] there is no type keyword, so it reports 'a property without a type' at spec error. The fetched spec (2026-07-28 streamable-http, Schema Extension) says x-mcp-header 'MUST only be applied to parameters with primitive types (integer, string, boolean)', and clients MUST reject violating tools. The Client Behavior table also has 'Parameter value is null → Client MUST omit the header', which suggests nullable values are anticipated. Neither reading is clearly right, and no client implementation was available to check: the local @modelcontextprotocol/sdk has no x-mcp-header code. The 'without a type' wording for anyOf is technically accurate but unhelpful."
+  }
+ ],
+ "arbiter": null
+}

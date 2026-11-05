@@ -1,0 +1,13 @@
+{
+ "id": "A05-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-09",
+   "verdict": "confirmed",
+   "evidence": "GREEK_NOTATION = /^[A-Z]+[α-ω][A-Zα-ω]*$/u requires Latin capitals before the Greek letter. Ran mixedScript from the bc7090d build: κB true, αSMA true, γH true, αKG true, αvβ true; TNFα, IκBα and NFκB false. INJ-002 tokenizes on \\p{L}+, so the hyphenated 'NF-κB' yields 'κB', which is flagged as a warning."
+  }
+ ],
+ "arbiter": null
+}

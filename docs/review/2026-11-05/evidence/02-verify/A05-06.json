@@ -1,0 +1,13 @@
+{
+ "id": "A05-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-06",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d the code is at src/rules/data.ts:55 (STRONG_CONVO includes context_?window|system_?prompt|user_?prompt) and line 81: the STRONG_CONVO entry has no skip. Only WEAK_CONVO (line 82) has skip: orResolved(isNonText). The finding cites lines 220/246, which are wrong. Ran DATA_001.check on dist built from bc7090d with search_models properties.context_window {type:integer, minimum:1}. Output: 'DATA-001 /properties/context_window parameter \"context_window\" requests conversation data' at the rule's default error level for claude and chatgpt. That is an error from a name-only match on an integer, which goes against the project's severity principle."
+  }
+ ],
+ "arbiter": null
+}

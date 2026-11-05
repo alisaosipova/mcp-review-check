@@ -1,0 +1,13 @@
+{
+ "id": "A01-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-04",
+   "verdict": "confirmed",
+   "evidence": "With `--plugin-dir test/fixtures/listing/plugin-valid --baseline b0.json` the exit code is 0. Adding `--fail-on-drift` makes it exit 1 with stderr '--fail-on-drift: tool definitions not compared (this run did not list every tool: no server was checked (a listing-only run)); fix this run (see the coverage line) before saving a baseline from it'. The other 4 listing fixtures behave the same. The cause: drift.ts:85 returns that string for listing targets, :136 sets notComparedBy 'run', and cli.ts:830-835 then gives exit 1 with advice the user cannot follow. The listing-only guard at cli.ts:596-600 rejects --bearer, --header, --env, --cwd, --active, --active-auth and --tool-args, but not --fail-on-drift or --baseline. Round 3 A01-04 recommended 'Consider also rejecting --fail-on-drift in a listing-only run as a usage error'; that was not done."
+  }
+ ],
+ "arbiter": null
+}

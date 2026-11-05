@@ -1,0 +1,13 @@
+{
+ "id": "A07-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-04",
+   "verdict": "confirmed",
+   "evidence": "I re-ran `node dist/cli.js --format json --target claude --env MODE=claude --stdio -- node test/fixtures/good-server.mjs`. The JSON has \"target\": \"«redacted»\". Ajv 2020 validation against schema/report.schema.json fails with `/target must be equal to one of the allowed values`. The docs URLs became https://«redacted».com/docs/connectors/building/... (4x submission, 3x review-criteria, 1x authentication, 1x external-links) and 2x https://support.«redacted».com/... The text header reads `target: «redacted»`. The cause is in src/redact.ts. Line 161 pushes a plain-name value in the full tier unless it matches PLAIN_SETTING (line 20) or TRIVIAL (line 14), and neither contains claude/chatgpt. OWN_VOCABULARY (line 175) lacks `target`, and catalog docs/fix/title strings are scrubbed. This is a residual of round-1 F118, which was fixed only for production/debug/versions."
+  }
+ ],
+ "arbiter": null
+}

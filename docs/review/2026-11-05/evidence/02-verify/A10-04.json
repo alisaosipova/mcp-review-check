@@ -1,0 +1,13 @@
+{
+ "id": "A10-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-04",
+   "verdict": "confirmed",
+   "evidence": "Функция foldNote(raw) в src/rules/util/text.ts:124-129 перечисляет все совпадения FOLD_BLANK/FOLD_DROP во всём сыром тексте. Вызовы (injection.ts:38, data.ts:48, policy.ts:65/88/132) ставятся по условию `text === e.text ? '' : foldNote(e.text)`, то есть срабатывают при любой свёртке где угодно в тексте, а не внутри совпавшего диапазона. В CHANGELOG 1.1.0 (строка 38) сказано: «messages whose match needed folded hidden characters». Запуск bad-server показал пометку `(matched with hidden characters folded: \\u{E0001})` у INJ-005/003/006/008, хотя в фикстуре U+E0001 стоит в самом конце описания, после `-->`, вне совпавших фраз. U+FE0F входит в FOLD_DROP (класс ︀-️), поэтому эмодзи ❤️ в любом месте текста тоже вызовет пометку."
+  }
+ ],
+ "arbiter": null
+}

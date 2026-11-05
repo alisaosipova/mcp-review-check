@@ -1,0 +1,18 @@
+{
+ "id": "A12-02",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read at bc7090d. action.yml: input `platform` defaults to `all` and `fail-on` to `error`. The run step always builds `args=(--target \"$platform\" --fail-on \"$INPUT_FAIL_ON\" --format sarif ...)`, while `--fail-on-spec` and `--active` are added only when the input is `true`. The CLI discovers the config file through findConfig(cwd) in src/cli.ts:522 when `--config` and `--no-config` are absent, and its help text (src/cli.ts:108) and CHANGELOG:268 say \"Command-line options override the file\". So under the Action a discovered mcp-review-check.config.json with `\"target\": \"claude\"` / `\"failOn\": \"warning\"` is always overridden by `--target all --fail-on error`, and no note is printed: the 'not used' notes in cli.ts:538-543 cover only other-transport and opposite keys, not a plain option replaced by a flag. A file `failOnSpec: true` still applies because the Action only ever adds `--fail-on-spec` and never `--no-fail-on-spec`. That matches the reported repro output (platforms claude/chatgpt/spec; 'FAIL (--fail-on error, --fail-on-spec)'). I found no guard and no documentation of this: neither action.yml nor docs/guide/ci.md mentions the config file being overridden, and round-3 FINDINGS has no related item. Effect: CI can gate less strictly than a local run (warning becomes error), with no message. A workaround exists: set the inputs to match the file. That justifies medium UX severity, not higher. Fix: default `platform` and `fail-on` to '' and pass them only when non-empty. This verdict comes from reading the code; I did not rebuild or rerun the repro."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read action.yml at bc7090d: the `platform` input defaults to `all` and `fail-on` defaults to `error` (lines 22-29). The run step always builds `args=(--target \"$platform\" --fail-on \"$INPUT_FAIL_ON\" --format sarif ...)`. `--fail-on-spec` and `--active` are added only when their inputs are `true`. CHANGELOG and options docs say config-file options are \"overridden by the command line\". docs/guide/ci.md (the Action input table, lines 130-132) has no note that the Action overrides the file's `target` or `failOn`.\n\nRepro: I built bc7090d in a detached worktree and ran it in a directory whose mcp-review-check.config.json held {\"failOn\":\"warning\",\"target\":\"claude\",\"failOnSpec\":true}.\n(1) With the Action's command line (`--target all --fail-on error --format sarif --output x.sarif --json-output j.json --stdio \"node test/fixtures/bad-server.mjs\"`): stderr shows only \"options from config file <path>\" with no override note. JSON `target` is \"all\" and `summary.gate.platforms` is [\"claude\",\"chatgpt\",\"spec\"]. The Result line is \"FAIL (--fail-on error, --fail-on-spec)\". So the file's target and failOn were dropped and its failOnSpec was kept.\n(2) Without those flags (a local or npx-style run): `target` is \"claude\", gate.platforms is [\"claude\",\"spec\"], and the Result line is \"FAIL (--fail-on warning, --fail-on-spec)\". The gate counts the warnings.\n\nSo the Action gates differently from a local run, gives no notice, and treats its inputs inconsistently. A server with only warnings would pass under the Action but fail locally. That weakens a CI gate in silence. The workaround is easy (set the inputs to match the file). Medium fits.\n\nWorktree removed."
+  }
+ ],
+ "arbiter": null
+}

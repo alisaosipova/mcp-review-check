@@ -1,0 +1,13 @@
+{
+ "id": "A05-10",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-10",
+   "verdict": "confirmed",
+   "evidence": "PSEUDO_TAG = /<\\/?(system|important|instructions?|admin|assistant|secret|hidden)\\b[^>]{0,200}>/i needs '<' directly before the name, and no file in src mentions im_start, <<SYS>> or [INST]. Ran every INJ-* and DATA-* rule check from the bc7090d build on tool descriptions with ChatML '<|im_start|>system…<|im_end|>', Llama '[INST] <<SYS>>…<</SYS>> [/INST]', fake 'Human:/Assistant:' turns and '< system >…</ system >': none of the four produced a finding. This is a coverage gap in a heuristic rule (warning level), not a wrong result."
+  }
+ ],
+ "arbiter": null
+}

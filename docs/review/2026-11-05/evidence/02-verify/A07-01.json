@@ -1,0 +1,18 @@
+{
+ "id": "A07-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read the code at bc7090d. In src/cli.ts:769 the listing warnings are printed as `warning: ${'--plugin-dir'|'--openai-manifest'} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}`. scrub only redacts secrets. This line never goes through visibleText or ciSafeLine. Elsewhere those helpers are used on the --verbose dump (line 817), the [http] and stdio tail lines (821-822), the fatal path (897) and the config notices (570/573), but not here, and nothing sanitizes stderr later before it is returned (lines 823 and 876-878 only scrub or append).\n\nThe path comes from file content. In src/listing/load.ts:236-250, declaredMcp() takes the manifest's string `mcpServers`, strips `./` and builds `shown` with posix(), which only swaps backslashes for slashes (displayUrl is used only when the value has a scheme). Then it calls `listing.errors.push({source:'openai', path: shown, ...})`. The plugin-dir errors use relative file names (rel) the same way.\n\nI reproduced it in a detached worktree at bc7090d after npm ci and a build. I copied test/fixtures/listing/openai-valid to the scratchpad and set mcpServers to \"./x\\u001b[31mRED\\n::error title=Injected::forged annotation\\n##[error]legacy\", then ran `GITHUB_ACTIONS=true node dist/cli.js --format json --openai-manifest .../plugin.json`. It exited 0. `cat -v` of stderr showed `warning: --openai-manifest x^[[31mRED`, then a line of its own reading `::error title=Injected::forged annotation`, then a line starting with `##[error]legacy does not exist in the package ...`. So the ESC byte reaches the terminal raw, and a workflow command starts a new line. The LST-024 annotation for the same problem, printed right after, is escaped correctly (`\\u{1B}`, `%0A`, `#\\u{23}[`), which matches the claim.\n\nThis is the same class as the round-3 fixes A07-04/A07-07, so medium fits: it needs a manifest supplied by a PR in CI and lets that PR forge annotations, stop-commands or add-mask. The fix is to wrap the line in ciSafeLine/visibleText. I removed the worktree afterwards."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "bc7090d src/cli.ts:769: `stderr += `warning: ${...} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}\\n`` uses only redaction, no visibleText/ciSafeLine (unlike the fatal path at :897, which uses ciSafeLine, and the annotation at :895). Built the worktree (npm ci, build OK). Copied test/fixtures/listing/openai-valid and set plugin.json mcpServers to \"./x\\u001b[31mRED\\n::error title=Injected::forged annotation\\n##[error]legacy\". Then ran GITHUB_ACTIONS=true node dist/cli.js --format json --openai-manifest X/plugin.json. Exit 0. `cat -v` of stderr showed `warning: --openai-manifest x^[[31mRED` (raw ESC), a separate line `::error title=Injected::forged annotation`, and a line `##[error]legacy does not exist in the package ...`. The LST-024 ::warning annotation printed next to it was correctly escaped (\\u{1B}, %0A, #\\u{23}). So file content from the repository under review can inject terminal escapes and forge GitHub workflow commands on stderr in CI. This is the same class as the round-3 fixes, which missed this line. Medium fits: a CI integrity/annotation spoof (::add-mask::, ::stop-commands::), not code execution. Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

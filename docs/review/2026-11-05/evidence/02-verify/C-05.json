@@ -1,0 +1,13 @@
+{
+ "id": "C-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-05",
+   "verdict": "confirmed",
+   "evidence": "Reproduced at bc7090d. node dist/cli.js '--stdio node test/fixtures/good-server.mjs' prints 'error: unknown option --stdio; did you mean --stdio?' with exit 2. '--quiet --no-quiet' as one word gives 'unknown option --quiet; did you mean --quiet?'. Cause: usageMessage's regex /'(?:-\\w, )?(-[^'=\\s,]*)/ cuts the option at the first whitespace. closestOption then finds the exact option at distance 0 and suggests it. A true typo (--stdoi) still gets a correct suggestion. This is a UX issue only."
+  }
+ ],
+ "arbiter": null
+}

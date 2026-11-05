@@ -1,0 +1,13 @@
+{
+ "id": "A02-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-04",
+   "verdict": "confirmed",
+   "evidence": "connect.ts:408 `connectTimeout = Math.min(timeoutMs, 15000)` is passed to connectLegacyHttp (438). The SDK error message is used verbatim (310), and describeHttpFailure's fallback (164) returns it with no hint. I found no mention of the 15 s cap in the README at bc7090d. Re-ran hang-init.mjs on port 18882 with `--timeout 60000`: exit 3 after 16 s, with 'Could not connect: MCP error -32001: Request timed out' and the generic SRV-003 fix. It does not mention initialize, the wait, or the cap. A UX finding, low as reported."
+  }
+ ],
+ "arbiter": null
+}

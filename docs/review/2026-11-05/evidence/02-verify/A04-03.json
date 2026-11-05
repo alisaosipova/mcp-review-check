@@ -1,0 +1,18 @@
+{
+ "id": "A04-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code: src/rules/engine.ts:236 skips a rule with empty results only when `snap.fatal || toolLevel === 'connect-failed'`. In the auth path, src/connect.ts:479 (`rejected()`) sets coverage to `auth-required` (or `token-rejected` when credentials were sent) and does NOT set snap.fatal. So rules with `needs: []` go through unmetNeed() without a reason, return [] and are counted in rulesRun. authReason() covers auth-required and token-rejected, but it is only used through the needs-based checks (list needs, ui and so on), so it gives no guard here. junit.ts:49 adds its synthetic error case only for fatal or stopped runs.\n\nRan in a detached worktree at bc7090d after build. The 127.0.0.1 stub answers 401 with a WWW-Authenticate header to every request. `node dist/cli.js http://127.0.0.1:47813/mcp --format json` gave coverage `{toolLevel:'auth-required'}`. SRV-011, SRV-012, SRV-013, SRV-014, SRV-015 and SPEC-002, SPEC-008, SPEC-016, SPEC-017, SPEC-018, SPEC-020, SPEC-021, SPEC-023 were in neither findings nor skipped, so they counted as passed. `--format junit` printed plain passing testcases: `SRV-015 Server depends on features Claude does not support`, `SPEC-020 List methods for declared capabilities succeed` (claude and chatgpt), and `SRV-011 ...` (chatgpt). None had <skipped/>.\n\nMitigation: score is null, the verdict comes from AUTH-004 or incomplete coverage, and the run fails. So the gate outcome is not wrong. Only the per-rule outputs (JUnit, SARIF rule list, rulesRun) overclaim. The claim is true as stated. Medium fits: it misleads the usual CI case of a job without a token, but it does not change the verdict."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built bc7090d in a detached worktree (since removed). I ran it against a loopback stub on 127.0.0.1:47812/mcp that answers 401 to every request, sends WWW-Authenticate resource_metadata and serves PRM and AS metadata. I gave no --bearer.\n\nJSON run (`--format json`):\n- coverage = {toolLevel:\"auth-required\"}, and both verdicts are INCOMPLETE.\n- `findings` holds only AUTH-012, AUTH-014 (twice), AUTH-015, SRV-001 and SRV-004. `skipped` has 130 entries.\n- SRV-011, SRV-012, SRV-013, SRV-014, SRV-015, SPEC-002, SPEC-008, SPEC-016, SPEC-017, SPEC-018, SPEC-020, SPEC-021 and SPEC-023 are in neither `findings` nor `skipped`, so they count as run and passed.\n\nJUnit run (`--format junit`): 188 testcases, 131 `<skipped>`. It includes `<testcase classname=\"claude\" name=\"SPEC-020 List methods for declared capabilities succeed\"/>`, `SRV-015 ...` and chatgpt `SRV-011`/`SRV-012`/`SPEC-020`, all with no `<skipped/>`, although no initialize or tools/list ever succeeded.\n\nCause (src/rules/engine.ts:236): the A10-05 guard only fires when `snap.fatal || snap.coverage.toolLevel === 'connect-failed'`. connect.ts:479 sets toolLevel 'auth-required' or 'token-rejected' without `fatal`, so rules with `needs: []` that find nothing are counted in rulesRun. `authReason()` already returns a reason for auth-required and token-rejected; the guard just doesn't check those levels.\n\nA10-05 in round 3 covered only connect-failed. This 401 case is not in FINDINGS.md or REMEDIATION.md, so it is not a known item.\n\nSeverity medium: the verdict line is correct, but per-rule outputs (JUnit, rulesRun) report checks that never ran as passed. That is the common CI case of a job without a token. It is a reporting-integrity problem, not a false error."
+  }
+ ],
+ "arbiter": null
+}

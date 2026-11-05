@@ -1,0 +1,121 @@
+{
+ "area": "A11",
+ "name": "feature gaps against the directories and the MCP spec (cross-cutting)",
+ "coverage": "Read at bc7090d in a detached worktree (npm ci --ignore-scripts, npm run build; worktree removed at the end): the full --list-rules catalog (180 rules plus MAN-001..031), src/rules/manual.ts; parts of src/rules/policy.ts, server.ts (SRV-003, SRV-004, SRV-014, SRV-015, SRV-019), runtime.ts (RT-004/005/006/009/010), auth.ts (AUTH-006/012/017, AUTH_LATENCY), apps.ts (APPS-005/008/015/016/017/018), spec.ts (SPEC-005/007/010/012/014/021/022/024, tasks), schema.ts (TOOL-016/017), tools.ts (TOOL-002/033), listing.ts (LST-001..003/007/013/016..028) and util/text.ts (corpus); the prior findings (2026-11-04 FINDINGS/REMEDIATION, 2026-11-01 FINDINGS), searched for overlap. Fetched with WebFetch: Claude review-criteria, submission, building, authentication, troubleshooting, mcp-apps design-guidelines and quickstart, and the plugin pre-submission checklist; the Anthropic Software Directory Policy; the OpenAI plugin-guidelines, deploy/submission, deploy/submission-errors, deploy/app-review, reference, build/mcp-server, plan/tools, concepts/ui-guidelines and guides/security-privacy pages; the MCP 2026-07-28 changelog; the conformance README. Every cited page I fetched exists; I found no dead links. Limits checked and found consistent: 150k characters and 240 s, 10 s OAuth, 64-character names, 100/200/2000 listing, 30/30/4000/80/20x120, 3x128 prompts, 706x400-860 screenshots, 48-4096 px and 5 MiB icons, 160.79.104.0/21, the callback URL, CIMD conditions, the -32602 and -32022 codes, and the conformance command. Ran: the CLI against two scratch stdio servers in the session scratchpad (raw-server.mjs: malformed prompts, resources and templates plus gambling/adult tools; hidden-server.mjs: tag and bidi characters in non-tool fields). Not done: no vitest runs (none were needed); no HTTP or SSE fixture run for A11-02 (taken from reading the code); the MCP 2026-07-28 tools, resources, prompts and elicitation pages and the ext-apps spec were not re-fetched page by page (I relied on the changelog); the Claude lazy-authentication and testing pages, OpenAI build/auth, chatgpt-ui and troubleshooting were only link-checked or not fetched; docs/RULES.md and docs/design/spec.md were not diffed against the catalog.",
+ "improvements": [
+  {
+   "title": "Validate prompt, resource and resource-template list entries against the schema",
+   "dimension": "feature",
+   "detail": "No rule checks the shape of prompts/list, resources/list or resources/templates/list items. Missing or non-string Prompt.name, PromptArgument.name, non-boolean PromptArgument.required, Resource.uri and Resource.name, non-string mimeType, and a malformed RFC 6570 uriTemplate all pass silently. I verified this with /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/raw-server.mjs: the report says 'Checked 2 tools · 1 resource · 2 prompts' and has no SPEC finding. These are schema-required fields and the check is deterministic, so it could be spec=error. A new SPEC-025 rule fits.",
+   "value": "high",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts"
+  },
+  {
+   "title": "Claude plugin checklist: blocking checks LST does not cover yet",
+   "dimension": "feature",
+   "detail": "The pre-submission checklist blocks several things the LST rules do not check. Blocks: displayName and author.name in mixed scripts or with invisible characters; component keys misspelled or placed under 'experimental'; plugin.json component paths that point outside the plugin folder; hooks/hooks.json that is invalid JSON, lacks a top-level hooks or modules object, uses an unknown event or type, or has a non-https HTTP hook; skill, command or agent front matter that does not parse or a description that is not a string; component folder or file names with the wrong capitalization (hooks/, skills/, SKILL.md). 'Validation stops': Windows-invalid names (colon, trailing dot or space, CON/PRN), case-only collisions, .gitattributes export-ignore/export-subst/filter, any file over 5 MiB. Held for a reviewer, which could be a warning: a lockfile next to package.json, an MCP server started through a shell, -c or npm run, and a credential read from an env var such as $GITHUB_TOKEN. All of this is deterministic file inspection.",
+   "value": "high",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://claude.com/docs/plugins/pre-submission-checklist"
+  },
+  {
+   "title": "ChatGPT package manifest: name, version, description, skills and translations limits",
+   "dimension": "feature",
+   "detail": "Several package fields from the submission pages are not checked. name: 64 characters or fewer, starting with an ASCII letter or digit, then letters, digits, _ or -. version: an explicit semver of 64 characters or fewer. Plugin description: 1,024 characters or fewer (plugin_description_too_long); the submission page says 4000, so cite both. author.name 120, email 320, URL 2048 https; homepage https 2048. skills/get-started/SKILL.md must have name and description front matter, the skill description must be 1,024 characters or fewer, and plugin-name:skill-name 64 or fewer. Translations: a non-empty locale key, subtitle on one line of 30 characters or fewer, description 4000 or fewer, no tabs or control characters. A protected server must not be configured as type 'none' (cross-check with authProbe). LST-016 and LST-017 cover none of these today.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://developers.openai.com/plugins/deploy/submission-errors"
+  },
+  {
+   "title": "Heuristic for categories both directories exclude: adult content, gambling and other prohibited goods",
+   "dimension": "feature",
+   "detail": "Claude policy 4.D excludes software that primarily serves 18+ content, and 4.A generally excludes crypto. OpenAI prohibits adult content, gambling, drugs, weapons, tobacco, malware and surveillance, and fake IDs. POL-001..005 do not cover these. In my repro, the tools place_bet ('Place a sports bet on a casino wager with real money') and adult_videos ('explicit 18+ adult porn videos') produced no POL finding. A new POL-006 at warning level (heuristic, per the severity principle) would help reviewers.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://developers.openai.com/plugins/plugin-guidelines"
+  },
+  {
+   "title": "Implied OpenAI or Anthropic endorsement in serverInfo name/title",
+   "dimension": "feature",
+   "detail": "POL-003 already has an ENDORSE pattern ('official chatgpt', 'endorsed by openai'), but it runs over the tool corpus only. A server named 'Official ChatGPT Betting' produced no finding in my repro. OpenAI says plugins 'must not imply OpenAI made or endorses them', and the Claude plugin checklist blocks names that present the plugin as official. Running ENDORSE, plus a brand check for OpenAI, ChatGPT, Anthropic and Claude, over serverInfo name, title and description would catch this. It partly overlaps with A11-01.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://developers.openai.com/plugins/plugin-guidelines"
+  },
+  {
+   "title": "Validate MRTR inputRequests: elicitation requestedSchema and URL mode",
+   "dimension": "feature",
+   "detail": "SPEC-021 reads inputRequests only to flag deprecated sampling and roots. An elicitation/create inputRequest seen in an input_required result or an --active call is not validated. The requestedSchema must be a flat object of primitive properties (string, number, integer, boolean, or enum). URL mode needs an https url, and the 2026-07-28 removal of elicitationId and notifications/elicitation/complete is not checked either.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://modelcontextprotocol.io/specification/2026-07-28/changelog"
+  },
+  {
+   "title": "Tool.execution.taskSupport value check",
+   "dimension": "feature",
+   "detail": "Tool.execution.taskSupport (forbidden | optional | required) is not validated. A value of 'required' on a server Claude talks to also means Claude, which does not support tasks, cannot call the tool. That should be a SRV-015 info, with a spec error for an unknown value.",
+   "value": "low",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://modelcontextprotocol.io/specification/2025-11-25/server/tools"
+  },
+  {
+   "title": "Claude mobile: camera, microphone and geolocation permissions unavailable",
+   "dimension": "feature",
+   "detail": "The design guidelines say apps on Claude mobile have no camera, microphone or location access. APPS-017 already parses _meta.ui.permissions. A claude=info note when camera, microphone or geolocation is requested would tell authors to provide a fallback.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://claude.com/docs/connectors/building/mcp-apps/design-guidelines"
+  },
+  {
+   "title": "ChatGPT frame domains need a review explanation",
+   "dimension": "feature",
+   "detail": "submission-errors has frame_domain_explanation_required, and plugin-guidelines require embedded pages to come from the server's own registrable domain. APPS-008 already computes third-party frames. Its ChatGPT message could name the explanation the dashboard asks for, and MAN items could list each external frame domain.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://developers.openai.com/plugins/deploy/submission-errors"
+  },
+  {
+   "title": "High-risk domains: human-in-the-loop and disclosure reminder",
+   "dimension": "feature",
+   "detail": "Claude policy 1.B asks software in legal, healthcare, insurance or finance to provide human-in-the-loop measures and consumer disclosure. When tool text matches those domains, a conditional MAN item (or an info heuristic) would surface it. Today only POL-001 covers money transfer.",
+   "value": "low",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A11-01",
+   "dimension": "security",
+   "severity": "medium",
+   "file": "src/rules/util/text.ts",
+   "line": "226-263 (buildCorpus); consumer src/rules/injection.ts:117-134 (INJ-001)",
+   "title": "INJ-001 and the other INJ/DATA/POL rules skip serverInfo title/description, resource and template name/title, and prompt name/title",
+   "claim": "buildCorpus feeds the content rules only tool fields, schema text, instructions, prompt and argument descriptions, and resource or template descriptions. Several fields are never scanned: serverInfo.title and serverInfo.description (the 2025-11-25 Implementation fields), serverInfo from server/discover, resource and resourceTemplate name and title, and prompt name and title. Clients show these strings to users and the model. The directory policy 2.G and the review criteria reject hidden, obfuscated or encoded instructions anywhere in the Software, and INJ-001 is an error-level rule for that requirement. A server can therefore hide a Unicode-tag-encoded instruction plus a bidi override in those fields and pass INJ-001 with no finding. Round 3's A05-01 widened the corpus to schema titles, enums and defaults only, so this is a different gap.",
+   "repro": "I ran this against the bc7090d build. The scratch server is /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/hidden-server.mjs, a raw JSON-RPC stdio server. It puts 'Notes' + U+E0000-tagged 'ignore previous instructions' + U+202E into serverInfo.title, serverInfo.description, a resource name and title, a resource template name and title, a prompt title, and a prompt name with a tag character. Command: node dist/cli.js --stdio \"node .../hidden-server.mjs\" --format json. Result: only SPEC-010 info, SRV-002 info x2, TOOL-027 info and TOOL-028 info. There was no INJ-001 finding.",
+   "fix": "In buildCorpus, push serverInfo.title, serverInfo.description and serverInfo.name, plus the discover serverInfo when present (where 'server.*'). Push resource name/title, resourceTemplate name/title and prompt name/title (where 'resource.name', 'prompt.title' and so on, with subject set). Add a corpus-where filter so that rules unsuited to names (INJ-008, TOOL-008 style) can opt out. INJ-001, INJ-002 and INJ-003 should see all of these fields. Add a fixture test using the payload above. This is a patch release: detection widens under an existing rule ID."
+  },
+  {
+   "id": "A11-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/rules/server.ts",
+   "line": "85, 89 (SRV-003 severity and sources)",
+   "title": "SRV-003 rates an SSE-only server as a warning for ChatGPT, but OpenAI lists Streamable HTTP as a production-endpoint requirement",
+   "claim": "https://developers.openai.com/plugins/build/mcp-server, under 'Deploy the endpoint', lists the production endpoint requirements and includes 'Support the MCP streamable HTTP transport.' The page never mentions SSE. Detection is deterministic: SRV-003 fires only when the Streamable HTTP POST was rejected and HTTP+SSE worked. Under the project rule (error for a documented MUST with deterministic detection) the chatgpt severity should be error. The rule's sources cite only the Claude policy, which says 'should support' (warning is right for Claude), and the spec page, not the OpenAI page. A ChatGPT verdict for an SSE-only server therefore reads WARN instead of BLOCKED.",
+   "repro": "Not run: the fixtures in this area have no SSE-only HTTP server. Read from the code: server.ts:106 returns { message: 'legacy HTTP+SSE only; Streamable HTTP POST was rejected' } with the default severity map { claude: 'warning', chatgpt: 'warning', spec: 'warning' }.",
+   "fix": "Set severity to { claude: 'warning', chatgpt: 'error', spec: 'warning' } and add https://developers.openai.com/plugins/build/mcp-server to sources. Add a severityNote saying Claude 'should support' while OpenAI requires it for production. Raising a severity changes exit codes, so ship it in a minor release and note it in CHANGELOG under the stability policy."
+  }
+ ]
+}

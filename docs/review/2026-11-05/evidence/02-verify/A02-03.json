@@ -1,0 +1,13 @@
+{
+ "id": "A02-03",
+ "status": "refuted",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-03",
+   "verdict": "refuted",
+   "evidence": "Re-ran `CODE=301 node redir-code.mjs 18871` and `node dist/cli.js http://127.0.0.1:18871/mcp --timeout 5000`. The connect line does show the raw SDK text ('... not followed (redirectPolicy: 'same-origin')') with the generic SRV-003 fix. But the same report then prints `! SRV-006 [claude] server: POST redirects (301) to http://127.0.0.1:18871/mcp/; register the final URL` with 'fix  Register the final URL, or serve MCP directly at the entered URL.' So the user already gets the final URL and the next step. The finding's central claim that nothing names the Location or suggests the final URL is false. Only cosmetic: the SDK wording 'redirectPolicy' in the summary."
+  }
+ ],
+ "arbiter": null
+}

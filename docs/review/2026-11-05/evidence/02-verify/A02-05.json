@@ -1,0 +1,18 @@
+{
+ "id": "A02-05",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at bc7090d: src/probe/network.ts:133-137 closeProbeSession awaits tracer.request DELETE with timeoutMs min(timeoutMs,5000). It is called after preflight (l.145), after each of the 4 Origin probes, which are awaited one after another in originProbes (l.195-200), and after invalidToken in src/probe/auth.ts:142. src/connect.ts:609-618 endSession awaits withTimeout(inner.terminateSession(), 5000). It is called from finishHttp (l.471) and from the finally of freshTools (l.594) for every fresh connection. No parallelism and no shorter bound on these paths. ruleExchanges (l.602-604) drops these DELETEs, so their answers are not evidence. endSessions/SESSION_END_TIMEOUT_MS=1500 with parallel fetch is used only on the stop/signal path. I found no guard that skips or shortens the regular-path DELETEs. Reproduced in a detached worktree (since removed) with a local stateful server that sets mcp-session-id on initialize: `node dist/cli.js http://127.0.0.1:18811/mcp --quiet --timeout 10000` took 37.6 s when DELETE hangs and 2.3 s when DELETE answers 200. The server logged 7 DELETEs in both runs, which matches 7 x 5 s. The --active run was not repeated; the code shows 3 more freshTools connections, each adding up to 5 s. Medium fits: it is not a correctness issue, but a run can be ~16x slower on servers or WAFs that hold DELETE open."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read the code at bc7090d. In src/probe/network.ts:137, closeProbeSession awaits a single DELETE with timeoutMs Math.min(timeoutMs, 5000). In src/connect.ts:614, endSession awaits withTimeout(inner.terminateSession(), 5000), one connection after another. The stop path endSessions (connect.ts:667) runs its DELETEs in parallel with SESSION_END_TIMEOUT_MS=1500. ruleExchanges (connect.ts ~602) filters out the \"(close session)\" DELETEs and the sessionEnds DELETEs, so these answers are never evidence.\n\nRepro: built the CLI in a detached worktree. Wrote a local stateful server that sets mcp-session-id on initialize and either answers DELETE with 200 or never answers it. Ran `node dist/cli.js http://127.0.0.1:PORT/mcp --quiet --timeout 10000`:\n- DELETE answered: 2.7 s; with --active 2.2 s\n- DELETE hanging: 36.8 s; with --active 53.0 s\nThe server logged 7 DELETEs in the plain run and 10 with --active, all sent one after another. This matches the claim (37.6/52.0 s).\n\nThe fix is easy: use the 1.5 s bound and/or run the DELETEs in parallel or without waiting for them. Medium perf severity is right: no wrong results, but up to about 50 s of extra wall time per run against a gateway or WAF that holds DELETE open. Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

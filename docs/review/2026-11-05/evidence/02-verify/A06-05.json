@@ -1,0 +1,13 @@
+{
+ "id": "A06-05",
+ "status": "refuted",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-05",
+   "verdict": "refuted",
+   "evidence": "submission-errors (O_ERRORS, which LST-027 cites) lists 'Image dimensions must not exceed 4,096×4,096 pixels.' under directory branding images in general, not only raster images. The submission page says 'Raster images can be at most 4096 pixels'. It does not say SVG may be larger; it only adds a separate SVG minimum. One cited source states an unqualified MUST and the check is deterministic, so the error level meets the project's severity principle. At most a docs or rationale note about the wording difference; not a defect."
+  }
+ ],
+ "arbiter": null
+}

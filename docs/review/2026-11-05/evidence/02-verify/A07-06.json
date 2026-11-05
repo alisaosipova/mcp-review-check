@@ -1,0 +1,13 @@
+{
+ "id": "A07-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-06",
+   "verdict": "confirmed",
+   "evidence": "src/protocol/trace.ts:25 adds three forms of each secret: as written, JSON-escaped and encodeURIComponent. scrub matches them literally and case-sensitively. I checked it on dist with the secret 'SYNTH/key+BBBB2222='. The exact form and the full encodeURIComponent form get redacted. Three forms come back unredacted: the Python quote style with '/' left raw ('SYNTH/key%2BBBBB2222%3D'), the lowercase-hex form, and the form-encoding '+'->' ' ('SYNTH/key BBBB2222='). The finding's 'lc' example also lowercases the secret itself, which is less realistic. Lowercase hex alone (%2f/%2b) and quote(safe='/') are realistic and leak just the same. Low severity, because it depends on the server echoing the credential in that encoding."
+  }
+ ],
+ "arbiter": null
+}

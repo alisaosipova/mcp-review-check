@@ -1,0 +1,13 @@
+{
+ "id": "A01-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-06",
+   "verdict": "confirmed",
+   "evidence": "Reproduced. c1.json, with a stdio argument '--api-key=S3cr\\u0000etTokenValue123', exits 3. The text report shows \"Received '--api-key=S3cr\\x00etTokenValue123'\" both in 'Could not connect' and in SRV-003. c2.json puts the same value in env.API_KEY: the text report and `--format json` (2 hits each) contain 'etTokenValue123' through \"options.env['API_KEY'] ... Received 'S3cr\\x00etTokenValue123'\". c4.json with cwd 'a\\u0000b' prints 'fatal: TypeError [ERR_INVALID_ARG_VALUE] ... without null bytes' and exits 3, not a usage error (exit 2). Low severity: this needs an explicit config file that contains a NUL."
+  }
+ ],
+ "arbiter": null
+}

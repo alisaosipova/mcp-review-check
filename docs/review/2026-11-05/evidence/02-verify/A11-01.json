@@ -1,0 +1,18 @@
+{
+ "id": "A11-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code read at bc7090d: buildCorpus in src/rules/util/text.ts:226-263 only adds tool name/title/annotations.title/description, schema text (description, title, enum/const, default/examples, property keys), instructions, prompt.description, prompt argument descriptions, resource.description and resourceTemplate.description. It never adds serverInfo.title or serverInfo.description (connect.ts:224/233 fills snap.serverInfo from both initialize and server/discover _meta), resource or template name/title, or prompt name/title. INJ-001 (injection.ts:117-134, error for claude and chatgpt) runs hiddenChars only over corpus(snap,{samples,keys}). No other rule calls hiddenChars (git grep finds only injection.ts:92/127). The other serverInfo consumers (POL at policy.ts:159, SRV naming at server.ts:327-344, SRV-013, SPEC-017 icons) check product words, suffixes, name/version shape or icons, not hidden characters. So nothing else guards these fields. docs/design/spec.md §1.5 (line 80) lists the same corpus 'where' set, so the gap is in the spec as well as the code. It is not a deviation from the spec, and it is not covered by round-3 A05-01, which widened the corpus to schema fields only. Repro: I ran the existing bc7090d build in the review-r4/scratch/find-A09 worktree, as a read-only run, against the finding's hidden-server.mjs. The report's serverInfo.title and description contain U+E0000-tagged 'ignore previous instructions' plus U+202E. The only findings were SPEC-010 info, SRV-002 info x2, TOOL-027 info and TOOL-028 info, with no INJ-001. Severity: medium is right. Tag and bidi detection is deterministic and INJ-001 is already error-level for this policy requirement, but the gap is limited to fields that are shown less prominently than tool descriptions. I created no worktree of my own, so there was nothing to remove."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Built bc7090d in a detached worktree (removed afterwards). In src/rules/util/text.ts, buildCorpus pushes tool name/title/annotations.title/description, schema text, instructions, prompt.description, prompt argument descriptions, resource.description and resourceTemplate.description. It never reads snap.serverInfo (title/description), resource or template name/title, or prompt name/title. The only uses of serverInfo in the rules are in server.ts (SRV suffix and name checks, SRV-013), and none of them do a hidden-character scan. Running node dist/cli.js --stdio \"node <scratchpad>/hidden-server.mjs\" --format json put a Unicode-tag-encoded 'ignore previous instructions' plus U+202E in serverInfo.title/description, a resource name/title, a template name/title, a prompt title and a tagged prompt name. The output had only SPEC-010, SRV-002 x2, TOOL-027 and TOOL-028 (all info). There was no INJ, DATA or POL finding. Control: the same string placed only in a resource description produced INJ-001 error 'resource.description: tag or bidi control characters ...'. The detector works, so the miss is caused only by the corpus scope. This is a deterministic false negative for an error-level rule on strings that clients show. It differs from round 3 A05-01, which covered schema titles, enums and defaults. Medium severity fits: the check can be bypassed, but only through the less prominent metadata fields."
+  }
+ ],
+ "arbiter": null
+}

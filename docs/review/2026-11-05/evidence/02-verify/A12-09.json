@@ -1,0 +1,13 @@
+{
+ "id": "A12-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A12-09",
+   "verdict": "confirmed",
+   "evidence": "action.yml builds args=(... --format sarif --output \"$INPUT_SARIF_FILE\" ...) and then appends the extra-args tokens. parseArgs keeps the last value of a string option. `node dist/cli.js --no-config --format sarif --output x.sarif --format markdown --stdio good-server` wrote a markdown report into x.sarif ('# Acme Notes 1.4.2'). So `extra-args: --format json|markdown` passes a non-SARIF file to upload-sarif, which fails with a parse error that does not point at extra-args. One detail is wrong: with `--output other`, the step does not report the old path. It runs `rm -f` on the SARIF file first and sets `sarif-file=` (empty) when the file is missing. The upload step's condition `steps.run.outputs.sarif-file != ''` then skips the upload silently. Nothing reaches code scanning in either case, and nothing warns. ci.md:138 does not say that these options must not go in extra-args."
+  }
+ ],
+ "arbiter": null
+}

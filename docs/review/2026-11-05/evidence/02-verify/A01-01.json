@@ -1,0 +1,18 @@
+{
+ "id": "A01-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "low",
+   "evidence": "I read the code at bc7090d with git show and did not run anything. src/cli.ts:789 calls buildReport(..., failOnSpec, failOnIncomplete) and never passes a drift flag. Drift is computed after the report exists (798-799) and only reaches the exit code at line 835: `report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0`. In src/report/index.ts:56-71, summary.failed = failed || incompleteFails || fatal || stopped, and gate.reason gets only the --fail-on-incomplete text. resultLine (index.ts:188+) reads only report.summary, so a drift-only failure prints 'Result: PASS'. annotations(report) (cli.ts:813) gets no drift, so no ::error is written. junit.ts:107 says drift is listed in system-out and is \"never a failure\". In action.yml:195-196 the action sets its `verdict` output to PASS when summary.failed is false, while its exit-code output is 1. In the not-compared case changes=0, so neither the heading note nor the summary-line note appears and the only trace is the stderr line at 834. Nothing elsewhere guards against this, so the mismatch is real.\n\nSeverity is reduced because this is partly documented on purpose. docs/guide/options-and-config.md:23 says \"The verdicts and `summary.failed` stay about findings\", and docs/design/spec.md:1317 says only \"the section heading and the --output summary line say so\". In text and markdown, the drift heading (drift.ts:188) does add \"fails the run (--fail-on-drift)\" when tools changed, so \"every format says PASS\" overstates it a little.\n\nThe doc wording still conflicts with itself. options-and-config.md:140 says the Result line and summary.gate \"name what failed the run\", but they read PASS with gate.reason null on exit 1. The Action's verdict output (PASS next to exit-code 1) is a real consumer-facing contradiction. This is the same class of mismatch as A10-01, but since summary.failed is documented this way and the text heading signals the failure when tools changed, I rate it low rather than medium."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I built bc7090d in a detached worktree, which I have since removed. In src/cli.ts:789, buildReport(...) receives failOn, failOnSpec and failOnIncomplete but nothing about drift. textOpts.failOnDrift and notCompared are only used in the exit code at line 835 (`report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0`), so summary.failed and gate.reason never include drift. src/report/index.ts:56-71 handles only incompleteFails.\n\nRepro: I saved a baseline from good-server.mjs, then set toolFingerprints[0].sha256 and fields.description to 64 zeros. Results with `--baseline bd.json --fail-on-drift`:\n- text: exit 1. It prints '~ search_notes: changed: description' and 'Result: PASS (--fail-on error)'. The only signal is the section heading 'CHANGED TOOL DEFINITIONS (1 since baseline) · fails the run (--fail-on-drift)', which contradicts the PASS line.\n- `--format json`: exit 1, summary.failed=false, gate.reason=null. The JSON has no drift field.\n- `--format junit`: exit 1, failures=\"0\".\n- `GITHUB_ACTIONS=true --format sarif`: exit 1, and stderr has only the 'Local target: ...' banner. There is no ::error annotation.\n\nThis is the same kind of report/exit mismatch fixed for --fail-on-incomplete in A10-01 (medium). The flag is opt-in and the text output names the drift once, so medium fits."
+  }
+ ],
+ "arbiter": null
+}

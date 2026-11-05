@@ -1,0 +1,115 @@
+{
+ "area": "A08",
+ "name": "supply chain and pipeline",
+ "coverage": "READ at bc7090d in a detached worktree (.claude/review-r4/scratch/find-A08; npm ci --ignore-scripts and npm run build OK; the worktree was removed at the end with git worktree remove --force; the main checkout was not touched). Files: package.json, a package-lock.json scan (96 prod packages; install scripts only in esbuild and fsevents, both dev; every resolved URL on registry.npmjs.org; every entry has an integrity), .github/workflows/{ci,release,docker,audit}.yml, .github/dependabot.yml, action.yml, Dockerfile, .dockerignore, .pre-commit-hooks.yaml, scripts/{shrinkwrap,postbuild,release-guard,verify-provenance}.mjs, CHANGELOG 1.0.1 and 1.1.0, README GitHub Action section and Stability policy, SECURITY.md, docs/guide/ci.md pre-commit and Docker sections, round 3 FINDINGS.md (the A08 rows and improvements, so nothing known is re-reported), and the head of test/r3-p8-pipeline.test.ts. Also read npm 11.20 internals (arborist build-ideal-tree, reify, node.js, @npmcli/config set-envs and parse-field, pacote git.js) and pre-commit 4.7.0 languages/node.py. RAN: `npm pack --dry-run` (68 files: dist, schema, README, LICENSE, CHANGELOG, npm-shrinkwrap.json; no maps or tests); shrinkwrap honouring checks (tarball installs ignore it; registry installs via a 127.0.0.1 fake registry honour it for both the action-style --no-package-lock --prefix install and a global install, with 0 of 96 mismatches); the action's run script end to end with the real npm install path against the local registry (exit 0, outputs written), with a project .npmrc containing bin-links=false (still works), and with an argument-injection target (A08-03, reproduced); pre-commit try-repo and a direct `npm -g git+file://` install (A08-01, reproduced offline); the `npm pack` stdout banner capture; vitest files r110-q3-shrinkwrap, r110-q4-release, workflows and r3-p8-pipeline (45 of 45 passed). NOT DONE: building or running the Docker image (needs Docker Hub and npm network access); checking the pinned action SHAs and the upload-sarif SHA against upstream tags (needs network); checking the real GitHub runs of 1.1.0 (GitHub API is off-limits); Windows and macOS behaviour of the action's install path; the pre-commit failure with npm 10 or online; signature verification of the provenance (verify-provenance.mjs checks the content only; not re-raised, round 3 offered `npm audit signatures` as an alternative). No third-party network requests were made; npm ran with --offline or --prefer-offline against a 127.0.0.1 registry.",
+ "improvements": [
+  {
+   "title": "Dependabot for the Docker digests",
+   "dimension": "engine",
+   "detail": "Add `package-ecosystem: docker` (directory /) to .github/dependabot.yml so the node:22-alpine digest in the Dockerfile (both stages, 'resolved 2026-11-03', refreshed by hand) gets update PRs for Node 22 security releases. Pin and track the registry:2 service image and the binfmt/buildkit images (A08-04) in the same refresh routine.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://docs.github.com/en/code-security/dependabot/ecosystems-supported-by-dependabot/supported-ecosystems-and-repositories"
+  },
+  {
+   "title": "Attest the published container image",
+   "dimension": "security",
+   "detail": "The npm package has checked provenance, but the ghcr.io image has no signature or attestation a user can verify. In the push job (it already knows the tested digest) add `actions/attest-build-provenance` with `subject-name: ghcr.io/alisaosipova/mcp-review-check`, `subject-digest: $DIGEST` and `push-to-registry: true` (needs id-token: write and attestations: write in that job only), and document `gh attestation verify oci://ghcr.io/...:<v> --owner alisaosipova` in ci.md. An SBOM attestation (build-push-action `sbom: true`) is a cheap addition.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds"
+  },
+  {
+   "title": "Check the installed tree against the shrinkwrap in every install smoke",
+   "dimension": "security",
+   "detail": "One small script (scripts/check-tree.mjs) that compares `npm ls --all --json` (or node_modules/**/package.json) with npm-shrinkwrap.json. Run it in the ci.yml pack smoke (after fixing A08-02), in the docker.yml smoke (`run --entrypoint node $image /usr/local/lib/node_modules/mcp-review-check/...`) and in the r3-p8 action test. Then the 1.1.0 claim 'npx, global, Action and Docker install the tree CI tested' is checked, not assumed. I verified it by hand for the action-style and global registry installs against a 127.0.0.1 fake registry (0 of 96 mismatches).",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Drop the extra npm install from the OIDC publish job",
+   "dimension": "security",
+   "detail": "release.yml:84 runs `npm install -g npm@11.21.0` (registry code, scripts on) in the only job holding id-token: write. Pin setup-node to a Node 24.x patch whose bundled npm is already 11.5.1 or newer for trusted publishing, and assert `npm --version`, so the privileged job fetches nothing beyond the downloaded tarball. Or add `--ignore-scripts` to that install.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch",
+   "source": "https://docs.npmjs.com/trusted-publishers"
+  },
+  {
+   "title": "Slimmer runtime dependency tree",
+   "dimension": "security",
+   "detail": "The shipped prod tree has 96 packages, most of them server-side dependencies of @modelcontextprotocol/sdk (express, hono, @hono/node-server, cors, express-rate-limit, raw-body ...) that a client-only CLI never loads. Each is supply-chain surface in npx, Action and Docker installs. Options: ask the SDK to move the server deps to optional or peer dependencies, or vendor the few client and transport pieces the CLI uses. Track the count in CI (fail on unexpected growth).",
+   "value": "medium",
+   "effort": "L",
+   "release": "minor"
+  },
+  {
+   "title": "A v1 major ref for the Action, or an explicit no-moving-ref policy",
+   "dimension": "ux",
+   "detail": "Most Action users expect `@v1`. Either maintain a v1 tag moved by gh-release after a successful release (SHA pinning stays the recommended form), or state the 1.x policy explicitly (see A08-05). Combined with the `version` input default it would also be useful to make the default the exact release version, so `@v1.1.0` runs exactly 1.1.0's CLI.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A08-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": ".pre-commit-hooks.yaml",
+   "line": "1-9 (with package.json:40 \"prepack\"; docs/guide/ci.md:270-285)",
+   "title": "pre-commit hook (language: node) cannot be installed: the git-dep preparation of the prepack build runs as a second global install and races the first",
+   "claim": "pre-commit 4.x installs a language: node hook with `npm install --allow-git=root --install-links -g git+file://<clone>`. The package has a `prepack` script, so pacote prepares the git dep by spawning `npm install --force --include=dev` in the clone. That child inherits `npm_config_global=true`, which @npmcli/config setEnvs exports from the outer -g run. The child therefore also reifies into <env>/lib/node_modules/mcp-review-check while the outer install writes the same folder. The install ends in TAR_ENTRY_ERROR / ENOTEMPTY and `npm error git dep preparation failed` (code 217), so the documented `repo: https://github.com/alisaosipova/mcp-review-check` hook never runs. The debug log of the nested npm shows `placeDep node_modules/mcp-review-check ...` and a reify into the global lib path, which confirms the leak. The same nested install run by hand, not global, succeeds (141 packages), so the offline cache is not the cause. Older pre-commit (`npm install` + `npm pack` + `npm install -g <stdout of npm pack>`) would also break: `npm pack` prints the prepack/build/postpack banners on stdout before the file name (captured), so `pkg.strip()` is not a path. docs/guide/ci.md:285 also describes the install wrongly ('by packing the cloned repository'). No test or CI job runs the hook (grep: nothing under test/ or .github/ runs pre-commit).",
+   "repro": "RAN with pre-commit 4.7.0, npm 11.20.0, Node 26.13.0, offline npm cache. In a scratch git repo with one committed .mcp.json: `PRE_COMMIT_HOME=<scratch> npm_config_offline=true pre-commit try-repo <worktree@bc7090d> mcp-review-check --ref bc7090d --all-files`, which fails with `npm error git dep preparation failed ... ENOTEMPTY`. The same without pre-commit: `npm install --offline --allow-git=root --install-links -g --prefix <scratch>/gprefix git+file://<clone@bc7090d>` gives the same ENOTEMPTY error. Control: `cd <clone> && npm install --offline --force --no-save --include=dev` succeeds. Not tried online or with npm 10.",
+   "fix": "Make the published hook not depend on building a git dep. For example, ship `.pre-commit-hooks.yaml` with `language: docker_image` and `entry: ghcr.io/alisaosipova/mcp-review-check:<version>` (URL and listing checks), or make the `repo: local` + `npx -y mcp-review-check@1.1` recipe (ci.md:287-297) the primary one and drop or deprecate the `language: node` hook. Fix the description in ci.md:285. Add a CI job that runs `pre-commit try-repo . mcp-review-check --all-files` against a fixture repo, so the hook is tested."
+  },
+  {
+   "id": "A08-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": ".github/workflows/ci.yml",
+   "line": "100-114 (line 110 `npm install \"$RUNNER_TEMP\"/mcp-review-check-*.tgz`)",
+   "title": "CI pack smoke installs the tarball by path, which npm installs WITHOUT its npm-shrinkwrap.json, so the smoke never runs the shipped dependency tree",
+   "claim": "Arborist honours a dependency's shrinkwrap only when the manifest carries `_hasShrinkwrap` (node.js:173, build-ideal-tree.js:874-913, reify.js:657-662). The registry sets that field; a local tarball's manifest from pacote does not. With a tarball install the 1.1.0 shrinkwrap is ignored and the ranges are re-resolved, so the 'Pack, install the tarball and run it' step tests whatever the ranges resolve to that day, not the tree that npx, global, Action and Docker users get. The step checks only that the file is in the tarball (line 106). The release notes claim users get 'the tree CI tested'. That holds for registry installs (verified below), but nothing in CI checks it.",
+   "repro": "RAN: packed bc7090d, then edited the tarball's npm-shrinkwrap.json to pin node_modules/zod to 4.99.0 (no integrity), a version that does not exist in the cache. `npm install --offline --no-save --no-package-lock --prefix A mod2.tgz`, the same without --no-package-lock, and with `--global` all succeeded and installed zod 4.6.7: the pin was ignored. Control: a 127.0.0.1 fake registry served the unmodified tarball with `_hasShrinkwrap: true` and 404s for every other packument. The action-style install (`--no-save --no-package-lock --prefix`) and a global install both succeeded, with all 96 packages equal to the shrinkwrap versions (0 mismatches). With `_hasShrinkwrap: false` the install failed on the 404 packuments.",
+   "fix": "Make the smoke install the shipped tree: extract the tarball and run `npm ci --omit=dev --ignore-scripts` inside `package/` (npm ci uses npm-shrinkwrap.json as the lockfile), then run `node package/dist/cli.js`. Alternatively, keep the tarball install and assert that `npm ls --all --json` matches the shrinkwrap versions. Note in CONTRIBUTING or ci.md that a tarball or git install (pre-commit) does not get the shrinkwrap."
+  },
+  {
+   "id": "A08-03",
+   "dimension": "security",
+   "severity": "low",
+   "file": "action.yml",
+   "line": "128 (`args+=(\"$INPUT_TARGET\")`)",
+   "title": "`target` input is passed to the CLI unvalidated as an argv word: a value starting with `--stdio=` launches a command",
+   "claim": "The script checks only that `target` is non-empty and appends it as the last argv word. The CLI parses `--stdio=<cmd>` given as one word as the option, and `--` cannot separate a URL because it is reserved for stdio ('\"-- <command>\" needs a bare --stdio before the --'). When a workflow wires `target` to event data, which is the pattern ci.md:26-43 shows for deployment_status.environment_url, an attacker-shaped value becomes a command on the runner with the job's secrets. The input is documented as 'URL of the MCP server'. CWE-88.",
+   "repro": "RAN the extracted action script with `INPUT_CLI_PATH=dist/cli.js INPUT_TARGET=\"--stdio=touch <scratch>/rt3/PWNED\"`. <scratch>/rt3/PWNED was created and the step exited 3. Also `node dist/cli.js \"--stdio=node test/fixtures/good-server.mjs\" --format json` runs the stdio server.",
+   "fix": "Validate the input in the action before building args: `case \"$INPUT_TARGET\" in http://*|https://*) ;; '') ;; *) usage \"target must be an http:// or https:// URL\";; esac`. The CLI already rejects scheme-less URLs, so nothing valid is lost. Add a case to test/r3-p8-pipeline.test.ts."
+  },
+  {
+   "id": "A08-04",
+   "dimension": "security",
+   "severity": "low",
+   "file": ".github/workflows/docker.yml",
+   "line": "65-69",
+   "title": "The image build job runs two unpinned, privileged third-party images (binfmt and BuildKit) although everything else is digest-pinned",
+   "claim": "docker/setup-qemu-action without `image:` runs `tonistiigi/binfmt:latest` privileged to register the emulators. docker/setup-buildx-action with the docker-container driver and no `image=` in driver-opts pulls `moby/buildkit:buildx-stable-1`. Both are mutable tags, and BuildKit performs the whole build of the image that the push job later copies to ghcr.io. The workflow pins the base image, registry:2 and every action by digest or SHA, but these two images (the code that actually builds and emulates arm64) float. The smoke test checks only behaviour (version, uname, a listing run, the uid), so a tampered layer would not be noticed.",
+   "repro": "Read docker.yml:65-69: there is no `with: image:` on setup-qemu-action and `driver-opts` holds only `network=host`. Not executed: building the image needs network access to Docker Hub and npm.",
+   "fix": "Pin both images by digest: `uses: docker/setup-qemu-action@<sha> with: image: tonistiigi/binfmt:qemu-vX@sha256:...`, and `driver-opts: |\\n network=host\\n image=moby/buildkit:vX@sha256:...`. Record the resolution date as for the other pins, and add them to the refresh routine in CONTRIBUTING."
+  },
+  {
+   "id": "A08-05",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "README.md",
+   "line": "113 (and SECURITY.md:9)",
+   "title": "Release and support docs still describe 0.x: 'There is no moving `v0` ref' and 'Only the latest published minor version receives security fixes while the project is 0.x'",
+   "claim": "At 1.1.0 the action ref advice names `v0` and says nothing about a `v1` ref, and the security support statement is conditioned on 0.x, so the 1.x support window is undefined. This matters because release-guard.mjs accepts only tags on main, so a 1.0.x backport cannot be released by the pipeline. In practice only the latest minor can get fixes, which the docs should say.",
+   "repro": "`git show bc7090d:README.md | sed -n 113p`; `git show bc7090d:SECURITY.md | sed -n 9p`",
+   "fix": "README: 'There is no moving `v1` ref: pin a full release tag or a commit SHA.' SECURITY.md: 'Only the latest published 1.x minor receives security fixes; fixes ship as a patch of that minor (release tags must be on main).' Optionally add a docs test that flags '0.x' and 'v0' outside CHANGELOG."
+  }
+ ]
+}

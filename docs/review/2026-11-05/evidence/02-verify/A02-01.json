@@ -1,0 +1,13 @@
+{
+ "id": "A02-01",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-01",
+   "verdict": "confirmed",
+   "evidence": "In connect.ts:303, trackSession stores the URL as entered (`url` passed to connectLegacyHttp at line 438, not `target`). endSessions (667-679) sends `fetch(s.url, {method:'DELETE', redirect:'manual'})` and ignores the answer. I re-ran this against bc7090d with the reviewer's redir-session.mjs on port 18841, using `--max-duration 4000 --timeout 20000`. Exit was 4 (stopped during listing). Server log: `DELETE /mcp/ sess-eqj46x` / `SESSION DELETE sess-eqj46x` comes from the raw probe session, which follows the target. The SDK session got only `DELETE /mcp -> 308 sess-c15yyc`, and no DELETE ever reached /mcp/ for it. So the CHANGELOG 1.1.0 Q4-SESSION claim fails in the same-origin 307/308 case. Impact is low because SRV-006 already warns about the redirect."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A02-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A02-02",
+   "verdict": "confirmed",
+   "evidence": "diagnose.ts:25 PROXY_HOP has no UND_ERR_SOCKS5_* codes. The proxy summary at 52-53 is hard-coded as 'through the HTTP proxy ... allows CONNECT ... check HTTPS_PROXY / HTTP_PROXY'. Re-ran: (1) `ALL_PROXY=socks5://127.0.0.1:18859` with nothing listening gives 'cannot reach 127.0.0.1:18842 through the HTTP proxy socks5://127.0.0.1:18859 (ECONNREFUSED); check HTTPS_PROXY / HTTP_PROXY: ... allows CONNECT'. (2) socks-reject.mjs with `socks5://alice:pw@...` gives 'Could not connect: fetch failed (UND_ERR_SOCKS5_AUTH_FAILED)' with the generic SRV-003 fix line and no proxy named. CHANGELOG 1.1.0 already fixed the same 'HTTP proxy' wording for SOCKS in the TLS check message, so the connect diagnosis is inconsistent with it. Not covered in round 3."
+  }
+ ],
+ "arbiter": null
+}

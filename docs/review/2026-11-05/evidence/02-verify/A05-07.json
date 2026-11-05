@@ -1,0 +1,13 @@
+{
+ "id": "A05-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-07",
+   "verdict": "confirmed",
+   "evidence": "src/rules/injection.ts hiddenChars: (cp >= 0xe0000 && cp <= 0xe007f) is pushed to hard with no exception for a tag sequence after U+1F3F4. Ran hiddenChars on the England flag sequence: hard = [E0067, E0062, E0065, E006E, E007F]. INJ-001 hard characters carry the rule's error severity for claude and chatgpt. The England, Scotland and Wales subdivision flags are RGI emoji tag sequences, so they get a false error."
+  }
+ ],
+ "arbiter": null
+}

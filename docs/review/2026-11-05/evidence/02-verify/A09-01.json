@@ -1,0 +1,18 @@
+{
+ "id": "A09-01",
+ "status": "confirmed",
+ "severity": "high",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "high",
+   "evidence": "Read bc7090d:src/rules/util/html.ts:144-161. importMapUrls runs matchAll on the opener regex, and for each match does `end = html.indexOf('</script', start)` and then `JSON.parse(html.slice(start, end<0 ? undefined : end))`. With no closer, every opener slices and parses to the end of the string, which is O(n^2). The JSON.parse failure is caught and skipped, so nothing exits early. The callers are extractOrigins at line 136, called from src/rules/apps.ts:205 and :343 (APPS rules). The only size bound is HTML_CAP of 2 MiB per resource (src/limits.ts:13,154-156). The deadline is checked only between rules (src/rules/engine.ts:203), and the rules run synchronously, so --max-duration cannot interrupt one. I found no other guard: no limit on the number of openers and no limit on the parse length. RAN in-process against the built worktree dist/rules/util/html.js: extractOrigins on '<script type=importmap>' repeated took 366 ms at 128 KB, 1267 ms at 256 KB and 5012 ms at 512 KB. Doubling the size roughly quadruples the time, as the claim says, which extrapolates to about 80 s at 2 MB. I did not repeat the end-to-end stdio run. The code and the call graph support the claimed overrun of --max-duration (exit 4 after about 49 s with a 10 s limit). The severity stays high: an untrusted server under review can make the documented --max-duration bound useless. Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "high",
+   "evidence": "Code at bc7090d src/rules/util/html.ts:144-151: for every match of the importmap opener regex, `end = html.indexOf('</script', start)` and then `JSON.parse(html.slice(start, end<0 ? undefined : end))`. With no closing tag, each opener slices and parses to the end of the string, so the work is O(n^2). extractOrigins caches by HTML (16 entries), so APPS-007 and APPS-013 share one scan. Different resources (up to UI_READS_CAP=50, each up to HTML_CAP=2 MB) are each scanned once. The deadline is checked only between rules (engine.ts runRules), so it cannot interrupt a scan that has already started.\n\nI built the CLI in a detached worktree and timed extractOrigins in-process on '<script type=importmap>' repeated: 64 KB took 90 ms, 128 KB 319 ms, 256 KB 1065 ms, 512 KB 4755 ms. Each doubling of the input costs about 3.5-4.5x the time, which is quadratic. As a control, 512 KB of properly closed '<script>x</script>' took 18 ms.\n\nEnd to end, I wrote an SDK stdio server with one tool whose _meta.ui.resourceUri points to a 2040 KB UI resource made of repeated unterminated importmap openers. `node dist/cli.js --max-duration 10000 --stdio \"env KB=2040 node ...\"` exited with code 4 after 77.4 s of wall time, about 7.7x the 10 s bound, and reported 'stopped by --max-duration 10000 ms during rules' with 73 rules stopped. A server with many such distinct UI resources multiplies the delay.\n\nSeverity high: a server-controlled input defeats the documented --max-duration bound (the A09-04 fix only checks between rules) and can stall a CI run for tens of minutes. I removed the scratch worktree."
+  }
+ ],
+ "arbiter": null
+}

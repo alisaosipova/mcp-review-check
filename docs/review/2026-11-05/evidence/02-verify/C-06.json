@@ -1,0 +1,13 @@
+{
+ "id": "C-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-06",
+   "verdict": "confirmed",
+   "evidence": "Reproduced. With a baseline saved from bad-server.mjs, `--baseline b.json --diff-only` prints text 'Score 0/100 · 32 root causes · 0 errors · 0 warnings · 0 info' and 'Claude: NO AUTOMATED BLOCKERS · ChatGPT: NO AUTOMATED BLOCKERS · Result: PASS'. The markdown table shows 'Score | 0/100 · 32 root causes' next to 'Findings | 0 errors · 0 warnings · 0 info'. Neither output mentions baselined findings. Source: report/index.ts:64,71 uses result.scored ?? f, and cli.ts:785 sets scored to all findings. Caveat: this split is documented and intended. options-and-config.md line 22 says 'The score still counts every finding', and line 24 says --diff-only drops the 'N known finding(s)' line. So it is not a logic bug. The confirmed defect is presentation: the --diff-only text and markdown summary (the docs/guide/ci.md:62 recipe) shows a contradictory score and counts with no hint that findings were baselined. Low severity, UX."
+  }
+ ],
+ "arbiter": null
+}

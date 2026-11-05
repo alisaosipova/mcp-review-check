@@ -1,0 +1,13 @@
+{
+ "id": "A05-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-08",
+   "verdict": "confirmed",
+   "evidence": "In hiddenChars every \\p{Cf} goes to soft. The only exception is U+200D when both emoji neighbours are pictographic. Ran it: Persian ZWNJ -> soft [200C]; Devanagari 'क्‍ष' -> soft [200D]; Arabic with RLM -> soft [200F]. INJ_001 pushes each soft list as severity 'warning'. These are legitimate uses in localised text, so the result is a warning-level false positive, as the finding says."
+  }
+ ],
+ "arbiter": null
+}

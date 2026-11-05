@@ -1,0 +1,90 @@
+{
+ "area": "A13",
+ "name": "engine architecture (cross-cutting)",
+ "coverage": "Read at bc7090d in a detached worktree (since removed): src/rules/engine.ts, src/rules/index.ts, src/rules/types.ts, src/rules/util/access.ts, the corpus memo in src/rules/util/text.ts (lines 190-260), the origin cache in src/rules/util/html.ts (lines 60-90), src/report/index.ts, the runRules orchestration in src/cli.ts (lines 760-830), the toolName call sites in src/connect.ts, paginate/listAll in src/protocol/legacy.ts, test/engine.test.ts and test/helpers.ts. Grepped round 1 and round 3 FINDINGS/REMEDIATION for engine items (F123, F124, F125, F133, A04-02, A09-04, A10-05) to avoid repeats. Ran: npm ci and build; a fuzz script with 423 hostile-shape snapshots through runRules(RULES); an end-to-end repro of A13-01 with a raw stdio JSON-RPC server (exit 3 fatal versus exit 1 baseline); the silent-PASS repro for A13-02 through runRules and buildReport; a read-tracking proxy and renderJunit on the auth-required fixture for A13-03; a metadata consistency check (duplicate IDs, finding platforms versus severity keys, empty sources), which found nothing. Not covered: util/net.ts, util/obs.ts, util/schemaWalk.ts, util/ui.ts and util/wwwAuth.ts in detail (other areas own them); the snapshot.ts type definitions beyond coverage; HTTP-path e2e of A13-01 (same toolName call at connect.ts:549, not run); the vitest suites (no single test file was run); the CHANGELOG 1.0.1/1.1.0 text beyond the corpus memo and the deadline changes visible in the code.",
+ "improvements": [
+  {
+   "title": "Hostile-shape fuzz test for the whole rule catalog",
+   "dimension": "engine",
+   "detail": "A vitest that builds snapshots with each server-controlled field (tool/schema/resource/prompt/serverInfo/capabilities/_meta, and names such as constructor/__proto__/toString) set to null, number, array, {}, {\"toString\":\"x\"} and parsed __proto__ objects. It runs runRules(snap, RULES) and asserts there are no INTERNAL findings, and also runs the connect-side helpers (toolName). The 423-case script used in this review found A13-01 in seconds. It costs about 1 s of CI time.",
+   "value": "high",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Rule-metadata self-test: needs must cover what check() reads",
+   "dimension": "engine",
+   "detail": "Run every rule against the auth-required, connect-failed and listing-only fixture snapshots through a read-recording Proxy, the same technique as engine.tracked(). Fail when a rule reads a list, serverInfo, initializeRaw or authProbe that its declared needs do not guarantee and still counts as run. This turns the hand-maintained URL_ONLY set and the A10-05/A13-03 class of bugs into a mechanical check.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Move engine-side rule ID lists into rule metadata",
+   "dimension": "engine",
+   "detail": "URL_ONLY (engine.ts:35) hard-codes six rule IDs that the engine treats differently, and the listing-only reason is computed twice (engine.ts:43 in unmetNeed and :211 in runRules). A metadata flag (e.g. `judges: 'url'` or a 'url' Need) plus a single listing check would make a new URL rule correct by construction. Internal refactor, no output change.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Per-rule timing in --verbose and a slowest-rules line",
+   "dimension": "perf",
+   "detail": "runRules already reads a clock for the deadline. Recording the elapsed time per rule and printing the top 5 in --verbose (and in JSON under a debug key, or not at all to keep the schema stable) would make the remaining between-rule deadline gap (a single slow rule runs to its end) diagnosable, and help with the A09 quadratic-regex class of reports.",
+   "value": "low",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Sort the ignored findings like the reported ones",
+   "dimension": "ux",
+   "detail": "runRules sorts `findings` with sortFindings but returns `ignored` in catalog-emission order (engine.ts:259). The JSON report's ignored[] and the JUnit system-out therefore list ignored findings in a different order than the main list. Deterministic, but inconsistent. sortFindings(ignored) is a one-line change.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Declarative custom checks in the config file (local rule pack)",
+   "dimension": "feature",
+   "detail": "Teams cannot add organisation policy, e.g. forbidden tool-name patterns, required annotations, or banned _meta keys, without forking. A small declarative schema in the explicit --config only (never a discovered file, see A01-01), with id prefix X-, severity warning/info only per the severity principle, and pattern matching over the existing corpus() data. This gives an extension point without executing user code and without the programmatic API that is listed as Not planned. Additive keys under the 1.x stability policy.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A13-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/rules/util/access.ts",
+   "line": "12 (callers src/connect.ts:549-550, 559 buildHttp; 902-903, 910 buildStdio)",
+   "title": "A tool whose name is an object with a non-function toString key crashes the whole CLI (fatal, exit 3, no report)",
+   "claim": "toolName() falls back to String(t.name). For a JSON object such as {\"toString\":\"x\"}, String() throws TypeError 'Cannot convert object to primitive value'. connect.ts maps toolName over the re-list and fresh-connection lists outside any try, so the exception reaches runCli as an internal error. The server under test can prevent any report from being written: there is no JSON/SARIF/JUnit output, only 'fatal:' and a stack trace. The same class appears in src/rules/spec.ts:434-435 and 522-523 (String(r.uri), String(p.name)).",
+   "repro": "RAN. A raw stdio JSON-RPC server that returns BAD_TOOLS from test/fixtures/bad-server.mjs plus {name:{toString:'x'},inputSchema:{type:'object'}}: `node dist/cli.js --stdio \"node .rr/raw.mjs evil\" --format json` gives exit 3 and an empty stdout, with stderr 'fatal: TypeError: Cannot convert object to primitive value at String at toolName (dist/rules/util/access.js:6) at Array.map at buildStdio (dist/connect.js:873)'. Without the extra tool: exit 1 and a full report with 14 errors. The same check through text format also gives exit 3.",
+   "fix": "Add one total, non-throwing stringifier in util/access.ts, e.g. safeStr(x) = typeof x === 'string' ? x : (() => { try { return JSON.stringify(x) ?? String(x) } catch { return Object.prototype.toString.call(x) } })(), capped in length. Use it in toolName and in every String()/template coercion of server values (spec.ts 434/435/522/523). Add a regression test with name {\"toString\":\"x\"} that goes through connect and runRules."
+  },
+  {
+   "id": "A13-02",
+   "dimension": "engine",
+   "severity": "medium",
+   "file": "src/rules/engine.ts",
+   "line": "218-227",
+   "title": "A rule that throws is counted as run, becomes an info finding, and leaves the score, coverage and gate as if the check were complete: a crash can turn FAIL into PASS",
+   "claim": "In the catch block, rulesRun is incremented and an INTERNAL finding with severity 'info' is pushed. It is not added to `scored`, and coverage.toolLevel stays 'ok'. So one input that makes rules throw drops all of their findings for every other tool: the gate passes, the score is computed, and the verdicts are not INCOMPLETE. This conflicts with the project's principle that a check missing data is partial, never a pass, as A10-05 and A04-02 already applied to stops and connect failures. Combined with A13-01, once connect.ts is fixed the same poisoned tool would make 59 rules throw.",
+   "repro": "RAN (engine plus buildReport via dist, connect bypassed): a snapshot with BAD_TOOLS gives {errors:14, failed:true, score:0, internal:0, rulesRun:94}. The same plus one tool {name:{toString:'x'}} gives {errors:1, failed:false, score:84, internal:59, rulesRun:94, coverage 'ok'}. The other fuzz cases were run too: 423 hostile-shape variants of tool, schema, resource, prompt, serverInfo and capabilities fields; only the toString-object cases threw.",
+   "fix": "Treat a throwing rule as not run. Push it to skipped with the reason 'internal error: <message>' and not to rulesRun. Mark the result partial: either a new coverage reason or an EngineResult.internalErrors count that buildReport turns into verdict INCOMPLETE and score null, and that --fail-on-incomplete gates. Keep the INTERNAL finding for visibility, but at warning level, or make it fail the run with exit 3 as the help text describes for internal errors."
+  },
+  {
+   "id": "A13-03",
+   "dimension": "engine",
+   "severity": "low",
+   "file": "src/rules/engine.ts",
+   "line": "235-239 (URL_ONLY / connect-failed guard); rules src/rules/server.ts:321,338,396,418, src/rules/spec.ts:566, src/rules/policy.ts:153",
+   "title": "In auth-required / token-rejected runs, rules with needs: [] that judge initialize or list data pass without data (JUnit shows them as passed)",
+   "claim": "A10-05 makes rules that find nothing skip only when toolLevel is 'connect-failed' or the run is fatal. In an auth-required run, initialize never happened: serverInfo, initializeRaw, capabilities and instructions are undefined and the lists are empty. Yet SRV-011, SRV-012, SRV-013, SRV-014, SRV-015, SPEC-002, SPEC-017, SPEC-018, SPEC-020, SPEC-021, SPEC-023 and POL-005 run on undefined or empty data, count in rulesRun, and are written as passed <testcase/> in JUnit. The metadata does not express their real dependency, an 'initialize' or handshake result.",
+   "repro": "RAN: on test/fixtures/snapshots/auth-required.json (coverage auth-required, no initializeRaw, no listMeta), runRules(snap, RULES) with a read-tracking proxy shows that these rules read serverInfo, initializeRaw, capabilities, tools and instructions, produce 0 findings, and are not skipped. renderJunit(buildReport(...)) contains `<testcase classname=\"chatgpt\" name=\"SRV-014 Server instructions quality\"/>`, `... SRV-011 .../>`, `... POL-005 .../>`, `<testcase classname=\"claude\" name=\"SRV-015 ...\"/>` and `... SPEC-020 .../>` as passes, while TOOL-011 is <skipped message=\"server requires auth...\">.",
+   "fix": "Add a Need such as 'handshake' (met when initializeRaw or discoverRaw is present, skip reason authReason(snap)), and give it to the rules that read initialize or discover results, or 'tools'/'resources'/'prompts' where they read lists (SPEC-017/018, SRV-015). Alternatively, generalise the line 236 guard to every toolLevel where no handshake completed, not only connect-failed. A metadata self-test (see improvements) prevents a regression."
+  }
+ ]
+}

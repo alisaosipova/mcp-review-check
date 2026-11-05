@@ -1,0 +1,97 @@
+{
+ "area": "A02",
+ "name": "connection and transport",
+ "coverage": "Worktree at bc7090d (detached, /home/kali/packages/mcp-review-check/.claude/review-r4/scratch/find-A02), with npm ci --ignore-scripts and npm run build. The worktree has been removed (git worktree list shows no find-A02).\n\nREAD IN FULL: src/connect.ts (1181 lines, including the new Q4-SESSION trackSession/endSessions/endAllNow code and withStops, stoppedSnapshot, budgetStopped and GroupStdioTransport), src/protocol/trace.ts, modern.ts, legacy.ts, recording.ts, stdioArgs.ts, clientCaps.ts, src/proxy.ts and src/diagnose.ts.\n\nREAD IN PART: src/probe/network.ts (requestRetried, closeProbeSession, preflight, sameHostRedirect, originProbes, TLS proxy skip); src/cli.ts (proxy install and the signal handler); the exit codes in --help; CHANGELOG 1.0.1 and 1.1.0; round-3 FINDINGS (confirmed A02 rows, improvements, coverage) and round-1 redirect notes; the SDK 1.32.1 streamableHttp.js, sse.js and shared/transport.js (fetchWithinOrigin, terminateSession); undici 7.30.1 env-http-proxy-agent.js, proxy-agent.js and the socks5-client error codes; the test names in r110-q4-session.test.ts and p5a-proxy.test.ts.\n\nRAN against the built CLI, on 127.0.0.1 fixtures only. Scripts are in /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/a02/: redir-session.mjs, redir-code.mjs, hang-init.mjs, hang-delete.mjs, socks-reject.mjs, socks-fwd.mjs.\n- Stop-path DELETE with and without a 308 slash redirect (A02-01).\n- SOCKS5 auth failure, refused target, proxy down and success, plus a credential-leak grep (A02-02; no leak).\n- 301 slash redirect diagnosis (A02-03).\n- Hung initialize, with and without --max-duration: the stop exits at 2.2 s with exit 3, as documented (A02-04).\n- DELETE-hanging server timing, plain and --active (A02-05).\n- Stdio fixtures: good-server (pass, 0.7 s), hang-server (16 s at --timeout 4000, as designed), stubborn-server --ignore-term (19 s, no leftover process), ENOENT, a missing script and a stdout-only process.\n\nCHECKED AND NOT REPORTED:\n- Round-3 fixes A02-01..06 hold: ALL_PROXY redaction, NO_PROXY parity with undici, SSE response pick, 5xx gateway diagnosis, TLS-via-proxy hint, single stdio close.\n- Known open improvements, not re-reported: legacy listing page size in UTF-16 units (legacy.ts:73) and SSE bodies parsed twice in finishBody.\n- Budget accounting in readBody, capBody and the stdio tap, and the stderr and stdout masking order: no defect found.\n\nNOT DONE:\n- No Windows run (taskkill and cmd paths).\n- No modern-server.ts run (needs tsx; covered by its own tests, which I did not run).\n- No https:// proxy with a self-signed proxy certificate.\n- No HTTP+SSE legacy fixture run.\n- No vitest files run.",
+ "improvements": [
+  {
+   "title": "Tally server notifications on stdio, legacy HTTP+SSE and the standalone GET stream",
+   "dimension": "engine",
+   "detail": "Only the tracer's POST response bodies feed transport.notifications. The standalone Streamable HTTP GET stream is not read (isStream), and stdio and HTTP+SSE have no tracer, so SPEC-024 (needs: ['http']) never sees notifications/message there. RecordingTransport already sees every message (record() returns early on `method`). It could count method names, capped, and check log levels and the logging capability. That would extend SPEC-024's capability and level parts, which the 2025-11-25 logging page also states as MUSTs, to every transport. The 2026-07-28 logLevel-request part stays HTTP-only.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor",
+   "source": "https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging"
+  },
+  {
+   "title": "--connect-timeout to lift the 15 s HTTP handshake cap",
+   "dimension": "feature",
+   "detail": "HTTP connect always waits min(--timeout, 15000) ms (connect.ts:408). Serverless and scale-to-zero servers (Cloud Run, Lambda, Fly machines) can take more than 15 s on a cold start. Today the check then fails with an unexplained timeout (see A02-04), and raising --timeout does not help. An option (or config key) with default 15000, as in 1.x, keeps the default behaviour and makes these servers checkable.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Proxy end-to-end diagnosis tests and a proxy line in --verbose",
+   "dimension": "ux",
+   "detail": "test/p5a-proxy.test.ts covers routing for SOCKS5 and HTTP proxies but none of the failure diagnoses for SOCKS. A table test over UND_ERR_SOCKS5_* codes, HTTP 407 through plain forwarding, and the CONNECT 'Proxy response (407)' path would pin A02-02. A one-line `proxy: socks5://host:port via ALL_PROXY (NO_PROXY: ...)` in --verbose (credentials masked with proxyLabel) would let users see which route the run took.",
+   "value": "medium",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Fix the proxy.ts comment on plain forwarding",
+   "dimension": "engine",
+   "detail": "proxy.ts:109 says proxyTunnel:false sends http: targets as absolute-URI requests. undici does that only when the proxy itself is http:. With an https:// proxy URL, http: targets are still tunnelled with CONNECT, and with SOCKS nothing is forwarded. The comment and the diagnosis text ('allows CONNECT') should match what undici does.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A02-05",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/probe/network.ts",
+   "line": "137 (also src/connect.ts:614)",
+   "title": "Each session-ending DELETE is awaited in turn for up to 5 s, so a server that does not answer DELETE adds 35 to 50 s per run",
+   "claim": "closeProbeSession awaits each raw-probe DELETE (preflight, 4 Origin probes, invalid-token) with timeoutMs min(timeoutMs, 5000). endSession awaits terminateSession with a 5000 ms withTimeout for the main connection and for every fresh connection (re-list, text-only, three clientInfo variants under --active). The answers are not evidence: ruleExchanges filters these DELETEs out. Yet a stateful server, gateway or WAF that holds DELETE open costs about 5 s each, one after another. The stop path already bounds the same request to 1.5 s in parallel (SESSION_END_TIMEOUT_MS).",
+   "repro": "RAN. A local stateful server (session id on initialize) that never answers DELETE (HANG=1 node hang-delete.mjs 18801), compared with the same server answering 200. `node dist/cli.js http://127.0.0.1:18801/mcp --quiet --timeout 10000` takes 37.6 s against 1.8 s. With --active it takes 52.0 s against 1.7 s. Server log: 7 DELETEs in the plain run, 10 with --active, each hanging.",
+   "fix": "Do not await the session closes inline. Start each DELETE (closeProbeSession and endSession), collect the promises, and at finishHttp (and on a stop) await them all at once, bounded by SESSION_END_TIMEOUT_MS (1.5 s). Or lower the per-DELETE wait to SESSION_END_TIMEOUT_MS and, after the first DELETE that gets no answer, send the rest without waiting (as the stall logic does for probes). Add a timing test with a DELETE-hanging fixture."
+  },
+  {
+   "id": "A02-01",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/connect.ts",
+   "line": "674 (also 303, 1051)",
+   "title": "Stop and Ctrl+C session DELETE does not follow a same-origin redirect, so the session stays open behind /mcp -> /mcp/",
+   "claim": "The new Q4-SESSION stop path (endSessions) sends DELETE to the URL as entered with redirect:'manual' and ignores the answer. trackSession records the URL passed to connectLegacyHttp, which is the URL as entered, not the redirect target. The SDK reached the session through fetchWithinOrigin, which follows 307/308 within the same origin, so the session lives at the target. With a /mcp -> 308 /mcp/ server, a run stopped by --max-duration, the byte budget or SIGINT/endAllNow sends `DELETE /mcp` and gets the 308, and the session is never ended. The regular path (endSession -> terminateSession) follows the redirect and works. So the 1.1.0 CHANGELOG claim that a stopped run 'ends the Streamable HTTP sessions the server issued' does not hold for exactly the slash-redirect case SRV-006 warns about.",
+   "repro": "RAN. A local server answers POST/DELETE /mcp with 308 Location:/mcp/. /mcp/ issues mcp-session-id on initialize and hangs on tools/list. Run `node dist/cli.js http://127.0.0.1:18741/mcp --max-duration 4000 --timeout 20000 --quiet`. Server log: `DELETE /mcp -> 308 sess-x9hexd`, and no DELETE ever reaches /mcp/. The same server without the redirect logs `SESSION DELETE sess-y8vubi`. Fixture: /tmp/claude-1000/-home-kali-packages/fae74d01-791a-469a-ab5f-90cdb063ebe5/scratchpad/a02/redir-session.mjs",
+   "fix": "In endSessions, follow 307/308 within the same origin (one or two hops, the SDK's isWithinOrigin rule, no userinfo added), still bounded by SESSION_END_TIMEOUT_MS. Alternatively, record the final URL in OpenSession: after connect, take the URL of the last 'sdk initialize' exchange that got 2xx, or use sameHostRedirect(url, pf). Add a case to test/r110-q4-session.test.ts with a 308 slash redirect."
+  },
+  {
+   "id": "A02-02",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/diagnose.ts",
+   "line": "25, 41-49, 84",
+   "title": "SOCKS5 proxy failures get no proxy diagnosis, and the proxy-hop message calls a SOCKS proxy an 'HTTP proxy' that must allow CONNECT",
+   "claim": "PROXY_HOP and the 407 regex know only HTTP-proxy failures. undici's SOCKS5 agent fails with codes UND_ERR_SOCKS5_AUTH_FAILED, UND_ERR_SOCKS5_AUTH_REJECTED and UND_ERR_SOCKS5_REPLY_<n> (n=5: target refused through the proxy, 4: host unreachable, 2: not allowed by ruleset). These are not in PROXY_HOP, so describeCause falls through to `fetch failed (UND_ERR_SOCKS5_AUTH_FAILED)` with kind 'other', no hint and no proxy named. When a SOCKS proxy is down, the message reads 'through the HTTP proxy socks5://... allows CONNECT ... check HTTPS_PROXY / HTTP_PROXY', even though ALL_PROXY set it and SOCKS uses no CONNECT. SOCKS5 support was added deliberately (README, proxy.ts SUPPORTED), so its failure path should be diagnosed as well as the HTTP-proxy one.",
+   "repro": "RAN against local fixtures. (1) A SOCKS5 server that rejects username/password: `ALL_PROXY='socks5://alice:s3cretPW@127.0.0.1:18750' node dist/cli.js http://127.0.0.1:18742/mcp` -> `Result: FAIL (could not connect: fetch failed (UND_ERR_SOCKS5_AUTH_FAILED))`, JSON coverage.diagnosis {kind:'other', summary:'fetch failed (UND_ERR_SOCKS5_AUTH_FAILED)'}. No credential leak: 0 matches for the user or password in --format json --verbose. (2) A working SOCKS5 forwarder to a closed port gives `fetch failed (UND_ERR_SOCKS5_REPLY_5)`, while the same target without the proxy gives the proper 'connection refused by 127.0.0.1:18799 (ECONNREFUSED)'. (3) `ALL_PROXY=socks5://127.0.0.1:18759` (nothing listening) gives 'cannot reach ... through the HTTP proxy socks5://127.0.0.1:18759 (ECONNREFUSED); check HTTPS_PROXY / HTTP_PROXY: ... allows CONNECT'.",
+   "fix": "In describeCause, when proxyForUrl(url) is a socks5 or socks URL: treat /^UND_ERR_SOCKS5_/ as a proxy hop. Map AUTH_FAILED and AUTH_REJECTED to a 'proxy auth' diagnosis (credentials in the socks5://user:pass@ URL). Map REPLY_5 to 'the SOCKS proxy could not connect to host:port (refused)', REPLY_4 and REPLY_3 to unreachable, and REPLY_2 to 'not allowed by the proxy's rules'. Name the proxy kind from the scheme ('SOCKS5 proxy' or 'HTTP proxy'). Name the variable that supplied it (HTTPS_PROXY, HTTP_PROXY or ALL_PROXY, as installProxy already works out). Say 'allows CONNECT' only for an http(s) proxy with an https target. Add cases to test/p5a-proxy.test.ts, whose SOCKS5 fixture already exists."
+  },
+  {
+   "id": "A02-03",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/diagnose.ts",
+   "line": "145-165 (called from src/connect.ts:505)",
+   "title": "A handshake that fails on a redirect gets the raw SDK text and no hint to use the final URL",
+   "claim": "describeHttpFailure has no 3xx branch. When the server answers the initialize POST with 301, 302 or 303 (which the SDK never follows for a POST), or with a cross-origin 307/308, the user sees `HTTP 301: Streamable HTTP error: Error POSTing to endpoint: Redirect to http://127.0.0.1:18771/mcp/ not followed (redirectPolicy: 'same-origin')`. That is SDK-internal wording ('redirectPolicy'). The fix line is the generic SRV-003 one. Nothing says that MCP clients do not re-send a POST after 301/302/303, or suggests running the check against the final URL. The preflight already holds the Location (sameHostRedirect) and could name it.",
+   "repro": "RAN. A server answers /mcp with 301 Location:/mcp/ and serves Streamable HTTP at /mcp/ (`CODE=301 node redir-code.mjs 18771`). Run `node dist/cli.js http://127.0.0.1:18771/mcp --timeout 5000`. Output: `Could not connect: HTTP 301: Streamable HTTP error: Error POSTing to endpoint: Redirect to http://127.0.0.1:18771/mcp/ not followed (redirectPolicy: 'same-origin')`, with the generic 'fix  Check the URL ...' line.",
+   "fix": "Add a redirect case to describeHttpFailure, given the preflight's Location (conn.headers.location or snap.transport.preflight). For 301/302/303: summary 'HTTP 301: the server redirects the POST to <target>; MCP clients do not re-send a POST after 301/302/303', hint 'register and check <target> (mcp-review-check <target>), or redirect with 307/308'. For a cross-origin or https->http 307/308: say clients do not follow a redirect to another origin. Use kind 'http', so the JSON enum does not change. Strip the '(redirectPolicy: ...)' suffix in cleanErrorMessage."
+  },
+  {
+   "id": "A02-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/connect.ts",
+   "line": "301, 816 (message surfaced at 312 and 868)",
+   "title": "An initialize timeout reads only 'MCP error -32001: Request timed out', without the request or the wait",
+   "claim": "When a server accepts the connection but never answers initialize, the fatal message and coverage reason are the SDK's bare `MCP error -32001: Request timed out`. They do not say it was initialize, how long the check waited, or that HTTP connect waits min(--timeout, 15000) ms whatever --timeout is set to. A user with a slow cold-start server who raises --timeout to 60000 still fails at 15 s with the same unexplained message. describeHttpFailure gets status undefined and no cause, so it returns the message with no hint.",
+   "repro": "RAN. A local HTTP server answers the raw probes with 404 and never answers the SDK initialize (hang-init.mjs). Run `node dist/cli.js http://127.0.0.1:18781/mcp --timeout 3000`. Output: `Could not connect: MCP error -32001: Request timed out`, after 4.0 s. The stdio hang at initialize shows the same text plus stderr.",
+   "fix": "In connectLegacyHttp and connectStdio, rewrite a timeout (McpError -32001, or 'timed out after') to 'initialize got no answer within <connectTimeout> ms'. For HTTP add the hint: 'the server accepted the connection but did not answer; HTTP connect waits min(--timeout, 15000) ms; a cold-starting server may need a warm-up request first'. Map it to the existing kind 'timeout' in the diagnosis."
+  }
+ ]
+}

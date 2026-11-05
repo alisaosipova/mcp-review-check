@@ -1,0 +1,18 @@
+{
+ "id": "A05-03",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "I read the code with git show bc7090d. In src/rules/util/text.ts:100-118, scanForm = foldInvisible(nfkc(text)). FOLD_BLANK only maps U+3164/FFA0/115F/1160/2800 to a space, and FOLD_DROP explicitly excludes [\\t\\n\\v\\f\\r ] through a negative lookahead. So runs of whitespace, tabs and newlines reach the regex rules unchanged, and nothing collapses \\s+. In injection.ts, scanCorpus (lines 64-66) gets its text from scanEntry(e), which is the memoized scanForm, and passes it straight to matchPattern (lines 30-35). matchPattern calls p.re.exec(text) and does no other normalization. INJ_005_PATTERNS[0] (line 288) is /ignore (all |any )?(previous|prior|above|earlier|system) (instructions|prompts?|rules)/i, with literal single spaces. policy.ts:61 also uses scanForm. I found no guard anywhere that collapses whitespace before matching. I ran the same fold and regex in node. 'Ignore all previous instructions.' returned true. The double-space, tab and newline variants returned false. A NBSP variant returned true, because NFKC maps U+00A0 to a space, so NBSP alone is not a bypass. snippet() (text.ts:153) does .replace(/\\s+/g,' ') for display, so the evidence shown to a reviewer hides the whitespace, as the claim says. The finding is not in the round-1 or round-3 FINDINGS/REMEDIATION. The round-3 A05-03 ID refers to a different issue (the INJ-007 'the' capture), and the CHANGELOG does not mention it. Severity: medium. It is a trivial, deterministic way to evade the error-level INJ-005 and the warning-level INJ/DATA/POL rules, the same class as the invisible-character fold (A05-02) that the project already chose to fix. The fix is easy: collapse [\\t\\n\\v\\f\\r ]+ (and other \\p{Zs}) to a single space in the scan form, or use \\s+ in the patterns. I did not create a worktree."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read bc7090d:src/rules/util/text.ts. scanForm = foldInvisible(nfkc(text)). FOLD_DROP explicitly leaves [\\t\\n\\v\\f\\r ] alone and nothing collapses whitespace runs. The INJ-005 pattern in src/rules/injection.ts:288 is /ignore (all |any )?(previous|prior|above|earlier|system) (instructions|prompts?|rules)/i, with literal single spaces. I built the CLI in a detached worktree at bc7090d and ran it with a one-tool SDK stdio fixture (description passed via argv), using `node dist/cli.js --format json --stdio -- node fixture \"<desc>\"`. All runs reached coverage.toolLevel=ok. Results: 'Ignore all previous instructions.' gives INJ-005:error. 'Ignore  all previous instructions.' (two spaces), 'Ignore\\tall previous instructions.' and 'Ignore all\\nprevious instructions.' give no INJ/DATA/POL finding. Control cases: U+00A0 and U+3000 between the words still give INJ-005:error, because NFKC folds them to a plain space. So only ASCII whitespace runs, tabs and newlines get past the rule, and all three are trivial to type. Not covered by round 1 or round 3 FINDINGS/REMEDIATION, and the CHANGELOG has no whitespace normalization (the round-3 A05-03 ID is a different INJ-007 issue). Severity medium: the explicit-marker error rule is evaded with no special characters, the description renders the same to the model and the reviewer, and INJ-001 does not flag ordinary whitespace. Fix: collapse [\\t\\n\\v\\f\\r ]+ to one space in scanForm, or use \\s+ in the patterns. I removed the worktree afterwards."
+  }
+ ],
+ "arbiter": null
+}

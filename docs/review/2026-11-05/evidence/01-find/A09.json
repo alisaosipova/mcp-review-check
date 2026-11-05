@@ -1,0 +1,146 @@
+{
+ "area": "A09",
+ "name": "performance and scale (cross-cutting)",
+ "coverage": "I worked in a detached worktree of bc7090d at /home/kali/packages/mcp-review-check/.claude/review-r4/scratch/find-A09 (npm ci --ignore-scripts, npm run build) and removed it at the end with `git worktree remove --force` (verified gone). The main checkout was not touched, and I made no network requests: only local stdio fixtures and generated servers.\n\nREAD: src/rules/engine.ts, src/rules/util/schemaWalk.ts, src/limits.ts, src/rules/util/text.ts (corpus memo, scanForm, fold), src/rules/util/ui.ts, src/rules/util/obs.ts (head), src/rules/util/html.ts (whole), src/rules/schema.ts (TOOL-036 unresolvedRefs, TOOL-020), src/rules/listing.ts (unwrapArgv, launcherOf, pyproject parsing, LST-009), src/rules/apps.ts (normalizeMime), src/protocol/trace.ts (redactor, readBody, capBody, SSE watcher), src/connect.ts (stdoutTap, connectStdio, GroupStdioTransport), src/report/index.ts, text.ts, markdown.ts, github.ts, drift.ts (fingerprints), test/r3-p5-content-rules.test.ts (guard), test/r110-q1-memo.test.ts, round-3 FINDINGS/REMEDIATION (A09 rows) and CHANGELOG 1.0.1/1.1.0.\n\nRAN:\n- Per-rule fuzz of all 180 rules with 31 repeated units at 200 KB and 10 units at 1 MB in every snapshot field: roughly linear, no new issue there.\n- Many-object scaling at 2k/8k/32k tools, resources, prompts and templates: linear without UI URIs, quadratic with them (A09-07).\n- extractOrigins/extractLinks/stripComments fuzz with 33 units at 2 MB (A09-01).\n- pyproject and launcher parser fuzz (A09-02, A09-04).\n- normalizeMime (A09-03), SDK ReadBuffer scaling (A09-05), budget-stopped vs complete runRules (A09-06), deep schemas with 1 MB names (A09-08).\n- End-to-end CLI runs with timing: the many-tools, huge, good, bad and leaky fixtures; generated 20k/50k/100k/140k-tool stdio servers with peak RSS and CPU profiles; every --format at 20k tools; GITHUB_ACTIONS mode with the step summary (fitSummary held the 1 MiB cap); importmap, mimeType and UI-URI servers and two crafted plugin dirs with --max-duration.\n- Startup: --version 44 ms vs 22 ms for node -e 0, so the 1.1.0 lazy-load fix holds; explain 83 ms.\n\nNOT DONE:\n- The HTTP transport at scale (SSE/batch bodies near 64 MB, the double SSE parse noted in round 3).\n- --active runtime rules with many calls; redact.ts patterns on large bodies with many secrets.\n- The listing image/SVG parser (px() has a \\\\s*(px)?\\\\s* shape but small inputs; not timed).\n- The baseline/drift comparison at scale (fixed in 1.0.1, not re-measured).\n- modern-server.ts tests; the full vitest suite (not run, as instructed).\n\nNote: some first-pass helper scripts in the shared scratchpad root were overwritten by another session during the run. Every result reported above was re-run from files in my own subdirectory scratchpad/a09 or matched the in-process numbers.",
+ "improvements": [
+  {
+   "title": "Group or cap GitHub annotations",
+   "dimension": "ux",
+   "detail": "With GITHUB_ACTIONS=true, a 20 000-tool server (srv.mjs) printed 80 000 ::error/::warning lines, 13.2 MB of stderr (RAN). GitHub shows only a limited number of annotations per step, so the rest is log noise. Emit one annotation per rule and message group, the way the text report groups them (count plus the first 3 subjects), and cap the total, for example at 50, with a final ::notice that names --output for the full list.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor",
+   "source": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands"
+  },
+  {
+   "title": "Cap the FIX SNIPPETS section of the text report",
+   "dimension": "ux",
+   "detail": "The text report groups findings into about 40 lines, but FIX SNIPPETS prints one line per tool: 20 000 lines for a 20 000-tool server (RAN, out.text was 2.3 MB). The ReportTooLargeError message recommends --format text as the compact choice, which this undermines. Show the first 20 snippets and a '+N more (--verbose for all)' line.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Widen the regex-complexity guard test to the inputs it misses",
+   "dimension": "perf",
+   "detail": "The round-3 guard feeds single repeated units into tool, prompt and resource fields and the UI text only. It missed A09-01 (an importmap opener), A09-02 and A09-04 (listing files: pyproject.toml, .mcp.json args) and A09-03 (uncapped read-item mimeType and _meta). Add: per-rule timing (so one slow rule is not hidden in a 5 s total), the resourceReads item fields, a listing-dir variant with pyproject.toml, .npmrc and .mcp.json args at the read caps, and multi-token units ('<script type=importmap>', '[a ' + spaces, 'text/html;a' + spaces).",
+   "value": "high",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Hard deadline for the rule phase (worker thread)",
+   "dimension": "engine",
+   "detail": "Every finding above (A09-01..07) overruns --max-duration, because the deadline is checked only between rules. Running runRules (and the report-time uiResources/counts) in a worker_thread and calling terminate() at the deadline would make the exit-4 bound real, as round 3 A09-04 suggested for a hard bound. The snapshot is plain data, so structured clone or transfer of the capped snapshot is feasible.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor"
+  },
+  {
+   "title": "Fingerprint each tool with one canonicalization",
+   "dimension": "perf",
+   "detail": "toolFingerprint (src/report/drift.ts:51) runs canonicalJson over the whole tool and again over each field, so every tool is serialized twice, and pinFingerprints computes the fingerprints twice per run (rules snapshot and report snapshot). In the 140k-tool profile this was about 10.5 s. Build the whole-tool canonical string from the per-field canonical strings ('{' + fields.map(f => JSON.stringify(f)+':'+canon[f]).join(',') + '}', fields in sorted order) and hash both from them, which gives the same digests.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Avoid the extra copy in readBody",
+   "dimension": "perf",
+   "detail": "src/protocol/trace.ts readBody does Buffer.concat(chunks.map((c) => Buffer.from(c))). Buffer.from(Uint8Array) copies every chunk before the concat copies them again, so a 64 MiB fullBody holds 3 copies at peak. Buffer.concat accepts Uint8Array directly; use Buffer.concat(chunks, size).",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A09-01",
+   "dimension": "perf",
+   "severity": "high",
+   "file": "src/rules/util/html.ts",
+   "line": "144-151 (importMapUrls, called from scanOrigins for APPS-007/APPS-013)",
+   "title": "importMapUrls is quadratic: 2 MB of '<script type=importmap>' takes about 85 s, and --max-duration does not stop it",
+   "claim": "For each importmap opener, importMapUrls looks for '</script' from that opener. If there is none, it JSON.parses html.slice(start) all the way to the end. So repeated unterminated openers cost O(n^2): one slice and one parse each. Openers inside an earlier importmap body are parsed again too. The UI HTML is server-controlled and capped only at HTML_CAP (2 MB). Each distinct resource is scanned once (cache of 16), and up to UI_READS_CAP=50 resources are read. The deadline is checked only between rules, so a server can make one run last tens of minutes. This code has been here since 0.2.0 (d6f0c19). The round-3 guard test has no '<script' unit, so it did not catch this.",
+   "repro": "RAN in-process (dist/rules/util/html.js extractOrigins): '<script type=importmap>' repeated to 128 KB took 361 ms, 256 KB 1081 ms, 512 KB 2956 ms, 2 MB 85 679 ms ('<script type=importmap>{' at 2 MB: 74 507 ms). RAN end-to-end: a stdio server with one tool whose _meta.ui.resourceUri points to a UI resource with text = '<html><body>' + '<script type=importmap>'.repeat(~90k) + '</body></html>' (about 2 MB). `node dist/cli.js --max-duration 10000 --stdio \"env KB=2040 node imp-server.mjs\"` gave exit 4, wall 48.9 s, 'INCOMPLETE (stopped at --max-duration during rules)'.",
+   "fix": "Make the scan linear. Track `next`, the end of the previous importmap body, and skip matches whose index is below it (a browser treats a '<script' inside a script body as text). When indexOf('</script') returns -1, parse the rest once and break. Also add '<script type=importmap>' and '<script type=importmap>{' to the UNITS of the regex-complexity guard test, and feed them through resourceReads."
+  },
+  {
+   "id": "A09-02",
+   "dimension": "perf",
+   "severity": "high",
+   "file": "src/rules/listing.ts",
+   "line": "462 (pyprojectSetsUvSource header regex, new in 1.1.0 C-02)",
+   "title": "pyproject.toml table-header regex is quadratic: one 256 KB line makes LST-009 run about 60 s",
+   "claim": "/^\\[\\[?\\s*([^\\]]+?)\\s*\\]\\]?\\s*(#.*)?$/ uses a lazy [^\\]]+? followed by \\s*\\]. On a line that starts with '[' and is followed by a long run of spaces with no ']', every extension of the lazy group rescans the whole space run, which is O(n^2). The file is a pyproject.toml anywhere in the third-party plugin folder under review. It is read up to LISTING_TEXT_CAP (256 KB), and up to LISTING_FILES_CAP files are listed. It is scanned whenever a server uses a launcher and the text contains 'uv'. The deadline cannot interrupt the rule.",
+   "repro": "RAN in-process: pyprojectSetsUvSource('[a' + ' '.repeat(n)) took 1333 ms at 64 KB and 26 561 ms at 256 KB; with a trailing 'x', 30 214 ms. RAN end-to-end: a plugin dir with .claude-plugin/plugin.json, .mcp.json {\"mcpServers\":{\"a\":{\"command\":\"npx\",\"args\":[\"some-pkg@1.0.0\"]}}} and pyproject.toml = '# uv\\n[a' + 250 KiB of spaces. `node dist/cli.js --plugin-dir <dir> --max-duration 5000` gave exit 4, wall 61.9 s.",
+   "fix": "Use /^\\[\\[?([^\\]]*)\\]\\]?\\s*(#.*)?$/ and trim the capture, treating an empty key as no header. RAN: it gives the same result as the old regex on 300k random short lines, except for degenerate whitespace-only or '[[]' keys, and it takes 0.3 ms on the 256 KB line. Add pyproject.toml and .mcp.json args units to the complexity guard test."
+  },
+  {
+   "id": "A09-03",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/limits.ts",
+   "line": "150-163 (resourceReads loop caps only text/blob); src/rules/apps.ts:63-66 (normalizeMime), 80, 83",
+   "title": "resources/read item fields other than text/blob escape the input caps; a long mimeType makes normalizeMime's regex quadratic",
+   "claim": "capSnapshot cuts only c.text and c.blob of each read content item. The item's mimeType, uri and _meta (csp lists, domain) keep their full size, up to the 64 MB budget, and no truncation is reported. APPS-003 calls normalizeMime on the read item's mimeType. normalizeMime uses /^([^=]+?)\\s*=\\s*.../, a lazy class followed by \\s*=, which is O(n^2) on a parameter with a long space run and no '='. The resources/list mimeType is capped at TEXT_CAP (16 KB), but even that costs 226 ms per call.",
+   "repro": "RAN in-process: normalizeMime('text/html;a' + ' '.repeat(n) + 'x') took 226 ms at 16 KB and 2758 ms at 64 KB. RAN end-to-end: a stdio server whose resources/read item has mimeType 'text/html;a' + ' '.repeat(KB*1024) + 'x'. `node dist/cli.js --max-duration 5000 --stdio \"env KB=64 node mime-server.mjs\"` gave exit 4, wall 15.4 s. With KB=192 it gave exit 4, wall 75.4 s, and no 'truncated' notice in either report.",
+   "fix": "In capSnapshot, run capStrings(TEXT_CAP, with the ID_KEYS rule) over every read content item after the text/blob cut, so uri gets ID_CAP and mimeType and _meta get TEXT_CAP, and the cuts are recorded. In normalizeMime, split each parameter on the first '=' with indexOf and trim both sides instead of using the regex."
+  },
+  {
+   "id": "A09-04",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/listing.ts",
+   "line": "127-131 (unwrapArgv env -S / --split-string, new in 1.1.0 C-01)",
+   "title": "env -S unwrapping rebuilds argv for every -S: quadratic in the .mcp.json args",
+   "claim": "Each '-S' does `a = ['env', ...words(a[i+1]), ...a.slice(i+2)]; i = 0`, which copies the rest of the argv and restarts the scan. Args like ['-S','-S','-S',...] remove one element per pass, so the work is O(n^2). LST-008 and LST-009 call launcherOf for every server. The args come from the plugin's .mcp.json, which is read up to LISTING_JSON_CAP (1 MiB, about 200k '-S' items).",
+   "repro": "RAN in-process: launcherOf(['env', ...Array(n).fill('-S'), 'npx', 'x']) took 739 ms at n=8000, 1320 ms at 16 000 and 7989 ms at 32 000 (160 KB of JSON). RAN end-to-end: a plugin dir whose .mcp.json has {command:'env', args:[30 000 x '-S','npx','some-pkg']} (150 KB). `node dist/cli.js --plugin-dir <dir> --max-duration 5000` gave exit 4, wall 11.3 s.",
+   "fix": "Limit -S expansions, for example to the same 4 as the wrapper limit (env reads one split string; nested -S is not a real launcher), and treat the rest as a plain argv. Alternatively, work on the argv as a reversed stack, so expanding a split string costs O(words) and copies nothing. Add this shape to the complexity guard test."
+  },
+  {
+   "id": "A09-05",
+   "dimension": "perf",
+   "severity": "low",
+   "file": "src/connect.ts",
+   "line": "1080-1083 (GroupStdioTransport.start data handler -> SDK ReadBuffer.append); also 727-775 stdoutTap",
+   "title": "stdio reads of large messages are quadratic (SDK ReadBuffer Buffer.concat per chunk), so a 62 MB tools/list times out and the server is reported as having stopped answering",
+   "claim": "STDIO_MAX_MESSAGE raises the SDK read buffer to 64 MB. The SDK 1.32.1 ReadBuffer.append does Buffer.concat([buffer, chunk]) for every 64 KiB pipe chunk, and processReadBuffer runs indexOf('\\n') over the whole buffer each time. Both are O(n^2) in the line size. The byte budget is charged only at the end of a line (stdoutTap), so a re-list that will exceed the budget is still buffered in full, at the same quadratic cost. GroupStdioTransport already owns the data handler, so the tool can fix this without an SDK change.",
+   "repro": "RAN: the SDK ReadBuffer with 64 KiB chunks took 1.7 s for an 8 MB line, 4.1 s for 32 MB and 12.1 s for 63 MB. RAN end-to-end: a stdio server answering tools/list with 140 000 tools (about 62 MB on one line). `node dist/cli.js --format json --stdio \"env N=140000 node big.mjs\"` with the default --timeout printed 'tools/list got no answer within --timeout; the server answered initialize, then stopped answering'. With --timeout 120000 it finished in 159 s. A CPU profile shows 43 s in ReadBuffer.append (Buffer.concat 39 s self) and 9.9 s in processReadBuffer/indexOf. A 100 000-tool (44 MB) run took 39 s wall with a peak RSS of 1.5 GB.",
+   "fix": "In GroupStdioTransport.start, replace self._readBuffer with a linear buffer: keep a list of chunks, search only the new chunk for '\\n', and Buffer.concat once per completed line. Then call the SDK's deserializeMessage. Charge the budget as bytes arrive (in stdoutTap.take), not at the end of a line, and stop reading or close once the budget is spent. stdoutTap.add also JSON.parses every JSON-RPC line only to check jsonrpc === '2.0', which is a second full parse of a 64 MB message; for lines past NON_JSON_HEAD in json mode, count the bytes and skip the parse."
+  },
+  {
+   "id": "A09-06",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/util/text.ts",
+   "line": "206-216 (CORPUS_MEMO keyed by snapshot object); src/rules/engine.ts:219 (tracked proxy per rule)",
+   "title": "1.1.0 corpus memo is bypassed in every stopped or budget-exhausted run: corpus and scanForm rebuilt per rule, superlinear",
+   "claim": "When a run was stopped by --max-duration or the snapshot budget ran out, runRules gives each rule a new tracked() Proxy. CORPUS_MEMO is keyed by that proxy and SCAN_MEMO by the rebuilt entries, so every corpus rule (about 16) runs walkSchema, buildCorpus, NFKC and foldInvisible again over the whole listing. The comment at text.ts:203 says this is intended. But the stopped and budget runs are exactly the large or hostile servers where the cost matters, and the rules phase has only a between-rules deadline.",
+   "repro": "RAN in-process with N tools of about 250 chars each (stop.mjs), comparing runRules(RULES) on a complete snapshot with the same snapshot plus limits.budgetExhausted={phase:'tools re-list', unfinished:['tools re-list']}. 20 000 tools: 1272 ms vs 2570 ms. 40 000 tools: 2750 ms vs 9938 ms (3.6x, and superlinear). End-to-end profile of the 140 000-tool run, which ended budget-exhausted: runRules 56.8 s, of which corpus 20 s, scanEntry 18 s and buildCorpus 13 s.",
+   "fix": "Read the corpus signature through the (tracked) snapshot as now, so the listing reads are still noted, but key the memo by the raw lists: for example a WeakMap keyed by snap.tools (the proxy returns the raw array) and checked with the existing sig. Then every tracked view shares one corpus and one set of scan forms. The same applies to future per-snapshot memos (uiResources, see A09-07)."
+  },
+  {
+   "id": "A09-07",
+   "dimension": "perf",
+   "severity": "medium",
+   "file": "src/rules/util/ui.ts",
+   "line": "49 (r.listEntry ??= snap.resources.find(...)); called by 15 rules and report counts() (src/report/index.ts)",
+   "title": "uiResources is O(UI URIs x resources) and rebuilt by each of 15 call sites: about 10 s per call at 40k tools (4 MB listing)",
+   "claim": "Round 3 listed this as an improvement and marked it 'not measured'. It is still unchanged, and it is quadratic in practice. Every ui:// URI taken from tools that is not in resources/list runs a linear find over snap.resources. The URIs from tools are not capped (only reads are, at 50). uiResources is not memoized: it runs again in every APPS rule and once more in counts() while the report is rendered, which is outside the rules deadline.",
+   "repro": "RAN in-process (ui.mjs): N tools with unique _meta.ui.resourceUri and N non-UI resources. One uiResources call took 91 ms at N=5000, 250 ms at 10 000, 1304 ms at 20 000 and 9768 ms at 40 000 (4.1 MB of list data). RAN end-to-end (uisrv.mjs): `node dist/cli.js --max-duration 8000 --stdio \"env N=10000 node uisrv.mjs\"` took 5.5 s (exit 1). With N=20000: exit 4, wall 10.3 s, with 74 rules 'stopped by --max-duration'.",
+   "fix": "Build a Map<uri, resource> once per call (or memoize the whole uiResources result per snapshot, keyed as in A09-06), and look up listEntry in it. It is also worth caching the decoded HTML per item, since each APPS rule decodes the 2 MB blob again."
+  },
+  {
+   "id": "A09-08",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/rules/tools.ts",
+   "line": "232 (TOOL-009 message); same pattern in other path-listing messages",
+   "title": "Finding messages embed full JSON pointers of server-chosen property names: a report several times the input size",
+   "claim": "TOOL-009 lists up to 10 parameter paths in full. A nested path repeats every ancestor's property name, and names are capped only at ID_CAP (1 MB). So one message grows with depth x name length and is repeated in every format: the text line, JSON, SARIF and markdown.",
+   "repro": "RAN in-process (deep.mjs): one tool whose inputSchema nests 16 levels of single properties with 1 MB names (16.8 MB of input). TOOL-009 gives one 57.7 MB message, the text report is 57.7 MB, and heap use is 602 MB. With 60 levels of 256 KB names, the message is 14.4 MB.",
+   "fix": "Cut each pointer in a message, for example to its first and last 60 characters with an ellipsis, and the message as a whole, for example to 2 KB. Keep the full pointer only in the finding's `path` field, cut there to a fixed bound as well."
+  }
+ ]
+}

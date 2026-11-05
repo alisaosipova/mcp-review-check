@@ -1,0 +1,13 @@
+{
+ "id": "A04-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-05",
+   "verdict": "confirmed",
+   "evidence": "bc7090d src/rules/auth.ts AUTH_002's missing() returns only a Claude warning when a.prm is set ('a well-known PRM still resolves'), with an explicit comment that the spec needs only one discovery mechanism. AUTH_016 has severity {spec:'error', chatgpt:'warning'}. When the invalid-token 401 lacks resource_metadata it returns {severity:'warning'} with no platforms, so the finding uses both rule platforms (spec+chatgpt) and never looks at snap.authProbe.prm. The same root cause therefore gives two findings that disagree on the spec and ChatGPT verdict. Nothing about this in the round 1 or 3 findings. CHANGELOG mentions AUTH-016 only for DPoP parsing and network-inconclusive handling."
+  }
+ ],
+ "arbiter": null
+}

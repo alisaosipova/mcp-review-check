@@ -1,0 +1,13 @@
+{
+ "id": "A13-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A13-03",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, src/rules/engine.ts runRules has only one guard that turns an empty result into a skip because there was no transport: `if ((snap.fatal || snap.coverage.toolLevel === 'connect-failed') && raw.length === 0 && !URL_ONLY.has(rule.id))`. That guard does not cover toolLevel 'auth-required' or 'token-rejected'. authReason() does map those levels to skip reasons, but only for the needs 'tools', 'resources', 'prompts', 'ui' and 'active' in unmetNeed. Rules with needs: [] never call it. SRV-011 (`snap.serverInfo ?? {}`), SRV-012, SRV-013 (serverInfo/initializeRaw checks only fire when the data exists), SRV-014 (snap.instructions), SRV-015 (capabilities) and POL-005 all have needs: [] and quietly return [] when initialize never happened. They then reach `rulesRun++` and count as passes. The fixture test/fixtures/snapshots/auth-required.json has coverage {toolLevel:'auth-required'}, no fatal and no initializeRaw, so it falls into this path. A10-05 in round 3 (docs/review/2026-11-04/FINDINGS.md) was scoped to connect-failed only, and the CHANGELOG 1.0.1 fix matches that scope, so this is a remaining gap and not a re-report. It is a low-severity UX/reporting issue: false passes in JUnit and in rulesRun, including SRV-013, a spec 'error' rule, passing without serverInfo. I did not re-run the harness and confirmed it from the code."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,123 @@
+{
+ "area": "A01",
+ "name": "CLI, config, input files, baseline and drift",
+ "coverage": "Read in full at bc7090d (detached worktree .claude/review-r4/scratch/find-A01, npm ci --ignore-scripts and npm run build OK; worktree removed at the end): src/cli.ts, src/config.ts, src/input-file.ts, src/baseline.ts, src/report/drift.ts. Read in part: src/redact.ts (tiers, TRIVIAL), src/protocol/trace.ts createRedactor, src/diagnose.ts schemeSuggestion, src/protocol/legacy.ts paginate, src/snapshot.ts emptySnapshot, src/report/index.ts buildReport failed/gate. Also the README stability policy, docs/guide/ci.md baseline recipes, round 3 FINDINGS.md (A01 rows and improvements) and REMEDIATION.md, the CHANGELOG 1.1.0 and 1.0.1 CLI items, and grepped round 1 for drift. Ran against the built CLI: good-server baseline save and reuse; fatal-run overwrite through --output json and --json-output (A01-02); drift with a tampered fingerprint in text, json, junit and sarif with GITHUB_ACTIONS (A01-01); a listing-only run with --fail-on-drift (A01-04); a local 401 server on 127.0.0.1 with --fail-on-incomplete --save-baseline (A01-03); config files with NUL in stdio args, env, header and cwd (A01-06); 11 parseArgs error cases (none echoes a value); 9 URL/scheme usage-error cases (heuristics behave as documented; not reported). Unit-level timing of knownFindings through dist/baseline.js (A01-05). Not done: vitest files (not needed for the repros), the Windows/macOS case-folding paths of samePath, the signal-exit path, the phase line on a real TTY, the modern-server.ts fixture, and redacted-name drift pairing beyond reading the code. One positional test ('https://h/x#tokenvalue') unintentionally started a check against the dotless host 'h' (DNS lookup only, no server reached). No fixed round-3 item was found to have regressed.",
+ "improvements": [
+  {
+   "title": "Bootstrap a baseline from config without exit 2",
+   "dimension": "ux",
+   "detail": "A config file with baseline and failOnDrift or diffOnly cannot do the first run: 'cannot read --baseline: no such file' is exit 2, so users must keep two configs or pass --no-fail-on-drift and drop the key. Add --baseline-optional (config key baselineOptional): a missing baseline file means no baseline, with a stderr note, and --fail-on-drift/--diff-only are then inactive with a note.",
+   "value": "medium",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "Say on stderr when the command line's server replaces the config file's server",
+   "dimension": "ux",
+   "detail": "When an explicit --config has url or stdio and the command line also names a server, the file's server is ignored silently. The 'options from --config X' line says nothing, while env/cwd/header drops get a 'not used from' note. Add 'key \"url\" (a server is given on the command line)' to that note.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Protect input files from being overwritten by outputs",
+   "dimension": "ux",
+   "detail": "samePath guards --output against --save-baseline, --json-output and --baseline only. --output, --json-output or --save-baseline can still overwrite the --config file, --tool-args, --openai-manifest or $GITHUB_STEP_SUMMARY. Extend the same check to every input path.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Stable SARIF fingerprint per drift change content",
+   "dimension": "engine",
+   "detail": "BASE-001 partialFingerprints hash only kind and tool name, so a later, different change to the same tool (description, then inputSchema) has the same fingerprint as an earlier dismissed or fixed alert. Include the sorted changed fields, or the new sha256, in the fingerprint so that code scanning treats a new change as a new alert. Source: SARIF 2.1.0 §3.27.17 partialFingerprints, https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html",
+   "value": "low",
+   "effort": "S",
+   "release": "minor"
+  },
+  {
+   "title": "UTF-16BE config/baseline/tool-args decoding",
+   "dimension": "ux",
+   "detail": "readToolArgs, loadConfig and readBaseline decode UTF-16LE with a BOM but not UTF-16BE (FE FF), which then fails as 'not valid JSON'. Decode it too, or name the encoding in the error.",
+   "value": "low",
+   "effort": "S",
+   "release": "patch"
+  },
+  {
+   "title": "Lean baseline document",
+   "dimension": "perf",
+   "detail": "--save-baseline writes the full JSON report (snapshot included). --baseline needs only findings (ruleId, platforms, tool, resource, path, message) and toolFingerprints. A --save-baseline that writes a lean document, still valid for --baseline, keeps baselines far under the 16 MiB INPUT_FILE_CAP and makes git diffs of committed baselines readable.",
+   "value": "medium",
+   "effort": "M",
+   "release": "minor"
+  }
+ ],
+ "findings": [
+  {
+   "id": "A01-01",
+   "dimension": "bug",
+   "severity": "medium",
+   "file": "src/cli.ts",
+   "line": "835 (code), 789 (buildReport call), src/report/index.ts:56,71",
+   "title": "--fail-on-drift exits 1 while every report format says PASS",
+   "claim": "Under --fail-on-drift, a tool change (or tools that could not be compared) makes the exit code 1, but buildReport is never told about it. The text Result line reads 'Result: PASS (--fail-on error)', JSON summary.failed is false and gate.reason is null, JUnit has failures=\"0\", and under GITHUB_ACTIONS no ::error annotation explains the exit 1. In the not-compared case the only trace is one stderr line. Round 3 fixed the same mismatch for --fail-on-incomplete (A10-01, medium); --fail-on-drift was left out. The Action and other tools that read summary.failed from the JSON see a passing run that the job failed.",
+   "repro": "RAN: save a baseline from good-server, then set toolFingerprints[0].sha256 and .fields.description to 64 zeros in a copy bd.json. `node dist/cli.js --baseline bd.json --fail-on-drift --stdio -- node test/fixtures/good-server.mjs` gives exit 1, prints '~ search_notes: changed: description' and 'Result: PASS (--fail-on error)'. The same with `--format json` gives exit 1 and summary {failed:false, gate.reason:null}. With `--format junit`: failures=\"0\". With GITHUB_ACTIONS=true --format sarif: exit 1, and stderr has only the local banner.",
+   "fix": "Pass the drift outcome into buildReport, as was done for failOnIncomplete: when failOnDrift && (changes>0 || notCompared), set summary.failed=true, gate.reason='tool definitions changed since baseline (--fail-on-drift)' or 'tool definitions not compared (--fail-on-drift)', a Result line 'FAIL (... --fail-on-drift)', a JUnit <failure>/<error> and one GitHub ::error. The exit code stays the same, so this fits a patch."
+  },
+  {
+   "id": "A01-02",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "630-631, 845-866, 868-871",
+   "title": "A failed or stopped run still overwrites the baseline through --output (format json) or --json-output",
+   "claim": "The A01-02 fix in 1.0.1 skips only --save-baseline when the run is fatal (exit 3) or stopped (exit 4). The comment at cli.ts:630 calls '--output in --format json' over the --baseline file 'the intended refresh', and docs/guide/ci.md:57 says --save-baseline writes 'the same document as --format json --output <file>'. Those paths, and --json-output pointed at the baseline file, are still written on exit 3/4. The result is the round-3 scenario again: the accepted baseline is replaced by a connect-failure report with toolFingerprints null. When --save-baseline and --json-output name the same file, stderr even says 'the earlier baseline, if any, is kept', then 'JSON report written to b3.json', and the file is overwritten.",
+   "repro": "RAN: (1) `node dist/cli.js --baseline b.json --format json --output b.json --stdio -- node -e 'process.exit(1)'` gives exit 3, and b.json now has 3 findings and toolFingerprints null. A later `--baseline b.json --fail-on-drift` run against good-server exits 1 with 'tool definitions not compared ... re-save the baseline'. (2) `node dist/cli.js --baseline b3.json --save-baseline b3.json --json-output b3.json --stdio -- node -e 'process.exit(1)'` gives exit 3 and the stderr lines 'warning: --save-baseline not written ... the earlier baseline, if any, is kept' and 'JSON report written to b3.json'. b3.json is overwritten (toolFingerprints null).",
+   "fix": "When unsaved (fatal or stopped), skip every output whose path samePath()s the --baseline file or the --save-baseline file. That covers --output in json format and --json-output; print the same 'not written' warning and keep the exit code. Fix the misleading 'is kept' message for the case where another output names the same file, and update the cli.ts:630 comment and ci.md:57 ('the same document, except that it is not written on exit 3 or 4')."
+  },
+  {
+   "id": "A01-03",
+   "dimension": "bug",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "847-856",
+   "title": "--save-baseline is written by a run that exits 3 under --fail-on-incomplete",
+   "claim": "`unsaved` covers only snap.fatal and limits.stopped. With --fail-on-incomplete, a partial run (auth-required, token rejected, tools/list failed) exits 3, which the help documents as a failed run. It still replaces the baseline with a report that has no tool findings and toolFingerprints null; the only sign is a stderr warning. An expired CI token in the documented default-branch refresh job therefore makes the next MR runs fail: every finding is new and drift is not compared.",
+   "repro": "RAN: a 127.0.0.1:18765 server that answers every request with 401 and WWW-Authenticate Bearer. `cp b0.json b2.json; MCP_REVIEW_CHECK_TOKEN= node dist/cli.js http://127.0.0.1:18765/mcp --fail-on-incomplete --save-baseline b2.json --timeout 3000` gives exit 3, 'warning: --save-baseline: the check is partial (auth-required) ...' and then 'JSON report written to b2.json'. b2.json now has coverage auth-required and toolFingerprints null; the good-server baseline is gone.",
+   "fix": "Treat `values['fail-on-incomplete'] && partial` as unsaved too: 'the check is partial (<level>) and --fail-on-incomplete is set'. Optionally, without that flag, refuse to replace an existing baseline that has fingerprints with one that has none, unless a new --force-save-baseline is given."
+  },
+  {
+   "id": "A01-04",
+   "dimension": "ux",
+   "severity": "low",
+   "file": "src/cli.ts",
+   "line": "596-600, 830-835; src/report/drift.ts:351,401",
+   "title": "Listing-only run with --fail-on-drift always exits 1 with wrong advice",
+   "claim": "A listing-only run (--plugin-dir or --openai-manifest without a server) given --baseline and --fail-on-drift always exits 1. The advice 'fix this run (see the coverage line) before saving a baseline from it' cannot be followed: the coverage is fine and a listing-only run never lists tools. The listing-only guard at 597 rejects --active, --env and similar options as usage errors but not --fail-on-drift. A config file with failOnDrift and baseline that serves both server and listing runs therefore fails every listing run. The other way round, a listing-only baseline used for a server run is reported as 'the baseline run did not list every tool', when that run checked no server at all.",
+   "repro": "RAN: `node dist/cli.js --plugin-dir test/fixtures/listing/openai-invalid --baseline b0.json --fail-on-drift` gives exit 1 and stderr '--fail-on-drift: tool definitions not compared (this run did not list every tool: no server was checked (a listing-only run)); fix this run (see the coverage line) before saving a baseline from it'.",
+   "fix": "In the listing-only guard, make --fail-on-drift from the command line a usage error ('--fail-on-drift needs a <url> or --stdio target; a listing-only run lists no tools'). Drop failOnDrift that comes from the config file with a 'not used from' note, as is done for transport keys. For a baseline whose server.listingOnly is true, say 'the baseline is a listing-only report (no server was checked)'."
+  },
+  {
+   "id": "A01-05",
+   "dimension": "perf",
+   "severity": "low",
+   "file": "src/baseline.ts",
+   "line": "160-180",
+   "title": "The baseline wildcard pass (A01-05 fix) is O(findings x wildcard entries) with polynomial regex backtracking",
+   "claim": "The 1.0.1 fallback matches a «redacted» baseline subject against any value. Each still-new finding is tested against every unused wildcard entry of the same rule with fresh regexes (Array.find), and is first checked with a lazy-quantifier regex per mark ('(?:[^\"\\\\]|\\\\.)+?' in subjects, '.+?' in messages). That is quadratic in count, and polynomial in length per regex (O(L^k) for k marks in one string). The A01 perf work in round 3 made the main buckets linear, but this new path is not. Marks appear in baseline subjects or messages whenever a weak-tier value of 4+ characters (for example an --env value) is echoed in tool names or quoted text.",
+   "repro": "RAN (unit-level, node against dist/baseline.js): (a) n wildcard baseline entries {ruleId TOOL-011, tool '«redacted»_tool_i'} against n new findings that match none: 1000 took 3.7 s, 4000 took 25.7 s, 10000 took 73 s. (b) One entry whose tool is '«r»a«r»a«r»b' against one finding with a 4000-char tool 'aaaa…': 28.7 s; with 4 marks, a 200-char tool takes 1.4 s. (c) The message wordRe with 6 marks and a 300-char message: 12.4 s.",
+   "fix": "Replace the regexes with a linear glob matcher: split the subject on the mark, then match literal pieces with indexOf leftmost-first, which is correct for '*'-only globs, and check that no matched gap crosses a '\"' in subjects. Index wildcard entries by the literal prefix and suffix of their subject (or by the (ruleId, tool-with-marks-stripped) shape) instead of scanning byRule lists, and cap the number of marks per entry (for example 8)."
+  },
+  {
+   "id": "A01-06",
+   "dimension": "security",
+   "severity": "low",
+   "file": "src/config.ts",
+   "line": "112-134, 140-154 (used at src/cli.ts:671, 702, 396)",
+   "title": "NUL bytes in config-file strings are not rejected: secrets echoed into the report, and a 'fatal' stack for paths",
+   "claim": "Command-line arguments cannot contain NUL, but JSON can ('\\u0000'). An explicit --config whose env value or stdio argument contains a NUL reaches spawn. Node's error quotes the value with the NUL rendered as '\\x00' ('Received ...'), so the whole-value redactor (which knows the raw NUL form) does not match it. The secret then appears in 'Could not connect' and in the SRV-003 finding of every format. A NUL in a path key (cwd, pluginDir, output) throws ERR_INVALID_ARG_VALUE from statSync, which prints as an internal 'fatal:' error with a stack trace (exit 3, 'please report it') instead of a usage error (exit 2).",
+   "repro": "RAN: c1.json = {\"stdio\":[\"node\",\"test/fixtures/good-server.mjs\",\"--api-key=S3cr\\u0000etTokenValue123\"]} prints 'Received '--api-key=S3cr\\x00etTokenValue123'' in the text report and in SRV-003 (exit 3). c2.json with \"env\":{\"API_KEY\":\"S3cr\\u0000etTokenValue123\"} does the same with 'options.env['API_KEY']'. c4.json with \"cwd\":\"a\\u0000b\" gives 'fatal: TypeError [ERR_INVALID_ARG_VALUE] ...' and a stack, exit 3.",
+   "fix": "In loadConfig, reject any string value (and list or map entry, and stdio/args/url) that contains U+0000, with ConfigError(`${where}: key \"x\" must not contain a NUL character (the value is not shown)`). As a safety net, also add the '\\x00'-escaped form of each secret to the redactor forms in createRedactor."
+  }
+ ]
+}

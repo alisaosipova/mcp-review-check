@@ -1,0 +1,13 @@
+{
+ "id": "A10-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-05",
+   "verdict": "confirmed",
+   "evidence": "Воспроизведено: для many-tools-server text-вывод занимает 442 строки, из них 400 строк `  tool_N` в FIX SNIPPETS. В src/report/text.ts:149-153 цикл по fixSnippets(r) идёт без ограничения и без группировки, хотя находки сворачиваются через groupFindings. `--format markdown` дал 2876 строк и 590380 байт. groupFindings вызывается только в text.ts:129, renderMarkdown его не использует. Это сильно больше лимита GitHub на комментарий в 65 536 символов."
+  }
+ ],
+ "arbiter": null
+}

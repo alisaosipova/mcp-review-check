@@ -1,0 +1,13 @@
+{
+ "id": "A09-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A09-08",
+   "verdict": "confirmed",
+   "evidence": "Reproduced on bc7090d with a built detached worktree, since removed. src/rules/tools.ts:232 (TOOL-009) joins up to 10 full JSON pointers, `uniq.slice(0, 10).join(', ')`, and no reporter or message cap shortens them (grep found no message truncation in src). walkSchema (src/rules/util/schemaWalk.ts:63-68) builds each path as `${path}/properties/${esc(k)}`, so every path repeats all its ancestors' names. MAX_DEPTH is 64, and property names are capped only at ID_CAP = 1 MiB (src/limits.ts:11). RAN: a local stdio fixture with one tool nesting 16 single properties with 1 MiB names (about 16.8 MB of tools/list) produced `TOOL-009 ... deep: 16 parameter(s) without description: /properties/qqqq...`, and the text report written by --output was 57,674,780 bytes (about 3.4x the input). The same message appears in json, sarif and markdown. The amplification is bounded: SNAPSHOT_BUDGET is 64 MiB, and with 30x1 MB or 40x1 MiB the run stopped with 'snapshot budget exhausted (during tools re-list)'; it reported INCOMPLETE and still wrote a report of about 55 MB. So this is a report-size and memory amplification of a few times the input (not unbounded), with a hostile server only. Low severity is appropriate. Fix: cut each path shown in the message (for example, abbreviate long segments) or cap the whole message length."
+  }
+ ],
+ "arbiter": null
+}

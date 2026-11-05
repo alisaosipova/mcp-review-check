@@ -1,0 +1,13 @@
+{
+ "id": "A06-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-04",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, svgSize is at src/listing/image.ts:109-111, not 395-397. It uses /<svg(?=[\\s>/])([^>]*)>/i, so [^>]* stops at a '>' inside a quoted attribute. Built dist: svgSize('<svg xmlns=\"x\" aria-label=\"a>b\" width=\"64\" height=\"64\"></svg>') returns undefined. Without the aria-label it returns {width:64,height:64}. Today an SVG without a measured size only gives an info finding, so the impact is low until A06-03 lands."
+  }
+ ],
+ "arbiter": null
+}

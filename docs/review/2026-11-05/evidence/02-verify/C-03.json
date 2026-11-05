@@ -1,0 +1,13 @@
+{
+ "id": "C-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-03",
+   "verdict": "confirmed",
+   "evidence": "server.ts SRV-008 (lines ~233-237) emits a finding for originEvil only when is2xx(evil). A 400, 404 or 500 to the foreign Origin yields no finding, even when originNone is 2xx, so the deviation from 'MUST respond with HTTP 403' is detectable by comparison. The rule's own rationale says 'The spec requires a 403 for an invalid Origin.' originEvil is not read anywhere else (only snapshot.ts type, network.ts probe send). I did not reproduce at runtime because the C-01 server was not available; the gap is clear from the code. It is a conformance-only gap: the foreign Origin is still rejected, so no DNS-rebinding exposure."
+  }
+ ],
+ "arbiter": null
+}

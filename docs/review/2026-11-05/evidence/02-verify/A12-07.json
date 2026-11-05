@@ -1,0 +1,13 @@
+{
+ "id": "A12-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A12-07",
+   "verdict": "confirmed",
+   "evidence": "In the ci.md GitLab recipe, the default-branch job also runs `--baseline .mcp-review-check/baseline.json --fail-on-drift` when a cached baseline exists. after_script copies the new report into the cache only if `$CI_JOB_STATUS = success` on the default branch. After an intended tool change is merged, each default-branch run exits 1 on drift, so the cached baseline is never replaced. GitLab's default cache `when: on_success` also skips the cache upload on a failed job. Every later default-branch pipeline therefore fails until someone clears the runner cache by hand or edits the CI file. The same lock-in happens when a new finding is accepted on the default branch. The Notes mention committing the baseline instead, and a missing cache, but give no way out of this state."
+  }
+ ],
+ "arbiter": null
+}

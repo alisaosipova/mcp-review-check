@@ -1,0 +1,18 @@
+{
+ "id": "A03-02",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read src/connect.ts and src/probe/auth.ts at bc7090d with git show. Line 434 sets `trigger = 'preflight-401'` whenever the unauthenticated preflight (authPf) gets 401. Credentials do not change this. Line 497 runs `if (trigger) await probeAuth();` unconditionally, so a run with --bearer still probes once. If the authenticated connect then succeeds (conn.ok, so authFailed is false), the code goes on to listEverything. A 401 on tools/list (lines 514-519) calls rejected(), where `trigger ??=` keeps 'preflight-401', and then calls `await probeAuth()` again. Nothing guards against this: there is no check of snap.authProbe and no flag recording that the probe already ran. probeAuth (lines 483-495) calls runAuthProbe again, which repeats the PRM/AS fetches, the invalid-token probe and the DNS lookups. With activeAuth it also repeats activeAuth() (auth.ts:165), which POSTs registration_endpoint (DCR) again plus the /authorize GETs and /token POSTs. probeAuth then overwrites `snap.authProbe = probe` and pushes the AS TLS observations into `tls` a second time. So authProbe.active.clientId, and the DCR notice built from it, name only the second client, and the first registered client is never reported. The second run is also not limited to a token rejected outright on initialize: any server that accepts any bearer for initialize and checks it only on tools/list, or an expired token, reaches it. I did not re-run it; the code path matches the submitted repro exactly (POST /register twice, only client-2 printed). Medium severity is right: it leaves an undisclosed artifact on the user's authorization server, partly reverses the earlier \"so you can delete it\" disclosure fix, and sends more requests than the documented count. It is not a correctness error in the findings."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read bc7090d src/connect.ts: trigger is set from the unauthenticated preflight (authPf.status===401 -> 'preflight-401') whether or not credentials are given. Line 498 `if (trigger) await probeAuth()` runs, then at 517-519 a tools/list 401 calls rejected() (trigger ??= keeps the old trigger) and `await probeAuth()` again. probeAuth overwrites snap.authProbe and pushes AS TLS results to tls again. runAuthProbe (auth.ts:165) calls activeAuth each time, and that registers a new DCR client every run. I built the CLI in a detached worktree and ran the reviewer's fixture on 127.0.0.1:38461: `node dist/cli.js http://127.0.0.1:38461/mcp --bearer sometoken-abcdef --active-auth --format json`. stderr reported only `registered DCR client client_id=client-2`, and JSON authProbe.active.clientId=client-2. Server counters: POST /register 2, GET /authorize 6, POST /token 4, GET PRM 6, GET AS metadata 6. The first DCR client (client-1) is never disclosed, so the A03-03 'so you can delete it' notice is defeated, and the request count is double what the docs describe. Trigger conditions: preflight 401, then the authenticated initialize succeeds, then tools/list gets 401 (expired token, scope step-up, or lazy token validation). That is plausible but not the common path, so medium is right. Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

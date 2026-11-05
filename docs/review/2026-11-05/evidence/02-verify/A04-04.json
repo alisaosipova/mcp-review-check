@@ -1,0 +1,13 @@
+{
+ "id": "A04-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-04",
+   "verdict": "confirmed",
+   "evidence": "bc7090d src/rules/spec.ts SPEC_010: severity {spec:'error'}, and check() pushes 'returned empty contents instead of an error' without a severity override for the legacy probe too (check(probeRpc(snap,'resourceMissing'), false)). The modern flag only affects the error-code branches. The source cites only the 2026-07-28 page. The 2025-11-25 resources page I fetched, under Error Handling, says only 'Servers SHOULD return standard JSON-RPC errors ... Resource not found: -32002', with no MUST or MUST NOT about empty contents. So a legacy-era server gets a spec error for something that is a SHOULD in the revision it negotiated, which breaks the error-only-for-MUST principle. Not in round 1 or 3: F060 added only the info for non-empty catch-all content."
+  }
+ ],
+ "arbiter": null
+}

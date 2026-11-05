@@ -1,0 +1,18 @@
+{
+ "id": "A13-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read bc7090d:src/rules/util/access.ts. toolName() returns `typeof t.name === 'string' ? t.name : String(t.name)`, and nothing guards it. In bc7090d:src/connect.ts, lines 549-550 and 559 (HTTP) and 902-903 and 910 (stdio) call `relist.items.map(toolName)` and `(await fresh())?.map(toolName)` with no try around them. I found no earlier check that rejects tools with a non-string name: the raw lists keep such items, and rules, limits.ts:119 and cli.ts:351 all call toolName too. I reproduced the crash in a detached worktree of bc7090d after npm ci and a build. The test server was a minimal raw stdio JSON-RPC server (.rr/raw.mjs) whose tools/list returned one normal tool plus {name:{toString:'x'},inputSchema:{type:'object'}}. Running `node dist/cli.js --stdio \"node .rr/raw.mjs\" --format json` exited 3 and wrote 0 bytes to stdout. Stderr was 'fatal: TypeError: Cannot convert object to primitive value at String at toolName (dist/rules/util/access.js:6:50) at Array.map at buildStdio (dist/connect.js:873:45)'. So the server under test can stop any report from being written, as the finding says. The same unguarded pattern is present in src/rules/spec.ts:434-435 and 522-523 (String(r.uri), String(p.name)). Severity: medium, not high. The tool fails closed with exit 3, so CI fails rather than passing silently, but a hostile server can still suppress every finding and every output format. The fix is a safe stringify (for example, wrap String() in try/catch or use JSON.stringify for non-strings). I removed the worktree afterwards."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "bc7090d src/rules/util/access.ts:11-13 has `toolName(t) => typeof t.name === 'string' ? t.name : String(t.name)`. In src/connect.ts, `relist.items.map(toolName)` and `(await fresh())?.map(toolName)` (HTTP around lines 549-550, stdio around lines 902-903) are not inside any try. I built a detached worktree at bc7090d (npm ci --ignore-scripts and npm run build both succeeded). I wrote a raw stdio JSON-RPC server, .rr/raw.mjs, that handles initialize and tools/list and returns BAD_TOOLS from test/fixtures/bad-server.mjs. The 'evil' variant adds {name:{toString:'x'},inputSchema:{type:'object'}}. Results: `node dist/cli.js --stdio \"node .rr/raw.mjs evil\" --format json` exited 3 with 0 bytes on stdout. stderr was 'fatal: TypeError: Cannot convert object to primitive value at String at toolName (dist/rules/util/access.js:6:50) at Array.map at buildStdio (dist/connect.js:873:45)'. Text format with the evil variant also exited 3. The plain variant exited 1 and wrote a 47 KB JSON report (14 errors, 15 warnings, BLOCKED on both platforms). So the server under test can stop any report from being written. Severity: medium, not high. Exit 3 is still non-zero, so a CI gate still fails and the defect cannot turn a failing result into a pass. The damage is that the report and SARIF/JUnit output are lost and the result shows as an internal error instead of findings. I did not run the String(r.uri) and String(p.name) sites in spec.ts. I removed the worktree afterwards."
+  }
+ ],
+ "arbiter": null
+}

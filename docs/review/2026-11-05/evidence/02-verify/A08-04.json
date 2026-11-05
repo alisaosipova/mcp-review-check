@@ -1,0 +1,13 @@
+{
+ "id": "A08-04",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-04",
+   "verdict": "confirmed",
+   "evidence": "In docker.yml at bc7090d, setup-qemu-action@c7c5346 (v3.7.0) has no `with: image:`. Its default is the mutable tag tonistiigi/binfmt:latest, which runs privileged. setup-buildx-action@f7ce87c (v3.9.0) has only `driver-opts: network=host` and no `image=`. The docker-container driver then pulls buildx's default moby/buildkit:buildx-stable-1, also a mutable tag. Every action in the workflow is SHA-pinned, but these two images float. I did not execute the build."
+  }
+ ],
+ "arbiter": null
+}

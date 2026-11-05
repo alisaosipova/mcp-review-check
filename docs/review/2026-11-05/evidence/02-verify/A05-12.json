@@ -1,0 +1,13 @@
+{
+ "id": "A05-12",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-12",
+   "verdict": "confirmed",
+   "evidence": "src/rules/util/html.ts scanOrigins runs tagRe and the CSS scans on the raw HTML, without stripComments, which exists in the same file. APPS-007 (src/rules/apps.ts ~205) calls extractOrigins(r.html) directly. Ran extractOrigins('<!-- <script src=\"https://old-cdn.example.net/x.js\"></script> -->') -> [{kind:'resource', origin:'https://old-cdn.example.net', confidence:'tag'}]. APPS-007 then reports it at the default severity (chatgpt error) because confidence is 'tag', not 'js'. APPS-014 and APPS-015 do strip comments."
+  }
+ ],
+ "arbiter": null
+}

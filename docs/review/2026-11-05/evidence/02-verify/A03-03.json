@@ -1,0 +1,13 @@
+{
+ "id": "A03-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A03-03",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, src/protocol/modern.ts:58-64 (mcpNameOf) uses `v.replace(/[^\\x20-\\x7E]/gu, encodeURIComponent)`, which percent-encodes non-ASCII. It sends leading/trailing whitespace and values matching the sentinel unchanged. modern.ts:101 uses it for every tools/call and resources/read. I fetched the live 2026-07-28 streamable-http page (Value Encoding section). It says that if a name or URI cannot be represented as plain ASCII, it is carried as `Mcp-Name: =?base64?{Base64EncodedValue}?=`. It also says 'servers MUST decode an encoded Mcp-Name ... before comparing it to the corresponding request body value', and Server Validation says a mismatch MUST get 400 / -32020. A conforming server therefore compares 'm%C3%A9t%C3%A9o' with 'météo' and rejects the call. In src/probe/active.ts:200-214, call() on the modern path keeps r.error as jsonRpcError. RT-003 (src/rules/runtime.ts:77) flags any invalid-missing or invalid-type call that has jsonRpcError !== undefined and does not exclude -32020. The false RT-003 warnings follow directly from that, and the synthetic or valid call returns no result. Leading/trailing whitespace and sentinel-matching names are also sent raw, which goes against the same MUST. I verified this by reading the code and the spec; I did not re-run the reported repro."
+  }
+ ],
+ "arbiter": null
+}

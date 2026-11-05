@@ -1,0 +1,13 @@
+{
+ "id": "A11-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A11-02",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, src/rules/server.ts:84 gives SRV-003 the severity map { claude: 'warning', chatgpt: 'warning', spec: 'warning' }. Line 88 lists only two sources, the Claude directory policy and the spec STREAMABLE_HTTP page; OAI_MCP is defined at line 16 but SRV-003 does not cite it. Line 106 returns a finding without a severity override when snap.transport.kind === 'sse'. Detection is deterministic. connect.ts tries SSE only after the Streamable HTTP POST initialize returned HTTP 400, 404 or 405 with no modern error body. connect.ts:349-350 sets kind 'sse' only when the SSE handshake completes, and connect.ts:450 sets it when the SSE GET answered 200 or 401. No other rule in src/ raises a ChatGPT error for an SSE-only server: a grep for 'sse' in the rules finds only skips and timing code. WebFetch of https://developers.openai.com/plugins/build/mcp-server, section 'Deploy the endpoint', which is scoped 'For public plugin submission', reads: 'The production endpoint must: - Support the MCP streamable HTTP transport.' The page never mentions SSE. This is a documented MUST with deterministic detection, so the project's severity principle calls for chatgpt=error, and OAI_MCP should be added to sources. The issue is not in the round-1 or round-3 FINDINGS or in REMEDIATION. Round 3's A10-07 was about the connect-failure path, not SSE severity. Not run: no fixture is an SSE-only HTTP server."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A08-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-03",
+   "verdict": "confirmed",
+   "evidence": "action.yml:128 appends `args+=(\"$INPUT_TARGET\")` after checking only that it is non-empty. cli.ts:465 parses with node parseArgs (strict, allowPositionals), so a single word `--stdio=<cmd>` becomes the --stdio option, not a positional URL. A URL cannot be put after `--`: cli.ts:515 rejects a `--` with no bare --stdio before it ('\"-- <command> [args...]\" needs a bare --stdio before the --'). So a target value that starts with `--stdio=` launches a command. Exploiting it needs an attacker-controlled target value; environment_url in the ci.md:26-43 example normally comes from the deploy provider, and that example uses npx rather than the action. This is defense-in-depth for CWE-88. Low severity."
+  }
+ ],
+ "arbiter": null
+}

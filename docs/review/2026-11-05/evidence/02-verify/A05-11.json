@@ -1,0 +1,13 @@
+{
+ "id": "A05-11",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A05-11",
+   "verdict": "confirmed",
+   "evidence": "Ran the INJ rules on a param description 'Host name. Format: https://<secret-name>.vault.azure.net or <admin-host>'. Output: 'INJ-003 /properties/host param.description …' at the default warning level for claude and chatgpt. '\\b' after 'secret' matches before '-', and NAMED_AS_MARKUP does not cover a placeholder, so INJ-003 reports a false pseudo-tag warning."
+  }
+ ],
+ "arbiter": null
+}

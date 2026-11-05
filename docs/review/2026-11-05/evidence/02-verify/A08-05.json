@@ -1,0 +1,13 @@
+{
+ "id": "A08-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-05",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d (release 1.1.0), README.md:113 still says 'There is no moving `v0` ref' and SECURITY.md:9 says 'Only the latest published minor version receives security fixes while the project is 0.x.' Both are stale for 1.x, and the 1.x support window is undefined. scripts/release-guard.mjs:17-33 accepts only tags on main with a green push-to-main CI run, so in practice backport releases to older minors are not possible. These two lines are not in the round 1 or round 3 findings. It is a documentation issue, low severity."
+  }
+ ],
+ "arbiter": null
+}

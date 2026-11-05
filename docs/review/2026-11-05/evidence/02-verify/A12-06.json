@@ -1,0 +1,13 @@
+{
+ "id": "A12-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A12-06",
+   "verdict": "confirmed",
+   "evidence": "All four mismatches were checked at bc7090d. (1) action.yml:45 has `default: '1.1'`, but the docs/guide/ci.md:135 table says `1.0`. (2) options-and-config.md:35-36 says --plugin-dir/--openai-manifest 'needs a <url> or --stdio target'. But cli.ts:593-594 allows a listing-only run, and --help (cli.ts:88,92) says 'Alone ... a listing-only run'. `node dist/cli.js --no-config --plugin-dir test/fixtures/listing/openai-invalid --quiet` ran the LST checks without connecting. It exited 1, not 0 as the repro says, because that folder fails LST-001/004/005; the contradiction still holds. (3) options-and-config.md:23 quotes only 're-save the baseline with --save-baseline'. cli.ts:833 prints 'fix this run (see the coverage line) before saving a baseline from it' when notComparedBy==='run'. (4) ci.md Local mode (line 154) says the banner goes to stderr 'for json and sarif'. cli.ts:805 checks `format === 'json' || 'sarif' || 'junit'`."
+  }
+ ],
+ "arbiter": null
+}

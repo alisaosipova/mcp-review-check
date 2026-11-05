@@ -1,0 +1,13 @@
+{
+ "id": "A07-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A07-03",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, stringifyReport (src/report/index.ts:133-136) runs JSON.stringify and then rewrites only '##['. Nothing replaces C1 or Cf characters. The JSON stays valid if they are escaped as \\uXXXX, and the parsed value is the same. I re-ran it with a stdio fixture: serverInfo.name 'srv\\u009B31mRED\\u0085x' and a tool named 'get\\u009B2Jx‮txt'. In --format json stdout I counted U+009B 13 times, U+202E 12 times and U+0085 once, all raw. In --format sarif: U+009B 20 times and U+202E 20 times. The text, markdown and junit outputs had 0 of each. This is not covered by round-3 A07-05/A07-07, which fixed annotations and the text report only. Severity is low: few terminals honour 8-bit C1 in UTF-8, but bidi reordering in a CI log is a real visual spoof."
+  }
+ ],
+ "arbiter": null
+}

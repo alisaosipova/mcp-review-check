@@ -1,0 +1,13 @@
+{
+ "id": "A06-09",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-09",
+   "verdict": "confirmed",
+   "evidence": "submission-errors says verbatim: 'Skills-only ZIP uploads must not include `interface.screenshots`; screenshots require **With MCP** and custom UI' and 'Screenshots are allowed only when the current MCP tool scan reports a UI output template.' LST-028 (listing.ts:1105-1133) checks only format, size and count against prompts. Reproduced: openai-valid with mcp.json deleted and screenshots=['./assets/s1.png'] (a generated 706x500 PNG) gives 'ChatGPT: NO AUTOMATED BLOCKERS · Result: PASS' with no LST-028 finding. Partly offset by the MAN-024 manual item ('allowed only with custom UI'), but the skills-only case can be detected deterministically and is missed."
+  }
+ ],
+ "arbiter": null
+}

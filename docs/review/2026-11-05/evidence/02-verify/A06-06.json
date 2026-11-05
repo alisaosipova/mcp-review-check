@@ -1,0 +1,18 @@
+{
+ "id": "A06-06",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "The code at bc7090d confirms the claim. I read it but did not run the repro. In src/listing/load.ts, walk() (lines 140-168) skips only one entry: `.git` at depth 0 (`if (next.depth === 0 && name === '.git') continue;`). It goes down to MAX_DEPTH=32 and stops at LISTING_FILES_CAP=10000. It does not read .gitignore and does not exclude node_modules, .venv or similar folders; a grep of src/ for node_modules, gitignore and .venv finds nothing except the fix text of LST-012. loadPluginDir (lines 193-196) builds packageConfigs from every walked file whose basename is in PACKAGE_CONFIG_FILES (.npmrc, .yarnrc, bunfig.toml, uv.toml, pip.conf, pyproject.toml, ...), at any depth. In src/rules/listing.ts, LST-009 (error) reports every packageConfigs entry that sets a source whenever any server uses a launcher, with no path filter, so node_modules/dep/.npmrc gives an error. LST-013 (warning) counts all p.files of kind file (>512) and flags >256 KiB and BINARY (.node, .so, .pyc) files with no path filter. Neither rule nor docs/guide/listings.md has a guard or a documented 'point it at a clean export' caveat. This is not covered by round 1, round 3 or REMEDIATION. C-02 only extended pyproject.toml reading to any depth. Practical caveat: npm never packs .npmrc into a published tarball, so the LST-009 error from a dependency is less common than the example suggests. Still, any vendored or linked package, or a .venv or site-packages pyproject.toml with [tool.uv] index settings, triggers it. The LST-013 count, size and binary warnings are almost certain in any checkout with node_modules or .venv. So medium: a false hard error in plausible cases, and near-certain false warnings."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "At bc7090d, src/listing/load.ts walk() skips only `.git` at depth 0 (`if (next.depth === 0 && name === '.git') continue;`). It has no ignore list and does not read .gitignore. loadPluginDir builds packageConfigs from every walked file whose basename is in PACKAGE_CONFIG_FILES, at any depth, and grep finds no 'node_modules' or 'gitignore' handling anywhere in src/listing. I built the CLI in a detached worktree. Then I copied test/fixtures/listing/plugin-valid and added a .gitignore with 'node_modules/', 600 files under node_modules/dep/ and a node_modules/dep/.npmrc containing 'registry=https://registry.npmjs.org/'. Running `node dist/cli.js --plugin-dir <copy>` gave: 'x LST-009 [claude] server: node_modules/dep/.npmrc sets a package source ... in a plugin that uses a package launcher', '! LST-013 ... the plugin has 607 files; over 512 is held for a reviewer', 'Claude: BLOCKED (1 error) ... Result: FAIL', exit 1. The unmodified plugin-valid fixture passes. So the error comes only from an ignored dependency folder that npm never reads for the plugin's launcher. I found nothing about this in the round 1 or round 3 FINDINGS/REMEDIATION or in the CHANGELOG, so it is not a known item. Severity: medium. The false result is at error level and fails the run, which goes against the project's rule of error only for deterministic detection. It needs an ignored folder that is present locally, which is common in a dev checkout. A dependency's .npmrc that sets a registry is rarer, but the LST-013 count and size warnings show up in any checkout that has node_modules. I removed the worktree afterwards."
+  }
+ ],
+ "arbiter": null
+}

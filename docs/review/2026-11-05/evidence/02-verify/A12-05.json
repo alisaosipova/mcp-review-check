@@ -1,0 +1,13 @@
+{
+ "id": "A12-05",
+ "status": "refuted",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A12-05",
+   "verdict": "refuted",
+   "evidence": "The behaviour is real: sarif.ts sets `level: LEVEL[f.severity]` from the top severity, while github.ts annotations follow the gated platforms. But it is a known item that the task says not to re-report. It is round 1 F122 (docs/review/2026-11-01/FINDINGS.md:94 and :2107, 'SARIF level берётся из максимальной severity по всем платформам, а не по gated'). It was raised again in round 3 under Improvements (docs/review/2026-11-04/FINDINGS.md:154, 'critic | ux | small | SARIF levels ignore the gate ... APPS-001, SRV-018, TOOL-016 on bad-server'), with the same example. The code has not regressed: it is unchanged, not newly broken."
+  }
+ ],
+ "arbiter": null
+}

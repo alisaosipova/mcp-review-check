@@ -1,0 +1,13 @@
+{
+ "id": "A04-07",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-07",
+   "verdict": "confirmed",
+   "evidence": "bc7090d src/rules/server.ts: const REDIRECTS = new Set([301, 302, 307, 308]), so SRV-006 runs `continue` on a 303. src/probe/network.ts:149 REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]) includes 303, and sameHostRedirect follows only same-host redirects. A cross-host 303 on the preflight is therefore not followed and the handshake fails. SRV-006 returns [] and the engine then skips it as 'could not connect' (connect-failed branch). The redirect is never named, while a 307 gives 'POST redirects (307) to another host'. The inconsistency between the two sets can be seen in the code itself. Not in round 1 or 3."
+  }
+ ],
+ "arbiter": null
+}

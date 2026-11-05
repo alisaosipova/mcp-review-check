@@ -1,0 +1,13 @@
+{
+ "id": "A10-03",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A10-03",
+   "verdict": "confirmed",
+   "evidence": "Воспроизведено на bc7090d: молчащий сервер на 127.0.0.1:58434, `--timeout 3000 --verbose` дал четыре последовательных ожидания по ~3000 мс (preflight, preflight (retry 1), discover, sdk initialize), всего 12,7 с, итог `Could not connect: MCP error -32001: Request timed out`, fix общий. По коду: в connect.ts buildHttp connectTimeout=min(timeout,15000) отдельно передаётся в preflight (requestWithRetry, retryTimeout по умолчанию даёт 1 повтор, network.ts:63-70), в discover и в connectLegacyHttp. Ранней остановки после двух таймаутов preflight нет, так что при значении по умолчанию получается 4×15 с = 60 с. Оговорка: --help говорит, что `--timeout` задаёт таймаут на запрос и что HTTP connect использует min(timeout,15000). Общий лимит в 15 с там прямо не обещан, так что формулировка «документировано 15 с» преувеличена. Но сама проблема UX реальна: лишние ожидания после явного молчания сервера и сообщение, по которому непонятно, какой запрос не ответил."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "C-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "C-02",
+   "verdict": "confirmed",
+   "evidence": "At bc7090d, recording.ts record() (lines 67-79) adds nothing for a result whose id is not pending. For an error it pushes requestId undefined. SPEC-016 (spec.ts:395-416) then runs only the integer and reserved-range code checks, and checks the id only when e.requestId !== undefined. transportErrors and transportErrorCount are written only in recording.ts; grep finds no reader in rules or report. Runtime check: a raw stdio server (scratchpad errflood.mjs) sent 2000 unsolicited error responses (ids 100000+, code -32603) plus a stray result. It produced exactly the same findings as N=0 (TOOL-006/011/012 error, SRV-002 info x2, TOOL-005 info), with no SPEC-016. JSON-RPC requires the response id to equal the request id, so this violation goes unreported. Low severity, as filed."
+  }
+ ],
+ "arbiter": null
+}

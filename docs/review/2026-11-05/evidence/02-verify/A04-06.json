@@ -1,0 +1,13 @@
+{
+ "id": "A04-06",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A04-06",
+   "verdict": "confirmed",
+   "evidence": "bc7090d src/rules/engine.ts runRules computes reason = rule.needs.map(unmetNeed).find(...) and skips with it before reaching the connect-failed branch, which uses authReason -> CONNECT_REASON. unmetNeed case 'auth' returns 'server did not request auth' for HTTP when snap.authProbe is absent. 'legacy'/'modern' return `era ${snap.era}`/`era ${snap.era} (not 2026-07-28)`. None of them check coverage.toolLevel==='connect-failed', although tools/resources/ui/active do so through authReason. After ECONNREFUSED there is no authProbe and the era is 'unknown', so these rules get the misleading reasons. A10-05 (round 3) added the post-check connect-failed skip but did not cover the unmetNeed path for these needs."
+  }
+ ],
+ "arbiter": null
+}

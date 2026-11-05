@@ -1,0 +1,18 @@
+{
+ "id": "C-01",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code path at bc7090d: src/probe/network.ts:200 sends the 'origin evil' probe (initialize, id 0, Origin https://evil.mcp-review-check.invalid) through the tracer. Its label does not start with 'sdk ', so src/connect.ts collectErrors reads it. summarizeJsonRpc (src/protocol/trace.ts:264) sets s.id only when 'id' in o, so an error body with no id gives responseId undefined, and collectErrors pushes {requestId: 0, responseId: undefined}. In src/rules/spec.ts:413 the check `e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null` exempts only null, not a missing id, and nothing earlier guards against it (no status check, no origin-probe exclusion). Ran it: I built a worktree at bc7090d and started a 127.0.0.1:58503 server that answers Origin *evil* with 403 and {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Origin not allowed\"}} and otherwise serves 2025-11-25 JSON. `node dist/cli.js http://127.0.0.1:58503/mcp` printed \"! SPEC-016 [spec] server: origin evil: response id undefined does not match request id 0\", the exact message from the claim. The Streamable HTTP spec text (\"HTTP response body MAY comprise a JSON-RPC error response that has no id\") allows this response for an invalid Origin (403) and for a rejected notification (400). So a server that follows the spec gets a spec warning. Neither FINDINGS.md (round 1 and round 3) nor CHANGELOG 1.0.1/1.1.0 covers it: they cover only the result-id case and the code-range policy. Severity: the false positive is only a warning, but it hits exactly the server behaviour that SRV-008 recommends, so medium. Fix: also skip responseId === undefined when the response is an error (or when the HTTP status is 4xx). Worktree removed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code at bc7090d. In src/connect.ts the collectErrors function sets responseId to m.id for every error message, so a body with no id gives undefined. In src/rules/spec.ts:413 SPEC-016 checks `e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null`. Only null is exempt, not undefined (an id that is absent).\n\nRepro: I built the CLI in a detached worktree. The test server bound to 127.0.0.1:58503 and answered any request whose Origin contained 'evil' with {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Origin not allowed\"}}, which has no id. Other requests got normal 2025-11-25 JSON and 202 for notifications. `node dist/cli.js http://127.0.0.1:58503/mcp` printed '! SPEC-016 [spec] server: origin evil: response id undefined does not match request id 0' with status 403. It printed the same line with status 400.\n\nSpec check: the 2025-11-25 transports page says \"If the Origin header is present and invalid, servers MUST respond with HTTP 403 Forbidden. The HTTP response body MAY comprise a JSON-RPC error response that has no id\". It allows the same id-less body for a rejected notification (400). The claim cites the 2026-07-28 page, which I did not fetch; the 2025-11-25 text alone is enough.\n\nSo a server that follows the spec gets a spec warning from SRV-008's own Origin probe. It is a false positive that every correct server answering this way will hit, so it is more than cosmetic, but it is only a warning and not an error. Suggested fix: also exempt responseId === undefined (or skip the id check when the response has no id and the HTTP status is 4xx). The worktree has been removed."
+  }
+ ],
+ "arbiter": null
+}

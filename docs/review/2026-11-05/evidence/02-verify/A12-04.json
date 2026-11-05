@@ -1,0 +1,18 @@
+{
+ "id": "A12-04",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Read from bc7090d with git show. The finding's line numbers are off: the code is at src/cli.ts:857-873, not 781-793. The behaviour is as claimed. The only fs imports are lstatSync, readlinkSync, realpathSync, statSync and writeFileSync; src/cli.ts has no mkdirSync and no recursive directory creation. In the jsonOutputs loop (--json-output and --save-baseline), writeFileSync(path, jsonDoc) sits in a try/catch. A failure adds \"error: cannot write <flag> <path>: ENOENT...\" to writeErrors, and then finalCode = writeErrors ? 2 : code, so the run exits 2 after the full check. --output does the same at about line 870: writeFileSync(values.output, body) returns code 2, though it still prints the report to stdout. Nothing creates the directory first. The only guards are the unsaved check (fatal or stopped run) and the size warning. Docs: docs/guide/ci.md:50 and docs/guide/walkthrough.md:62 both give `--save-baseline .mcp-review-check/baseline.json` as the first run with no mkdir. Only the GitLab recipe (ci.md:226, 232) and the Docker recipe (ci.md:262) run `mkdir -p`. action.yml passes `--output \"$INPUT_SARIF_FILE\"` straight through and only creates the npm prefix dir (line 148). So a sarif-file input in a missing subdirectory (the default mcp-review-check.sarif is fine) leads to exit 2 and an empty sarif-file output. I did not re-run the repro; Node's writeFileSync raises ENOENT on a missing parent directory, which is what the reported message shows. Severity medium, not higher: the error message is clear and no data is lost, because stdout still has the report and the JSON goes to any writable path. But the documented quick-start step fails for every new repository."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Built bc7090d in a detached worktree and ran it from an empty directory. `node dist/cli.js --no-config --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node test/fixtures/good-server.mjs` exited 2 with \"error: cannot write --save-baseline .mcp-review-check/baseline.json: ENOENT: no such file or directory\". The full check ran before this failure. `--format sarif --output reports/x.sarif` exited 2 the same way with \"cannot write --output reports/x.sarif: ENOENT\". In src/cli.ts, the only fs imports are lstatSync, readlinkSync, realpathSync, statSync and writeFileSync, with no mkdirSync. The two writeFileSync calls are at lines 860 and 870 (the finding's line numbers are slightly off). The documented first-baseline command appears with no mkdir in docs/guide/ci.md:50 and docs/guide/walkthrough.md:62. Only the GitLab recipe (ci.md:226,232) and ci.md:262 run `mkdir -p`. action.yml passes `--output \"$INPUT_SARIF_FILE\"` with no mkdir, so a nested sarif-file path makes the step exit 2. On that failure the action sets the sarif-file output to empty, so the upload is skipped. It is a usability bug in documented paths and fails loudly, not silently, so medium is the right severity. Worktree removed."
+  }
+ ],
+ "arbiter": null
+}

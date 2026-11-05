@@ -1,0 +1,13 @@
+{
+ "id": "A01-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-02",
+   "verdict": "confirmed",
+   "evidence": "Reproduced at bc7090d. In cli.ts:847-856, `unsaved` skips only the `--save-baseline` entry (`if (flag === '--save-baseline' && unsaved) continue`). `--json-output` and `--output` are still written on exit 3 or 4. (1) The command `--baseline b.json --format json --output b.json --stdio -- node -e 'process.exit(1)'` exits 3 and b.json then has toolFingerprints null and 3 findings. cli.ts:630 calls this path 'the intended refresh'. (2) With `--save-baseline b3.json --json-output b3.json` on the same failed command, stderr prints 'warning: --save-baseline not written: the run did not connect; the earlier baseline, if any, is kept' and then 'JSON report written to s/b3.json'. The file is overwritten (toolFingerprints null), so the message is wrong. Low severity: the user named that path for the output."
+  }
+ ],
+ "arbiter": null
+}

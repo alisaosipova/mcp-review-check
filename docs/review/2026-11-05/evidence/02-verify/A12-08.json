@@ -1,0 +1,13 @@
+{
+ "id": "A12-08",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A12-08",
+   "verdict": "confirmed",
+   "evidence": "cli.ts:721 (the finding cites line 688) is `if (values['sarif-location'] !== undefined && format !== 'sarif') stderr += 'warning: --sarif-location applies only to --format sarif'`. It tests the merged values. formatWarnings (cli.ts:205-213) requires `given.has(opt)`, so it warns only for switches given on the command line, and options-and-config.md:34 documents that a config key gets no warning. Reproduced with a config {\"sarifLocation\":\"servers/a\",\"quiet\":true} and `--config <file> --stdio good-server --format json`: stderr had 'warning: --sarif-location applies only to --format sarif' and nothing for quiet."
+  }
+ ],
+ "arbiter": null
+}

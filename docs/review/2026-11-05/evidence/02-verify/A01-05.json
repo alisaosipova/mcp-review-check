@@ -1,0 +1,13 @@
+{
+ "id": "A01-05",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A01-05",
+   "verdict": "confirmed",
+   "evidence": "In baseline.ts:162-180 every still-new finding runs `byRule.get(ruleId)?.find(...)` over all wildcard entries, in up to 4 passes (sameWording x forms). byRule is also built with an O(n^2) spread. Measured with dist/baseline.js: 1000 vs 1000 non-matching wildcard entries took 286 ms, 2000 took 1028 ms (about 4x, so quadratic). The subject regex joins marks with the lazy `(?:[^\"\\\\]|\\\\.)+?`. One entry '«redacted»a«redacted»a«redacted»b' against a tool name of 1500 'a' characters took 1612 ms, which fits polynomial (about cubic) backtracking. One correction to the claim: the regexes are compiled once per entry, not anew per test. Real impact is low: it needs many «redacted» subjects in the baseline or long server-supplied names (capped at 16 KB)."
+  }
+ ],
+ "arbiter": null
+}

@@ -1,0 +1,13 @@
+{
+ "id": "A08-02",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A08-02",
+   "verdict": "confirmed",
+   "evidence": "ci.yml:110 installs the packed tarball by path, and line 106 only checks that package/npm-shrinkwrap.json is in the tarball. I reproduced the ignored pin with npm 11.20.0. I made a minimal package with dependencies zod ^4.0.0 and an npm-shrinkwrap.json that pins node_modules/zod to 4.99.0, a version that does not exist. I packed it and ran `npm install --offline <tgz>` in an empty project. The install succeeded and put zod 4.6.7 in node_modules, so npm ignored the shrinkwrap for the local tarball. The pack smoke therefore runs a freshly re-resolved tree, and no CI step checks that registry installs honour the shipped shrinkwrap, which CHANGELOG 1.1.0:61 claims. The unit tests run on the lockfile tree from npm ci, so the impact is limited to the smoke's coverage. Low severity."
+  }
+ ],
+ "arbiter": null
+}

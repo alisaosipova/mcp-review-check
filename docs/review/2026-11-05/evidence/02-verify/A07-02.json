@@ -1,0 +1,18 @@
+{
+ "id": "A07-02",
+ "status": "confirmed",
+ "severity": "medium",
+ "votes": [
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Code read at bc7090d with git show; the repro was not run. In src/cli.ts:789, buildReport(snap, gated, manual, failOn, started, dur, failOnSpec, failOnIncomplete) gets no drift or failOnDrift argument. The drift is computed only afterwards, at cli.ts:798 (compareTools). failOnDrift lives only in textOpts (cli.ts:808), and notCompared at cli.ts:830. The exit code at cli.ts:835 is `report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0`, so the exit is 1 while report.summary.failed stays false. In src/report/index.ts:45-75 (buildReport), failed = gate || incompleteFails || fatal || stopped, and gate.reason is changed only for --fail-on-incomplete; nothing mentions drift. Every output takes its PASS/FAIL from the report: resultLine (index.ts:188ff) for the text and markdown Result line and the summary line; JSON summary.failed and gate.reason; github.ts annotations(report), which never sees drift; SARIF level from LEVEL[f.severity]; and action.yml `verdict`, which comes from s.failed. JUnit only lists the drift in <system-out>, and the renderJunit doc comment says drift is \"never a failure either\". The text and markdown drift heading does say \"fails the run (--fail-on-drift)\" via driftHeading(…, failOnDrift), but the Result line still reads PASS. The notCompared case (cli.ts:830-835) does not reach the report either: it only adds a line to stderr. I found no guard that sets summary.failed for drift anywhere. This is the same class of bug that A10-01 fixed for --fail-on-incomplete, and the drift gate is new in 1.1.0 (CHANGELOG:221, 255). Severity medium: CI gating still works because the exit code is right, but every report format and the Action's verdict output say PASS for a run that failed."
+  },
+  {
+   "verdict": "confirmed",
+   "severity": "medium",
+   "evidence": "Built bc7090d in a detached worktree (since removed). Saved a baseline from bad-server.mjs, then ran `GITHUB_ACTIONS=true node dist/cli.js --fail-on never --fail-on-drift --baseline B.json --format {json,junit,text,markdown,sarif} --stdio -- node test/fixtures/good-server.mjs`. All five formats exited 1, but every report says the run passed:\n- JSON: summary.failed=False and gate=None.\n- JUnit: failures=\"0\" errors=\"0\".\n- Text: \"CHANGED TOOL DEFINITIONS (17 since baseline) · fails the run (--fail-on-drift)\" and then \"Result: PASS (--fail-on never)\".\n- Markdown: \"| Result | PASS (--fail-on never) |\".\n- SARIF: only BASE-001 results, all at level note.\n- stderr: no ::error lines (count 0).\nCause, read in src/cli.ts:836: the exit code is `report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0`. Drift and notCompared feed only the exit code, not buildReport/summary.failed. In action.yml (~line 196) the `verdict` output comes from s.failed, so the Action outputs PASS while the step fails with exit 1. README line 138 and CHANGELOG document that --fail-on-drift exits 1, so the reports contradict the documented outcome. Severity is medium: the exit code is correct, but every machine-readable verdict (JSON failed, JUnit, SARIF, the Action's verdict output) is wrong for this gate."
+  }
+ ],
+ "arbiter": null
+}

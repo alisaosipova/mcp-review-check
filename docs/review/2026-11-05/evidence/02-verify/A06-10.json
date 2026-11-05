@@ -1,0 +1,13 @@
+{
+ "id": "A06-10",
+ "status": "confirmed",
+ "severity": "low",
+ "votes": [
+  {
+   "id": "A06-10",
+   "verdict": "confirmed",
+   "evidence": "plugins-reference#name gives the table row 'Has claude, anthropic, or anthropics as a whole word anywhere else, such as mcp-for-claude | Warning'. LST-002 (listing.ts:250-273) tests only RESERVED_WHOLE equality on the whole normalized name, the reserved prefix and official+claude, so 'mcp-for-claude' gets nothing. It never reads displayName or author.name. Reproduced: plugin-valid with name 'mcp-for-claude' and displayName 'Acme N​otеs' gives 'Claude: NO AUTOMATED BLOCKERS ... Result: PASS' with no LST-002 finding. I did not fetch the pre-submission checklist wording that would block displayName/author.name (C_PSC); the whole-word warning gap alone is enough to confirm the finding."
+  }
+ ],
+ "arbiter": null
+}
