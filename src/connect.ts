@@ -275,6 +275,8 @@ interface LegacyConn {
   /** The HTTP+SSE fallback after a 400/404/405 also failed: its HTTP status (401 on a GET-only auth route), its error,
    *  and whether its GET opened a stream (the URL is a legacy SSE endpoint). */
   sse?: { status?: number; message: string; reached: boolean };
+  /** The Streamable HTTP session the server issued, until it is ended (Q4-SESSION). */
+  open?: OpenSession;
 }
 
 const MODERN_CODES = [-32020, -32021, -32022];
@@ -302,7 +304,9 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
     const rec = new RecordingTransport(inner);
     try {
       await withTimeout(client.connect(rec, { timeout: timeoutMs }), timeoutMs + 1000, 'initialize');
-      return { ok: true, client, rec, kind: 'streamable-http', sessionId: inner.sessionId, protocolVersion: inner.protocolVersion };
+      const conn: LegacyConn = { ok: true, client, rec, kind: 'streamable-http', sessionId: inner.sessionId, protocolVersion: inner.protocolVersion };
+      if (inner.sessionId) trackSession(conn, tracer, { url, headers, sessionId: inner.sessionId, protocolVersion: inner.protocolVersion });
+      return conn;
     } catch (e) {
       await client.close().catch(() => {});
       await tracer.flush();
@@ -608,14 +612,81 @@ function ruleExchanges(tracer: Tracer): HttpExchange[] {
 /** Close a connection; a Streamable HTTP session is ended with DELETE first (the spec's SHOULD for a client that no
  *  longer needs it), so repeated checks leave no sessions behind on a stateful server. 405 means it does not support that. */
 async function endSession(conn: LegacyConn, tracer: Tracer): Promise<void> {
+  const ended = !!conn.open && !untrackSession(conn, tracer); // a stop or the signal handler sent its DELETE already
   const inner = conn.rec?.inner;
-  if (conn.ok && conn.kind === 'streamable-http' && inner instanceof StreamableHTTPClientTransport && inner.sessionId) {
+  if (!ended && conn.ok && conn.kind === 'streamable-http' && inner instanceof StreamableHTTPClientTransport && inner.sessionId) {
     const before = tracer.exchanges.length;
     await withTimeout(inner.terminateSession(), 5000, 'session DELETE').catch(() => {});
     await tracer.flush();
     for (const e of tracer.exchanges.slice(before)) if (e.method === 'DELETE') sessionEnds.add(e);
   }
   await conn.client?.close().catch(() => {});
+}
+
+/** A Streamable HTTP session the check opened and has not ended: what a DELETE needs once its client is closed. */
+interface OpenSession {
+  url: URL;
+  /** The connection's own request headers (--header, --bearer): the session belongs to that identity. */
+  headers: Record<string, string>;
+  sessionId: string;
+  protocolVersion?: string;
+  /** The run's set of open sessions it is in. */
+  run?: Set<OpenSession>;
+}
+
+/** Bound on a stop's session DELETEs (--max-duration, the byte budget, SIGINT): one attempt each, in parallel. */
+export const SESSION_END_TIMEOUT_MS = 1500;
+
+/** The open sessions of each run (by its tracer), ended when --max-duration or the byte budget stops it. */
+const runSessions = new WeakMap<Tracer, Set<OpenSession>>();
+/** The open sessions of every run in this process, for the CLI's signal handler (endAllNow). */
+const everySession = new Set<OpenSession>();
+
+/** Runs whose sessions a stop has ended: a session one of them opens after it (an initialize that was still in flight)
+ *  is ended at once, as is any session opened after the CLI's signal handler ran (endAllNow). */
+const stoppedRuns = new WeakSet<Tracer>();
+
+function trackSession(conn: LegacyConn, tracer: Tracer, s: OpenSession): void {
+  conn.open = s;
+  if (ending || stoppedRuns.has(tracer)) { void endSessions([s]); return; }
+  let set = runSessions.get(tracer);
+  if (!set) runSessions.set(tracer, (set = new Set()));
+  s.run = set;
+  set.add(s);
+  everySession.add(s);
+}
+
+/** The session is ended by the regular path (endSession) or by a stop, not both: true while it was still open. */
+function untrackSession(conn: LegacyConn, tracer: Tracer): boolean {
+  if (!conn.open) return false;
+  (conn.open.run ?? runSessions.get(tracer))?.delete(conn.open);
+  return everySession.delete(conn.open);
+}
+
+/**
+ * End sessions after a stop (Q4-SESSION): the run's tracer sends nothing once the stop aborted it, so the DELETE goes
+ * out on fetch directly, once, without following a redirect, within SESSION_END_TIMEOUT_MS; the answer (405, an
+ * error, no answer) does not matter. Each session leaves both sets first, so a second stop sends no second DELETE.
+ * Not recorded: the snapshot was copied at the stop, and these requests are no evidence for the rules.
+ */
+async function endSessions(sessions: Iterable<OpenSession> | undefined, timeoutMs = SESSION_END_TIMEOUT_MS): Promise<void> {
+  const list = [...(sessions ?? [])];
+  for (const s of list) { s.run?.delete(s); everySession.delete(s); }
+  await Promise.all(list.map(async (s) => {
+    const headers: Record<string, string> = { ...s.headers, 'mcp-session-id': s.sessionId };
+    if (s.protocolVersion) headers['mcp-protocol-version'] = s.protocolVersion;
+    try {
+      const res = await fetch(s.url, { method: 'DELETE', headers, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+      await res.body?.cancel().catch(() => {});
+    } catch { /* best effort: no answer within the bound, a network error, a refused connection */ }
+  }));
+}
+
+/** End the open sessions of the run that `tracer` belongs to (the stop of withStops). */
+function endRunSessions(tracer: Tracer | undefined): Promise<void> {
+  if (!tracer) return Promise.resolve();
+  stoppedRuns.add(tracer);
+  return endSessions(runSessions.get(tracer));
 }
 
 // ---------- stdio ----------
@@ -921,7 +992,8 @@ async function withStops(run: Promise<BuildResult>, snap: Snapshot, progress: Pr
       progress.abort.abort();
       void progress.close?.();
       const stopped = { snap: stoppedSnapshot(snap, cause, progress), tracer: progress.tracer, stderrTail: progress.stderrTail?.() };
-      ending = endChildren(progress.children);
+      // The stdio servers end and the Streamable HTTP sessions are ended (DELETE, bounded) side by side.
+      ending = Promise.all([endChildren(progress.children), endRunSessions(progress.tracer)]).then(() => {});
       void ending.then(() => resolve(stopped));
     };
   });
@@ -973,12 +1045,14 @@ function endTree(c: ChildProcess, signal: NodeJS.Signals): void {
   c.kill(signal);
 }
 
-/** End every stdio server this process started that is still running; the CLI calls it on SIGINT, SIGTERM, SIGHUP and
- *  SIGQUIT, with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait. */
+/** End every stdio server this process started that is still running, and its open Streamable HTTP sessions
+ *  (Q4-SESSION); the CLI calls it on SIGINT, SIGTERM, SIGHUP and SIGQUIT, with `kill` on a second signal: SIGKILL to every group (Windows: tree) at once, without a wait. */
 export function endAllNow(kill = false): Promise<void> {
   ending = true;
   if (kill) for (const c of everyChild) endTree(c, 'SIGKILL');
-  return endChildren(everyChild);
+  // The open Streamable HTTP sessions get their DELETE, bounded by SESSION_END_TIMEOUT_MS; the first signal took
+  // them all, so a second one sends none and waits for none.
+  return Promise.all([endChildren(everyChild), endSessions(everySession)]).then(() => {});
 }
 
 /** The SDK 1.32.1 transport's private state that GroupStdioTransport works on (client/stdio.js). */
