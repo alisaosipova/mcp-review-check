@@ -22,9 +22,7 @@ export function sniffFormat(b: Buffer): ImageFormat | undefined {
   // SVG is text: the root element is <svg, after an optional BOM, XML declaration, processing instructions, comments
   // and doctype (a licence header may be long, so the whole header read is searched).
   if (svgRootAt(b.toString('utf8')) !== undefined) return 'svg';
-  // 1.0.x compatibility: an <svg tag in the first 4 KiB that is not the root element (inside a comment, or in a text
-  // file) was accepted before; it is still taken as SVG, and sized from the root element only when there is one.
-  if (/<svg[\s>/]/i.test(b.toString('utf8', 0, Math.min(b.length, 4096)))) return 'svg';
+  // An <svg tag that is not the root element (inside a comment, or in a text file) is not an SVG image (A06-06).
   return undefined;
 }
 
