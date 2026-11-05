@@ -1,7 +1,11 @@
 // Corporate proxy support: HTTPS_PROXY / HTTP_PROXY / NO_PROXY (and lowercase) for every request made with global fetch.
 // Node's built-in fetch ignores these variables; undici's EnvHttpProxyAgent honours them, and is installed only when one is set.
-import { EnvHttpProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from 'undici';
+import { createRequire } from 'node:module';
 import { displayUrl } from './rules/util/net.js';
+
+// undici is loaded only inside installProxy, when a proxy variable is set: explain and --list-rules reach this module
+// through the rules (diagnose.ts) and should not pay for it. undici is a CommonJS package, so require gives the same module.
+const loadUndici = (): typeof import('undici') => createRequire(import.meta.url)('undici') as typeof import('undici');
 
 type Env = Record<string, string | undefined>;
 
@@ -100,6 +104,7 @@ export function installProxy(env: Env = process.env): boolean {
   const httpProxy = normalize(env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpProxy);
   const httpsProxy = normalize(env.HTTPS_PROXY || env.https_proxy ? 'HTTPS_PROXY' : env.HTTP_PROXY || env.http_proxy ? 'HTTP_PROXY' : 'ALL_PROXY', c.httpsProxy);
   suppressProxyWarning();
+  const { EnvHttpProxyAgent, fetch: undiciFetch, setGlobalDispatcher } = loadUndici();
   // noProxy is always given ("" when unset) so undici never rereads the environment and decides as bypassesProxy does.
   // proxyTunnel: false sends http: targets as absolute-URI requests (plain forwarding); https: targets still use CONNECT.
   const dispatcher = new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy: c.noProxy ?? '', proxyTunnel: false });

@@ -59,6 +59,8 @@ describe('lazy loading of the check modules', () => {
       expect(has(r.loaded, '/dist/rules/index.js')).toBe(true);
       expect(has(r.loaded, '/dist/connect.js'), args[0]).toBe(false);
       expect(has(r.loaded, '@modelcontextprotocol'), args[0]).toBe(false);
+      // 1.1.0 integration: proxy.ts loads undici only inside installProxy, so the rules' import of diagnose.ts no longer pulls it in.
+      expect(has(r.loaded, '/node_modules/undici/'), `${args[0]} loaded undici`).toBe(false);
     }
   });
 
