@@ -90,7 +90,7 @@ npx mcp-review-check explain TOOL-011
 npx mcp-review-check --list-rules TOOL --format json
 ```
 
-On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@1.0` line in [CI recipes](docs/guide/ci.md#ci-recipes) and [Docker Compose](docs/guide/ci.md#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
+On a machine without access to the npm registry, where `npx` cannot fetch the package, run it from a checkout: `npm install && npm run build`, then `node dist/cli.js <url>` or `npm link`. The same applies to every `npx -y mcp-review-check@1.1` line in [CI recipes](docs/guide/ci.md#ci-recipes) and [Docker Compose](docs/guide/ci.md#docker-compose): replace it with `node path/to/mcp-review-check/dist/cli.js`.
 
 mcp-review-check is a command-line tool only: the package has no supported programmatic API yet (its `exports` field exposes only `package.json`, so `import 'mcp-review-check'` and deep imports of `dist/` fail), and its internal modules may change in any release.
 
@@ -100,7 +100,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: alisaosipova/mcp-review-check@v1.0.1
+      - uses: alisaosipova/mcp-review-check@v1.1.0
         with:
           target: https://staging.example.com/mcp     # or stdio: node dist/server.js
           platform: claude
@@ -156,7 +156,7 @@ How to get the token, and what "Server rejected the token (401)" means: [Authent
 ## Example output
 
 ```
-mcp-review-check 1.0.1 · rules 2026-11-02 · target: all
+mcp-review-check 1.1.0 · rules 2026-11-02 · target: all
 Server  repo-wiki 0.1.0 · https://mcp.wiki.example/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth none
           2026-07-28 clients fall back to initialize. Not a defect.
@@ -256,7 +256,7 @@ From 1.0.0 the project follows [semantic versioning](https://semver.org/). The p
 
 Not covered by the policy, and free to change in any release: the wording of messages and fix hints, score values, the heuristics inside a rule (word lists, regexes, thresholds; they are capped at warning), the text of the manual checklist, the layout of the human-readable report, and every internal module (the package exports a CLI, not a library).
 
-In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@1.0 <url>`.
+In CI, pin the minor version so that new rules arrive when you choose to upgrade: `npx mcp-review-check@1.1 <url>`.
 
 ## Limitations and disclaimer
 

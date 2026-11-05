@@ -8,7 +8,7 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 Nothing yet.
 
-## [1.1.0] - 2026-11-05
+## [1.1.0] - 2026-11-04
 
 Rule catalog dated 2026-11-02. 180 rules: one is new (TOOL-036) and several report more than before (see **Rules added** and **Severity raised**), so this is a minor release. It ships the minor-level findings of review round 3 ([docs/review/2026-11-04](docs/review/2026-11-04/FINDINGS.md)) and the 1.0.1 deferrals. Ten new command-line switches and one new JSON report field (`authProbe.active.clientId`); no option, config key, exit code, report field or rule id was removed or renamed.
 
