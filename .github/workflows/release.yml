@@ -4,6 +4,7 @@ name: Release
 # Publishing uses npm trusted publishing (OIDC) only: the trusted publisher is configured on npmjs.com for this
 # repository, workflow file "release.yml" and environment "npm" (0.3.0 was the first release published that way).
 # No npm token is stored or read anywhere; provenance is attached automatically (publishConfig.provenance is also set).
+# The guard job runs first: the tagged commit must be on main and have a green CI run (scripts/release-guard.mjs).
 # Only the publish job can mint the OIDC token and only gh-release can write to the repository; neither installs
 # dependencies, builds or runs tests: the build job does that without write permissions and hands over the tarball.
 on:
@@ -14,7 +15,28 @@ permissions:
   contents: read
 
 jobs:
+  # The tag must point at a commit on main that CI passed (a push to main, ci.yml); a CI run still in progress for it
+  # is waited for. Nothing is built or published from a commit that skipped review or failed its tests.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read # the CI runs of the tagged commit
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+      - name: Tagged commit is on main and CI passed on it
+        run: node scripts/release-guard.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   build:
+    needs: guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
