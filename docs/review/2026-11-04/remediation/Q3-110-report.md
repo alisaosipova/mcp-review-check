@@ -47,9 +47,16 @@ phase. The new tests drive it with a clock that jumps past the deadline inside `
 - Hard interruption of a single slow rule (A09-04 "for a hard bound, run runRules in a worker_thread"): the snapshot holds
   `URL` objects and closures (rule `check` functions), which a worker cannot receive, so this would mean serialising the
   snapshot. The deadline is checked between rules. Removing the quadratic rule paths themselves was A09-01..03 (1.0.1).
-- The phase line shows the real phase only after the integrator change below in `src/connect.ts`, which is not in this package.
 - `explain`/`--list-rules` still load undici (`rules/auth.ts` and `rules/server.ts` import `diagnose.ts`, which imports
   `proxy.ts`) and ajv (`rules/schema.ts`), about 100 ms. Those files are not in this package; see integrator notes.
+
+## Review fixes
+
+| Finding | Fix | Tests |
+|---|---|---|
+| medium: a rules-phase stop lists phases that never ran in `limits.stopped.completed` | `buildSnapshot` returns `BuildResult.completed`, the phases the run really went through (`progress.completed`, plus the phase it returned in unless that is `closing`), set only when no deadline or budget stopped it. `markRulesStopped(snap, ms, ran)` writes that list (a listing-only run: `[]`) instead of the whole `PHASES` list. A stdio run without `--active` now reports `connect, listing, UI resource reads, wire probes, tools re-list, text-only tools/list` (no `auth probe`, no `active tool calls`). Touches `src/connect.ts` (additive field), outside this package's files. | `test/r110-q3-max-duration.test.ts` (8): unit test passes the ran list and checks it exactly; the stdio CLI run (repro from the finding) has `connect` and `listing` but not `auth probe` or `active tool calls`; new: a listing-only stop has `completed: []` |
+| low: the docs say the phase line shows the phase, but it always reads `connecting` | `BuildOptions.onPhase` in `src/connect.ts`, kept on `Progress` and called from `advance()` on each phase change (a throwing callback is ignored); `cli.ts` sets `opts.onPhase` without the cast. Phase names are constants, never server data. The docs line in `docs/guide/options-and-config.md` is now true; unchanged. | `test/r110-q3-phase-line.test.ts`: the TTY run draws `listing… N s` and `wire probes… N s` |
+| low: `npm-shrinkwrap.json` is not in `.gitignore` | `.gitignore` has `/npm-shrinkwrap.json`. `npm pack --dry-run` still lists it (the `files` entry and npm's own rule for the shrinkwrap win over `.gitignore`), checked by hand and by the clean-copy pack test, which copies `.gitignore`. | `test/r110-q3-shrinkwrap.test.ts` (6): `.gitignore` lists it; the pack test still finds it in the tarball |
 
 ## Proposed CHANGELOG lines (1.1.0)
 
@@ -62,6 +69,11 @@ phase. The new tests drive it with a clock that jumps past the deadline inside `
 - `--max-duration` also bounds the rule evaluation: rules not started by the deadline are skipped (`stopped by --max-duration`), the run reads `INCOMPLETE (stopped at --max-duration during rules)` and exits 4, as `--help` documented. The rules get at least 1 s, so a run whose connect phases used up the time still reports what they observed (review A09-04).
 - A command-line option now overrides the config file's opposite or transport-specific key instead of failing with exit 2: `--local` wins over `noLocal` (and the reverse), a `<url>` ignores the file's `env` and `cwd`, a `--stdio` command its `header`, `bearer` and `activeAuth`, and `--bearer` replaces the file's `Authorization` header. A note on stderr names what was not used (review A01-03).
 - `--version` and `--help` start about 5x faster (no transport, rules or renderers loaded); `explain` and `--list-rules` load the rules but not the transport.
+
+### Fixed
+(Both are fixes to the 1.1.0 lines above, not to a released version: fold them in if those lines ship together.)
+- A `--max-duration` stop during the rules lists in `limits.stopped.completed` only the phases the run went through, not every phase a run can have (review Q3-110).
+- The terminal status line shows the phase the check is in (`listing`, `wire probes`, …), not `connecting` for the whole run (review Q3-110).
 
 ### Security
 - The npm package ships `npm-shrinkwrap.json` with the production dependency tree of `package-lock.json`, so `npx mcp-review-check`, a global install, the GitHub Action and the Docker image install the tree CI tested and audited, not whatever the version ranges resolve to that day (review A08-03).
@@ -90,10 +102,9 @@ Rules added / Severity raised: none.
 
 ## Integrator notes (outside this package)
 
-1. Phase line: in `src/connect.ts`, add `onPhase?: (phase: string) => void` to `BuildOptions`, keep it on `Progress`, and
-   call it in `advance()` when the phase changes: `if (p.phase !== phase) { (p.completed ??= []).push(p.phase); p.onPhase?.(phase); }`.
-   The CLI already sets `opts.onPhase` (through a cast that keeps working once the field exists).
-2. `.gitignore`: add `npm-shrinkwrap.json`, so a prepack interrupted before postpack cannot be committed by accident.
+1. Phase line: done in the review fixes below (`src/connect.ts` `BuildOptions.onPhase`, called from `advance()`).
+   `src/connect.ts` is outside this package's files: the integrator should check it against other packages' edits there.
+2. `.gitignore`: done in the review fixes below.
 3. Faster `explain`/`--list-rules`: in `src/proxy.ts`, import undici lazily inside `installProxy` (for example
    `createRequire(import.meta.url)('undici')`, or make `installProxy` async and `await import('undici')`; the CLI calls it
    once in `runCli` before the connect). That cuts about 70 ms from every command that loads the rules.
