@@ -124,14 +124,16 @@ export function unwrapArgv(argv: string[]): string[] {
       let i = 1;
       for (; i < a.length; i++) {
         const w = a[i];
-        if (w === '-S' || w === '--split-string') { a = [...words(a[i + 1] ?? ''), ...a.slice(i + 2)]; i = -1; break; }
-        if (w.startsWith('-S') && w.length > 2) { a = [...words(w.slice(2)), ...a.slice(i + 1)]; i = -1; break; }
+        // -S splits its string into words that env reads on, so K=V and options in the string are skipped too.
+        if (w === '-S' || w === '--split-string') { a = ['env', ...words(a[i + 1] ?? ''), ...a.slice(i + 2)]; i = 0; continue; }
+        if (w.startsWith('--split-string=')) { a = ['env', ...words(w.slice(15)), ...a.slice(i + 1)]; i = 0; continue; }
+        if (w.startsWith('-S') && w.length > 2) { a = ['env', ...words(w.slice(2)), ...a.slice(i + 1)]; i = 0; continue; }
         if (w === '--') { i++; break; }
         if (w.startsWith('-')) { if (ENV_VALUE_FLAGS.has(w)) i++; continue; }
         if (/^[A-Za-z_][\w]*=/.test(w)) continue;
         break;
       }
-      if (i >= 0) a = a.slice(i);
+      a = a.slice(i);
       continue;
     }
     if (b0 === 'cmd') {
