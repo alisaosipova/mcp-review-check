@@ -1,14 +1,16 @@
 name: Docker image
 
-# Push a tag like v0.5.0: release.yml publishes the npm package, this workflow then builds
-# ghcr.io/alisaosipova/mcp-review-check:<version> (and :latest for a final release) from the PUBLISHED package
-# (Dockerfile, build-arg VERSION). It waits until the registry serves that version, so the image contains what npm
-# users get. The image is built ONCE, for linux/amd64 and linux/arm64, into a registry that lives only on the build
+# Push a tag like v0.5.0: release.yml publishes the npm package; when that Release run succeeds (workflow_run), this
+# workflow builds ghcr.io/alisaosipova/mcp-review-check:<version> (and :latest for a final release) from the PUBLISHED
+# package (Dockerfile, build-arg VERSION), from the tagged commit. A Release run that failed (guard, tests, publish,
+# provenance) builds no image, and the release has already waited until the registry serves the version, so the image
+# contains what npm users get. The image is built ONCE, for linux/amd64 and linux/arm64, into a registry that lives only on the build
 # runner; every platform is smoke-tested by that digest, and the push job copies the same image, by digest, to
 # ghcr.io and checks the digest it pushed. Only the push job can write packages; it builds, installs and runs nothing.
 on:
-  push:
-    tags: ['v*.*.*']
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: read
@@ -20,10 +22,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Only a successful Release run of a tag push in this repository (not a fork's, not a failed or cancelled one).
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.repository.full_name == github.repository
     permissions:
       contents: read
     outputs:
       digest: ${{ steps.image.outputs.digest }}
+      version: ${{ steps.v.outputs.version }}
     services:
       # registry:2 (2.8.3), pinned by digest (multi-arch index, resolved 2026-11-04). Reachable on the runner only.
       registry:
@@ -31,24 +39,28 @@ jobs:
         ports:
           - 5000:5000
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      # release.yml publishes in parallel; the registry can take minutes to serve a new version.
-      - name: Wait for the npm release
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          for attempt in $(seq 1 60); do
-            if [ "$(npm view "mcp-review-check@$version" version 2>/dev/null)" = "$version" ]; then exit 0; fi
-            echo "attempt $attempt: mcp-review-check@$version is not on the registry yet"
-            sleep 30
-          done
-          echo "::error::mcp-review-check@$version was not published to npm within 30 minutes"
-          exit 1
-      # docker/* actions: SHAs of the newest tags listed by `ls-remote` on 2026-11-03 (setup-qemu-action on 2026-11-04).
+      # A workflow_run run's GITHUB_REF and GITHUB_SHA are main's: the tag and its commit come from the Release run.
+      # The tag is checked before any use (it reaches the shell only through env).
       - name: Version
         id: v
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::the Release run is not for a version tag: $TAG"; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the Release run has no commit sha"; exit 1; }
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      # The Release run waited until the registry served the version; one look, no polling.
+      - name: The version is on npm
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          [ "$(npm view "mcp-review-check@$VERSION" version 2>/dev/null)" = "$VERSION" ] || { echo "::error::mcp-review-check@$VERSION is not on the npm registry, although the Release run succeeded"; exit 1; }
+      # docker/* actions: SHAs of the newest tags listed by `ls-remote` on 2026-11-03 (setup-qemu-action on 2026-11-04).
       # QEMU runs the arm64 variant on the amd64 runner, for the build and for the smoke test.
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
       # network=host: BuildKit reaches the runner's registry on localhost:5000.
@@ -75,8 +87,9 @@ jobs:
       - name: Smoke test
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$VERSION"
           image="localhost:5000/mcp-review-check@$DIGEST"
           for platform in linux/amd64 linux/arm64; do
             echo "::group::$platform"
@@ -129,10 +142,12 @@ jobs:
       - name: Push the tested image
         env:
           DIGEST: ${{ needs.build.outputs.digest }}
+          VERSION: ${{ needs.build.outputs.version }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="$VERSION"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::the build job passed no version"; exit 1; }
           archive="$RUNNER_TEMP/image/image.tar"
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the build job passed no image digest"; exit 1; }
           command -v skopeo > /dev/null || { echo "::error::skopeo is not installed on this runner"; exit 1; }

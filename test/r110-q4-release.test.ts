@@ -228,3 +228,61 @@ describe('the provenance content check (Q4-PROVENANCE)', () => {
     }
   });
 });
+
+describe('docker.yml runs after a successful Release run (Q4-DOCKER)', () => {
+  const DOCKER_YML = read('.github/workflows/docker.yml');
+  const build = jobText(DOCKER_YML, 'build');
+  const push = jobText(DOCKER_YML, 'push');
+
+  it('is triggered by the Release workflow completing, not by the tag push, and polls npm no more', () => {
+    expect(DOCKER_YML).toMatch(/^on:\n {2}workflow_run:\n {4}workflows: \[Release\]\n {4}types: \[completed\]\n/m);
+    const on = DOCKER_YML.slice(DOCKER_YML.indexOf('\non:\n'), DOCKER_YML.indexOf('\npermissions:'));
+    expect(on).not.toMatch(/push:|tags:/);
+    expect(read('.github/workflows/release.yml')).toMatch(/^name: Release$/m);
+    expect(DOCKER_YML).not.toMatch(/Wait for the npm release|seq 1 60|sleep 30/);
+    // GITHUB_REF_NAME is main's in a workflow_run run: no step reads it.
+    expect(DOCKER_YML).not.toMatch(/GITHUB_REF_NAME/);
+  });
+
+  it('builds only for a successful push-event Release run of this repository', () => {
+    const y = parseYaml(DOCKER_YML);
+    const cond = y ? String(y.jobs.build.if) : build;
+    expect(cond).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(cond).toContain("github.event.workflow_run.event == 'push'");
+    expect(cond).toContain('github.event.workflow_run.repository.full_name == github.repository');
+    if (y) {
+      // YAML 1.1 (python's yaml) reads the key `on` as true.
+      expect(y.on ?? y.true).toEqual({ workflow_run: { workflows: ['Release'], types: ['completed'] } });
+      // The push job needs the build job, so it inherits the condition (a skipped need skips it).
+      expect(y.jobs.push.needs).toBe('build');
+    }
+  });
+
+  it('takes the version from the Release run\'s tag (checked, through env) and checks out the tagged commit', () => {
+    expect(build).toMatch(/TAG: \$\{\{ github\.event\.workflow_run\.head_branch \}\}/);
+    expect(build).toMatch(/\[\[ "\$TAG" =~ \^v\[0-9\]\+/);
+    expect(build).toMatch(/ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+    // No ${{ }} expression of the event inside a run: script.
+    const runs = build.split('\n').filter((l) => /^\s+(run: |\[|echo|version=)/.test(l));
+    expect(runs.filter((l) => /\$\{\{\s*github\.event/.test(l))).toEqual([]);
+    expect(build).toMatch(/version: \$\{\{ steps\.v\.outputs\.version \}\}/);
+    expect(push).toMatch(/VERSION: \$\{\{ needs\.build\.outputs\.version \}\}/);
+    // Version comes before checkout, and the checkout comes before any step that reads the tree.
+    expect(build.indexOf('id: v')).toBeLessThan(build.indexOf('actions/checkout@'));
+    expect(build.indexOf('actions/checkout@')).toBeLessThan(build.indexOf('docker/build-push-action@'));
+  });
+
+  it('the tag check accepts version tags only', () => {
+    const re = /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/;
+    expect(build).toContain(re.source.replace(/\\\./g, '\\.'));
+    for (const ok of ['v1.1.0', 'v0.6.0-rc.1']) expect(re.test(ok), ok).toBe(true);
+    for (const bad of ['main', 'v1.1', 'v1.1.0;id', 'v1.1.0 $(id)', '']) expect(re.test(bad), bad).toBe(false);
+  });
+
+  it('keeps the smoke test and the digest push (A08-05)', () => {
+    expect(build).toMatch(/- name: Smoke test/);
+    expect(build).toMatch(/run "\$image" --version \| grep -F "\$version"/);
+    expect(push).toMatch(/\[ "\$pushed" = "\$DIGEST" \]/);
+    expect(push).toMatch(/packages: write/);
+  });
+});
