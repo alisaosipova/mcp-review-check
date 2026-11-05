@@ -113,7 +113,7 @@ export function scanEntry(e: CorpusEntry): string {
 export function foldInvisible(text: string): string {
   return text
     .replace(/[\u3164\uFFA0\u115F\u1160\u2800]/gu, ' ')
-    .replace(/(?!\s)[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '');
+    .replace(/(?![\t\n\v\f\r ])[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '');
 }
 
 /** Escape invisible / control characters as \u{...} for display. A zero-width joiner inside an emoji sequence (👨‍💻) is kept. */
