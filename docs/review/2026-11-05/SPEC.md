@@ -40,3 +40,14 @@ D1–D4 as in round 3: no whole-suite runs by agents; all agents on Opus; worktr
 | When | Event |
 |---|---|
 | 2026-11-04 | Workflow `wf_b3edd7dc-711` against `bc7090d`: 102 Opus agents (13 finders, verifiers, arbiters, critic). 92 findings: 88 confirmed (3 high, 32 medium, 53 low), 1 disputed, 3 refuted; 92 improvement ideas. |
+| 2026-11-04 | Planning workflow `wf_557ecc20-a42`: the planner draft ([REMEDIATION-draft.md](REMEDIATION-draft.md), assignment in `evidence/plan-draft-assignment.json`) and two critiques (`evidence/plan-critique.json`) finished. The revision was stopped at the user's request (usage limits); nothing from round 4 is implemented yet. |
+
+## 8. Next steps (when work resumes)
+
+1. Revise the plan with the critique issues: rerun `.claude/review-r4/plan-round4.js` with `resumeFromRunId: wf_557ecc20-a42` (only the revision agent runs), or edit the draft by hand. Then rename it to `REMEDIATION.md`.
+2. Implement 1.1.1 (patch) first. It includes the 3 high findings: A06-01 (Claude plugin `mcpServers` config files are never read), A09-01 (quadratic importmap scan), A09-02 (quadratic pyproject table-header regex). Then the minors in plan order, one workflow per release, with a review per package.
+3. Release cycle as for 1.0.1/1.1.0:
+   - full suite with the CI environment;
+   - a green push CI on `main` (the tag guard requires it);
+   - tag;
+   - verify npm provenance, the GitHub release and ghcr.

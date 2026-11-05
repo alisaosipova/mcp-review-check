@@ -1,0 +1,188 @@
+[
+ {
+  "critic": "critic feasibility",
+  "severity": "high",
+  "issue": "1.1.1 P3 cannot carry out A04-03/A13-03 or I-A13-3 inside its files. A rule's `needs` is declared in its own rule file (e.g. src/rules/server.ts:85 `SRV-003 ... needs: []`, src/rules/spec.ts:749 `SPEC-024 ... needs: ['http']`). Giving the new `handshake` need to SRV-011..015 and SPEC-002/008/016..023, and replacing URL_ONLY (src/rules/engine.ts:35, which lists SRV-001/003/004/005/017 and AUTH-001) with rule metadata, both mean editing server.ts, spec.ts and auth.ts, which P4 owns. Adding a value to `Need` (src/rules/types.ts) also breaks the typecheck of src/explain.ts:9 (`NEED_LABEL: Record<Need,string>`), and no package in 1.1.1 owns that file.",
+  "fix": "Keep P3 engine-only for 1.1.1. Use the alternative the finding itself offers: widen the engine.ts:236 guard to toolLevel auth-required, token-rejected and connect-failed whenever neither initializeRaw nor discoverRaw is present, except for rules marked URL-only or auth. Keep URL_ONLY in engine.ts for now. Or move the per-rule `needs`/`judges:'url'` edits to P4 (server.ts, spec.ts, auth.ts) as a handoff P3→P4 that is listed in the merge order. Add src/explain.ts to P3's owned files (NEED_LABEL entry for `handshake`)."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "high",
+  "issue": "1.1.1 merge order is broken for P3's test items. I-A13-1 (no INTERNAL over the catalog for hostile shapes) and I-A13-2 (rules may read only data their needs guarantee) assert properties of rule files owned by P4, P5 and P6, and depend on fixes in them (A13-01's safeStr in spec.ts lines ~434/522 is applied by P4). Yet the plan merges P3 first ('P3 before P4'). At P3's merge the new tests fail on main, or P3 has to edit files it does not own to make them pass. The plan also leaves out the P3→P7 dependency: P7 turns `EngineResult.internalErrors`, a type that P3 adds, into INCOMPLETE.",
+  "fix": "Split P3: P3a (engine, safeStr, needs, A13-02 engine half) merges first. A short P3b (or the integrator) adds test/r111-p3-fuzz.test.ts and test/r111-p3-needs-selftest.test.ts after P4, P5 and P6 merge, and fixes any violations through handoffs. Add 'P3 before P7 (internalErrors)' and 'P3 before P4/P5/P6' to the 1.1.1 handoff list."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "high",
+  "issue": "1.6.0 O4 `init` writes a starter config that names the server, but a config file in the working directory is a DISCOVERED config. src/config.ts:36 DISCOVERED_FORBIDDEN drops url, stdio, args, saveBaseline, output, cwd, env and so on, with a warning. The generated file would not work on the next plain run, and the printed CI snippet would not check anything. Separately, init detects the server from package.json `bin`/`main` and starts it to write the first baseline, so it runs repo-controlled code with no confirmation.",
+  "fix": "Choose the config file name in the plan (e.g. `mcp-review-check.config.json`). Make every snippet init prints pass `--config <that file>` explicitly, or write the server as a CLI argument in the snippet and keep only options in the file. Make init print the detected command and require `--yes` (or an explicit `--stdio`/<url>) before it launches anything or writes a baseline. Test: a plain run after init uses the file without a 'not used from' warning only when invoked as the snippet says."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "high",
+  "issue": "1.8.0 is not designed concretely enough, and it conflicts with the 1.0.1 trust model. M1 says `servers` is allowed 'in an explicit or discovered config, under the A01-01 trust rules of 1.0.1'. But a discovered config may not set url, stdio, cwd, env, header or baseline outputs (DISCOVERED_FORBIDDEN), so `servers` is unusable there. 'A01-01' now also names this round's drift finding, so the reference is ambiguous. The plan does not specify: the per-server key list ('…'); whether `servers` excludes top-level url/stdio and the CLI <url>/--stdio; the config key for `--report-name`; whether --max-duration is per server or total; per-server listing inputs (pluginDir, openaiManifest); how `{server}` interacts with --save-baseline/--baseline; and the JSON report field that carries the server name (schema/report.schema.json has no owner in 1.8.0).",
+  "fix": "State that `servers` is explicit-`--config` only and that a discovered file's `servers` is ignored with the existing note, citing 'round-3 A01-01 (1.0.1)'. Name the keys: `servers.<name>.{url|stdio, args, cwd, env, header, bearer, baseline, saveBaseline, target, failOn, ignore}`, with name pattern `^[a-z0-9][a-z0-9-]{0,31}$`. `servers` together with top-level url/stdio or a CLI target is a usage error, except that `--server <name>` selects one. `--report-name` maps to config `reportName`. --max-duration applies per server. Add a JSON `server.name` field and give schema/report.schema.json and src/report/json.ts to M3. Move `--report-name` parsing to M2 (cli.ts) as a listed handoff. Consider merging M1 and M4 into M2 (3 packages instead of 5)."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.3.0 L2 (I-A06-3, I-A11-2) and L3 (I-A11-3) both say 'new LST rules (next free ids)' and run in parallel worktrees. Both will take LST-029 onward and collide. No rule ids, titles, platform severities or source URLs are given for any of the new rules, so the CONTRIBUTING rules ('Every rule cites a public source', per-platform severity) cannot be checked before implementation.",
+  "fix": "Assign id blocks in the plan. Current max is LST-028 and MAN-031. For example, L2: LST-029 hooks.json, LST-030 component paths, LST-031 component keys/capitalization, LST-032 front matter, LST-033 credential env var (warning). L3: LST-034 package name/version, LST-035 descriptions, LST-036 author/homepage, LST-037 get-started skill, LST-038 translations, LST-039 protected server with auth none. Give each a severity map (`{claude:'error'}` / `{chatgpt:'error'}`) and the source URL (Claude plugin reference/checklist, OpenAI apps submission page)."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.3.0 has unlisted cross-package edits. A06-02 ('an inline object is still read') needs loader changes in src/listing/load.ts (L2), not listing.ts (L1). A06-03 (SVG without viewBox or width/height) and I-A06-6 need src/listing/image.ts (L4) to report 'no dimensions' to L1's rule, but L4 has no ordering. I-A06-10, which is A06-10 (hidden chars in displayName), needs a detector exported from the 1.2.0 S3 unicode util.",
+  "fix": "Add handoffs L2→L1 (inline mcpServers object kept in loader data, with its source path) and L4→L1 (svgSize returns `{width,height}|{noDimensions:true}`). Update the merge order to 'L2, L4 before L1 and L3'. Name the exported function from src/rules/util/unicode.ts (1.2.0) that A06-10 reuses."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.4.0 is missing handoffs to cli.ts (C4). A07-08 (SARIF `invocations.exitCode`) and I-A07-2 (`summary.exitCode`, `failedBy`) need the exit code before the reports are rendered. Today the exit code is computed after buildReport (src/cli.ts:835). I-A03-5 prints its request-count stderr line from cli.ts. I-A10-2 (LST `physicalLocation`) needs a source-file field on findings (src/rules/types.ts) and in the listing rule files (listing.ts, listing-plugin.ts, listing-openai.ts), none of which a 1.4.0 package owns.",
+  "fix": "Add a C4 item: compute `{exitCode, failedBy}` before rendering and pass them to buildReport (contract defined by C2). Order C2 before C1 and C4. C6 hands the request counter to C4 for the stderr line. Move I-A10-2 to 1.3.0 (L1/L2 add `file` to listing findings while writing the new rules, and types.ts goes to L1). Or add src/rules/types.ts and the listing rule files to C1's owned files."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.7.0 E1 and E2 are underspecified and conflict on files. E1 moves runRules into a worker_thread, but the call site is in src/cli.ts (owned by E3) and the 'report-time uiResources/counts' live in src/report/* (no owner in 1.7.0). Worker loading of TS sources under vitest compared with dist/*.js is not addressed. E2 custom checks give no config shape, and 'pattern matching' over server-controlled text from user regexes is a ReDoS vector. The ids 'X-…' must match the 1.1.1 A07-05 schema pattern `^([A-Z]+-\\d{3}|INTERNAL)$`. The custom rules must be registered in the engine (E1's file), and no E2→E1 handoff exists.",
+  "fix": "E1: start with a spike item (worker entry built to dist/rules/worker.js; vitest uses a prebuilt worker or tsx execArgv), and list a handoff E1→E3 for the cli.ts call site. Drop the report-time part or give it src/report/index.ts. E2: define `custom: [{id: 'X-001'.., title, severity: 'warning'|'info', platforms, field: 'tool.name'|'tool.description'|'corpus'|'annotation.key'|'_meta.key', match: {contains|glob|regex}, message}]` with id `^X-\\d{3}$`. Restrict `regex` to length ≤200 with no backreferences or nested quantifiers, run under the regex-complexity guard, or offer only contains/glob. Add handoff E2→E1 (engine accepts extra rules) and note SARIF/`--ignore`/`explain` behaviour for X- ids."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.1.1 P1 (17 items plus 2 handoffs), P5 (14 items) and P7 (15 items) exceed the ~12-item budget for one Opus agent. P1 also mixes cli.ts work with baseline-engine work: A01-05 is the linear glob matcher (src/baseline.ts:165) and I-A09-5 is toolFingerprint (src/report/drift.ts:73).",
+  "fix": "Split along file lines. P1a cli.ts/config.ts/input-file.ts (cli and output items). P1b baseline.ts/report/drift.ts (A01-05, I-A09-5, the BASE-001 sarifText call from A07-07, baseline UTF-16 decoding if it is in baseline.ts). P5a performance: html.ts, limits.ts, util/text.ts, util/ui.ts (A09-01, A09-03, A09-06, A09-07, A10-04, I-A09-3, guard test). P5b false positives: injection, data, schema, tools, annotations, apps, policy, schemaWalk (A05-05..A05-13, A09-08), with handoff P5a→P5b for A05-12's comment stripping in html.ts. P7a reports and schema. P7b redact.ts and protocol/trace.ts (A07-04, A07-06, I-A07-7, I-A09-6, the A01-06 safety net)."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.1.1 P2 adds the diagnosis kind `no-answer` (A10-03), but `connectDiagnosis.kind` is a closed enum in schema/report.schema.json:61 (owned by P7), and no handoff is listed. A JSON report with the new kind would fail schema validation. Adding an enum value to a report field is also more a minor-level change than a patch one. A10-06 changes the SRV-003 skip, but the special case lives in src/report/junit.ts:75 (P7) as well as engine.ts.",
+  "fix": "In 1.1.1, map A10-03 to the existing kind `timeout` with the new summary and hint (as A02-04 does), and defer a separate `no-answer` kind to 1.4.0 C2. Otherwise add a P2→P7 schema handoff. Add a P3→P7 handoff for the junit.ts:75 SRV-003 reason."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "Shared files without an owner within a release. test/docs.test.ts is edited by 1.1.1 P6 (I-A06-8 anchor check) and P9 (A12-06 Action input table, A08-05 0.x check). In 1.3.0 (L2, L3) and 1.5.0 (R2, R5) several packages add rules 'SDD first', but docs/design/spec.md has an owner only in 1.2.0 (S1), so parallel edits to it conflict. CONTRIBUTING.md:35 lists the rule files per category; the new src/rules/listing-plugin.ts and listing-openai.ts are not added and CONTRIBUTING has no owner.",
+  "fix": "1.1.1: give test/docs.test.ts to P9; P6 puts its anchor check in test/r111-p6-listings.test.ts. For each minor, name one owner of docs/design/spec.md (L1 in 1.3.0, R2 in 1.5.0, E1 in 1.7.0). The other packages deliver spec text as a handoff in their report. Add CONTRIBUTING.md (the rule-file list) to L1 in 1.3.0."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.6.0 O1 suppression is incomplete on ownership and semantics. `--ignore` handling, the 'matched nothing' warnings and usage errors run in cli.ts (O3), and the subject key comes from src/baseline.ts (unowned). JSON/markdown output of the suppression reason (json.ts, markdown.ts) has no owner. 'Expired entry is a usage error' makes a green pipeline exit 2 on a calendar date with no code change. The plan does not specify the date format, whether `reason` is required, glob support in `tool`, or the effect on score and `--diff-only`. I-A12-4 generates config.schema.json from `KEYS`, but KEYS (src/config.ts:18) only holds coarse kinds ('string', 'pairs'), so enums (format, target, failOn) and the `suppress` item shape cannot be generated.",
+  "fix": "Specify: `suppress[]` items `{rule (required, RULE-ID), tool?|resource?|prompt? (exact or glob), path? (JSON pointer), reason (required, ≤500), expires? (YYYY-MM-DD, UTC end of day)}`. An expired entry stops applying and gives a stderr warning, not exit 2. Suppressed findings leave the score and exit code like `--ignore`. Add handoffs O1→O3 (cli.ts wiring and warnings) and add json.ts/markdown.ts to O1. Extend KEYS (or a parallel KEY_META) with enum values and descriptions in O2 so the schema generator has the data."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "medium",
+  "issue": "1.4.0 A12-02 changes the default of two Action inputs (`platform`, `fail-on` → ''). CONTRIBUTING.md:81 says 'A breaking change to the action's inputs or outputs is a new major'. A user with `failOn: warning` in the config and the old Action default `error` will see a passing job fail after upgrading the Action minor. The plan only says 'listed under Changed'.",
+  "fix": "Add an explicit justification to the plan. The Action pins MAJOR.MINOR of the CLI and users pin a tag/SHA, so the change arrives only on an explicit upgrade. The old behaviour contradicted the documented config precedence, and the stability policy already allows a minor to turn a gate red. Record it under 'Changed' with the config key named. Or keep the old defaults when no config file is found, so non-config users see no change."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "low",
+  "issue": "1.5.0 I-A11-8 targets 'APPS-017', which is 'UI resource meta field types' (spec error, src/rules/apps.ts:446) and only validates permission keys. Adding a Claude info about unavailable mobile permissions mixes a platform-availability note into a type-validation rule. I-A11-10's 'info heuristic' has no rule id. POL-006 (I-A11-4) and SPEC-025 (I-A11-1) give no source URL, although CONTRIBUTING requires one per rule.",
+  "fix": "Either state 'APPS-017 gains severity key claude:info with the Claude mobile-capabilities source', or allocate APPS-020 for it. Allocate an id for the I-A11-10 heuristic (e.g. POL-007, claude: info) and the MAN id (MAN-032). Put the first `sources` URL for POL-006 (OpenAI app submission guidelines / Anthropic directory policy) and SPEC-025 (MCP schema.ts for 2025-11-25/2026-07-28) in the plan."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "low",
+  "issue": "Several items leave the design decision to the implementing agent. A08-01 says 'reproduce first, then either docker_image or the repo-local npx recipe'. A05-13 says 'decide from the spec text'. I-A08-5 is a spike whose result may be 'ask upstream', which would leave 1.7.0 E5 with nothing to ship. A12-06's 'generate the Action input table' names no generator script or package.json script, and P9 does not own package.json.",
+  "fix": "Make the decision in the plan or as a gated step 0 of the package: the maintainer records the A08-01 and A05-13 choice in the status log before dispatch. Mark I-A08-5 as droppable from 1.7.0 if the spike finds no bundling route. For A12-06, name `scripts/action-inputs.mjs` (new, owned by P9) and run it from docs.test without a package.json script."
+ },
+ {
+  "critic": "critic feasibility",
+  "severity": "low",
+  "issue": "Bookkeeping inconsistencies. The 1.2.0 CHANGELOG headline lists 'Severity raised: INJ-001/003/004/005, INJ-002, APPS-006/007, POL-003', but those are widened detections; APPS-007 only adds an info. The status log row is dated 2026-11-04 while the review folder is 2026-11-05. The 1.1.1 P7 fail-on-incomplete path (buildReport receives failOnIncomplete, src/cli.ts:789) must not mark `summary.failed` for internalErrors, but the plan never says so explicitly.",
+  "fix": "Use 'Detection widened' for 1.2.0 and reserve 'Severity raised' for true severity-map changes. Align the dates. Add to P7's A13-02 item: 'internalErrors set the verdict to INCOMPLETE and score null but are not counted in summary.failed or the --fail-on-incomplete partial flag until 1.4.0'."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "high",
+  "issue": "C-06 (1.1.1, P7) relabels the verdicts as \"NO NEW AUTOMATED BLOCKERS\" in every format. JSON and SARIF verdicts follow a closed enum in schema/report.schema.json ($defs.verdict.verdict: BLOCKED | NEEDS ATTENTION | NO AUTOMATED BLOCKERS | INCOMPLETE). Emitting a new value, or replacing NO AUTOMATED BLOCKERS for baselined runs, is a JSON report value change. It fails schema validation for consumers, and the README stability policy needs a major for a field that changes meaning or type. It cannot ship in a patch.",
+  "fix": "In 1.1.1, limit C-06 to the human formats: the text, markdown and GitHub job-summary labels, plus the score qualifier \"(all findings, N known)\". Keep the JSON and SARIF verdict values unchanged. If a machine-readable flag is wanted, add it as a new field (for example summary.baselined or summary.verdictScope: 'new') in 1.4.0 C2, with the schema updated. Edit the C-06 bullet to say \"text, markdown and job summary\" rather than \"every format\", and change its test to assert that the JSON verdict values are unchanged."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "high",
+  "issue": "A06-01 patch half is not patch-safe as specified. Only \"LST-006..011 findings on those servers\" go to info. But pluginServers() also feeds LST-015 (listing.ts:642: a remote plugin server URL does not match the checked server, a claude warning, needs plugin-dir+http). LST-009's subject is a package config such as .npmrc, not the server: it fires when any merged server uses a launcher (listing.ts:486), so the \"findings on those servers\" wording does not cover it. Example: a URL run with --plugin-dir and --fail-on warning, whose referenced ./config/mcp.json points at another host. It passes on 1.1.0 and fails on 1.1.1 through a new LST-015 warning, or through an LST-009 error on .npmrc.",
+  "fix": "Reword the P6 A06-01 bullet: every finding that appears only because of servers loaded from plugin.mcpFiles is emitted at info in 1.1.1, whatever rule produced it (LST-006..011, LST-009 package-config hits, LST-015). One way: evaluate those rules with and without the mcpFiles servers and downgrade the difference. Add a test where a URL run with --fail-on warning and a referenced file pointing at another host, plus a .npmrc with a registry, still exits 0. Name LST-015 in the 1.3.0 L1 second half as well."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "medium",
+  "issue": "A10-03 (1.1.1, P2) adds a new diagnosis kind 'no-answer'. The kind enum in report.schema.json is closed (dns, refused, timeout, reset, tls, not-mcp, http, other), and P2 does not own the schema; no handoff to P7 is listed. Today a silent server reports kind 'timeout'; under the patch the same server would report a value that the published 1.x schema rejects. A new enum value is new report data, so it belongs in a minor at most. A02-04 in the same package maps to 'timeout', which makes the two inconsistent.",
+  "fix": "In 1.1.1, keep kind 'timeout' for the no-answer case and put the new information (host:port, the wait, which request got no answer) in summary and hint. Schedule the 'no-answer' kind as a sub-item in 1.4.0 C2 (which owns the schema and adds failedBy) and list it under Changed/Added. Alternatively, if it stays in 1.1.1, add a P2→P7 schema handoff, but that would still break the patch rule for consumers that validate."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "medium",
+  "issue": "File-ownership conflicts in 1.1.1 P3. Rule metadata lives in files owned by P4 and other packages: A04-03 assigns a 'handshake' need to SRV-011..015 and SPEC-002/008/016..023, and A10-06 changes SRV-003's needs (server.ts). I-A13-3 replaces URL_ONLY (engine.ts:35: SRV-001/003/004/005/017, AUTH-001) with a 'url' need on rules in server.ts and auth.ts. I-A13-2's self-test will flag under-declared needs in rules owned by P4, P5 and P6. The plan lists no P3→P4/P5/P6 handoff. Its merge order is P3 before P4 only for safeStr.",
+  "fix": "Add handoffs. P3 defines the new need types (handshake, url) and the self-test. P4 applies the needs metadata to SRV-*/SPEC-*/AUTH-* rules (A04-03, A10-06, I-A13-3) and P5/P6 apply it to rules the self-test flags. Merge P3 first and keep the self-test allowlist empty only after P4–P6 merge. Alternatively, move the per-rule needs edits for A04-03, A10-06 and I-A13-3 into P4's bullet list and keep only the engine side in P3."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "medium",
+  "issue": "In 1.4.0, the exit code is computed in src/cli.ts:835 (C4 owns cli.ts), but three items need it outside C4. A13-02's second half (--fail-on-incomplete gating on internalErrors, exit 3) and I-A07-2 (summary.exitCode, failedBy) are assigned to C2. A07-08 (SARIF invocations.exitCode/executionSuccessful) is assigned to C1. The listed handoffs cover only C6/C3→C4 and C1/C2→C5.",
+  "fix": "Add a handoff: C4 computes the final exit code and the failure causes, and passes them to buildReport/SARIF through an options object defined by C2 and consumed by C1. Merge order: C2 (contract) → C1 → C4 (wiring and exit-3 gating) → C5. Alternatively, assign the A13-02 exit-code change to C4 and leave C2 the report fields."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "medium",
+  "issue": "The FP gate runs only on minors. Yet 1.1.1 carries the strongest promise (\"a patch cannot turn a passing CI run red\") and has items that can add findings or change match keys. A05-05 puts unwrapNullable into resolvedNode, which every resolvedNode consumer reads (TOOL-021/023/024/025/026 and others), so new constraint findings can appear. A09-08 bounds the finding `path`, but subjectKey in baseline.ts:88 (and the SARIF partialFingerprints basis) includes `path`. Previously baselined findings with long paths then become \"new\" under --baseline/--diff-only/--fail-on-drift, and code-scanning alerts reopen.",
+  "fix": "Add a patch gate to section 5 and to the 1.1.1 release. Over test/fixtures/real/* and the existing fixtures, the 1.1.1 build must produce no finding at warning or error that 1.1.0 did not produce, and a baseline saved by 1.1.0 must still match every finding. For A09-08, cut only the message in 1.1.1 and leave `path` intact. Bound `path` in a minor, with key compatibility (match on a hash of the full path) or a CHANGELOG note."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "medium",
+  "issue": "A06-01, one of the three highs, is fixed only at info in 1.1.1, and its real fix (rule severity) waits for 1.3.0, behind the unrelated 1.2.0 security-detection release. The second half is a small severity switch, but a broken plugin MCP file still passes for two releases.",
+  "fix": "Move the A06-01 second half into the first minor (1.2.0) as a small package of its own, owning src/rules/listing.ts for that release. Alternatively, swap the order so the listings release (currently 1.3.0) comes before the security-detection release. Update the release map, the 1.3.0 L1 bullet, the CHANGELOG headlines and the 1.1.1 message \"(reported at rule severity from 1.3.0)\" to match."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "A05-13 (disputed) keeps an option to \"keep the error but say nullable union\". The verifier verdict was uncertain, and the finding itself says the MUST is ambiguous, because the spec defines \"Parameter value is null → Client MUST omit the header\". Keeping a spec error on an ambiguous MUST contradicts the severity principle (error only for a documented MUST with deterministic detection).",
+  "fix": "Change the decision rule. If the 2026-07-28 text does not explicitly forbid a nullable primitive, accept the [prim,'null'] type array and the anyOf primitive|null form. Otherwise lower TOOL-021 to warning for the nullable shapes (a patch may lower severities) and fix the wording. Record the decision in the CHANGELOG; never keep the error."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "I-A01-3 (1.1.1) treats $GITHUB_STEP_SUMMARY as an input path, so `--format markdown --output \"$GITHUB_STEP_SUMMARY\"` becomes exit 2. That command is a plausible, currently passing setup (the user writes the summary explicitly), so a patch would turn it red.",
+  "fix": "For $GITHUB_STEP_SUMMARY, do not return a usage error. When --output or --json-output equals it, skip the automatic summary append and print a stderr note. Keep exit 2 only for real inputs (--config, --tool-args, --openai-manifest, plugin files). Add a test that `--output $GITHUB_STEP_SUMMARY` exits 0 and writes the report once."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "A12-09 (1.1.1) rejects reserved options in the Action's extra-args with exit 2. A workflow with upload disabled and `extra-args: --output x.sarif` (or `--format json` for its own use) passes today and would fail after a patch. The finding offers a patch-safe alternative. Related: A08-03's target validation must allow an empty target when the `stdio` input is used (action.yml:130). The bullet says only \"rejects a target that is not http(s)\".",
+  "fix": "In 1.1.1, place the reserved --format/--output/--json-output after extra-args so they win, and print a ::warning naming the sarif-file input. Move the hard rejection to 1.4.0 C5 under \"Changed\". In the A08-03 bullet, add \"an empty target is allowed when stdio is set\" and a test for it."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "A13-02 and A10-02 (1.1.1) introduce new INCOMPLETE verdicts \"without changing the exit code\". The existing --fail-on-incomplete path reads `complete` / `partial` from coverage.toolLevel (cli.ts:793, report/index.ts:50-56). An implementation that marks these runs partial would make --fail-on-incomplete runs exit 3 in a patch, which the plan defers to 1.4.0.",
+  "fix": "State in the P3 and P7 bullets that internalErrors and an unchecked listing platform change only the verdict and score, never coverage.toolLevel, `incompleteFails` or summary.failed in 1.1.1. Add tests: with --fail-on-incomplete, a throwing rule exits 0, and a plugin-only listing run exits 0, with summary.failed false."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "The security-relevant review list in section 5 leaves out 1.1.1 P1 and P6, which carry security fixes. P1: A07-01 and I-A07-1 (workflow-command injection on stderr), A01-06 (secret echoed through a NUL), I-A01-3 (overwrite of input files). P6: A06-08 (credential leak in the --verbose listing dump) and the ReDoS/quadratic DoS items A09-02 (high) and A09-04.",
+  "fix": "Add 1.1.1 P1 and P6, and P5 (which owns A09-01, a high ReDoS), to the bypass-reviewer list."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "The 1.2.0 CHANGELOG headline puts \"Severity raised: INJ-001/003/004/005, INJ-002, APPS-006/007, POL-003\" under a heading that, per CONTRIBUTING and the release notes, means a level change. These items widen detection (new matches at the existing level). The headline also omits SRV-004 (changed by C-04's isNonPublicIPv6) and the DATA/POL rules affected by the A05-01 and A11-01 corpus growth.",
+  "fix": "Rename the line to \"Detection widened (more matches at the existing severity)\" and list INJ-001..005, APPS-006/007, POL-003, SRV-004 and the DATA-*/POL-* corpus consumers. Use \"Severity raised\" only for real level changes (none in 1.2.0)."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "Ownership and handoff gaps in later minors. In 1.5.0, I-A11-7 is split between R1 (the SRV-015 info) and R2 (the taskSupport spec error), but the assignment gives only R2 and the markdown has no handoff. In 1.7.0, E2's custom checks must be registered in the engine and run inside E1's worker thread, but only E2→E3 and E1→E3 are listed. In 1.2.0, A11-01's \"corpus-where opt-out for name-unsuited rules\" edits rule files owned by S2 (injection.ts) and S5 (policy.ts), and data.ts, which no package owns.",
+  "fix": "For I-A11-7, mark the R1 part as \"I-A11-7 (part)\" and add an R1/R2 note. In 1.7.0, add the handoff E2→E1 (the engine and worker accept custom rules) and the merge order E2, E1, E3. In 1.2.0, state that S1 provides the where values and that each rule owner (S2, S5, plus S1 for data.ts) applies the opt-out."
+ },
+ {
+  "critic": "critic coverage/policy",
+  "severity": "low",
+  "issue": "Section 3 says the full id→release/package mapping is \"in the assignment table that goes with this plan\", but the markdown does not contain it. The previous plan put every id inline in its release tables. A reader of REMEDIATION.md cannot check coverage against FINDINGS.md: all 89 finding ids and 92 improvement ids do appear in the assignment exactly once, and the per-release counts (67/33, 7/7, 5/9, 3/13, 4/12, 0/4, 0/7, 0/2) match the release map, but nothing in the document shows it.",
+  "fix": "Append an appendix table to the plan, generated from the assignment list, with columns id, severity or dimension, release, package and duplicate-of. Also list the 3 refuted ids as \"not scheduled\"."
+ }
+]
