@@ -13,6 +13,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
+// runCli loads the transport on its first check (1.1.0 lazy loading): loaded here, under the real platform, as the
+// static import did before, so the emulated win32 run below does not evaluate the SDK's platform constants as win32.
+import '../src/connect.js';
 import { cli, CLI, ROOT } from './cli-runner.js';
 
 vi.mock('node:child_process', async (orig) => {
