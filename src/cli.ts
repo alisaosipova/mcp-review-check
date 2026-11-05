@@ -762,8 +762,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // On a terminal (not in CI, not with --quiet): one status line with the phase while it connects and probes.
     const status = phaseLine(!listingOnly && !values.quiet && phaseLineWanted(stderrTty, env), (x) => { process.stderr.write(x); });
     opts.onStall = (m) => { status.clear(); process.stderr.write(`mcp-review-check: ${m}\n`); };
-    // Read by a connect.ts that reports its phases (its checkpoints); without it the line says "connecting".
-    (opts as BuildOptions & { onPhase?: (phase: string) => void }).onPhase = (p) => status.phase(p);
+    // connect.ts reports each phase it moves on to (its checkpoints).
+    opts.onPhase = (p) => status.phase(p);
     // Rules quote server text in cut snippets ("…") that a whole-value scrub of the report cannot recognise, so
     // buildSnapshot scrubs the strong values from what the server sent (before the input caps) and the rules see none.
     let built0: Awaited<ReturnType<typeof buildSnapshot>> | undefined;

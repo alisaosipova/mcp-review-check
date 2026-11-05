@@ -60,6 +60,9 @@ describe('runCli shows the line on a TTY stderr only', () => {
     expect(r.code, r.stderr).not.toBe(2);
     expect(out[0]).toMatch(/^\r\x1b\[2Kmcp-review-check: connecting… \d+ s$/);
     expect(out.at(-1)).toBe('\r\x1b[2K');
+    // The line follows the run's phases (connect.ts onPhase), not only "connecting" (review Q3-110 phase line).
+    expect(out.some((x) => /mcp-review-check: listing… \d+ s$/.test(x)), out.join('|')).toBe(true);
+    expect(out.some((x) => /mcp-review-check: wire probes… \d+ s$/.test(x))).toBe(true);
     expect(out.join('')).not.toContain(SECRET);
     expect(out.join('')).not.toContain('good-server');
     expect(r.stderr).not.toContain('\x1b[2K'); // the returned stderr (the report's) never carries the line

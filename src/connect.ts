@@ -47,6 +47,8 @@ export interface BuildOptions {
   snapshotBudget?: number;
   /** Called once when tools/list times out after a successful initialize (the CLI can say so on stderr); the text holds no server data. */
   onStall?: (message: string) => void;
+  /** Called with each phase the run moves on to (connect.ts PHASES, then "closing"); the CLI's phase line shows it. */
+  onPhase?: (phase: string) => void;
 }
 
 /** The redactor for these options; before the rules only strong values, `all` adds --env values under a plain name. */
@@ -86,6 +88,8 @@ interface Progress {
   /** Aborted at the deadline or when the byte budget runs out: the tracer then sends no more HTTP requests and cancels
    *  its probes in flight. */
   abort: AbortController;
+  /** BuildOptions.onPhase. */
+  onPhase?: (phase: string) => void;
   /** The run's byte budget (F146), charged by the tracer, the SDK's HTTP responses and the stdio reader. */
   budget?: ByteBudget;
   /** What the run has observed so far that it otherwise stores only at its end (modern results, observed errors).
@@ -101,8 +105,10 @@ const CLOSING = 'closing';
 
 /** Move on to `phase`: the one before it ran to its end (a checkpoint repeated within a phase moves nowhere). */
 function advance(p: Progress, phase: string): void {
-  if (p.phase !== phase) (p.completed ??= []).push(p.phase);
+  if (p.phase === phase) return;
+  (p.completed ??= []).push(p.phase);
   p.phase = phase;
+  try { p.onPhase?.(phase); } catch { /* a status line never fails the run */ }
 }
 
 function checkpoint(p: Progress | undefined, phase: string): void {
@@ -860,7 +866,7 @@ export async function buildSnapshot(opts: BuildOptions, deps: Deps = defaultDeps
     ? emptySnapshot({ kind: 'http', urlAsEntered: t.url, url: new URL(t.url) }, options)
     : emptySnapshot({ kind: 'stdio', command: t.command, args: t.args }, options);
   if (t.kind === 'http') snap.env = { nodeExtraCaCerts: !!process.env.NODE_EXTRA_CA_CERTS };
-  const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController(), budget: createBudget(opts.snapshotBudget ?? SNAPSHOT_BUDGET) };
+  const progress: Progress = { phase: 'connect', children: new Set(), abort: new AbortController(), onPhase: opts.onPhase, budget: createBudget(opts.snapshotBudget ?? SNAPSHOT_BUDGET) };
   const run = t.kind === 'http' ? buildHttp(snap, t.url, opts, deps, progress) : buildStdio(snap, t, opts, deps, progress);
   let result: BuildResult;
   try {
