@@ -4,35 +4,52 @@ import { lstatSync, readlinkSync, realpathSync, statSync, writeFileSync } from '
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { installProxy, ProxyConfigError } from './proxy.js';
-import { buildSnapshot, endAllNow, redactorFor, type BuildOptions, type TargetSpec } from './connect.js';
-import { explainRule, listRulesJson, listRulesText, rulesMarkdown } from './explain.js';
-import { schemeSuggestion } from './diagnose.js';
-import { redactDeep, scrub, type Redactor } from './redact.js';
+// Light modules only (no transport, rules or renderers): --help and --version need nothing more, and the catalog
+// commands (--list-rules, explain) load the rules alone. A check loads the rest in loadCheckModules.
 import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
 import { buildReport, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
-import { renderMarkdown } from './report/markdown.js';
-import { renderSarif, SARIF_LOCATION } from './report/sarif.js';
-import { renderJunit, xmlText } from './report/junit.js';
 import { ConfigError, findConfig, loadConfig, type LoadedConfig } from './config.js';
 import { annotations, appendStepSummary, escapeCommand } from './report/github.js';
 import type { FailOn } from './report/score.js';
-import { localBanner, renderText, type TextOptions } from './report/text.js';
 import { CATALOG_DATE, staleCatalogWarning } from './catalog.js';
-import { manualChecklist, MANUAL_ITEMS, RULES, runRules } from './rules/index.js';
 import { displayUrl, isKnownToken, REDACTED_MARK } from './rules/util/net.js';
-import { isSafeToCall } from './probe/active.js';
-import { dcrClientNotice } from './probe/auth.js';
 import { emptySnapshot, PHASES, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
-import { addBaselineToMarkdown, addBaselineToText, BaselineError, knownFindings, readBaseline, renderJsonWithBaseline, renderSarifWithBaseline, type Baseline } from './baseline.js';
 import { attachListing, listingDump, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { compareTools, driftCount, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
 import { INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
+import type { BuildOptions, TargetSpec } from './connect.js';
+import type { Redactor } from './redact.js';
+import type { TextOptions } from './report/text.js';
+import type { Baseline } from './baseline.js';
 import type { Finding } from './rules/types.js';
+
+/** The modules a check needs besides the light ones: the transport (the MCP SDK, undici), the rules (ajv), the
+ *  renderers and the baseline. Loaded once, on the first check, so --help and --version start without them. */
+async function loadCheckModules() {
+  const [proxy, connect, diagnose, redact, markdown, sarif, junit, text, rules, active, auth, baseline] = await Promise.all([
+    import('./proxy.js'), import('./connect.js'), import('./diagnose.js'), import('./redact.js'), import('./report/markdown.js'),
+    import('./report/sarif.js'), import('./report/junit.js'), import('./report/text.js'), import('./rules/index.js'),
+    import('./probe/active.js'), import('./probe/auth.js'), import('./baseline.js'),
+  ]);
+  return { proxy, connect, diagnose, redact, markdown, sarif, junit, text, rules, active, auth, baseline };
+}
+
+let M: Awaited<ReturnType<typeof loadCheckModules>> | undefined;
+
+/** Set by the entry point: the first check installs the proxy (HTTPS_PROXY, HTTP_PROXY, NO_PROXY, ALL_PROXY) before
+ *  anything connects. --help, --version, --list-rules and explain never get there, so a bad proxy variable does not
+ *  block them and they load no undici. runCli called in-process (tests) leaves the global dispatcher alone. */
+let proxyOnCheck = false;
+
+/** The check modules, loaded on the first call. */
+async function checkModules(): Promise<NonNullable<typeof M>> {
+  M ??= await loadCheckModules();
+  return M;
+}
 
 const HELP = `mcp-review-check ${VERSION} (rules ${CATALOG_DATE})
 Lint an MCP server against the Claude connector directory, ChatGPT plugin directory and MCP spec.
@@ -278,6 +295,10 @@ type RenderOptions = TextOptions & { diffOnly?: boolean };
 /** `known` (with --baseline): the findings of the baseline report, which `r.findings` (the new ones) leaves out;
  *  `opts.drift`: the comparison of the tool definitions with the baseline's. */
 function render(r: Report, format: string, opts: RenderOptions, rerun: string, sarifLocation: string, known?: Finding[]): string {
+  const { addBaselineToText, renderJsonWithBaseline, renderSarifWithBaseline } = M!.baseline;
+  const { renderSarif } = M!.sarif;
+  const { renderJunit } = M!.junit;
+  const { renderText } = M!.text;
   switch (format) {
     case 'json': return known ? renderJsonWithBaseline(r, known, opts.drift) : renderJson(r);
     case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun, drift: opts.drift, failOnDrift: opts.failOnDrift }, known, opts.diffOnly); // --quiet and --checklist are text only
@@ -291,7 +312,9 @@ function render(r: Report, format: string, opts: RenderOptions, rerun: string, s
 }
 
 /** The markdown report (also the job summary), with the known findings of --baseline as one line (not with --diff-only). */
-function markdownReport(r: Report, opts: Parameters<typeof renderMarkdown>[1], known?: Finding[], diffOnly = false): string {
+function markdownReport(r: Report, opts: Parameters<NonNullable<typeof M>['markdown']['renderMarkdown']>[1], known?: Finding[], diffOnly = false): string {
+  const { renderMarkdown } = M!.markdown;
+  const { addBaselineToMarkdown } = M!.baseline;
   if (diffOnly) return renderMarkdown({ ...r, manual: [] }, opts);
   const md = renderMarkdown(r, opts);
   return known ? addBaselineToMarkdown(md, known) : md;
@@ -309,7 +332,7 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
     if (eq) return `${eq[1]}=${masked(eq[1], eq[2])}`;
     if (i > 0 && ['--bearer', '--header', '--env'].includes(argv[i - 1])) return masked(argv[i - 1], a);
     return /^https?:\/\//i.test(a) ? displayUrl(a) : a;
-  }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => scrub(a, redactor));
+  }).filter((a, i) => i >= end || (a !== '--quiet' && a !== '--checklist')).map((a) => M!.redact.scrub(a, redactor));
   // cmd.exe takes no single quotes: on Windows an argument is double-quoted by the Windows argv rule, for cmd.exe.
   const quote = process.platform === 'win32' ? cmdQuote : (a: string) => `'${a.replace(/'/g, "'\\''")}'`;
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : quote(a)))].join(' ');
@@ -326,7 +349,7 @@ function unusedToolArgs(toolArgs: Record<string, unknown>, snap: Snapshot): stri
   const used = new Set(snap.active?.calls.filter((c) => c.kind === 'valid').map((c) => c.tool));
   return Object.keys(toolArgs).filter((name) => !used.has(name)).map((name) => {
     const tool = snap.tools.find((t) => toolName(t) === name);
-    const why = !tool ? 'the server lists no tool by that name' : !isSafeToCall(tool) ? 'the tool is not read-only (readOnlyHint: true), so --active does not call it' : 'the tool was past the cap on --active calls';
+    const why = !tool ? 'the server lists no tool by that name' : !M!.active.isSafeToCall(tool) ? 'the tool is not read-only (readOnlyHint: true), so --active does not call it' : 'the tool was past the cap on --active calls';
     return `warning: --tool-args entry ${JSON.stringify(name)} was not used: ${why}\n`;
   }).join('');
 }
@@ -404,7 +427,7 @@ function incompleteAnnotation(a: string): string {
  *  so a CI test view does not show a green run that exited 3 (A10-01). The counts of each suite and the total follow. */
 function junitIncomplete(xml: string, r: Report): string {
   const cov = r.snap.coverage;
-  const why = xmlText(`partial check: ${cov.toolLevel}${cov.reason ? ` (${cov.reason})` : ''}; --fail-on-incomplete fails the run`);
+  const why = M!.junit.xmlText(`partial check: ${cov.toolLevel}${cov.reason ? ` (${cov.reason})` : ''}; --fail-on-incomplete fails the run`);
   let suites = 0;
   const out = xml.replace(/^( {2}<testsuite name="([^"]*)" tests=")(\d+)(" failures="\d+" errors=")(\d+)(" skipped="\d+">\n {4}<properties>\n(?:.*\n)*? {4}<\/properties>\n)/gm,
     (_m, a: string, name: string, tests: string, b: string, errors: string, c: string) => {
@@ -445,6 +468,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     if (values.help) return { code: 0, stdout: HELP, stderr };
     if (values.version) return { code: 0, stdout: `${VERSION}\n`, stderr };
     if (values['list-rules']) {
+      const { MANUAL_ITEMS, RULES } = await import('./rules/index.js');
+      const { listRulesJson, listRulesText, rulesMarkdown } = await import('./explain.js');
       if (positionals.length > 1) throw new UsageError('--list-rules takes at most one rule ID prefix');
       // Only an ID-like prefix filters; anything else (a URL with a token, a path) lists the whole catalog, as the baseline did, unrepeated.
       const prefix = /^[A-Z]+(-\d*)?$/i.test(positionals[0] ?? '') ? positionals[0].toUpperCase() : '';
@@ -459,11 +484,27 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     if (positionals[0] === 'explain') {
       if (positionals.length !== 2) throw new UsageError('usage: mcp-review-check explain <RULE-ID>');
-      const text = explainRule(positionals[1]);
+      const text = (await import('./explain.js')).explainRule(positionals[1]);
       if (!text) throw new UsageError(`unknown rule ID ${/^[a-z]+-\d+$/i.test(positionals[1]) ? positionals[1] : '(value not shown)'}; --list-rules prints the catalog`);
       return { code: 0, stdout: text, stderr };
     }
 
+    const m = await checkModules();
+    if (proxyOnCheck) {
+      proxyOnCheck = false;
+      try { m.proxy.installProxy(); } catch (e) {
+        if (!(e instanceof m.proxy.ProxyConfigError)) throw e;
+        return { code: 2, stdout: '', stderr: `${stderr}error: ${e.message}\nRun with --help for usage.\n` };
+      }
+    }
+    const { buildSnapshot, redactorFor } = m.connect;
+    const { schemeSuggestion } = m.diagnose;
+    const { redactDeep, scrub } = m.redact;
+    const { SARIF_LOCATION } = m.sarif;
+    const { localBanner } = m.text;
+    const { manualChecklist, MANUAL_ITEMS, RULES, runRules } = m.rules;
+    const { dcrClientNotice } = m.auth;
+    const { BaselineError, knownFindings, readBaseline } = m.baseline;
     // A "--" that splitStdioArgv did not take (--stdio has a value, or no bare --stdio before it) left the command in positionals.
     if ((split.command || split.args.includes('--')) && values.stdio !== undefined) throw new UsageError('give --stdio either "<command>" or -- <command> [args...], not both');
     if (!split.command && split.args.includes('--')) throw new UsageError('"-- <command> [args...]" needs a bare --stdio before the --');
@@ -833,7 +874,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     if (e instanceof ReportTooLargeError) {
       // Not an internal bug: the server was checked but its report does not fit one string. A message with a hint, no stack.
-      const message = redactor ? scrub(e.message, redactor) : e.message;
+      const message = redactor && M ? M.redact.scrub(e.message, redactor) : e.message;
       const ann = env.GITHUB_ACTIONS === 'true' ? `::error title=mcp-review-check::${escapeCommand(message)}\n` : '';
       return { code: 3, stdout: '', stderr: `${stderr}error: ${message}\n${ann}` };
     }
@@ -841,10 +882,11 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
     // An error message can carry server text: control and format characters show as \u{..}, and no line of the stack
     // starts a workflow command (A07-04).
-    const ann = first ? `::error title=mcp-review-check::${escapeCommand(visibleText((redactor ? scrub(first, redactor) : first).split('\n')[0]))}\n` : '';
+    const scrubbed = (x: string) => (redactor && M ? M.redact.scrub(x, redactor) : x);
+    const ann = first ? `::error title=mcp-review-check::${escapeCommand(visibleText(scrubbed(first).split('\n')[0]))}\n` : '';
     const raw = `fatal: ${(e as Error).stack ?? e}`;
-    const fatal = (redactor ? scrub(raw, redactor) : raw).split('\n').map(ciSafeLine).join('\n');
-    return { code: 3, stdout: '', stderr: `${redactor ? scrub(stderr, redactor) : stderr}${fatal}\n${ann}` };
+    const fatal = scrubbed(raw).split('\n').map(ciSafeLine).join('\n');
+    return { code: 3, stdout: '', stderr: `${scrubbed(stderr)}${fatal}\n${ann}` };
   }
 }
 
@@ -860,16 +902,7 @@ const isMain = (() => {
 })();
 
 if (isMain) {
-  try { installProxy(); } catch (e) {
-    if (!(e instanceof ProxyConfigError)) throw e;
-    // --help, --version, --list-rules and explain never touch the network: a bad proxy variable must not block them.
-    const args = process.argv.slice(2);
-    const offline = args.some((a) => ['--help', '-h', '--version', '-v', '--list-rules'].includes(a)) || args[0] === 'explain';
-    if (!offline) {
-      process.stderr.write(`error: ${e.message}\nRun with --help for usage.\n`);
-      process.exit(2);
-    }
-  }
+  proxyOnCheck = true;
   // The stdio servers lead their own process group, so a terminal's Ctrl+C or Ctrl+\ reaches only the CLI: end
   // them, then die by the same signal (130, 131, 143), also when the run finishes first and exits; on Windows, where
   // a process cannot die by a signal, exit 128 + its number. A second signal SIGKILLs every server at once.
@@ -878,7 +911,8 @@ if (isMain) {
   const interrupted = new AbortController();
   for (const [signal, n] of Object.entries(signals)) {
     process.on(signal, () => {
-      void endAllNow(signalled).finally(() => process.exit());
+      // No check modules loaded yet (a signal during --help): no server was started.
+      void (M ? M.connect.endAllNow(signalled) : Promise.resolve()).finally(() => process.exit());
       if (signalled) return;
       signalled = true;
       interrupted.abort(n);
