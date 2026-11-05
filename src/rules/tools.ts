@@ -249,7 +249,17 @@ function isFreeString(node: Obj): boolean {
 
 /** Top-level input properties with each local `$ref` resolved, so an enum kept in `$defs` still counts. */
 function resolvedProperties(schema: unknown): Obj {
-  return Object.fromEntries(Object.entries(properties(schema)).map(([k, v]) => [k, isObj(v) ? resolvedNode(schema, v).node : v]));
+  return Object.fromEntries(Object.entries(properties(schema)).map(([k, v]) => [k, isObj(v) ? resolved(schema, v) : v]));
+}
+
+/**
+ * A property through its local `$ref` chain (resolvedNode). A resolved node drops its `$ref`, so the target's shape is
+ * judged; an unresolved one keeps it, and its unknown shape is no evidence of a free-form string.
+ */
+function resolved(schema: unknown, node: Obj): Obj {
+  const r = resolvedNode(schema, node);
+  if (!r.unresolved) delete r.node.$ref;
+  return r.node;
 }
 
 export const TOOL_023 = defineRule(
@@ -265,7 +275,7 @@ export const TOOL_023 = defineRule(
     let methodPath = '';
     walkSchema(t.inputSchema, (v) => {
       if (methodProp || !v.viaProperty || !/^(method|http_?method|verb|request_?method)$/i.test(v.name)) return;
-      methodProp = resolvedNode(t.inputSchema, v.node).node;
+      methodProp = resolved(t.inputSchema, v.node);
       methodPath = v.path;
     });
     if (methodProp) {
