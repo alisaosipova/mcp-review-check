@@ -101,6 +101,14 @@ export function scanForm(text: string): string {
   return foldInvisible(nfkc(text));
 }
 
+const SCAN_MEMO = new WeakMap<CorpusEntry, string>();
+/** scanForm of a corpus entry, computed once per entry (the regex rules each read every entry). */
+export function scanEntry(e: CorpusEntry): string {
+  let t = SCAN_MEMO.get(e);
+  if (t === undefined) { t = scanForm(e.text); SCAN_MEMO.set(e, t); }
+  return t;
+}
+
 /** scanForm without NFKC: for INJ-002, where NFKC would erase the fullwidth and mathematical letters it looks for. */
 export function foldInvisible(text: string): string {
   return text
@@ -175,8 +183,22 @@ function stringLeaves(value: unknown, path: string, out: Array<[string, string]>
   else if (isObj(value)) for (const [k, x] of Object.entries(value)) stringLeaves(x, `${path}/${k.replace(/~/g, '~0').replace(/\//g, '~1')}`, out, depth + 1);
 }
 
+/**
+ * The corpus is built once per snapshot and shared by the rules that read it (up to 16 per run, which each rebuilt it
+ * before 1.1.0). A captured snapshot is not changed, but a test may replace a list or the instructions between runs, so
+ * the memo is keyed by the snapshot object and checked against the identity and length of what it was built from. The
+ * engine gives each rule of a stopped run its own read-tracking view of the snapshot: a different key, so every such
+ * rule still reads (and is tracked on) the lists itself.
+ */
+const CORPUS_MEMO = new WeakMap<object, { sig: unknown[]; entries: CorpusEntry[] }>();
+const corpusSig = (snap: Snapshot): unknown[] =>
+  [snap.tools, snap.tools.length, snap.prompts, snap.prompts.length, snap.resources, snap.resources.length, snap.resourceTemplates, snap.resourceTemplates.length, snap.instructions];
+
 export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
-  const all = buildCorpus(snap);
+  const sig = corpusSig(snap);
+  let memo = CORPUS_MEMO.get(snap);
+  if (!memo || memo.sig.some((x, i) => x !== sig[i])) { memo = { sig, entries: buildCorpus(snap) }; CORPUS_MEMO.set(snap, memo); }
+  const all = memo.entries;
   const { values = true, samples = false, keys = false } = scope;
   return all.filter((e) => (values || !SCHEMA_VALUE.has(e.where)) && (samples || !SCHEMA_SAMPLE.has(e.where)) && (keys || e.where !== 'param.name'));
 }

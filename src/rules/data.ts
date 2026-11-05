@@ -3,7 +3,7 @@ import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, toolName } from './util/access.js';
 import { deref, resolvedNode, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
-import { corpus, locationOf, scanForm, snippet } from './util/text.js';
+import { corpus, locationOf, scanEntry, snippet } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -43,7 +43,7 @@ function scanNames(snap: Snapshot, rules: NameRule[], extra?: (v: SchemaVisit, r
 function scanText(snap: Snapshot, re: RegExp, label: string, severity?: Severity): RawFinding[] {
   const out: RawFinding[] = [];
   for (const e of corpus(snap)) {
-    const text = scanForm(e.text);
+    const text = scanEntry(e);
     const m = re.exec(text);
     if (m) out.push({ tool: e.tool, path: e.path, severity, message: `${locationOf(e)} ${label}: "${snippet(text, m.index, m[0].length)}"` });
   }

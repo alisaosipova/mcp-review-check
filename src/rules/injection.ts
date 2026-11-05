@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, isStr, toolNames } from './util/access.js';
-import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanForm, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
+import { corpus, foldInvisible, invisibleOutsideCf, locationOf, scanEntry, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -38,7 +38,11 @@ function finding(e: CorpusEntry, text: string, m: RegExpExecArray, extra: Partia
   return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"`, evidence: m[0].slice(0, 120), ...extra };
 }
 
-/** Run patterns over the NFKC-normalized corpus; one finding per entry (the first matching pattern wins, an informational one only when no other matches). */
+/**
+ * Run patterns over the scan form of the corpus; one finding per entry (the first matching pattern wins, an informational
+ * one only when no other matches). Without a filter the winning match depends on the text alone, so a text repeated
+ * across tools (a shared enum value or parameter description) is matched once per rule.
+ */
 export function scanCorpus(
   snap: Snapshot, patterns: Pattern[],
   filter?: (e: CorpusEntry, m: RegExpExecArray, p: Pattern) => boolean,
@@ -46,19 +50,25 @@ export function scanCorpus(
   scope?: CorpusScope,
 ): RawFinding[] {
   const out: RawFinding[] = [];
-  for (const e of corpus(snap, scope)) {
-    const text = scanForm(e.text);
-    let hit: RawFinding | undefined;
+  const seen = new Map<string, { m: RegExpExecArray; p: Pattern } | null>();
+  const pick = (e: CorpusEntry, text: string): { m: RegExpExecArray; p: Pattern } | null => {
+    let hit: { m: RegExpExecArray; p: Pattern } | null = null;
     for (const p of patterns) {
       const m = matchPattern(p, text);
       if (!m || (filter && !filter(e, m, p))) continue;
-      const f = finding(e, text, m, { ...decorate?.(e), ...(p.severity ? { severity: p.severity } : {}) });
-      if (p.note) f.message += ` (${p.note})`;
-      if (p.severity === 'info') { hit ??= f; continue; } // a later pattern may still match harder wording
-      hit = f;
-      break; // one finding per entry
+      if (p.severity === 'info') { hit ??= { m, p }; continue; } // a later pattern may still match harder wording
+      return { m, p }; // one finding per entry
     }
-    if (hit) out.push(hit);
+    return hit;
+  };
+  for (const e of corpus(snap, scope)) {
+    const text = scanEntry(e);
+    let hit = filter ? undefined : seen.get(text);
+    if (hit === undefined) { hit = pick(e, text); if (!filter) seen.set(text, hit); }
+    if (!hit) continue;
+    const f = finding(e, text, hit.m, { ...decorate?.(e), ...(hit.p.severity ? { severity: hit.p.severity } : {}) });
+    if (hit.p.note) f.message += ` (${hit.p.note})`;
+    out.push(f);
   }
   return out;
 }
@@ -76,7 +86,11 @@ function emojiNeighbor(cps: string[], i: number, step: 1 | -1): string {
   return cps[j] ?? '';
 }
 
+/** Printable ASCII and ordinary whitespace: no hidden character and no other script, the common case, skipped fast. */
+const PLAIN_ASCII = /^[\x20-\x7e\t\n\r]*$/;
+
 export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
+  if (PLAIN_ASCII.test(text)) return { hard: [], soft: [] };
   const cps = [...text];
   const hard: string[] = [];
   const soft: string[] = [];
@@ -155,6 +169,7 @@ export const INJ_002 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
+      if (PLAIN_ASCII.test(e.text)) continue;
       // Invisible characters removed first: a zero-width space must not split "Gо\u200Bogle" into two clean words.
       for (const m of foldInvisible(e.text).matchAll(/\p{L}+/gu)) {
         const w = m[0];
@@ -192,7 +207,8 @@ export const INJ_003 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap, { samples: true })) {
-      const text = scanForm(e.text);
+      const text = scanEntry(e);
+      if (!text.includes('<')) continue; // both forms start with '<'
       const comment = htmlComment(text);
       const m = comment ?? PSEUDO_TAG.exec(text);
       if (!m) continue;
@@ -244,7 +260,8 @@ export const INJ_004 = defineRule(
   (snap) => {
     const out: RawFinding[] = [];
     for (const e of corpus(snap)) {
-      const text = scanForm(e.text);
+      const text = scanEntry(e);
+      if (text.length < 24) continue; // shorter than the shortest run (8 escapes of 3 characters, 40 base64 characters)
       let hit: RegExpExecArray | null = null;
       for (const m of text.matchAll(/[A-Za-z0-9+/]{40,}={0,2}/g)) {
         if (encodedPayload(m[0])) { hit = m as RegExpExecArray; break; }
