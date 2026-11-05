@@ -17,7 +17,28 @@ describe('Q3 note 4: the pinning advice mentions the shrinkwrap', () => {
   });
 });
 
-describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () => {
+describe('Q4 lows: CONTRIBUTING release steps and the guard comment', () => {
+  const steps = flat('CONTRIBUTING.md');
+  it('the release steps say to tag the head of a green push to main, enforced by the guard', () => {
+    expect(steps).toMatch(/tag only (a|the) commit that is the head of a green push to `?main`?/i);
+    expect(steps).toMatch(/release guard.{0,80}?fails the release/i);
+  });
+  it('the release steps name the provenance content check', () => {
+    expect(steps).toContain('scripts/verify-provenance.mjs');
+    expect(steps).toMatch(/provenance[^.]*names? this repository, `release\.yml`, the tag(ged)? commit, the run and the tarball/i);
+  });
+  it('the release steps say docker.yml runs after a successful Release run', () => {
+    expect(steps).toMatch(/docker\.yml[^.]*after a successful Release run/i);
+  });
+  it("the guard comment says the tag's own release.yml runs, so the guard stops mistakes, not a hostile tag", () => {
+    const yml = read('.github/workflows/release.yml');
+    const comment = yml.slice(0, yml.indexOf('\n  guard:')).split('\n').filter((l) => /^\s*#/.test(l)).join(' ');
+    expect(comment).not.toMatch(/Nothing is built or published from a commit that skipped review/);
+    expect(comment).toMatch(/release\.yml and scripts\/release-guard\.mjs of the tagged commit/);
+  });
+});
+
+describe('Q3 note 5:the CI pack smoke checks where npm-shrinkwrap.json is', () => {
   const ci = read('.github/workflows/ci.yml');
   const step = ci.slice(ci.indexOf('- name: Pack, install the tarball and run it'));
   const run = step.slice(0, step.indexOf('\n\n'));

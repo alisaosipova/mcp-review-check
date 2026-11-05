@@ -17,7 +17,9 @@ permissions:
 
 jobs:
   # The tag must point at a commit on main that CI passed (a push to main, ci.yml); a CI run still in progress for it
-  # is waited for. Nothing is built or published from a commit that skipped review or failed its tests.
+  # is waited for. This catches a tag on the wrong commit (a branch, an unmerged or a red commit). It is no barrier
+  # against a hostile tag: a tag push runs the release.yml and scripts/release-guard.mjs of the tagged commit, so a
+  # commit that changed them can skip the check; who may push tags and the npm environment guard that.
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 40
