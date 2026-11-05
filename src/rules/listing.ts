@@ -83,6 +83,8 @@ export interface Launcher {
 }
 
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ash', 'ksh']);
+/** Shell options before -c that take a separate value. */
+const SHELL_VALUE_OPTS = new Set(['--rcfile', '--init-file', '-o', '+o', '-O', '+O']);
 /** env options that take a separate value. */
 const ENV_VALUE_FLAGS = new Set(['-u', '--unset', '-C', '--chdir']);
 /** uv run options that take a separate value (the value is not the script), as `uv run --help` lists them. */
@@ -144,9 +146,15 @@ export function unwrapArgv(argv: string[]): string[] {
       continue;
     }
     if (SHELLS.has(b0)) {
-      // sh -c 'cmd', sh -lc 'cmd', bash -l -c 'cmd': the options before the command string are single-dash letters.
+      // sh -c 'cmd', sh -lc 'cmd', bash -l -c 'cmd', bash --login -c 'cmd': letter options, long options
+      // (--rcfile / --init-file and -o / -O / +o / +O with their value) and then -c.
       let i = 1;
-      while (i < a.length && /^-[a-z]+$/i.test(a[i]) && !a[i].includes('c')) i++;
+      while (i < a.length) {
+        const w = a[i];
+        if (SHELL_VALUE_OPTS.has(w)) i += 2;
+        else if (/^--[a-z][\w-]*(=.*)?$/i.test(w) || (/^[-+][a-z]+$/i.test(w) && !w.includes('c'))) i++;
+        else break;
+      }
       if (!/^-[a-z]*c[a-z]*$/i.test(a[i] ?? '')) return a;
       a = words(a[i + 1] ?? '');
       continue;
