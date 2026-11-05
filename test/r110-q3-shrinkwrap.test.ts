@@ -43,6 +43,11 @@ describe('A08-03 npm-shrinkwrap.json from package-lock.json', () => {
     expect(PKG.scripts.postpack).toBe('node scripts/shrinkwrap.mjs --remove');
     expect(existsSync(join(ROOT, 'npm-shrinkwrap.json'))).toBe(false); // never left in the checkout
   });
+
+  it('is ignored in the checkout, so an interrupted pack cannot leave it to be committed (review Q3-110 ignore)', () => {
+    const lines = readFileSync(join(ROOT, '.gitignore'), 'utf8').split(/\r?\n/).map((l) => l.trim());
+    expect(lines).toContain('/npm-shrinkwrap.json');
+  });
 });
 
 // Needs git (the tracked file list), as pack.test.ts does.

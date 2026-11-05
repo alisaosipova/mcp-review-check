@@ -6,3 +6,5 @@ coverage/
 /report.*
 *.tgz
 .captures/
+# Written by prepack, removed by postpack (scripts/shrinkwrap.mjs); never committed: in the checkout it would shadow package-lock.json
+/npm-shrinkwrap.json
