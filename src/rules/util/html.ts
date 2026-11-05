@@ -91,7 +91,7 @@ function scanOrigins(html: string): ExtractedOrigin[] {
   };
 
   // [^<>] keeps the scan linear on unterminated tags ("<img<img<img..."); HTML allows '<' in attribute values, rarely used.
-  const tagRe = /<(script|link|img|source|video|audio|iframe|base)\b[^<>]*>/gi;
+  const tagRe = /<(script|link|img|source|video|audio|iframe|base|embed|object)\b[^<>]*>/gi;
   for (const m of html.matchAll(tagRe)) {
     const tag = m[0];
     const name = m[1].toLowerCase();
@@ -101,7 +101,9 @@ function scanOrigins(html: string): ExtractedOrigin[] {
       if (/\b(stylesheet|preload|icon|modulepreload)\b/.test(rel)) add('resource', attr(tag, 'href'), tag, 'tag');
     } else if (name === 'iframe') add('frame', attr(tag, 'src'), tag, 'tag');
     else if (name === 'base') add('base', attr(tag, 'href'), tag, 'tag');
+    else if (name === 'object') add('resource', attr(tag, 'data'), tag, 'tag'); // <embed src> takes the branch below
     else {
+      if (name === 'video') add('resource', attr(tag, 'poster'), tag, 'tag');
       add('resource', attr(tag, 'src'), tag, 'tag');
       const srcset = attr(tag, 'srcset');
       if (srcset) for (const part of srcset.split(',')) add('resource', part.trim().split(/\s+/)[0], tag, 'tag');
@@ -117,7 +119,11 @@ function scanOrigins(html: string): ExtractedOrigin[] {
     ['connect', new RegExp(`\\bfetch\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`new\\s+WebSocket\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`new\\s+EventSource\\(\\s*${lit}`, 'g')],
-    ['connect', new RegExp(`\\.open\\(\\s*["']GET["']\\s*,\\s*${lit}`, 'gi')],
+    // XMLHttpRequest.open with any method: telemetry posts are the usual way a widget sends data out.
+    ['connect', new RegExp(`\\.open\\(\\s*["'](?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)["']\\s*,\\s*${lit}`, 'gi')],
+    ['connect', new RegExp(`\\bnavigator\\.sendBeacon\\(\\s*${lit}`, 'g')],
+    // A worker script is fetched like a script (worker-src falls back to script-src): a resource origin.
+    ['resource', new RegExp(`\\bnew\\s+(?:Shared)?Worker\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`\\baxios(?:\\.\\w+)?\\(\\s*${lit}`, 'g')],
     ['connect', new RegExp(`\\bky(?:\\.\\w+)?\\(\\s*${lit}`, 'g')],
     ['navigate', new RegExp(`\\bopenExternal\\(\\s*(?:\\{\\s*url\\s*:\\s*)?${lit}`, 'g')],
