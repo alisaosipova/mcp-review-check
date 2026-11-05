@@ -86,6 +86,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 | TOOL-033 | Tool name matches the vendor API pattern | claude: error, chatgpt: error | [link](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools) |
 | TOOL-034 | Tool list budget | claude: info, chatgpt: info | [link](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) |
 | TOOL-035 | Schema lint: dangling required, keyword typos, unknown format | spec: info | [link](https://json-schema.org/draft/2020-12/json-schema-validation) |
+| TOOL-036 | Every $ref resolves inside the schema | spec: warning | [link](https://modelcontextprotocol.io/specification/2026-07-28/basic#ref-resolution) |
 | INJ-001 | Hidden or invisible characters | claude: error, chatgpt: error | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | INJ-002 | Mixed-script words (homoglyphs) | claude: warning, chatgpt: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | INJ-003 | Markup hidden from humans, or pseudo-system tags | claude: warning, chatgpt: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |

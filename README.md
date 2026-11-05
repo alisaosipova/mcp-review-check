@@ -11,7 +11,7 @@ Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account).
 
 <sub>A real run of mcp-review-check 1.0.0 on a small demo server (<a href="docs/launch/demo-server.mjs"><code>docs/launch/demo-server.mjs</code></a>, two typical mistakes), cut after the verdict line. Text version of a longer report: [Example output](#example-output).</sub>
 
-`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->179<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
+`mcp-review-check` connects to your server (remote Streamable HTTP, legacy HTTP+SSE, or local stdio), takes a snapshot of what it exposes (tools, resources, prompts, MCP Apps widgets, OAuth metadata), runs side-effect-free protocol probes, and checks everything against <!-- RULE_COUNT -->180<!-- /RULE_COUNT --> automated rules. Every rule links to its public source. Checks that cannot be automated are listed as a manual checklist (in full in markdown and JSON; one line in text unless you pass `--checklist`).
 
 4 of 7 public MCP servers we captured (2026-10-22) miss a directory requirement on tool titles or annotations, or widget metadata ([method and caveats](https://github.com/alisaosipova/mcp-review-check/blob/main/docs/launch/aggregate-2026-11-03.md)).
 
