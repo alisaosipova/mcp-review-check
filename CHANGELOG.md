@@ -8,6 +8,66 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 Nothing yet.
 
+## [1.1.0] - 2026-11-05
+
+Rule catalog dated 2026-11-02. 180 rules: one is new (TOOL-036) and several report more than before (see **Rules added** and **Severity raised**), so this is a minor release. It ships the minor-level findings of review round 3 ([docs/review/2026-11-04](docs/review/2026-11-04/FINDINGS.md)) and the 1.0.1 deferrals. Ten new command-line switches and one new JSON report field (`authProbe.active.clientId`); no option, config key, exit code, report field or rule id was removed or renamed.
+
+### Rules added
+
+- TOOL-036 "Every $ref resolves inside the schema" (spec: warning) reports, in `inputSchema` and `outputSchema`, a `$ref` or `$dynamicRef` whose `#/...` pointer names no subschema, whose `#name` fragment names no `$anchor`, `$dynamicAnchor` or draft-07 `$id: '#name'`, or that is relative while the schema has no absolute `$id`. Every key under `properties`, `$defs` and the other name maps is walked, also one named `default`, `enum` or `x-...` (A05-05, R110-Q1-01).
+
+### Severity raised
+
+- INJ-001, INJ-003 and INJ-005 also read property titles, `enum`/`const` values, `default` and `examples` values, and INJ-001 property names; INJ-002, INJ-004, INJ-006..010 and DATA-001..003 read titles and `enum`/`const`, POL-003/004 titles only. Paths point at the string, such as `/properties/format/enum/1` (A05-01).
+- INJ-001 reports a run of two or more variation selectors (emoji smuggling) as an error, and a stray variation selector, the Hangul fillers, the Braille blank, CGJ and the Khmer inherent vowels as warnings (A05-02).
+- INJ-002 flags words that mix ASCII letters with fullwidth or mathematical Latin letters, or Latin with Armenian or Cherokee (A05-10).
+- The regex rules (INJ-003..010, DATA-001..003, POL-002..004) match on text with invisible characters folded (format characters including U+FEFF, CGJ, variation selectors; Hangul fillers and the Braille blank read as a space), so they can no longer split a keyword (A05-02, R110-Q1-02).
+- APPS-006 judges a wildcard by its host: `https://*.vercel.app:443` is overly broad (A05-06).
+- APPS-007 sees XHR `.open()` of any method, `navigator.sendBeacon`, `new Worker`/`SharedWorker`, `<video poster>`, `<embed src>` and `<object data>` origins (A05-07, R110-Q1-05).
+- LST-008 and LST-009 recognise `npm exec`, `npm x`, `pnpx`, `bun x` and `uv tool run`, also behind `env [K=V ...]` (and `env -S`), `cmd /c` and `sh -c`/`bash --login -c`. `uv run` counts `--locked`/`--frozen` only among its own options before the script (C-01).
+- LST-009 reads the uv package-index settings of `pyproject.toml`: `[[tool.uv.index]]` and the index keys of `[tool.uv]` and `[tool.uv.pip]`, also as dotted keys, quoted keys and inline tables (C-02).
+- SPEC-013 warns when `ttlMs` is not an integer (the caching page defines it as integer milliseconds; a negative or missing value stays an error) (A04-06).
+- SRV-015 (info) notes the 2026-07-28 `io.modelcontextprotocol/tasks` extension, in every capability object the server announced, `server/discover` included (A04-05).
+
+### Added
+
+- `--no-fail-on-spec`, `--no-fail-on-incomplete`, `--no-fail-on-drift`, `--no-diff-only`, `--no-active`, `--no-active-auth`, `--no-verbose`, `--no-quiet`, `--no-checklist` and `--color` (for `noColor`) turn off on the command line a switch the config file turns on (A01-03).
+- JSON report field `authProbe.active.clientId`: the `client_id` of the DCR client `--active-auth` registered, so you can delete it (`null` if the server returned none; present only when the active auth probes ran; in the schema since 1.1) (A03-03).
+- A status line on a terminal's stderr while the check connects and probes, with the phase (`listing`, `wire probes`, ...) and the elapsed seconds, cleared before the report. Never in CI, without a TTY or with `--quiet`, and it names no server, URL or value.
+- A warning when a switch given on the command line is not used by the chosen `--format`: `--quiet` and `--checklist` (text only), `--diff-only` (text and markdown).
+- INJ, DATA and POL messages whose match needed folded hidden characters end with `(matched with hidden characters folded: \u{...})`, so the evidence still names them (R110-Q1-04).
+
+### Changed
+
+- `--max-duration` also bounds the rules: rules not started by the deadline are skipped (`stopped by --max-duration`), `limits.stopped.phase` is `rules`, `limits.stopped.completed` lists only the phases that ran, the run reads `INCOMPLETE (stopped at --max-duration during rules)` and exits 4, as `--help` documented. The rules get at least 1 s; a running rule finishes first (A09-04).
+- A command-line option overrides the config file's opposite or other-transport key instead of exit 2: `--local` over `noLocal` (and the reverse), a `<url>` ignores the file's `env` and `cwd`, `--stdio` its `header`, `bearer` and `activeAuth`, and `--bearer` replaces the file's `Authorization` header; a note on stderr names what was not used (A01-03).
+- A run stopped by `--max-duration`, the snapshot byte budget or Ctrl+C ends the Streamable HTTP sessions the server issued: one `DELETE` each with the session id, best effort, at most 1.5 s, not recorded in the report (Q4-SESSION).
+- `--fail-on-incomplete` is applied inside report building, so every format shows the failed partial check from one place; the output is the same as in 1.0.1 (A10-01).
+- `--version` and `--help` load no transport, rules or renderers (about 5x faster); `explain` and `--list-rules` load the rules but not the transport, and undici only when a proxy is installed.
+- Rule evaluation builds the text corpus once per run, matches a repeated text once per rule and skips plain-ASCII text in INJ-001/002.
+- TOOL-034's fix no longer suggests one tool with an `action` parameter, which TOOL-024 flags (A05-08).
+- Release pipeline: a release tag must point at a commit on `main` with a green CI run of a push to `main` (Q4-GUARD); the Docker image is built after a successful Release run (`workflow_run`) instead of polling npm (Q4-DOCKER); the CI pack smoke checks that the tarball has `npm-shrinkwrap.json` and the checkout has none.
+
+### Fixed
+
+- After a server stops answering following `initialize`, a timed-out Origin or domain-challenge probe is no longer retried: each costs one short (2 s) wait, not two (A10-02 follow-up).
+- TOOL-023/025/026 follow a chain of local `$ref`s to the enum or type they judge, and a resolved node is judged by its target's shape.
+- LST-014 no longer accepts a font file (`.woff2`, `.ttf`, `.otf`, `.eot`) as the plugin icon (A06-11).
+- A text file whose first 4 KiB mention `<svg` without an SVG root element is no longer taken as an SVG image; the 1.0.x compatibility branch is gone (A06-06).
+
+### Security
+
+- A05-01, A05-02, A05-06 and A05-10 close detection bypasses: payloads in schema values and property names, invisible characters outside `\p{Cf}` (U+FEFF included), lookalike letters, and a port on a broad CSP wildcard.
+- The npm package ships `npm-shrinkwrap.json` with the production tree of `package-lock.json`, so `npx`, a global install, the GitHub Action and the Docker image install the tree CI tested and audited (A08-03).
+- `release.yml` checks that the npm provenance attestation names this repository, `release.yml`, the tag, the tagged commit, the run and the tarball's sha512 (Q4-PROVENANCE), and refuses a tag on a commit that is not on `main` or has no green CI run (Q4-GUARD). The guard catches a tag on the wrong commit; it runs the tagged commit's own workflow, so it is no barrier against a hostile tag.
+
+### Docs
+
+- The listings guide explains the trust model of a config file found in a plugin folder under review (A01-01).
+- README and the CI guide: the package now fixes its dependency tree, but the Action's `version` input still floats over patch releases unless pinned exactly.
+- CONTRIBUTING's release steps: tag the head of a green push to `main`, the provenance content check, and the Docker build after the Release run.
+- The options guide, the privacy guide and SECURITY.md describe `authProbe.active.clientId`, the deadline on the rules and that a timed-out probe is not retried after a stall.
+
 ## [1.0.1] - 2026-11-04
 
 Rule catalog dated 2026-11-02. Fixes the 57 patch-level findings of review round 3 ([docs/review/2026-11-04](docs/review/2026-11-04/FINDINGS.md)). As a patch release it never makes a passing run fail: no rules added, no severity raised, no new JSON report fields. Some findings now come out as skipped or "not checked" warnings, where 1.0.0 silently passed or checked the wrong file.
@@ -513,7 +573,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.6.0...v0.7.0

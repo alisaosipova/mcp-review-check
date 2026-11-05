@@ -65,3 +65,25 @@ describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () 
     expect(absent).toBeGreaterThan(pack);
   });
 });
+
+describe('CHANGELOG: the 1.1.0 section', () => {
+  const log = read('CHANGELOG.md');
+  it('[Unreleased] stays on top with "Nothing yet.", followed by [1.1.0] - 2026-11-05', () => {
+    expect(log).toMatch(/## \[Unreleased\]\n\nNothing yet\.\n\n## \[1\.1\.0\] - 2026-11-05\n/);
+  });
+  it('the section has the rule catalog date, the rule count and the headings in order', () => {
+    const section = log.slice(log.indexOf('## [1.1.0]'), log.indexOf('## [1.0.1]'));
+    expect(section).toMatch(/^## \[1\.1\.0\] - 2026-11-05\n\nRule catalog dated 2026-11-02\. 180 rules/);
+    const order = ['Rules added', 'Severity raised', 'Added', 'Changed', 'Fixed', 'Security', 'Docs'].map((h) => section.indexOf(`\n### ${h}\n`));
+    expect(order.every((i) => i > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    for (const id of ['TOOL-036', 'INJ-001', 'INJ-002', 'APPS-006', 'APPS-007', 'LST-008', 'LST-009', 'authProbe.active.clientId']) expect(section, id).toContain(id);
+  });
+  it('the compare links name v1.1.0', () => {
+    const repo = 'https://github.com/alisaosipova/mcp-review-check/compare';
+    expect(log).toContain(`[Unreleased]: ${repo}/v1.1.0...HEAD\n[1.1.0]: ${repo}/v1.0.1...v1.1.0\n[1.0.1]:`);
+  });
+  it('the package version is left to the release step', () => {
+    expect(JSON.parse(read('package.json')).version).toBe('1.0.1');
+  });
+});
