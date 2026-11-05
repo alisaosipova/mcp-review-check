@@ -16,3 +16,18 @@ describe('Q3 note 4: the pinning advice mentions the shrinkwrap', () => {
     expect(text).toMatch(/npm-shrinkwrap\.json.{0,120}?`version` input.{0,60}?patch/i);
   });
 });
+
+describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () => {
+  const ci = read('.github/workflows/ci.yml');
+  const step = ci.slice(ci.indexOf('- name: Pack, install the tarball and run it'));
+  const run = step.slice(0, step.indexOf('\n\n'));
+  it('the tarball holds package/npm-shrinkwrap.json and the checkout has none after the pack', () => {
+    const pack = run.indexOf('npm pack');
+    expect(pack).toBeGreaterThan(0);
+    // No grep -q: under pipefail, grep leaving early could fail tar with SIGPIPE.
+    const listed = run.search(/tar -tzf "\$RUNNER_TEMP"\/mcp-review-check-\*\.tgz \| grep -x package\/npm-shrinkwrap\.json > \/dev\/null/);
+    const absent = run.search(/test ! -e "?\$GITHUB_WORKSPACE\/npm-shrinkwrap\.json"?/);
+    expect(listed).toBeGreaterThan(pack);
+    expect(absent).toBeGreaterThan(pack);
+  });
+});

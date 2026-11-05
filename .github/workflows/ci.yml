@@ -101,6 +101,10 @@ jobs:
         run: |
           rm -rf dist
           npm pack --pack-destination "$RUNNER_TEMP"
+          # The tarball ships npm-shrinkwrap.json (prepack); postpack removed it from the checkout. No grep -q: under
+          # pipefail, grep leaving early could fail tar with SIGPIPE.
+          tar -tzf "$RUNNER_TEMP"/mcp-review-check-*.tgz | grep -x package/npm-shrinkwrap.json > /dev/null
+          test ! -e "$GITHUB_WORKSPACE/npm-shrinkwrap.json"
           mkdir "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/mcp-review-check-*.tgz
