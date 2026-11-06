@@ -17,7 +17,9 @@ const TRIVIAL = /^(true|false|yes|no|on|off|null|undefined|none|\d{1,6}(\.\d+)?|
  * Common settings an --env value under a plain name often holds (NODE_ENV=production, LOG_LEVEL=debug, APP_VERSION=1.2.3):
  * not masked in the report, as they would blank out the same words in tool names, descriptions and serverInfo.version.
  */
-const PLAIN_SETTING = /^(production|prod|development|dev|staging|stage|test|testing|local|debug|info|warn|warning|error|trace|verbose|silent|fatal|v?\d+(\.\d+){1,3}([-+][\w.]+)?)$/i;
+/** Also the report's own words (A07-04): platforms (CLIENT=claude), formats and transports, which the report prints in
+ *  its header, its docs URLs and its JSON enums. */
+const PLAIN_SETTING = /^(production|prod|development|dev|staging|stage|test|testing|local|debug|info|warn|warning|error|trace|verbose|silent|fatal|claude|chatgpt|openai|anthropic|spec|all|stdio|sse|http|https|streamable-http|json|sarif|junit|markdown|v?\d+(\.\d+){1,3}([-+][\w.]+)?)$/i;
 
 /** A percent-decoded URL part, or the part as written when its escapes are malformed. */
 const decoded = (part: string) => { try { return decodeURIComponent(part); } catch { return part; } };
@@ -179,6 +181,17 @@ const SERVER_KEYED = new Set(['resourceReads']);
 const SERVER_VALUES = new Set(['capabilities', 'initializeRaw', 'discoverRaw', ...SERVER_KEYED]);
 /** The report's own vocabulary (severities, platforms, verdicts, the gate texts) outside server data: renderers compare these values. */
 const OWN_VOCABULARY = new Set(['ruleId', 'severity', 'platforms', 'severityByPlatform', 'verdict', 'failOn', 'toolLevel', 'era', 'kind', 'role', 'gate']);
+/** Catalog text of a finding or a manual item (A07-04): its title and docs URLs are the catalog's, never the server's
+ *  or the run's. Not `fix`: SRV-003 and INJ-006 build theirs from what the server or the connect error said. */
+const CATALOG_FIELDS = new Set(['title', 'docs']);
+/** --target values: kept under the key `target` when the value is one (snap.options.target, JSON `target`); the
+ *  snapshot's `target` object (the URL and the argv) is scrubbed as before. */
+const TARGET_VALUE = /^(claude|chatgpt|all)$/;
+/** A finding (ruleId) or a manual item (id and text) of the report: the objects whose CATALOG_FIELDS are kept. */
+/** The report arrays whose items are findings or manual items; CATALOG_FIELDS are kept only there, by position, not by
+ *  shape (a server object with a string `ruleId` elsewhere, e.g. under transport, is scrubbed in full). */
+const CATALOG_LISTS = new Set(['findings', 'ignored', 'manual']);
+const isCatalogItem = (o: Record<string, unknown>) => typeof o.ruleId === 'string' || (typeof o.id === 'string' && /^MAN-\d{3}$/.test(o.id) && typeof o.text === 'string');
 
 /**
  * A deep copy of `value` with every secret replaced in strings and URL objects; no recursion, so any depth works.
@@ -191,7 +204,8 @@ export function redactDeep<T>(value: T, r: Redactor): T {
   const seen = new Map<object, unknown>();
   const pending: (() => void)[] = [];
   // Copies one level: containers come back empty and are filled from `pending`, so deep data never grows the call stack.
-  const copy = (v: unknown, keys = 0, own = false, srv = false): unknown => {
+  // `cat`: v is an item of a report findings, ignored or manual array (or that array itself).
+  const copy = (v: unknown, keys = 0, own = false, srv = false, cat = false): unknown => {
     if (typeof v === 'string') return own ? v : scrub(v, r);
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return seen.get(v);
@@ -204,16 +218,18 @@ export function redactDeep<T>(value: T, r: Redactor): T {
     if (Array.isArray(v)) {
       const out: unknown[] = [];
       seen.set(v, out);
-      pending.push(() => { for (const x of v) out.push(copy(x, keys, own, srv)); });
+      pending.push(() => { for (const x of v) out.push(copy(x, keys, own, srv, cat)); });
       return out;
     }
     if (!isPlain(v)) return v;
     const out: Record<string, unknown> = {};
     seen.set(v, out);
     pending.push(() => {
+      const catalog = cat && !srv && keys !== 2 && isCatalogItem(v as Record<string, unknown>);
       for (const [k, x] of Object.entries(v)) {
         const s = srv || keys === 2 || SERVER_VALUES.has(k);
-        const key = keys ? scrub(k, r) : k, val = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || OWN_VOCABULARY.has(k)), s);
+        const mine = OWN_VOCABULARY.has(k) || (catalog && CATALOG_FIELDS.has(k)) || (k === 'target' && typeof x === 'string' && TARGET_VALUE.test(x));
+        const key = keys ? scrub(k, r) : k, val = copy(x, keys === 2 || SERVER_DATA.has(k) ? 2 : SERVER_KEYED.has(k) ? 1 : 0, !s && (own || mine), s, !s && Array.isArray(x) && CATALOG_LISTS.has(k));
         // A "__proto__" key the server sent is data: a plain assignment would set the copy's prototype instead.
         if (key === '__proto__') Object.defineProperty(out, key, { value: val, enumerable: true, writable: true, configurable: true });
         else out[key] = val;

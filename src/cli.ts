@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 // Light modules only (no transport, rules or renderers): --help and --version need nothing more, and the catalog
 // commands (--list-rules, explain) load the rules alone. A check loads the rest in loadCheckModules.
 import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
-import { buildReport, neutralizeCommands, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
+import { applyDrift, buildReport, neutralizeCommands, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { ConfigError, findConfig, loadConfig, type LoadedConfig } from './config.js';
@@ -20,7 +20,7 @@ import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { attachListing, listingDump, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
 import { PACKAGE_CONFIG_FILES } from './listing/load.js';
-import { compareTools, driftCount, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
+import { compareTools, driftCount, driftItems, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
 import { decodeText, INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
 import type { BuildOptions, TargetSpec } from './connect.js';
 import type { Redactor } from './redact.js';
@@ -862,7 +862,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     // No manual checklist when nothing connected: the connect failure is the only thing to act on.
     const ignoredIds = new Set(ignore.map((id) => id.toUpperCase())); // --ignore MAN-xxx hides the item
-    const built = buildReport(snap, gated, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec'], !!values['fail-on-incomplete']);
+    const built = buildReport(snap, gated, snap.fatal ? [] : manualChecklist(snap).filter((m) => !ignoredIds.has(m.id)), failOn, started, performance.now() - t0, !!values['fail-on-spec'], !!values['fail-on-incomplete'], { baselined: knownRaw?.length });
     // The one place secrets leave the report: every string of the finished report is scrubbed before any format renders it.
     const report = redactDeep(built, redactor);
     // --fail-on-incomplete: exit 3 on a partial check; buildReport marks the report failed for every format (A10-01).
@@ -873,6 +873,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     pinFingerprints(report.snap, snap);
     const drift: Drift | undefined = baseline && compareTools(baseline.tools, report.snap, baseline.listingOnly);
     const changes = driftCount(drift);
+    // --fail-on-drift fails the report as it fails the exit code below (A01-01): FAIL in every format, same exit code.
+    applyDrift(report, { failOn: !!values['fail-on-drift'], changes, notCompared: drift?.notCompared, tools: drift ? driftItems(drift).map((i) => i.name) : [] });
 
     // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off.
     const tty = env.FORCE_COLOR !== undefined ? /^(|[123]|true)$/.test(env.FORCE_COLOR) : isTty && !env.NO_COLOR;

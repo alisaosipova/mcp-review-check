@@ -3,7 +3,8 @@
 // of that platform: a <failure> when its findings reach --fail-on at the platform's own severity, <skipped> for a rule
 // that did not run, lower findings, known (--baseline) and ignored ones in <system-out>. A failed connect or a
 // --max-duration stop is one <error> test case per suite, as it fails the run whatever the findings; so is a partial
-// check with --fail-on-incomplete (type "incomplete").
+// check with --fail-on-incomplete (type "incomplete"). A --fail-on-drift failure is one <failure type="drift"> test case
+// per suite (A01-01).
 import { baselineLine } from '../baseline.js';
 import { driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
 import { RULES } from '../rules/index.js';
@@ -23,6 +24,9 @@ export function xmlText(s: string): string {
     .replace(NOT_XML, (ch) => `\\u{${ch.codePointAt(0)!.toString(16).toUpperCase()}}`)
     .replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[ch]!);
 }
+
+/** Rules that judge the transport itself (the `transport` need): on a failed connect they report it for spec only. */
+const TRANSPORT_RULES = new Set(RULES.filter((rule) => rule.needs.includes('transport')).map((rule) => rule.id));
 
 const reaches = (s: Severity, failOn: FailOn) => (failOn === 'warning' ? s !== 'info' : failOn === 'error' && s === 'error');
 
@@ -56,6 +60,11 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
     const why = `partial check: ${cov.toolLevel}${cov.reason ? ` (${cov.reason})` : ''}; --fail-on-incomplete fails the run`;
     cases.push(testcase(p, 'mcp-review-check run', [`<error message="${xmlText(why)}" type="incomplete"/>`], { failure: false, skipped: false, error: true }));
   }
+  // --fail-on-drift failed the run (A01-01): a failed test case per suite, listing what changed.
+  if (r.driftFails) {
+    const lines = drift && !driftSummary(drift) ? driftLines(drift) : drift?.notCompared ? [`not compared: ${drift.notCompared}`] : [];
+    cases.push(testcase(p, 'tool definitions since baseline', [`<failure message="${xmlText(r.driftFails.reason)}" type="drift">${lines.map(xmlText).join('\n')}</failure>`], { failure: true, skipped: false, error: false }));
+  }
   // The catalog's rules for this platform, then any other rule ID with findings here (INTERNAL: a rule that threw).
   const ids: Array<[string, string]> = RULES.filter((rule) => p in rule.severity).map((rule) => [rule.id, rule.title]);
   for (const f of [...r.findings, ...known, ...r.ignored]) {
@@ -70,9 +79,9 @@ function suite(r: Report, p: Platform, known: Finding[], drift?: Drift): { xml: 
       ...mine(r.ignored, id).map((f) => `ignored with --ignore: ${line(f, p)}`),
     ];
     const inner: string[] = [];
-    // A failed connect: SRV-003 reports it as a spec error only, so in the directory suites it was not checked rather
-    // than passed (A10-05); the run's <error> case above carries the failure.
-    const reason = skippedBy.get(id) ?? (snap.fatal && id === 'SRV-003' && p !== 'spec' && !found.length ? CONNECT_REASON : undefined);
+    // A failed connect: a rule with the `transport` need (SRV-003) reports it as a spec error only, so in the directory
+    // suites it was not checked rather than passed (A10-05); the run's <error> case above carries the failure.
+    const reason = skippedBy.get(id) ?? (snap.fatal && p !== 'spec' && !found.length && TRANSPORT_RULES.has(id) ? CONNECT_REASON : undefined);
     const skipped = reason !== undefined && !found.length;
     if (skipped) inner.push(`<skipped message="${xmlText(reason)}"/>`);
     if (failing.length) {

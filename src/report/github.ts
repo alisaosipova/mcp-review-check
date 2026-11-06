@@ -25,7 +25,8 @@ const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
  * directories, plus spec with --fail-on-spec), as for the exit code; info and ungated findings get none.
  * Exit 3 (no connect) or 4 (a --max-duration stop) comes first as one `::error` with its cause; a partial check that
  * still finished (no or a rejected token, tools/list failed) as one `::warning`, so a green job whose tool checks
- * were skipped is visible, or as one `::error` when --fail-on-incomplete failed the run on it.
+ * were skipped is visible, or as one `::error` when --fail-on-incomplete failed the run on it. A --fail-on-drift
+ * failure is one `::error` naming the changed tools (A01-01).
  */
 export function annotations(r: Report): string[] {
   const stop = r.snap.limits?.stopped;
@@ -42,6 +43,12 @@ export function annotations(r: Report): string[] {
     const advice = r.incompleteFails ? '--fail-on-incomplete fails the run.' : '--fail-on-incomplete fails the run on a partial check.';
     const why = `Partial check: ${level} (${cause}); tool-level checks were skipped${skipped}, so the result covers only what ran. ${advice}`;
     out.push(`::${r.incompleteFails ? 'error' : 'warning'} title=mcp-review-check::${escapeCommand(shown(why))}`);
+  }
+  // --fail-on-drift failed the run (A01-01): one ::error naming the changed tools (the redacted report's names).
+  if (r.driftFails && !outcome) {
+    const t = r.driftFails.tools;
+    const names = t.length ? `: ${t.slice(0, 10).map((n) => n || '(empty name)').join(', ')}${t.length > 10 ? `, +${t.length - 10} more` : ''}` : '';
+    out.push(`::error title=mcp-review-check::${escapeCommand(shown(`${r.driftFails.reason.charAt(0).toUpperCase()}${r.driftFails.reason.slice(1)}${names}`))}`);
   }
   for (const f of r.findings) {
     const sev = r.summary.gate.platforms.filter((p) => f.platforms.includes(p)).map((p) => platformSeverity(f, p))

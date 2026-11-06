@@ -168,7 +168,8 @@
             "warnings": { "type": "integer", "minimum": 0 }
           }
         },
-        "baselined": { "type": "integer", "minimum": 0, "description": "Since 0.3, with --baseline: the findings known from the baseline." }
+        "baselined": { "type": "integer", "minimum": 0, "description": "Since 0.3, with --baseline: the findings known from the baseline." },
+        "internalErrors": { "type": "integer", "minimum": 1, "description": "Since 1.2: how many rules threw (each an INTERNAL finding and a skipped rule); absent when none. The verdicts are then those of a partial check and score is null; coverage.toolLevel, failed and the exit code do not change." }
       }
     },
     "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
@@ -258,7 +259,7 @@
       "additionalProperties": false,
       "required": ["ruleId", "severity", "platforms", "title", "message", "fix", "docs"],
       "properties": {
-        "ruleId": { "type": "string", "pattern": "^[A-Z]+-\\d{3}$" },
+        "ruleId": { "type": "string", "pattern": "^([A-Z]+-\\d{3}|INTERNAL)$", "description": "A catalog rule ID, or INTERNAL (since 1.2 in this pattern) for a rule of mcp-review-check that threw." },
         "severity": { "$ref": "#/$defs/severity" },
         "platforms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/platform" } },
         "severityByPlatform": {

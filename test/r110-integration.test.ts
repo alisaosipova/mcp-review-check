@@ -12,8 +12,9 @@ const flat = (p: string) => read(p).replace(/\s+/g, ' ');
 describe('Q3 note 4: the pinning advice mentions the shrinkwrap', () => {
   it.each(['README.md', 'docs/guide/ci.md'])('%s says the package fixes its tree but the version input still floats', (file) => {
     const text = flat(file);
-    expect(text).toMatch(/pin a full (release )?tag.{0,30}? or a commit SHA\. .{0,40}?npm-shrinkwrap\.json/i);
-    expect(text).toMatch(/npm-shrinkwrap\.json.{0,120}?`version` input.{0,60}?patch/i);
+    // 1.2.0 (A08-05) rewrote the pin advice around "there is no moving v1 ref": the shrinkwrap now follows one sentence later.
+    expect(text).toMatch(/pin a full (release )?tag.{0,30}? or a commit SHA[.;:] .{0,200}?npm-shrinkwrap\.json/i);
+    expect(text).toMatch(/npm-shrinkwrap\.json.{0,200}?`version` input.{0,60}?patch/i);
   });
 });
 
@@ -53,7 +54,8 @@ describe('Q5 notes and lows: docs of authProbe.active.clientId and of the stall 
 
 describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () => {
   const ci = read('.github/workflows/ci.yml');
-  const step = ci.slice(ci.indexOf('- name: Pack, install the tarball and run it'));
+  // Renamed in 1.2.0 (A08-02): "Pack, install the shipped tree from the tarball and run it".
+  const step = ci.slice(ci.indexOf('- name: Pack, install the shipped tree from the tarball and run it'));
   const run = step.slice(0, step.indexOf('\n\n'));
   it('the tarball holds package/npm-shrinkwrap.json and the checkout has none after the pack', () => {
     const pack = run.indexOf('npm pack');

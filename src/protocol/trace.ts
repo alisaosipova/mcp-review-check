@@ -19,10 +19,14 @@ export interface Redactor {
   values: Set<string>; // literal secret values to scrub from bodies and URLs
 }
 
+/** A secret as util.inspect quotes it, e.g. in a Node spawn error ("Received '--api-key=S3cr\\x00et'"): C0 controls
+ *  and DEL as \\xHH (the A01-06 safety net; a config NUL is a usage error since 1.2). */
+const inspectForm = (v: string) => v.replace(/[\x00-\x1f\x7f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+
 export function createRedactor(secretHeaders: string[] = [], secretValues: string[] = []): Redactor {
-  // Each secret also in its JSON-escaped and percent-encoded forms; longest first so a secret that contains
-  // another one is replaced whole.
-  const forms = secretValues.filter((v) => v.length >= 4).flatMap((v) => [v, JSON.stringify(v).slice(1, -1), encodeURIComponent(v)]);
+  // Each secret also in its JSON-escaped, percent-encoded and inspect-quoted forms; longest first so a secret that
+  // contains another one is replaced whole. patternOf matches every other escape of each one as well.
+  const forms = secretValues.filter((v) => v.length >= 4).flatMap((v) => [v, JSON.stringify(v).slice(1, -1), encodeURIComponent(v), inspectForm(v)]);
   return {
     headerNames: new Set(['authorization', 'cookie', 'proxy-authorization', ...secretHeaders.map((h) => h.toLowerCase())]),
     values: new Set([...new Set(forms)].sort((a, b) => b.length - a.length)),
@@ -32,17 +36,58 @@ export function createRedactor(secretHeaders: string[] = [], secretValues: strin
 /** Values shorter than this are masked only as whole tokens: "test" stays in "attestation", "latest" and "run_tests". */
 const SHORT_SECRET = 8;
 const escapeRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const patterns = new WeakMap<Redactor, { size: number; re: RegExp }>();
+const patterns = new WeakMap<Redactor, { size: number; re: RegExp; longest: number }>();
+
+/** "[aA]" for a letter, the digit itself otherwise: hex in either case. */
+const anyCase = (h: string) => (/[a-f]/i.test(h) ? `[${h.toLowerCase()}${h.toUpperCase()}]` : h);
+const hexRe = (n: number, width: number) => [...n.toString(16).padStart(width, '0')].map(anyCase).join('');
+/** JSON's short escapes (and `\/`, which JSON allows and some servers write). Not `\\` for a backslash: with the
+ *  literal backslash as another alternative a run of backslashes backtracks exponentially; the JSON-escaped form of
+ *  the whole secret is a value of its own (createRedactor). */
+const JSON_SHORT: Record<string, string> = { '"': '\\"', '/': '\\/', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+/**
+ * The pattern of one character of a secret and the longest text it matches (A07-06, I-A07-7). A letter or a digit is
+ * itself; any other character is itself, its UTF-8 percent-encoding with hex in either case (Python's quote keeps "/"
+ * raw, others write %2f), its JSON \uXXXX escape (a surrogate pair outside the BMP) or short escape, a space also "+"
+ * (form encoding), and a control character also util.inspect's \xHH.
+ */
+function charPattern(ch: string): [string, number] {
+  if (/^[A-Za-z0-9]$/.test(ch)) return [ch, 1];
+  const cp = ch.codePointAt(0)!;
+  const pct = [...Buffer.from(ch, 'utf8')].map((b) => `%${hexRe(b, 2)}`).join('');
+  const units = [...Array(ch.length).keys()].map((i) => ch.charCodeAt(i));
+  const alts = [escapeRe(ch), pct, units.map((u) => `\\\\u${hexRe(u, 4)}`).join('')];
+  let longest = Math.max(3 * Buffer.byteLength(ch, 'utf8'), 6 * units.length);
+  if (JSON_SHORT[ch]) alts.push(escapeRe(JSON_SHORT[ch]));
+  if (ch === ' ') alts.push('\\+');
+  if (ch === "'") alts.push("\\\\'");
+  if (cp < 0x20 || cp === 0x7f) { alts.push(`\\\\x${hexRe(cp, 2)}`); longest = Math.max(longest, 4); }
+  return [`(?:${alts.join('|')})`, longest];
+}
+
+/** One alternation for a secret: each character as charPattern, so mixed escapes ("SYNTH/key%2BB", lowercase hex,
+ *  "a\/b") match too; a secret of SHORT_SECRET or more characters in either letter case. */
+function secretPattern(v: string): [string, number] {
+  let re = '';
+  let longest = 0;
+  const fold = v.length >= SHORT_SECRET;
+  for (const ch of v) {
+    const [p, n] = charPattern(ch);
+    re += fold && /^[A-Za-z]$/.test(ch) && ch.toLowerCase() !== ch.toUpperCase() ? `[${ch.toLowerCase()}${ch.toUpperCase()}]` : p;
+    longest += n;
+  }
+  return [v.length < SHORT_SECRET ? `(?<![\\w-])${re}(?![\\w-])` : re, longest];
+}
 
 /** One pattern for all values, longest first; a short value must not touch a letter, digit, "_" or "-" on either side. */
-function patternOf(r: Redactor): RegExp {
+function patternOf(r: Redactor): { re: RegExp; longest: number } {
   const cached = patterns.get(r);
-  if (cached && cached.size === r.values.size) return cached.re;
-  const alts = [...r.values].sort((a, b) => b.length - a.length)
-    .map((v) => (v.length < SHORT_SECRET ? `(?<![\\w-])${escapeRe(v)}(?![\\w-])` : escapeRe(v)));
-  const re = new RegExp(alts.join('|'), 'g');
-  patterns.set(r, { size: r.values.size, re });
-  return re;
+  if (cached && cached.size === r.values.size) return cached;
+  const parts = [...r.values].sort((a, b) => b.length - a.length).map(secretPattern);
+  const entry = { size: r.values.size, re: new RegExp([...new Set(parts.map(([p]) => p))].join('|'), 'g'), longest: Math.max(0, ...parts.map(([, n]) => n)) };
+  patterns.set(r, entry);
+  return entry;
 }
 
 /**
@@ -51,7 +96,7 @@ function patternOf(r: Redactor): RegExp {
  */
 export function scrub(text: string, r: Redactor): string {
   if (!r.values.size || !text) return text;
-  return text.replace(patternOf(r), REDACTED);
+  return text.replace(patternOf(r).re, REDACTED);
 }
 
 /**
@@ -143,13 +188,15 @@ export interface BodyRead {
  * Read a response body up to `cap` bytes or `timeoutMs`. For an SSE response to a JSON-RPC request
  * (`rpcId` set), stop as soon as the matching response event arrives: some servers keep the stream open.
  * `drainTo`: past `cap`, keep reading (without keeping the bytes) up to this many, to see when the response ends.
+ * Exported for tests.
  */
-async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap, budget?: ByteBudget): Promise<BodyRead> {
+export async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?: unknown, drainTo = cap, budget?: ByteBudget): Promise<BodyRead> {
   const out: BodyRead = { text: '', truncated: false, timedOut: false, stoppedAtResponse: false, done: false, bytes: 0, budgetExhausted: false };
   if (!res.body) { out.done = true; return out; }
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let kept = 0; // the bytes in `chunks`
   const watch = rpcId !== undefined && /text\/event-stream/i.test(res.headers.get('content-type') ?? '') ? sseResponseWatcher(rpcId) : undefined;
   const decoder = new TextDecoder();
   let handle: NodeJS.Timeout | undefined;
@@ -163,12 +210,13 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
         // The kept bytes count against the run's budget (F146): the chunk that crosses it is cut there, and the read ends.
         const left = budgetLeft(budget);
         if (!charge(budget, r.value.byteLength)) {
-          if (left > 0) chunks.push(r.value.subarray(0, left));
+          if (left > 0) { chunks.push(r.value.subarray(0, left)); kept += Math.min(left, r.value.byteLength); }
           size += r.value.byteLength;
           out.budgetExhausted = true;
           break;
         }
         chunks.push(r.value);
+        kept += r.value.byteLength;
       }
       size += r.value.byteLength;
       if (watch?.(decoder.decode(r.value, { stream: true }))) { out.stoppedAtResponse = true; break; }
@@ -179,7 +227,8 @@ async function readBody(res: Response, timeoutMs: number, cap = READ_CAP, rpcId?
   clearTimeout(handle);
   reader.cancel().catch(() => {});
   out.bytes = size;
-  out.text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
+  // One copy: Buffer.concat takes the Uint8Array chunks as they are (I-A09-6).
+  out.text = Buffer.concat(chunks, kept).toString('utf8');
   return out;
 }
 
@@ -242,12 +291,13 @@ function parseBody(text: string, contentType: string | undefined, requestJson: u
 /**
  * The first SNIPPET characters of a body with its secrets masked, scrubbing only a prefix of the body (up to 64 MiB).
  * Masked before the cut, so no secret prefix is left: a secret cut at the end of the scrubbed prefix stays in its last
- * 3 × longest + 13 characters (a 4-character value grows into the 10-character marker), so that much is kept past the
- * snippet, and the prefix doubles while secrets longer than the marker shrink it below that.
+ * 3 × longest + 13 characters (a 4-character value grows into the 10-character marker; `longest` is the longest text
+ * a secret's pattern matches, every character escaped), so that much is kept past the snippet, and the prefix doubles
+ * while secrets longer than the marker shrink it below that.
  */
 export function snippetOf(text: string, r: Redactor): string {
   if (!r.values.size) return text.slice(0, SNIPPET);
-  const margin = 3 * Math.max(...[...r.values].map((v) => v.length)) + REDACTED.length + 3;
+  const margin = 3 * patternOf(r).longest + REDACTED.length + 3;
   for (let len = SNIPPET + margin; ; len *= 2) {
     if (len >= text.length) return scrub(text, r).slice(0, SNIPPET);
     const s = scrub(text.slice(0, len), r);
@@ -297,7 +347,8 @@ export function summarizeJsonRpc(json: unknown, keepResult = false): JsonRpcSumm
 /** SHA-256 of the kept body text; over the masked text when a known secret value occurs in it, so the digest of a
  *  body that is little more than the secret cannot confirm a guess. */
 function bodyDigest(text: string, r: Redactor): string {
-  const masked = [...r.values].some((v) => text.includes(v)) ? scrub(text, r) : text;
+  // Any form of a secret the scrub would mask (percent-, JSON- or inspect-escaped too, A07-06), not only the literal.
+  const masked = r.values.size ? scrub(text, r) : text;
   return createHash('sha256').update(masked, 'utf8').digest('hex');
 }
 

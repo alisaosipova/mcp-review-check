@@ -9,7 +9,7 @@ import { DEPLOY } from '../rules/server.js';
 import { annotations, isNonEmptyStr, toolName } from '../rules/util/access.js';
 import { tokenize, toolKind } from '../rules/util/text.js';
 import { driftCount, driftHeading, driftLines, driftSummary, type Drift } from './drift.js';
-import { authSummary, counts, eraLine, neutralizeCommands, platformLabel, resultLine, scoreLabel, serverName, skippedSummary, targetLabel, visibleText, type Report } from './index.js';
+import { authSummary, counts, countsText, eraLine, neutralizeCommands, platformLabel, resultLine, scoreText, serverName, skippedSummary, targetLabel, verdictText, visibleText, type Report } from './index.js';
 
 export interface TextOptions {
   color: boolean;
@@ -25,6 +25,8 @@ const ANSI = { red: '\x1b[31m', yellow: '\x1b[33m', cyan: '\x1b[36m', bold: '\x1
 const MARK: Record<Severity, string> = { error: 'x', warning: '!', info: 'i' };
 const COLOR: Record<Severity, keyof typeof ANSI> = { error: 'red', warning: 'yellow', info: 'cyan' };
 const HEAD: Record<Severity, string> = { error: 'ERRORS', warning: 'WARNINGS', info: 'INFO' };
+/** FIX SNIPPETS lines shown without --verbose (A10-05). */
+export const FIX_SNIPPETS = 10;
 
 interface Group { first: Finding; items: Finding[] }
 
@@ -107,7 +109,8 @@ export function renderText(r: Report, opts: TextOptions): string {
   const snap = r.snap;
   const out: string[] = [];
   out.push(c('bold', `${r.tool.name} ${r.tool.version} · rules ${r.tool.catalogDate} · target: ${snap.options.target}`));
-  out.push(t(`Server  ${serverName(snap)} · ${targetLabel(snap)}`));
+  // A listing-only run names the plugin from its manifest (I-A10-5): "Plugin acme-notes · listing-only (no server checked)".
+  out.push(t(`${snap.target.kind === 'listing' ? '' : 'Server  '}${serverName(snap)} · ${targetLabel(snap)}`));
   if (snap.target.kind !== 'listing') out.push(t(`Transport ${snap.transport.kind} · era ${eraLine(snap)} · auth ${authSummary(snap)}`));
   const rev = r.findings.find((f) => f.ruleId === 'SRV-020')?.message.replace(/^era: [^.]*\.? */, '');
   if (rev) out.push(c('dim', `          ${rev}`));
@@ -148,8 +151,11 @@ export function renderText(r: Report, opts: TextOptions): string {
   const findingsEnd = out.length;
   const snippets = fixSnippets(r);
   if (snippets.length) {
+    // At most FIX_SNIPPETS lines unless --verbose, so a server with hundreds of tools keeps its findings on screen (A10-05).
+    const shown = opts.verbose ? snippets : snippets.slice(0, FIX_SNIPPETS);
     out.push('', c('bold', 'FIX SNIPPETS (add to each tool definition; check the guessed hint values)'));
-    for (const x of snippets) out.push(t(`  ${x}`));
+    for (const x of shown) out.push(t(`  ${x}`));
+    if (shown.length < snippets.length) out.push(c('dim', `  … +${snippets.length - shown.length} more (--verbose for all)`));
   }
   if (r.ignored.length) out.push('', c('dim', `Ignored ${r.ignored.length} finding(s) via --ignore.`));
 
@@ -164,14 +170,13 @@ export function renderText(r: Report, opts: TextOptions): string {
   }
 
   if (opts.quiet) out.length = findingsEnd; // no fix snippets, ignored count, checklist or skipped rules
-  const s = r.summary;
   const rc = r.rootCauses;
   const causes = rc.errors + rc.warnings;
-  // --quiet hides the info findings, so it does not count them either.
-  out.push(...(out.length ? [''] : []), t(`Score ${scoreLabel(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${s.errors} errors · ${s.warnings} warnings${opts.quiet ? '' : ` · ${s.info} info`}`));
-  const v = (name: string, x?: { verdict: string; errors: number; warnings: number }) =>
-    x ? `${name}: ${x.verdict}${x.errors ? ` (${x.errors} error${x.errors === 1 ? '' : 's'})` : x.warnings ? ` (${x.warnings} warning${x.warnings === 1 ? '' : 's'})` : ''}` : undefined;
-  const verdicts = [v('Claude', s.verdicts.claude), v('ChatGPT', s.verdicts.chatgpt)].filter(Boolean);
+  // --quiet hides the info findings, so it does not count them either. With --baseline the score is over every finding
+  // and the counts over the new ones, which the line says (C-06), also under --diff-only.
+  out.push(...(out.length ? [''] : []), t(`Score ${scoreText(r)} · ${causes} root cause${causes === 1 ? '' : 's'} · ${countsText(r, !opts.quiet)}`));
+  const v = (name: string, p: 'claude' | 'chatgpt') => { const x = verdictText(r, p); return x ? `${name}: ${x}` : undefined; };
+  const verdicts = [v('Claude', 'claude'), v('ChatGPT', 'chatgpt')].filter(Boolean);
   // The cause of a failed connect in the result line is the server's text: made visible first, then FAIL is coloured.
   const result = t(resultLine(r, (x) => x, opts.quiet)).replace(/^(FAIL|INCOMPLETE)\b/, (x) => c('red', x));
   out.push([...verdicts, `Result: ${result}`].join(' · '));

@@ -200,10 +200,12 @@ describe('--baseline end to end: the Changed tool definitions section', () => {
     expect(junit.stdout).toContain(`Changed tool definitions (3 since baseline)\n  + new_${R}: added\n  - old_tool: removed\n  ~ lookup_${R}: changed: description</system-out>`);
 
     expect(failing.code, failing.stderr).toBe(1);
-    expect(failing.stderr).toMatch(/ · 3 tool changes \(--fail-on-drift\) · PASS \(--fail-on never\)/);
+    // Since 1.2 (A01-01) the report says FAIL as the exit code does; before it read PASS (--fail-on never).
+    expect(failing.stderr).toMatch(/ · 3 tool changes \(--fail-on-drift\) · FAIL \(--fail-on-drift\) · tool definitions changed since baseline/);
     expect(readFileSync(at('r.txt'), 'utf8')).toContain('CHANGED TOOL DEFINITIONS (3 since baseline) · fails the run (--fail-on-drift)');
     expect(never.code).toBe(1); // --fail-on never does not turn --fail-on-drift off
-    expect(JSON.parse(never.stdout).summary.failed).toBe(false); // the verdicts and the gate stay about findings
+    // The verdicts stay about findings, but summary.failed and gate.reason follow the exit code (A01-01, 1.2).
+    expect(JSON.parse(never.stdout).summary).toMatchObject({ failed: true, gate: { reason: 'tool definitions changed since baseline (--fail-on-drift)' } });
 
     for (const r of [text, md, json, sarif, junit, failing, never]) expect(r.stdout + r.stderr).not.toContain(SECRET);
     expect(readFileSync(at('r.txt'), 'utf8') + readFileSync(base, 'utf8')).not.toContain(SECRET);

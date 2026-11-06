@@ -8,6 +8,7 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ### Added
 
+- JSON `summary.internalErrors` (since 1.2): how many rules threw; absent when none (A13-02).
 - JSON `coverage.diagnosis.kind` can be `no-answer`: the server accepted the connection but answered neither the unauthenticated `initialize` nor the handshake; the summary names host:port and the wait (A10-03).
 - `proxyRouteLine` (`src/proxy.ts`) builds the `--verbose` route line, `proxy: <proxy> via <variable> (SOCKS5 | CONNECT tunnel | plain forwarding; NO_PROXY: ...)`, with credentials removed (I-A02-3).
 - The `not used from <file>` note names the config file's `url` or `stdio` key when the command line gives the server (I-A01-2).
@@ -19,6 +20,19 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ### Fixed
 
+- A `--fail-on-drift` failure (exit 1) no longer reads PASS: the Result line says `FAIL (--fail-on-drift)`, JSON `summary.failed` is true with `gate.reason` `tool definitions changed since baseline (--fail-on-drift)` or `tool definitions not compared (--fail-on-drift)`, JUnit has a failed `tool definitions since baseline` test case per suite and GitHub an `::error` naming the changed tools. The exit code is unchanged (A01-01).
+- In a listing-only run a platform whose input was not given is `INCOMPLETE (not checked: no --openai-manifest)` (or `no --plugin-dir`) instead of NO AUTOMATED BLOCKERS; the exit code and `summary.failed` are unchanged (A10-02).
+- JSON and SARIF write DEL, C1 controls (U+009B CSI, U+0085), format characters (bidi overrides) and U+2028/U+2029 from server text as `\uXXXX`, the same value to a parser (A07-03).
+- SARIF `message.text` escapes `\`, `[` and `]`, also in BASE-001 drift results, so server text cannot become an embedded link (SARIF 2.1.0 3.11.6) (A07-07).
+- A plain-name `--env` value such as `claude`, `chatgpt`, `stdio` or `json` is no longer masked: it broke the JSON `target` enum and the docs URLs (`https://«redacted».com/...`); a finding's catalog title and docs and the `--target` value are never masked (A07-04).
+- A secret echoed with escapes is masked: lowercase or partial percent-encoding (Python `quote`), JSON `\uXXXX` and `\/`, `+` for a space, Node's `\x00`; one pattern per secret (A07-06, I-A07-7, A01-06 safety net).
+- The JSON Schema accepts the `INTERNAL` rule ID of a rule that threw (A07-05).
+- A baseline entry whose whole tool digest differs while every field digest matches (an edited baseline) is no longer a change with an empty `fields` list, which failed the schema's `minItems`; it is unchanged.
+- With `--baseline`, text and markdown label the score `(all findings, N known)`, the counts `new` and a clean verdict `NO NEW AUTOMATED BLOCKERS`, also under `--diff-only`; the JSON and SARIF verdict values are unchanged (C-06).
+- Text shows at most 10 FIX SNIPPETS lines and `+N more (--verbose for all)`; markdown groups repeated findings as text does (400 tools: 590 KB to under 50 KB) (A10-05).
+- Text and markdown counts are pluralised (`1 error`), markdown verdict rows carry the platform's counts (`BLOCKED (1 error)`), and a listing-only header names the plugin (`Plugin acme-notes`) (I-A07-4, I-A07-5, I-A10-5).
+- A response body is joined with one copy instead of two (I-A09-6).
+- JUnit skips any rule with the `transport` need after a failed connect in the directory suites, not SRV-003 by ID.
 - Session-ending DELETEs are no longer awaited one by one: each gets at most 1.5 s and they settle together at the end of the run, so a stateful server that never answers DELETE no longer adds 35 to 50 s to a run (A02-05).
 - A stopped run's session DELETE follows a same-origin 307/308 (`/mcp` → `/mcp/`, at most two hops, never to a URL that adds userinfo), so the session behind the redirect is ended (A02-01).
 - SOCKS5 proxy failures are diagnosed as the proxy's: rejected or missing credentials, and the proxy's refused, unreachable or not-allowed replies; proxy messages name the proxy kind and the variable that set it, and mention `CONNECT` only where the request is tunnelled (A02-02, I-A02-4).
@@ -38,7 +52,7 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - `"--stdio node server.js"` passed as one argument says how to split it instead of "unknown option --stdio; did you mean --stdio?" (C-05).
 - Tool fingerprints canonicalize each tool once and each snapshot is fingerprinted once per run, with the same digests (I-A09-5).
 - A tool whose `name` is an object such as `{"toString":"x"}` no longer stops the run with `fatal:` and exit 3 and no report: tool names are turned into text by a total `safeStr()` (A13-01).
-- A rule that throws is skipped with `internal error: <message>` and no longer counted as run; the engine reports how many rules threw (`internalErrors`; the report does not read it yet). The INTERNAL finding stays at info and the exit code is unchanged (A13-02).
+- A rule that throws is skipped with `internal error: <message>` and no longer counted as run; the report is then partial: the verdicts are those of a partial check (INCOMPLETE without errors), the score is null (`n/a (internal error: N rules threw)`) and JSON has `summary.internalErrors`. The INTERNAL finding stays at info; `coverage.toolLevel`, `summary.failed`, `--fail-on-incomplete` and the exit code are unchanged (A13-02).
 - In an auth-required or token-rejected run SRV-011..015, SPEC-002, SPEC-008, SPEC-016..018, SPEC-020, SPEC-021, SPEC-023 and POL-005 are skipped with the auth reason when they find nothing, instead of counting as passed in JUnit, SARIF and `rulesRun`: they declare the new soft `handshake` need, so a finding made without a handshake (SPEC-016 on a 401's JSON-RPC error, SPEC-021 on an SSE-only server) is kept (A04-03, A13-03).
 - On a connect failure, AUTH and era-dependent rules are skipped as `could not connect` (or the auth reason), not `server did not request auth` or `era unknown`; AUTH rules still run when the auth probe did (a 403 challenge without a handshake) (A04-06).
 - SRV-003 is skipped with `stdio target` for a stdio server that started, instead of a passed "Streamable HTTP transport available" test (A10-06).

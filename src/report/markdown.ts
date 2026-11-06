@@ -5,9 +5,9 @@ import { limitsNotice } from '../limits.js';
 import { subjectOf } from '../rules/engine.js';
 import { RULES } from '../rules/index.js';
 import { AUTH_CONTACT } from '../rules/auth.js';
-import { localBanner, visibleFindings } from './text.js';
+import { groupFindings, localBanner, visibleFindings } from './text.js';
 import { driftHeading, driftItems, driftSummary, driftWhat, type Drift } from './drift.js';
-import { authSummary, counts, eraLine, platformLabel, resultLine, scoreLabel, serverName, targetLabel, visibleText, type Report } from './index.js';
+import { authSummary, counts, countsText, eraLine, platformLabel, resultLine, scoreText, serverName, targetLabel, verdictText, visibleText, type Report } from './index.js';
 
 const EOL = /\r\n?|\n/g; // a lone CR ends a line too (CommonMark)
 /** One line, with every other control or format character (ESC, bidi overrides, zero-width) shown as \u{..}. */
@@ -53,10 +53,14 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
   if (rev) out.push(`| Revision | ${text(rev)} |`);
   out.push(`| Checked | ${snap.target.kind === 'listing' ? 'listing-only: no server' : counts(snap)} · ${r.rulesRun} rules run · ${r.skipped.length} skipped |`);
   const rc = r.rootCauses;
-  out.push(`| Score | ${scoreLabel(r)} · ${rc.errors + rc.warnings} root cause${rc.errors + rc.warnings === 1 ? '' : 's'} |`);
-  out.push(`| Findings | ${s.errors} errors · ${s.warnings} warnings · ${s.info} info |`);
-  if (s.verdicts.claude) out.push(`| Claude | ${s.verdicts.claude.verdict} |`);
-  if (s.verdicts.chatgpt) out.push(`| ChatGPT | ${s.verdicts.chatgpt.verdict} |`);
+  // With --baseline the score is over every finding, the counts and verdicts over the new ones (C-06); the verdict rows
+  // carry the platform's counts as the text report does (I-A07-5).
+  out.push(`| Score | ${scoreText(r)} · ${rc.errors + rc.warnings} root cause${rc.errors + rc.warnings === 1 ? '' : 's'} |`);
+  out.push(`| Findings | ${countsText(r)} |`);
+  for (const [name, p] of [['Claude', 'claude'], ['ChatGPT', 'chatgpt']] as const) {
+    const v = verdictText(r, p);
+    if (v) out.push(`| ${name} | ${v} |`);
+  }
   out.push(`| Result | ${cell(resultLine(r))} |`, '');
   if (opts.rerun) out.push(code(`rerun: ${opts.rerun}`, false), '');
 
@@ -64,8 +68,11 @@ export function renderMarkdown(r: Report, opts: { cta?: string; verbose?: boolea
     const list = visibleFindings(r.findings, opts).filter((f) => f.severity === sev);
     if (!list.length) continue;
     out.push(`## ${HEAD[sev]} (${list.length})`, '', '| Rule | Platforms | Subject | Message | Fix | Docs | Evidence |', '|---|---|---|---|---|---|---|');
-    for (const f of list) {
-      const subject = `${subjectOf(f)}${f.path ? ` (${f.path})` : ''}`;
+    // Repeated findings of one rule and message are one row, as in the text report; --verbose lists each (A10-05).
+    for (const g of groupFindings(list, !!opts.verbose)) {
+      const f = g.first;
+      const subjects = g.items.map((x) => `${subjectOf(x)}${x.path ? ` (${x.path})` : ''}`);
+      const subject = subjects.length > 1 ? `${subjects.length} ${g.items.every((x) => x.tool !== undefined) ? 'tools' : 'items'}: ${subjects.slice(0, 3).join(', ')}${subjects.length > 3 ? `, +${subjects.length - 3} more` : ''}` : subjects[0];
       out.push(`| ${f.ruleId} | ${platformLabel(f)} | ${text(subject)} | ${text(f.message)} | ${cell(f.fix)} | ${cell(f.docs[0])} | ${code(f.evidence)} |`);
     }
     out.push('');

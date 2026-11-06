@@ -181,9 +181,9 @@ export interface EngineResult {
   /** Set when `deadline` passed during the rules (A09-04): the first rule not run and how many were not run. */
   stopped?: { atRule: string; rulesNotRun: number };
   /** How many rules threw (A13-02), whatever --target: each is skipped with "internal error: <message>", not counted
-   *  as run, and leaves an INTERNAL info finding. Set only when not 0. Not read by the report yet: P7 (1.2.0) makes a
-   *  report with it partial (INCOMPLETE verdicts, score null) without changing coverage.toolLevel, summary.failed or
-   *  the exit code. */
+   *  as run, and leaves an INTERNAL info finding. Set only when not 0. buildReport makes a report with it partial (the
+   *  verdicts of a partial check, score null, JSON summary.internalErrors) without changing coverage.toolLevel,
+   *  summary.failed or the exit code (spec §5.2). */
   internalErrors?: number;
 }
 

@@ -8,7 +8,7 @@ import { sortFindings } from './rules/engine.js';
 import type { Finding } from './rules/types.js';
 import { REDACTED_MARK } from './rules/util/net.js';
 import { JSON_SCHEMA_VERSION, toJson } from './report/json.js';
-import { artifactUri, SARIF_LOCATION, toSarif } from './report/sarif.js';
+import { artifactUri, SARIF_LOCATION, sarifText, toSarif } from './report/sarif.js';
 import { stringifyReport, type Report } from './report/index.js';
 import { DRIFT_RULE, driftItems, driftJson, driftWhat, TOOL_FIELDS, type Drift, type ToolFingerprint } from './report/drift.js';
 
@@ -298,7 +298,7 @@ export function renderSarifWithBaseline(report: Report, known: Finding[], locati
         ruleId: DRIFT_RULE.id,
         partialFingerprints: { 'mcpReviewCheck/v1': createHash('sha256').update(n ? `${key}|${n}` : key).digest('hex') },
         level: 'note',
-        message: { text: `${i.name || '(empty name)'}: tool definition ${driftWhat(i)} since baseline` },
+        message: { text: sarifText(`${i.name || '(empty name)'}: tool definition ${driftWhat(i)} since baseline`) },
         locations: [{ physicalLocation: { artifactLocation: { uri } }, logicalLocations: [{ name: i.name, kind: 'function' }] }],
         baselineState: 'new',
         properties: { change: i.kind, ...(i.fields ? { fields: i.fields } : {}) },

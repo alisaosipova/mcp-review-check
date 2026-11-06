@@ -167,8 +167,12 @@ export function compareTools(baseline: ToolFingerprint[] | null | undefined, sna
     const other = alt?.[i];
     if (!old) changes.added.push(t.name);
     else if (old.sha256 !== t.sha256 && old.sha256 !== other?.sha256) {
-      const fields = changedFields(old, t).filter((f) => !other || old.fields[f] !== other.fields[f]);
-      changes.changed.push({ name: t.name, fields: fields.length ? fields : changedFields(old, t) });
+      const all = changedFields(old, t);
+      const fields = all.filter((f) => !other || old.fields[f] !== other.fields[f]);
+      // Every field digest equal but the whole digest not: the baseline entry is inconsistent (edited by hand), not
+      // the tool. The fields are what changes are reported by, so it is unchanged (a change needs at least one field,
+      // as the schema requires).
+      if (all.length) changes.changed.push({ name: t.name, fields: fields.length ? fields : all });
     }
   });
   for (const q of before.values()) for (let k = q.next; k < q.list.length; k++) changes.removed.push(q.list[k].name);

@@ -21,6 +21,14 @@ export function fingerprint(f: Finding, n = 0): string {
   return createHash('sha256').update([f.ruleId, f.tool ?? f.resource ?? '', f.path ?? '', ...(n ? [n] : [])].join('|')).digest('hex');
 }
 
+/**
+ * SARIF plain-text message (SARIF 2.1.0 s3.11.6): `[text](uri)` is an embedded link, so `\`, `[` and `]` are escaped
+ * with a backslash and server text (a tool name, a quoted description) cannot become a link in a viewer (A07-07).
+ */
+export function sarifText(s: string): string {
+  return s.replace(/[\\[\]]/g, '\\$&');
+}
+
 const LEVEL: Record<Severity, string> = { error: 'error', warning: 'warning', info: 'note' };
 
 export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, unknown> {
@@ -60,7 +68,7 @@ export function toSarif(r: Report, location = SARIF_LOCATION): Record<string, un
           ruleId: f.ruleId,
           partialFingerprints: { 'mcpReviewCheck/v1': prints[i] },
           level: LEVEL[f.severity],
-          message: { text: `${f.tool !== undefined || f.resource !== undefined ? `${subjectOf(f)}: ` : ''}${f.message}` },
+          message: { text: sarifText(`${f.tool !== undefined || f.resource !== undefined ? `${subjectOf(f)}: ` : ''}${f.message}`) },
           locations: [
             {
               physicalLocation: { artifactLocation: { uri } },
