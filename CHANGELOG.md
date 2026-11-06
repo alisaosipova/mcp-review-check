@@ -6,6 +6,17 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.3.0] - 2026-11-06
+
+Rule catalog dated 2026-11-02, 180 rules, no rule id added. With this release, all 89 confirmed findings of review round 4 are closed. The 19 findings fixed here needed wider detection or raised severities, which the 1.x policy allows only in a minor release:
+- **Content:** injection checks read schema nodes and server, resource and prompt metadata, and see control characters, determiner phrasings and chat-template markers.
+- **Listings:** listing checks that 1.2.0 reported at info now report at their rule severity.
+- **ChatGPT:** an SSE-only server is now an error for ChatGPT.
+- **SARIF:** reports a failed run and uses one category per server.
+- **Action:** the `platform` and `fail-on` inputs defer to the project's config file; see the upgrade note under Changed.
+
 ### Severity raised
 
 - `--plugin-dir`: findings on servers from the MCP files `plugin.json` names in `mcpServers` (LST-006, 007, 008, 009, 011 and LST-015) are reported at the rule's own severity instead of info, and the "(reported at rule severity from 1.3.0)" suffix is gone. A path that is not `./`, leaves the plugin folder or does not exist is an LST-006 error; a file behind a linked folder or over the read cap stays a warning (A06-01, second half).
@@ -726,7 +737,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.0...v1.0.1

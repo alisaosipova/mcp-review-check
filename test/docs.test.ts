@@ -156,6 +156,6 @@ describe('docs match action.yml and the CLI (review round 4, P9)', () => {
     const pc = section('pre-commit', GUIDE.ci)!;
     expect(pc).not.toMatch(/by packing the cloned repository/);
     expect(pc).toMatch(/npx --yes mcp-review-check@<MAJOR\.MINOR>/);
-    expect(pc).toMatch(/rev: v1\.2\.0/);
+    expect(pc).toContain(`rev: v${(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version}`);
   });
 });

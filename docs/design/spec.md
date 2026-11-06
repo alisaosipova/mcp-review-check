@@ -1633,7 +1633,7 @@ The original Node 18 plan:
 
 ### 5.1 Text (default)
 ```
-mcp-review-check 1.2.0 · rules 2026-11-02 · target: all
+mcp-review-check 1.3.0 · rules 2026-11-02 · target: all
 Server  Acme Docs 1.4.2 · https://mcp.acme.com/mcp
 Transport streamable-http · era legacy (2025-11-25) · auth OAuth (CIMD, S256)
 Checked 12 tools · 3 resources · 1 prompt · 2 UI resources · 104 rules run · 18 skipped (need --active)
