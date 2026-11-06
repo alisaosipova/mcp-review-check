@@ -84,11 +84,11 @@ export function stdioStartFix(snap: Snapshot): string {
 
 export const SRV_003 = defineRule(
   {
-    id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: ['transport'],
-    severityNote: 'spec=error when no transport works (connect failure, exit 3); the directory verdicts then read INCOMPLETE.',
-    rationale: 'SSE has been deprecated since 2025-03-26; both directories expect Streamable HTTP. When no transport works at all (the server could not be reached, did not start or did not complete a handshake), this rule reports that as a spec error, because nothing else could be checked.',
+    id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'error', spec: 'warning' }, needs: ['transport'],
+    severityNote: 'spec=error when no transport works (connect failure, exit 3); the directory verdicts then read INCOMPLETE. chatgpt=error for an SSE-only server: OpenAI lists Streamable HTTP among what the production endpoint must support; Claude\'s policy says should (warning).',
+    rationale: 'SSE has been deprecated since 2025-03-26. OpenAI requires the production endpoint to support Streamable HTTP; Claude\'s directory policy says servers should. When no transport works at all (the server could not be reached, did not start or did not complete a handshake), this rule reports that as a spec error, because nothing else could be checked.',
     fix: 'Serve Streamable HTTP at the registered URL.',
-    sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy', STREAMABLE_HTTP],
+    sources: ['https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy', OAI_MCP, STREAMABLE_HTTP],
   },
   (snap) => {
     if (snap.fatal && snap.target.kind === 'stdio') {
@@ -174,7 +174,8 @@ export const SRV_005 = defineRule(
   },
 );
 
-const REDIRECTS = new Set([301, 302, 307, 308]);
+// 303 too (A04-07): a POST that gets it is retried as a GET, so the MCP handshake cannot follow it at all.
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
 export const SRV_006 = defineRule(
   {
@@ -195,9 +196,10 @@ export const SRV_006 = defineRule(
       let target: URL;
       try { target = new URL(loc, url); } catch { continue; }
       const cross = target.host !== url.host;
+      const toGet = ex.status === 303 && ex.method !== 'GET' ? `; a 303 turns the ${ex.method} into a GET, so the MCP handshake cannot follow it` : '';
       const msg = cross
-        ? `${ex.method} redirects (${ex.status}) to another host: ${target.href}`
-        : `${ex.method} redirects (${ex.status}) to ${target.href}; register the final URL`;
+        ? `${ex.method} redirects (${ex.status}) to another host: ${target.href}${toGet}`
+        : `${ex.method} redirects (${ex.status}) to ${target.href}; register the final URL${toGet}`;
       if (seen.has(msg)) continue;
       seen.add(msg);
       // Claude's handshake is the POST: a cross-host redirect there loses Authorization. A GET-only one (the root
@@ -220,6 +222,8 @@ export const SRV_007 = defineRule(
     return hit ? [{ message: `${hit.label} got 403 "Invalid Host"`, evidence: hit.bodySnippet?.slice(0, 120) }] : [];
   },
 );
+
+const ORIGIN_OTHER_4XX = (status: number): boolean => status >= 400 && status < 500 && ![401, 403, 407, 429].includes(status);
 
 function is2xx(e: HttpExchange | undefined): boolean {
   return !!e?.status && e.status >= 200 && e.status < 300;
@@ -247,6 +251,11 @@ export const SRV_008 = defineRule(
     if (is2xx(evil)) {
       if (snap.localMode) out.push({ platforms: ['spec'], severity: 'error', message: 'local server (loopback, private address or dotless name) accepts a foreign Origin (DNS rebinding risk)' });
       else out.push({ platforms: ['spec'], severity: 'info', message: 'server accepts any Origin (acceptable for a public server)' });
+    } else if (evil?.status && ORIGIN_OTHER_4XX(evil.status) && is2xx(base) && snap.transport.kind !== 'sse') {
+      // The 2025-11-25 and 2026-07-28 transports say an invalid Origin MUST get 403 Forbidden (C-03). A warning, not an
+      // error: the status may come from another check that ran first. 401 (auth before the Origin check) and 429 (rate
+      // limit) say nothing about the Origin. The 2024-11-05 HTTP+SSE page names no status.
+      out.push({ platforms: ['spec'], severity: 'warning', message: `foreign Origin rejected with ${evil.status}; the spec requires 403 Forbidden` });
     }
     return sseDocs(snap, [SHTTP_2026], out);
   },

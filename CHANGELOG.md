@@ -13,6 +13,7 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - LST-027: an SVG icon without a numeric `viewBox` or numeric `width` and `height` is an error ("SVG must define a numeric viewBox or numeric width and height"), was info; an SVG whose start tag is not closed in the first 256 KiB, or whose width and height use a non-px unit without a viewBox, is a warning, was info (A06-03).
 - LST-028: screenshots in a package without an MCP server (skills-only) are an error, and so are screenshots when the checked server reports no UI output template (A06-09).
 - LST-002: a plugin name with `claude`, `anthropic` or `anthropics` as a whole word after the start (`mcp-for-claude`) is a warning, as the plugins reference says (A06-10, name part).
+- SRV-003: an SSE-only server (Streamable HTTP POST rejected, HTTP+SSE works) is a ChatGPT error, was warning: OpenAI's "Build an MCP server" page says the production endpoint must support the Streamable HTTP transport. Claude stays warning (its policy says should); the rule now cites the OpenAI page (A11-02, spec §2.1 SRV-003 amendment).
 
 ### Added
 
@@ -35,6 +36,10 @@ Review round 4, block 1.3.0-B1 ([findings](docs/review/2026-11-05/FINDINGS.md); 
 - INJ-001 (error): ESC and the C1 controls (U+0080-009F), which start terminal escape sequences that hide text in terminal hosts; at warning, the other C0 controls except tab, LF and CR, DEL, and a CR not followed by LF (A05-02).
 - INJ-003 (warning): chat-template role markers (`<|im_start|>`, `<|eot_id|>`, `[INST]`, `<<SYS>>`), a fake `Human:`/`Assistant:`/`System:` turn after a blank line, and spaced pseudo-tags (`< system >`); a marker named as a token is info (A05-10).
 - INJ-005 (error): "Ignore the previous instructions", "Ignore your instructions", "ignore all of your prior directions" and similar; at warning, "Ignore everything above" ending a clause (A05-04).
+- SRV-006: a 303 redirect counts like 301/302/307/308; on the POST the message adds that a 303 turns it into a GET, so the handshake cannot follow it. A cross-host 303 is an error instead of a bare "could not connect" skip (A04-07).
+- SRV-008: a foreign Origin rejected with a 4xx other than 403 (401, 407 and 429 excepted) while the request without Origin succeeds is a spec warning "the spec requires 403 Forbidden"; not on HTTP+SSE (C-03).
+- SPEC-016: JSON-RPC responses whose id answers no pending request (never sent or answered before) are one warning with the count and the first five ids; a flood of them is counted, not stored (C-02).
+- SRV-004, APPS-006 and the AUTH local-URL checks: IPv6 forms that carry a private IPv4 address (IPv4-compatible `::127.0.0.1`, IPv4-translated, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`) and the ranges 100::/64, fec0::/10, Teredo 2001::/32 and 192.88.99.0/24 count as non-public; `::127.0.0.1` counts as loopback (C-04).
 - All regex rules (INJ-003..010, DATA, POL): a double space, tab or line break between words no longer defeats a phrase; the scan form collapses each whitespace run to one space and reads NEL as a space (A05-03).
 
 ## [1.2.0] - 2026-11-06

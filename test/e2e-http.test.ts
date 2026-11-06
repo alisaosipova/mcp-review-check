@@ -93,12 +93,12 @@ describe('e2e http', () => {
     expect(f.every((x: any) => x.severity === 'info' && /not verified/.test(x.message))).toBe(true);
   });
 
-  it('legacy HTTP+SSE only → SSE fallback and SRV-003 warning', async () => {
+  it('legacy HTTP+SSE only → SSE fallback and SRV-003 (chatgpt error from 1.3.0, A11-02)', async () => {
     const s = await good({ sseOnly: true });
     const r = await cli([s.url, '--format', 'json']);
     expect(r.json.server.transport).toBe('sse');
     expect(r.json.server.era).toBe('sse-legacy');
-    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003')?.severity).toBe('warning');
+    expect(r.json.findings.find((f: any) => f.ruleId === 'SRV-003')?.severityByPlatform).toEqual({ claude: 'warning', chatgpt: 'error', spec: 'warning' });
     expect(r.json.server.serverInfo.name).toBe('acme-notes');
   });
 

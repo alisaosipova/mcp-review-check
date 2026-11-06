@@ -5,6 +5,9 @@ import type { ObservedError } from '../snapshot.js';
 import { isObj } from '../rules/util/access.js';
 
 export const TRANSPORT_ERRORS_KEPT = 20;
+/** Unsolicited responses (an id that answers no pending request): ids kept in the summary, and error entries kept
+ *  for the SPEC-016 code checks. The count is exact; a flood adds nothing else (C-02). */
+export const UNSOLICITED_IDS_KEPT = 5;
 
 export class RecordingTransport implements Transport {
   onclose?: () => void;
@@ -64,9 +67,27 @@ export class RecordingTransport implements Transport {
     if (/ReadBuffer exceeded/.test(message)) this.overflow ??= message;
   }
 
+  /** The summary entry in `errors` for responses that answered no pending request; created on the first one. */
+  private unsolicited?: { count: number; ids: unknown[] };
+
   private record(message: JSONRPCMessage): void {
     const m = message as unknown as Record<string, unknown>;
     if (m.method !== undefined) return; // server request or notification
+    // A response whose id no request of ours is waiting for: never sent, or answered before (C-02). An error with id
+    // null or no id is not counted: JSON-RPC and the transport page allow it when the request id is unknown (C-01).
+    if (!this.pending.has(m.id) && m.id !== null && m.id !== undefined) {
+      if (!this.unsolicited) {
+        this.unsolicited = { count: 0, ids: [] };
+        this.errors.push({ source: 'unsolicited responses', unsolicited: this.unsolicited });
+      }
+      const u = this.unsolicited;
+      u.count++;
+      if (u.ids.length < UNSOLICITED_IDS_KEPT) {
+        u.ids.push(typeof m.id === 'string' ? m.id.slice(0, 64) : m.id);
+        if (isObj(m.error)) this.errors.push({ source: 'unsolicited response', responseId: m.id, code: m.error.code, message: m.error.message });
+      }
+      return;
+    }
     const method = this.pending.get(m.id);
     const sent = this.sentAt.get(m.id);
     this.pending.delete(m.id);

@@ -11,7 +11,7 @@ const cases: Record<string, Case> = {
   'SRV-002': { pos: snap(), neg: snap({ url: URL_OK }), severity: 'info' },
   'SRV-003': {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.kind = 'sse'; } }),
-    neg: snap({ url: URL_OK }), severity: 'warning', match: /legacy HTTP\+SSE/,
+    neg: snap({ url: URL_OK }), severity: 'error', match: /legacy HTTP\+SSE/, // chatgpt=error from 1.3.0 (A11-02)
   },
   'SRV-004': {
     pos: snap({ url: URL_OK, set: (s) => { s.transport.dns = dns(['10.0.0.5']); } }),

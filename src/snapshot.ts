@@ -112,6 +112,9 @@ export interface ObservedError {
   result?: boolean;
   /** The request's JSON-RPC method (set on `result` entries). */
   method?: string;
+  /** One summary entry for the responses (result or error) whose id answered no pending request: how many, and the
+   *  first UNSOLICITED_IDS_KEPT ids (SPEC-016, 1.3.0 C-02). */
+  unsolicited?: { count: number; ids: unknown[] };
 }
 
 export interface DnsResult {

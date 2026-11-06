@@ -10,6 +10,7 @@ const V4_RANGES: Array<[string, number]> = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
   ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
   ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+  ['192.88.99.0', 24], // deprecated 6to4 relay anycast (RFC 7526)
 ];
 
 export function isNonPublicIPv4(ip: string): boolean {
@@ -37,22 +38,42 @@ function v6Groups(ip: string): number[] | undefined {
   return tail === undefined ? a : [...a, ...new Array(8 - a.length - b.length).fill(0), ...b];
 }
 
+const v4Of = (hi: number, lo: number): string => [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff].join('.');
+
 /** The IPv4 address inside an IPv4-mapped IPv6 address (::ffff:a.b.c.d, also written ::ffff:7f00:1). */
 function mappedV4(g: number[]): string | undefined {
   if (!g.slice(0, 5).every((x) => x === 0) || g[5] !== 0xffff) return undefined;
-  return [g[6] >> 8, g[6] & 0xff, g[7] >> 8, g[7] & 0xff].join('.');
+  return v4Of(g[6], g[7]);
+}
+
+/**
+ * The IPv4 address an IPv6 form carries in a fixed position (1.3.0, C-04): IPv4-mapped ::ffff:0:0/96,
+ * IPv4-compatible ::/96 (deprecated, RFC 4291; :: and ::1 excluded), IPv4-translated ::ffff:0:0:0/96 (RFC 2765),
+ * NAT64 64:ff9b::/96 (RFC 6052) and 6to4 2002::/16 (bits 16-47, RFC 3056).
+ */
+function embeddedV4(g: number[]): string | undefined {
+  const mapped = mappedV4(g);
+  if (mapped) return mapped;
+  if (g.slice(0, 6).every((x) => x === 0) && !(g[6] === 0 && g[7] <= 1)) return v4Of(g[6], g[7]);
+  if (g.slice(0, 4).every((x) => x === 0) && g[4] === 0xffff && g[5] === 0) return v4Of(g[6], g[7]);
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return v4Of(g[6], g[7]);
+  if (g[0] === 0x2002) return v4Of(g[1], g[2]);
+  return undefined;
 }
 
 export function isNonPublicIPv6(ip: string): boolean {
   const g = v6Groups(ip);
   if (!g) return false;
-  const mapped = mappedV4(g);
-  if (mapped) return isNonPublicIPv4(mapped);
+  const v4 = embeddedV4(g);
+  if (v4) return isNonPublicIPv4(v4);
   if (g.slice(0, 7).every((x) => x === 0) && g[7] <= 1) return true; // :: and ::1
   if ((g[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
   if ((g[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+  if ((g[0] & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local (deprecated, RFC 3879)
   if ((g[0] & 0xff00) === 0xff00) return true; // ff00::/8 multicast
   if (g[0] === 0x2001 && g[1] === 0x0db8) return true; // 2001:db8::/32 documentation
+  if (g[0] === 0x2001 && g[1] === 0) return true; // 2001::/32 Teredo: a tunnel, not a server address
+  if (g[0] === 0x0100 && g.slice(1, 4).every((x) => x === 0)) return true; // 100::/64 discard-only (RFC 6666)
   return false;
 }
 
@@ -66,9 +87,10 @@ export function isLoopbackHost(host: string): boolean {
   if (isIP(h) === 4) return h.startsWith('127.');
   const g = v6Groups(h);
   if (!g) return false;
-  const mapped = mappedV4(g);
-  if (mapped) return mapped.startsWith('127.');
-  return g.slice(0, 7).every((x) => x === 0) && g[7] === 1;
+  // ::1, and 127/8 written IPv4-mapped (::ffff:127.0.0.1) or IPv4-compatible (::127.0.0.1, C-04).
+  if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true;
+  const v4 = mappedV4(g) ?? (g.slice(0, 6).every((x) => x === 0) && g[6] !== 0 ? v4Of(g[6], g[7]) : undefined);
+  return !!v4 && v4.startsWith('127.');
 }
 
 /** Local mode for a host without a dot, or one whose every address (DNS and the system resolver) is non-public. */

@@ -9,7 +9,7 @@ Severity is listed per platform; a rule's platforms are the keys. **error** only
 |---|---|---|---|
 | SRV-001 | Remote server served over HTTPS | claude: error, chatgpt: error | [link](https://claude.com/docs/connectors/building/submission) |
 | SRV-002 | Local stdio server cannot be submitted as a remote connector | claude: info, chatgpt: info | [link](https://claude.com/docs/connectors/building/submission) |
-| SRV-003 | Streamable HTTP transport available | claude: warning, chatgpt: warning, spec: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
+| SRV-003 | Streamable HTTP transport available | claude: warning, chatgpt: error, spec: warning | [link](https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy) |
 | SRV-004 | Hostname resolves to public IPv4 | claude: error, chatgpt: error | [link](https://claude.com/docs/connectors/building/troubleshooting) |
 | SRV-005 | Temporary tunnel or shared hosting domain | chatgpt: error, claude: warning | [link](https://developers.openai.com/plugins/build/mcp-server) |
 | SRV-006 | No cross-host redirect at the registered URL | claude: error | [link](https://claude.com/docs/connectors/building/troubleshooting) |

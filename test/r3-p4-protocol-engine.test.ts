@@ -171,6 +171,6 @@ describe('A10-07: a connect-failed run gives no --fail-on-spec advice, and expla
     expect(rep(false).summary.gate).toMatchObject({ notGated: null }); // SSE is a claude/chatgpt warning: counted, not a spec-only note
   });
   it('explain SRV-003 says a connect failure is a spec error', () => {
-    expect(explainRule('SRV-003')).toMatch(/Severity {2}claude=warning, chatgpt=warning, spec=warning\n {10}spec=error when no transport works \(connect failure, exit 3\)/);
+    expect(explainRule('SRV-003')).toMatch(/Severity {2}claude=warning, chatgpt=error, spec=warning\n {10}spec=error when no transport works \(connect failure, exit 3\)/);
   });
 });

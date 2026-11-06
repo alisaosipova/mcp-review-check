@@ -106,6 +106,7 @@ These live in `src/rules/util/*` and are used by many rules. Each is defined onc
 - **`originMatches(origin, entry)`**: exact match on scheme, host and port, plus `https://*.example.com` wildcard subdomains.
 - **`net.ts`**:
   - `isNonPublicIPv4/6`: covers 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4, 240/4, ::1, fc00::/7, fe80::/10, and IPv4-mapped addresses.
+  - Amendment (2026-11-06, 1.3.0-B4, C-04): 192.88.99.0/24 (6to4 relay anycast), 100::/64 (discard-only), fec0::/10 (site-local) and 2001::/32 (Teredo) are non-public. IPv6 forms that carry an IPv4 address in a fixed position are judged by that address: IPv4-mapped `::ffff:0:0/96`, IPv4-compatible `::/96` (except `::` and `::1`), IPv4-translated `::ffff:0:0:0/96`, NAT64 `64:ff9b::/96` and 6to4 `2002::/16` (bits 16-47). `isLoopbackHost` also reads 127/8 written IPv4-compatible (`::127.0.0.1`). Consumers: SRV-004, APPS-006 and the AUTH local-URL checks (`src/rules/util/net.ts`).
   - `registrableDomain(host)`: last two labels, or three when the suffix is in a built-in multi-label list (co.uk, com.au, co.jp, com.br, co.nz, ...) or in `SHARED_HOST_SUFFIXES` (vercel.app, netlify.app, workers.dev, pages.dev, herokuapp.com, onrender.com, fly.dev, azurewebsites.net, run.app, github.io, railway.app, replit.app, ngrok.app, ngrok-free.app, ngrok.io, trycloudflare.com, loca.lt, devtunnels.ms).
   - This is not the full Public Suffix List. Only `info` and `warning` rules depend on it, which keeps the dependency count low.
 - **`parseWwwAuthenticate(header)`**: RFC 9110 challenge-list parser. Returns `[{scheme, params}]` with case-insensitive scheme and param names and support for quoted strings. We write our own because the SDK's `extractWWWAuthenticateParams` returns only some params.
@@ -147,15 +148,16 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
 - Fix: deploy remotely, or package the server as a Claude plugin.
 - Source: https://claude.com/docs/connectors/building/submission
 
-**SRV-003 Streamable HTTP transport available.** Severity: claude=warning, chatgpt=warning, spec=warning. Needs: http.
+**SRV-003 Streamable HTTP transport available.** Severity: claude=warning, chatgpt=error, spec=warning. Needs: http.
 - Detect:
   - SSE-only (legacy HTTP+SSE fallback succeeded, Streamable HTTP POST got 400/404/405 with no modern JSON-RPC error body) → warning "legacy HTTP+SSE only".
   - Neither transport works → **error**, emitted by the connector as a fatal finding (exit code 3).
   - A stdio server that does not start → **error** for `spec` only, with a stdio-specific fix (a local launch failure is not a directory blocker). The connect message keeps the first error-looking stderr line plus the last line; HTML bodies in HTTP connect errors are stripped and the HTTP status is shown.
   - A 401 on POST counts as a pass for transport.
 - Why: SSE has been deprecated since 2025-03-26, and both directories expect Streamable HTTP.
+- Amendment (2026-11-06, 1.3.0-B4, A11-02): the SSE-only finding is a **chatgpt error** (was warning). OpenAI's "Build an MCP server" page, under "Deploy the endpoint", says "The production endpoint must: Support the MCP streamable HTTP transport" (read 2026-11-06), and the detection is deterministic (the Streamable HTTP POST was rejected and HTTP+SSE worked). Claude's directory policy says "should", so claude stays warning. The rule cites the OpenAI page.
 - Fix: serve Streamable HTTP at the registered URL.
-- Source: https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy, https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+- Source: https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy, https://developers.openai.com/plugins/build/mcp-server, https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
 
 **SRV-004 Hostname resolves to public IPv4.** Severity: claude=error, chatgpt=error. Needs: http.
 - Detect: run `dns.promises.resolve4` and `resolve6` on the MCP host, and on the authorization server host when the auth probe ran.
@@ -181,6 +183,7 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
 - Detect: run preflight POST initialize and GET with `redirect: 'manual'`.
   - Status in {301, 302, 307, 308} and `new URL(location, url).host !== url.host` → error.
   - Same-host redirect, for example a trailing slash → claude warning: "register the final URL".
+  - Amendment (2026-11-06, 1.3.0-B4, A04-07): 303 counts too (status in {301, 302, 303, 307, 308}). A 303 on the POST adds "a 303 turns the POST into a GET, so the MCP handshake cannot follow it"; a cross-host one is an error like the others, so a run whose connect failed on it names the redirect instead of skipping SRV-006 with "could not connect".
 - Why: Claude drops the Authorization header on a cross-host redirect.
 - Fix: register the final URL, or serve MCP directly at the entered URL.
 - Source: https://claude.com/docs/connectors/building/troubleshooting
@@ -197,6 +200,7 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
 - Detect, part (b): POST with `Origin: https://evil.mcp-review-check.invalid`.
   - Accepted (2xx) on a loopback target → spec **error** (DNS rebinding).
   - Accepted on a public target → spec **info** only, because a public server may treat all origins as valid.
+  - Amendment (2026-11-06, 1.3.0-B4, C-03): rejected with a 4xx other than 403, 401 (auth may run before the Origin check), 407 or 429 (rate limit), while the request without Origin got 2xx → spec **warning** "foreign Origin rejected with <status>; the spec requires 403 Forbidden". The 2025-11-25 and 2026-07-28 transport pages say "If the Origin header is present and invalid, servers MUST respond with HTTP 403 Forbidden"; warning, not error, because the status may come from another check that ran first. Not on an HTTP+SSE target: the 2024-11-05 page names no status.
 - Why: the spec requires a 403 for an invalid Origin, but hosts send their own Origin values.
 - Fix: validate Origin against an allowlist that includes the host origins.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http. On a legacy HTTP+SSE target each finding cites https://modelcontextprotocol.io/specification/2024-11-05/basic/transports first, the page that server implements, which has its own Origin MUST (1.2.0, I-C-4; `sseDocs` in `src/rules/spec.ts`).
@@ -376,6 +380,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
   - Only for responses to 2026-07-28 requests (`observedError.modern`, or era `modern` when unknown): code in [-32099, -32020] but not one of -32020/-32021/-32022 → error, and -32002 or -32042 → error ("removed in 2026-07-28"). 2025-11-25 defines -32042 (URL elicitation required) and predates the range policy, so legacy responses get only the integer and id checks.
   - Response `id` differs from the request id and is not `null` → **warning**. Example: DeepWiki returns `"server-error"`. An error response with no `id` is read like `id: null` (1.2.0, C-01): the 2026-07-28 Streamable HTTP page lets a 403 for an invalid Origin (and a rejected notification or header) carry a JSON-RPC error without an id.
   - A successful response (a `result`, no `error`) whose `id` is not the request's (strict comparison: `"6"` does not echo `6`) → **warning** "`<source>`: result answers another request id (response id X, request id Y)". Such an entry (`observedError.result: true`, with the request `method`) has no `code`, so the code checks do not apply to it. When the response is to `tools/list`, `resources/list` or `prompts/list` and SPEC-020 reports that listing as failed because of the mismatch, SPEC-016 leaves it to SPEC-020, so one exchange is not reported twice.
+  - Amendment (2026-11-06, 1.3.0-B4, C-02): a response (result or error) on the SDK connection whose `id` answers no pending request (never sent, or answered before) → one **warning** "JSON-RPC responses answer no pending request: N (ids X, Y, ...)". `RecordingTransport.record()` keeps one summary entry (`observedError.unsolicited = { count, ids }`, the first `UNSOLICITED_IDS_KEPT` = 5 ids, the count exact) and an error entry (source `unsolicited response`) for the first unsolicited errors, so their codes are still checked; a flood adds nothing else. An error with id `null` or no id is not counted (C-01).
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#error-codes, https://www.jsonrpc.org/specification
 
 **SPEC-017 Icons well-formed.** Severity: spec=warning.
@@ -1511,6 +1516,7 @@ interface ObservedError {                         // in transport.observedErrors
   source: string; requestId?: unknown; responseId?: unknown; code?: unknown; message?: unknown; modern?: boolean;
   result?: boolean;   // a successful response whose id is not the request's (no code), SPEC-016
   method?: string;    // the request's method, on result entries
+  unsolicited?: { count: number; ids: unknown[] };   // summary of responses that answered no pending request, SPEC-016 (1.3.0)
 }
 const PHASES = ['connect', 'auth probe', 'listing', 'UI resource reads', 'wire probes', 'tools re-list', 'text-only tools/list', 'active tool calls'];
 interface Limits {                                // snap.limits, also in the JSON report

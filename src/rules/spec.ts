@@ -403,7 +403,7 @@ export const SPEC_015 = defineRule(
 export const SPEC_016 = defineRule(
   {
     id: 'SPEC-016', title: 'JSON-RPC error codes and ids valid', severity: { spec: 'error' }, needs: ['handshake'],
-    rationale: 'Error codes in the reserved range have defined meanings; ids must echo the request.',
+    rationale: 'Error codes in the reserved range have defined meanings; ids must echo the request, and every response answers a request the client sent.',
     fix: 'Use integer codes from the spec and echo the request id (or null).',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic#error-codes', 'https://www.jsonrpc.org/specification'],
   },
@@ -412,6 +412,13 @@ export const SPEC_016 = defineRule(
     const seen = new Set<string>();
     const add = (f: RawFinding) => { if (!seen.has(f.message)) { seen.add(f.message); out.push(f); } };
     for (const e of snap.transport.observedErrors ?? []) {
+      // Responses whose id answered no pending request: one warning with the count and the first ids (1.3.0, C-02).
+      if (e.unsolicited) {
+        const { count, ids } = e.unsolicited;
+        const shown = ids.map((x) => JSON.stringify(x)).join(', ') + (count > ids.length ? ', ...' : '');
+        add({ severity: 'warning', message: `JSON-RPC ${count === 1 ? 'response answers' : 'responses answer'} no pending request: ${count} (ids ${shown})` });
+        continue;
+      }
       // A result with another id carries no code. A failed listing of a declared capability is SPEC-020's (it names
       // the mismatch as the cause); every other request (probes, reads, a fresh connection's re-list) is reported here.
       if (e.result) {
