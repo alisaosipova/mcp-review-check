@@ -1,6 +1,7 @@
 // Rule engine: needs evaluation, platform filtering, severity, ignore, sorting (§1.2, §4.2).
 import { PHASES, type Platform, type Severity, type Snapshot, type TargetOpt } from '../snapshot.js';
 import { hasUi } from './util/access.js';
+import { capPath } from './util/text.js';
 import { maxSeverity, SEVERITY_RANK, type Finding, type Need, type Rule } from './types.js';
 
 export function activePlatforms(target: TargetOpt): Platform[] {
@@ -246,7 +247,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       const severity = maxSeverity(Object.values(severityByPlatform)) ?? 'info';
       const finding: Finding = {
         ruleId: rule.id, title: rule.title, severity, platforms, severityByPlatform, message: r.message,
-        tool: r.tool, resource: r.resource, path: r.path, evidence: r.evidence,
+        tool: r.tool, resource: r.resource, path: r.path === undefined ? undefined : capPath(r.path), evidence: r.evidence,
         fix: r.fix ?? rule.fix, docs: r.docs ?? rule.sources,
       };
       if (!ignore.has(rule.id)) scored.push(finding);

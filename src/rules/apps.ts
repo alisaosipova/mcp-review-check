@@ -60,9 +60,21 @@ export const APPS_002 = defineRule(
 );
 
 /** Lowercased type, subtype and parameter names, no spaces around `;` and `=`, and quoted parameter values unquoted (RFC 2045). */
+// Each parameter is split on its first `=` with indexOf (A09-03): the earlier lazy-name regex was quadratic on a long
+// space run with no `=`.
 export function normalizeMime(m: string): string {
-  return m.split(';').map((p) => p.trim()).map((p, i) => (i === 0 ? p.toLowerCase()
-    : p.replace(/^([^=]+?)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|(.*))$/, (_, k: string, q: string | undefined, v: string | undefined) => `${k.toLowerCase()}=${q !== undefined ? q.replace(/\\(.)/g, '$1') : v}`))).join(';');
+  return m.split(';').map((p) => p.trim()).map((p, i) => {
+    if (i === 0) return p.toLowerCase();
+    const eq = p.indexOf('=');
+    if (eq <= 0) return p;
+    const k = p.slice(0, eq).trimEnd();
+    if (!k) return p;
+    const v = p.slice(eq + 1).trimStart();
+    const q = /^"((?:[^"\\]|\\.)*)"$/.exec(v);
+    if (q) return `${k.toLowerCase()}=${q[1].replace(/\\(.)/g, '$1')}`;
+    // As before: an unquoted value with a line break is left as it was.
+    return /[\n\r\u2028\u2029]/.test(v) ? p : `${k.toLowerCase()}=${v}`;
+  }).join(';');
 }
 
 export const APPS_003 = defineRule(

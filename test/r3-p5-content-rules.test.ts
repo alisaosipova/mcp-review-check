@@ -195,7 +195,9 @@ describe('A09-03: extractOrigins CSS url() scan', () => {
 
 describe('regex-complexity guard: every rule over large server-controlled fields', () => {
   const SIZE = 200 * 1024;
-  const UNITS = ['A', '0', 'a', 'Aa', 'A0', '-', '_', ' ', '.', '/', '%', 'url(', '<a ', '<!--', '<system', '`', '"', "'", '(', '{{', '${', 'https://', 'http://a', 'а', 'α', 'A' + 'α'.repeat(30) + 'b', 'A' + 'α'.repeat(30) + 'b ', 'call ', 'use the ', 'always ', '0% off', '\\', '​'];
+  const UNITS = ['A', '0', 'a', 'Aa', 'A0', '-', '_', ' ', '.', '/', '%', 'url(', '<a ', '<!--', '<system', '`', '"', "'", '(', '{{', '${', 'https://', 'http://a', 'а', 'α', 'A' + 'α'.repeat(30) + 'b', 'A' + 'α'.repeat(30) + 'b ', 'call ', 'use the ', 'always ', '0% off', '\\', '​',
+    // Round 4 (I-A09-3): multi-token units the single-character ones missed (A09-01, A09-03).
+    '<script type=importmap>', '<script type=importmap>{', 'text/html;a ', '[a '];
 
   for (const unit of UNITS) {
     it(`unit ${JSON.stringify(unit)} in every field runs all rules in under 5 s`, () => {
@@ -211,12 +213,20 @@ describe('regex-complexity guard: every rule over large server-controlled fields
         set: (x) => {
           x.resourceTemplates = [{ uriTemplate: `acme://${big}/{id}`, name: big, description: big }];
           x.instructions = big;
-          x.resourceReads[uiUri] = { ok: true, durationMs: 1, raw: { contents: [{ uri: uiUri, mimeType: 'text/html;profile=mcp-app', text: big.repeat(4) }] } };
+          // Every field of the read item, not only its text (A09-03): mimeType and _meta are server data too.
+          const meta = { ui: { domain: big, csp: { connectDomains: [big], resourceDomains: [big], frameDomains: [big] } }, 'openai/widgetCSP': { connect_domains: [big], redirect_domains: [big] }, 'openai/widgetDomain': big };
+          x.resourceReads[uiUri] = { ok: true, durationMs: 1, raw: { contents: [{ uri: uiUri, mimeType: `text/html;a${big}x`, text: big.repeat(4), _meta: meta }, { uri: big, mimeType: big, blob: big, _meta: meta }] } };
         },
       });
       capSnapshot(s);
-      const t = ms(() => runRules(s, RULES));
-      expect(t, `all rules on ${JSON.stringify(unit)}`).toBeLessThan(5000);
+      // Per rule, so one slow rule is not hidden in the total.
+      let total = 0;
+      for (const rule of RULES) {
+        const t = ms(() => runRules(s, [rule]));
+        total += t;
+        expect(t, `${rule.id} on ${JSON.stringify(unit)}`).toBeLessThan(2000);
+      }
+      expect(total, `all rules on ${JSON.stringify(unit)}`).toBeLessThan(5000);
     });
   }
 });

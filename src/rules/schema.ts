@@ -6,6 +6,7 @@ import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
 import { isObj, isStr } from './util/access.js';
 import { deref, resolvePointer, schemaMetrics, walkSchema } from './util/schemaWalk.js';
+import { capMessage, shortPointer } from './util/text.js';
 
 type AjvLike = {
   validateSchema(s: unknown): boolean | Promise<unknown>;
@@ -314,7 +315,7 @@ export const TOOL_036 = defineRule(
       const root = t[key];
       if (!isObj(root)) continue;
       for (const r of unresolvedRefs(root)) {
-        out.push({ path: `${key}${r.path}`, message: `${key}${r.path} ${r.keyword} ${JSON.stringify(r.ref.slice(0, 200))} ${r.why}` });
+        out.push({ path: `${key}${r.path}`, message: capMessage(`${shortPointer(`${key}${r.path}`)} ${r.keyword} ${JSON.stringify(r.ref.slice(0, 200))} ${r.why}`) });
       }
     }
     return out;

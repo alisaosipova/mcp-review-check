@@ -68,8 +68,9 @@ describe('Q3 note 5: the CI pack smoke checks where npm-shrinkwrap.json is', () 
 
 describe('CHANGELOG: the 1.1.0 section', () => {
   const log = read('CHANGELOG.md');
-  it('[Unreleased] stays on top with "Nothing yet.", followed by [1.1.0] - 2026-11-04', () => {
-    expect(log).toMatch(/## \[Unreleased\]\n\nNothing yet\.\n\n## \[1\.1\.0\] - 2026-11-04\n/);
+  it('[Unreleased] stays on top, followed by [1.1.0] - 2026-11-04', () => {
+    expect(log.indexOf('## [Unreleased]')).toBeGreaterThan(0);
+    expect(log.indexOf('## [Unreleased]')).toBeLessThan(log.indexOf('## [1.1.0] - 2026-11-04\n'));
   });
   it('the section has the rule catalog date, the rule count and the headings in order', () => {
     const section = log.slice(log.indexOf('## [1.1.0]'), log.indexOf('## [1.0.1]'));

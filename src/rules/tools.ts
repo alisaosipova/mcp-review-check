@@ -4,7 +4,7 @@ import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
 import { deref, enumValues, resolvedNode, walkSchema } from './util/schemaWalk.js';
-import { firstVerb, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
+import { capMessage, firstVerb, shortPointer, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
 import { TEXT_CAP, TOOL_LIST_MAX_BYTES, TOOL_LIST_MAX_COUNT } from '../limits.js';
 
 const MCP_TOOLS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools';
@@ -229,7 +229,7 @@ export const TOOL_009 = defineRule(
       if (!isNonEmptyStr(v.node.description) && !(isObj(target) && isNonEmptyStr(target.description))) missing.push(v.path);
     });
     const uniq = [...new Set(missing)];
-    return uniq.length ? { message: `${uniq.length} parameter(s) without description: ${uniq.slice(0, 10).join(', ')}${uniq.length > 10 ? ', …' : ''}` } : undefined;
+    return uniq.length ? { message: capMessage(`${uniq.length} parameter(s) without description: ${uniq.slice(0, 10).map(shortPointer).join(', ')}${uniq.length > 10 ? ', …' : ''}`) } : undefined;
   }),
 );
 

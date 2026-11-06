@@ -140,14 +140,21 @@ function scanOrigins(html: string): ExtractedOrigin[] {
 /**
  * Targets of `<script type="importmap">` (imports and scopes). A mapped module is loaded only when imported, so the
  * caller treats these as js confidence. Unparseable maps are skipped: the browser rejects them too.
+ * Linear (A09-01): an opener inside an earlier map body is script text, as in a browser, and is skipped; a map with no
+ * `</script` runs to the end of the HTML, so it is parsed once and the scan stops.
  */
 function importMapUrls(html: string): Array<[string, string]> {
   const out: Array<[string, string]> = [];
-  for (const m of html.matchAll(/<script\b[^<>]*\btype\s*=\s*["']?importmap\b[^<>]*>/gi)) {
+  let next = 0;
+  // Every opener is matched first and tested for the type after: one regex with both [^<>]* runs and the type word
+  // between them backtracks quadratically on a long opener without '>' (review of A09-01).
+  for (const m of html.matchAll(/<script\b[^<>]*>/gi)) {
+    if ((m.index ?? 0) < next || !/\btype\s*=\s*["']?importmap\b/i.test(m[0])) continue;
     const start = (m.index ?? 0) + m[0].length;
     const end = html.indexOf('</script', start);
+    next = end < 0 ? html.length : end;
     let map: unknown;
-    try { map = JSON.parse(html.slice(start, end < 0 ? undefined : end)); } catch { continue; }
+    try { map = JSON.parse(html.slice(start, next)); } catch { if (end < 0) break; continue; }
     if (typeof map !== 'object' || map === null) continue;
     const { imports, scopes } = map as { imports?: unknown; scopes?: unknown };
     const take = (o: unknown) => {

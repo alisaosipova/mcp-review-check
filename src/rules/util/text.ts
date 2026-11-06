@@ -3,6 +3,7 @@ import type { Snapshot } from '../../snapshot.js';
 import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from '../lexicon.js';
 import { annotations, isObj, isStr, toolName, type Obj } from './access.js';
 import { walkSchema } from './schemaWalk.js';
+import { MESSAGE_CAP, PATH_CAP, POINTER_MESSAGE_MAX, POINTER_SHOWN } from '../../limits.js';
 
 export function tokenize(name: string): string[] {
   return name
@@ -198,10 +199,11 @@ function stringLeaves(value: unknown, path: string, out: Array<[string, string]>
 /**
  * The corpus is built once per snapshot and shared by the rules that read it (up to 16 per run, which each rebuilt it
  * before 1.1.0). A captured snapshot is not changed, but a test may replace a list or the instructions between runs, so
- * the memo is keyed by the snapshot object, checked against the identity and length of what it was built from, and
+ * the memo is keyed by the raw tools array, checked against the identity and length of what it was built from, and
  * dropped at the end of the synchronous run that built it (so an in-place edit is seen by the next run). The
- * engine gives each rule of a stopped run its own read-tracking view of the snapshot: a different key, so every such
- * rule still reads (and is tracked on) the lists itself.
+ * engine gives each rule of a stopped run its own read-tracking view of the snapshot; the memo is keyed by the raw
+ * tools array (the view returns it unwrapped), so those views share one corpus (A09-06), and the signature is still
+ * read through the view, so each rule is still tracked on the lists it depends on.
  */
 const CORPUS_MEMO = new WeakMap<object, { sig: unknown[]; entries: CorpusEntry[] }>();
 const corpusSig = (snap: Snapshot): unknown[] =>
@@ -209,14 +211,15 @@ const corpusSig = (snap: Snapshot): unknown[] =>
 
 export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
   const sig = corpusSig(snap);
-  let memo = CORPUS_MEMO.get(snap);
+  const key = snap.tools;
+  let memo = CORPUS_MEMO.get(key);
   if (!memo || memo.sig.some((x, i) => x !== sig[i])) {
     const built = { sig, entries: buildCorpus(snap) };
     memo = built;
-    CORPUS_MEMO.set(snap, built);
+    CORPUS_MEMO.set(key, built);
     // runRules is synchronous, so one run shares the memo; it expires after the current task, so a tool object changed
     // in place before a later run is read afresh (review R110-Q1-06).
-    queueMicrotask(() => { if (CORPUS_MEMO.get(snap) === built) CORPUS_MEMO.delete(snap); });
+    queueMicrotask(() => { if (CORPUS_MEMO.get(key) === built) CORPUS_MEMO.delete(key); });
   }
   const all = memo.entries;
   const { values = true, samples = false, keys = false } = scope;
@@ -271,10 +274,41 @@ function buildCorpus(snap: Snapshot): CorpusEntry[] {
 export function locationOf(e: CorpusEntry): string {
   if (e.where.startsWith('prompt.') && e.subject !== undefined) {
     const prompt = `prompt ${JSON.stringify(e.subject)}`;
-    if (e.where === 'prompt.argument.description') return `${prompt} argument${e.path ? ` ${e.path}` : ''} description`;
+    if (e.where === 'prompt.argument.description') return `${prompt} argument${e.path ? ` ${shortPointer(e.path)}` : ''} description`;
     return `${prompt} description`;
   }
-  return e.path ? `${e.where} ${e.path}` : e.where;
+  return e.path ? `${e.where} ${shortPointer(e.path)}` : e.where;
+}
+
+/**
+ * A pointer as a finding message shows it (A09-08): in full up to POINTER_MESSAGE_MAX characters, past that its first
+ * and last POINTER_SHOWN characters around an ellipsis. Property names are server-chosen and a nested pointer repeats
+ * every ancestor's name, so an uncut one makes a message (and every report format) many times the input size.
+ */
+/** The first and last n UTF-16 units of s around an ellipsis, never splitting a surrogate pair. */
+function ends(s: string, n: number): string {
+  let a = n, b = s.length - n;
+  if (/[\uD800-\uDBFF]/.test(s[a - 1])) a--;
+  if (/[\uDC00-\uDFFF]/.test(s[b])) b++;
+  return `${s.slice(0, a)}\u2026${s.slice(b)}`;
+}
+
+export function shortPointer(p: string): string {
+  return p.length <= POINTER_MESSAGE_MAX ? p : ends(p, POINTER_SHOWN);
+}
+
+/** A finding message cut to MESSAGE_CAP characters, ending in an ellipsis when cut (A09-08). */
+export function capMessage(m: string): string {
+  if (m.length <= MESSAGE_CAP) return m;
+  let end = MESSAGE_CAP - 1;
+  if (/[\uD800-\uDBFF]/.test(m[end - 1])) end--; // do not split a surrogate pair
+  return `${m.slice(0, end)}\u2026`;
+}
+
+/** The finding `path` field cut to PATH_CAP characters, its start and end kept around an ellipsis (A09-08). */
+export function capPath(p: string): string {
+  if (p.length <= PATH_CAP) return p;
+  return ends(p, Math.floor((PATH_CAP - 1) / 2));
 }
 
 const GENERIC_ERROR =

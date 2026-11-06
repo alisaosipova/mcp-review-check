@@ -17,6 +17,13 @@ export const ERROR_BODY_CAP = 64 * 1024;
 export const TOOL_LIST_MAX_COUNT = 40;
 /** TOOL-034, linter-defined: JSON.stringify(tools).length (UTF-16 code units, about bytes for ASCII) above this is reported. */
 export const TOOL_LIST_MAX_BYTES = 64 * 1024;
+/** A JSON pointer longer than this is shown in a finding message as its first and last POINTER_SHOWN characters (A09-08). */
+export const POINTER_MESSAGE_MAX = 1024;
+export const POINTER_SHOWN = 60;
+/** A finding message that lists pointers is cut to this many characters (A09-08). */
+export const MESSAGE_CAP = 2 * 1024;
+/** The finding `path` field is cut to this many characters, keeping its start and end (A09-08). */
+export const PATH_CAP = 4 * 1024;
 /** UI resources read per run (resources/read for every ui:// URI the tools and resources list). */
 export const UI_READS_CAP = 50;
 
@@ -160,6 +167,12 @@ export function capSnapshot(snap: Snapshot): Truncated {
         out.push({ where: `UI resource ${uri.slice(0, 80)} (blob)`, length: Math.floor((c.blob.length * 3) / 4), cap: HTML_CAP });
         c.blob = c.blob.slice(0, blobCap);
       }
+      // Every other field of the item (A09-03): uri at ID_CAP, mimeType and _meta at TEXT_CAP, like listed metadata.
+      const { text, blob, ...rest } = c;
+      const before = Object.keys(rest);
+      capStrings(rest, TEXT_CAP, `UI resource ${uri.slice(0, 80)} item`, out);
+      if (Object.keys(rest).some((k, i) => k !== before[i])) for (const k of before) delete c[k];
+      Object.assign(c, rest);
     }
   }
   if (out.length) (snap.limits ??= { truncated: [] }).truncated.push(...out);

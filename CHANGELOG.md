@@ -6,7 +6,14 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The `<script type="importmap">` scan of UI HTML (APPS-007, APPS-013) is linear: 2 MB of unclosed importmap openers took about 85 s and ran past `--max-duration`; an opener inside an earlier map body is now read as script text, and a map with no `</script` is parsed once (A09-01).
+- Every field of a `resources/read` content item is capped, not only `text` and `blob`: `uri` at ID_CAP, `mimeType` and `_meta` at TEXT_CAP, each cut listed in `limits.truncated`; the MIME normalization of APPS-003 splits a parameter on its first `=` instead of a regex that was quadratic on a long run of spaces (A09-03).
+- A run stopped by `--max-duration` or the snapshot budget builds the INJ, POL and DATA corpus once, as a complete run does, instead of once per rule (A09-06).
+- The UI resource view is built once per snapshot, with a linear lookup of the list entries and each content item decoded once, instead of once per APPS rule with a search of the resource list per linked URI (about 10 s per rule at 40,000 tools) (A09-07).
+- Finding messages show a JSON pointer over 1024 characters as its first and last 60 characters, TOOL-009 and TOOL-036 messages are cut to 2 KB, and a finding `path` to 4 KB: deep schemas with long property names made reports many times the input size (A09-08).
+- The regex-complexity guard test also feeds importmap openers, MIME parameters and every `resources/read` item field, including `_meta`, and times each rule on its own (I-A09-3).
 
 ## [1.1.0] - 2026-11-04
 
