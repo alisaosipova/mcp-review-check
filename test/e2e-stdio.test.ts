@@ -187,11 +187,11 @@ describe('e2e stdio', () => {
     expect(r.json.server.command).toBe(`${process.execPath} ${GOOD_PATH}`);
   });
 
-  it('unwritable --output: exit 2 with a clear message, report printed instead', async () => {
+  it('unwritable --output: exit 2 with a clear message, checked before connecting (1.2.0, I-A10-1)', async () => {
     const r = await cli(['--stdio', GOOD, '--format', 'json', '--output', '/nonexistent-dir-mrc/r.json']);
     expect(r.code).toBe(2);
-    expect(r.stderr).toMatch(/cannot write --output/);
-    expect(r.json.server.serverInfo.name).toBe('acme-notes');
+    expect(r.stderr).toMatch(/cannot write --output .*\(checked before connecting; no report was written\)/);
+    expect(r.stdout).toBe('');
   });
 
   it('exit 3 when the stdio server cannot start; report still emitted', async () => {

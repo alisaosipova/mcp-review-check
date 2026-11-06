@@ -41,3 +41,17 @@ export function inputFileProblem(e: unknown): string {
     default: return code ?? 'read failed';
   }
 }
+
+/**
+ * The text of a JSON file as editors save it: UTF-8 with or without a BOM, UTF-16LE with its BOM (FF FE), or UTF-16BE
+ * with its BOM (FE FF), as some Windows and macOS editors write "Unicode (big endian)". The BOM is dropped (I-A01-5).
+ */
+export function decodeText(raw: Buffer): string {
+  if (raw[0] === 0xff && raw[1] === 0xfe) return raw.subarray(2).toString('utf16le');
+  if (raw[0] === 0xfe && raw[1] === 0xff) {
+    // Swap each byte pair into a copy (an odd trailing byte is dropped, as utf16le decoding does).
+    const be = raw.subarray(2, 2 + ((raw.length - 2) & ~1));
+    return Buffer.from(be).swap16().toString('utf16le');
+  }
+  return raw.toString('utf8').replace(/^\uFEFF/, '');
+}

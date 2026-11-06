@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // CLI entry: argument parsing, validation, orchestration, exit codes, --list-rules and explain.
-import { lstatSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 // Light modules only (no transport, rules or renderers): --help and --version need nothing more, and the catalog
 // commands (--list-rules, explain) load the rules alone. A check loads the rest in loadCheckModules.
 import { cmdQuote, splitStdioArgv, tokenizeCommand } from './protocol/stdioArgs.js';
-import { buildReport, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
+import { buildReport, neutralizeCommands, ReportTooLargeError, resultLine, scoreLabel, visibleText, type Report } from './report/index.js';
 import { ctaLine } from './report/constants.js';
 import { renderJson } from './report/json.js';
 import { ConfigError, findConfig, loadConfig, type LoadedConfig } from './config.js';
@@ -19,8 +19,9 @@ import { emptySnapshot, type Snapshot, type TargetOpt } from './snapshot.js';
 import { toolName } from './rules/util/access.js';
 import { VERSION } from './version.js';
 import { attachListing, listingDump, loadOpenAiManifest, loadPluginDir, mergeListings } from './listing/index.js';
+import { PACKAGE_CONFIG_FILES } from './listing/load.js';
 import { compareTools, driftCount, incompleteTools, pinFingerprints, type Drift } from './report/drift.js';
-import { INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
+import { decodeText, INPUT_FILE_CAP, inputFileProblem, readInputFile } from './input-file.js';
 import type { BuildOptions, TargetSpec } from './connect.js';
 import type { Redactor } from './redact.js';
 import type { TextOptions } from './report/text.js';
@@ -61,6 +62,7 @@ Usage:
   mcp-review-check explain <RULE-ID>
 
 Options:
+  --stdio "<command>"     Start a local stdio server instead of <url> (or --stdio -- <command> [args...], verbatim).
   --header "K: V"         Extra request header (repeatable). Values are redacted in output.
   --bearer <token>        Bearer token (default: $MCP_REVIEW_CHECK_TOKEN).
   --target <t>            claude | chatgpt | all (default: all)
@@ -69,27 +71,19 @@ Options:
   --json-output <file>    Also write the JSON report (as --format json prints it) to a file, whatever --format.
   --save-baseline <file>  The same, under the baseline name: write it now, pass it to --baseline on later runs.
   --sarif-location <path> Repository-relative path the SARIF results point at (default: .mcp-review-check).
-  --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000), stdio start uses the full timeout).
-  --max-duration <ms>     Stop the whole check after this long and report what ran, exit 4 (default: no limit). Also
-                          bounds the rules: those not started by then are skipped (they get at least 1 s).
+  --timeout <ms>          Per-request timeout (default: 30000; HTTP connect uses min(timeout, 15000)).
+  --max-duration <ms>     Stop the whole check (rules included) after this long, report what ran, exit 4.
   --fail-on <level>       error | warning | never (default: error). Counts findings for the --target directories only.
   --fail-on-spec          Also fail on MCP spec findings (spec-only findings do not fail the run by default).
-  --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed), so a
-                          job without a working token does not pass; without it the exit code follows --fail-on.
-  --baseline <file>       A JSON report of an earlier run (--format json): its findings are known, and only new ones
-                          count for --fail-on and the verdicts (JSON baselined, SARIF baselineState). Also compares
-                          the tool definitions with the baseline's fingerprints: "Changed tool definitions".
-  --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed since the baseline, or
-                          when the tools could not be compared (no fingerprints in the baseline, tools/list failed
-                          or partial): a warning on stderr says why.
-  --diff-only             With --baseline, text and markdown: only the new findings and the tool changes (no
-                          known-findings line, no manual checklist).
-  --plugin-dir <dir>      Also lint a Claude plugin folder (.claude-plugin/plugin.json, .mcp.json, README, LICENSE) against
-                          the plugin directory checklist (LST rules). Alone (no <url> or --stdio) it checks the files only: a listing-only run.
+  --fail-on-incomplete    Exit 3 when the check is partial (auth required, token rejected, tools/list failed).
+  --baseline <file>       A JSON report of an earlier run: only new findings count; tool definitions are compared
+                          with its fingerprints ("Changed tool definitions").
+  --fail-on-drift         With --baseline: exit 1 when a tool was added, removed or changed, or the tools could not
+                          be compared (a warning says why). Needs a <url> or --stdio target.
+  --diff-only             With --baseline, text and markdown: only the new findings and the tool changes.
+  --plugin-dir <dir>      Also lint a Claude plugin folder (LST rules). Alone (no <url> or --stdio): a listing-only run.
   --openai-manifest <file>
-                          Also lint a ChatGPT plugin package manifest (plugin.json with extensions.com.openai, or
-                          .codex-plugin/plugin.json; its mcp.json is read from the package root) (LST rules).
-                          Alone (no <url> or --stdio) it checks the files only: a listing-only run.
+                          Also lint a ChatGPT plugin package manifest (LST rules). Alone: a listing-only run.
   --local                 Local mode: deploy-time checks (HTTPS, public DNS, tunnel domains) are informational.
   --no-local              Strict deploy-time checks, also for loopback, private and dotless hosts and --stdio.
   --active                Call read-only tools (readOnlyHint: true) to run RT checks.
@@ -100,44 +94,28 @@ Options:
   --ignore <RULE-ID>      Ignore a rule (repeatable or comma-separated); an ID that is not a rule or MAN item is a usage error.
   --list-rules [prefix]   Print the rule catalog (--format text, json or markdown; IDs starting with prefix) and exit.
   --no-color              Disable colors (also off when not a TTY or NO_COLOR is set; FORCE_COLOR=1 forces them on).
-  --verbose               Expand collapsed findings, show TOOL-013 info and rule rationales; print the redacted HTTP trace and stdio stderr.
+  --verbose               Expand collapsed findings and rationales; print the redacted HTTP trace and stdio stderr.
   --quiet                 Text only: print just error and warning findings, the Score and Result lines and the disclaimer.
   --checklist             Text only: print the manual checklist in full (default: one line with the item count).
   --config <file>         Read options from a JSON file (keys: long option names in camelCase, such as failOn).
-  --no-config             Do not look for mcp-review-check.config.json or .mcp-review-check.json in --cwd or the
-                          working directory (read when --config is not given). Command-line options override the file.
-                          A found file only sets options: its url, stdio, args, output, jsonOutput, saveBaseline, cwd,
-                          env, header, bearer, active and activeAuth keys are ignored with a warning; use --config.
-  --no-fail-on-spec       Turn off the config file's failOnSpec.
-  --no-fail-on-incomplete Turn off the config file's failOnIncomplete.
-  --no-fail-on-drift      Turn off the config file's failOnDrift.
-  --no-diff-only          Turn off the config file's diffOnly.
-  --no-active             Turn off the config file's active.
-  --no-active-auth        Turn off the config file's activeAuth.
-  --no-verbose            Turn off the config file's verbose.
-  --no-quiet              Turn off the config file's quiet.
-  --no-checklist          Turn off the config file's checklist.
+  --no-config             Do not read mcp-review-check.config.json or .mcp-review-check.json from --cwd or the working
+                          directory. A found file only sets options (no server, outputs, cwd, env or credentials).
+  --no-<switch>           Turn off a config file's switch: fail-on-spec, fail-on-incomplete, fail-on-drift, diff-only,
+                          active, active-auth, verbose, quiet, checklist.
   --color                 Turn off the config file's noColor (colours then follow the TTY, NO_COLOR and FORCE_COLOR).
   -h, --help              Show this help.
   -v, --version           Show the version.
 
 Examples:
-  mcp-review-check https://mcp.example.com/mcp --target claude
+  mcp-review-check https://mcp.example.com/mcp --target claude --format markdown --output report.md
   mcp-review-check --env API_BASE=http://localhost:4000 --stdio -- node dist/server.js
-  mcp-review-check https://staging.example.com/mcp --format markdown --output report.md
-  mcp-review-check https://mcp.example.com/mcp --plugin-dir ./my-plugin
-  mcp-review-check --stdio "node dist/server.js" --openai-manifest ./package/plugin.json --target chatgpt
   mcp-review-check explain TOOL-011
   mcp-review-check --list-rules TOOL --format json
 
 --stdio "<command>" is split on whitespace; quote arguments with spaces. A backslash is literal (Windows paths work),
-also inside double quotes, except before a ": there, as on Windows, \\\\" is one \\ and ends the quote, \\" a literal ".
-The "-- <command> [args...]" form passes arguments verbatim, with options before --.
-A --config file may also name the server: {"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}.
-Its paths are relative to the file; a list option given on the command line (--ignore, --header, --env) replaces
-the file's list, and a switch its key and its opposite's (--local wins over noLocal, --no-quiet over quiet). A <url>
-on the command line does not use the file's env and cwd, a --stdio command not its header, bearer and activeAuth, and
---bearer replaces the file's Authorization header (each with a note). Secrets belong in $MCP_REVIEW_CHECK_TOKEN, not in the file (header and bearer keys get a warning).
+also inside double quotes, except before a ": \\\\" is one \\ and ends the quote, \\" a literal ".
+A --config file may name the server ({"url": "https://…"} or {"stdio": "node", "args": ["dist/server.js"]}); its paths
+are relative to the file, and the command line wins over its keys (each key not used is named on stderr).
 Secrets are redacted in every format: --bearer, --header and --env values, URL credentials, and stdio arguments
 after secret-looking flags (--api-key X, --token=X, API_KEY=X, "Authorization: Bearer X").
 
@@ -146,22 +124,16 @@ Exit codes:
   1       Completed, threshold reached for a --target directory (or for the spec with --fail-on-spec), or
           with --fail-on-drift a tool definition changed since --baseline.
   2       Usage or configuration error (also in the config file), or --output, --json-output or --save-baseline
-          could not be written.
+          could not be written (checked before connecting).
   3       Could not connect or complete a handshake (also when --max-duration ran out before it); with
           --fail-on-incomplete, a partial check (auth required, token rejected, tools/list failed); or an internal
           error of mcp-review-check itself (fatal: and a stack trace on stderr; please report it).
   4       Stopped by --max-duration after the handshake, at any --fail-on (the Result line reads INCOMPLETE).
-  128+N   Ended by signal N: 130 Ctrl+C (SIGINT), 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP. A stdio server is ended first
-          and no report is written.
+  128+N   Ended by signal N: 130 Ctrl+C (SIGINT), 143 SIGTERM, 131 SIGQUIT, 129 SIGHUP; no report is written.
 
-The exit code counts findings at each directory's own severity for --target (all = Claude and ChatGPT); MCP spec
-findings are reported but count only with --fail-on-spec. The Result line names the findings that failed the run.
-The score (100 - 12 per rule with errors - 4 per rule with only warnings) is provisional.
-With GITHUB_ACTIONS=true, findings are also printed as ::error/::warning annotations on stderr (at the --target
-severity), exit 3 and 4 as one ::error with its cause, a partial check as one ::warning naming why, and the markdown
-report is appended to $GITHUB_STEP_SUMMARY when it is set.
-Environment: HTTPS_PROXY, HTTP_PROXY and NO_PROXY route requests through an HTTP(S) or SOCKS5 proxy (ALL_PROXY is the fallback; credentials redacted);
-NODE_EXTRA_CA_CERTS adds trusted CAs; MCP_REVIEW_CHECK_TOKEN is the default --bearer.
+Spec findings count only with --fail-on-spec. The score (100 - 12 per rule with errors - 4 per rule with only
+warnings) is provisional. With GITHUB_ACTIONS=true, findings are also ::error/::warning annotations on stderr and the
+markdown report is appended to $GITHUB_STEP_SUMMARY. Proxies: HTTPS_PROXY, HTTP_PROXY, NO_PROXY, ALL_PROXY.
 Guide: https://github.com/alisaosipova/mcp-review-check/tree/main/docs/guide
 No telemetry is sent. Passing these checks does not guarantee directory approval.
 `;
@@ -219,11 +191,12 @@ const HTTP_ONLY = ['header', 'bearer', 'active-auth'] as const;
 
 const isAuthorization = (h: string) => h.slice(0, Math.max(0, h.indexOf(':'))).trim().toLowerCase() === 'authorization';
 
-/** The known option nearest to an unknown one (Levenshtein distance at most 2), for "did you mean". */
-function closestOption(name: string): string | undefined {
+/** The candidate nearest to `name` (Levenshtein distance at most 2, never `name` itself), for "did you mean". */
+function closest(name: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestDistance = 3;
-  for (const option of Object.keys(OPTIONS).map((k) => `--${k}`)) {
+  for (const option of candidates) {
+    if (option === name) continue;
     let prev = Array.from({ length: option.length + 1 }, (_, j) => j);
     for (let i = 1; i <= name.length; i++) {
       const cur = [i];
@@ -235,10 +208,31 @@ function closestOption(name: string): string | undefined {
   return best;
 }
 
+const OPTION_NAMES = Object.keys(OPTIONS).map((k) => `--${k}`);
+
+/** The known option nearest to an unknown one, for "did you mean". */
+const closestOption = (name: string) => closest(name, OPTION_NAMES);
+
+/** The usage error for a value outside an enumeration (--format, --target, --fail-on), with "did you mean" for a
+ *  near miss (I-A10-3). Only a known value is ever shown, never the value given. */
+function enumMessage(option: string, given: string, allowed: readonly string[], list: string): string {
+  const near = closest(given.toLowerCase(), allowed);
+  return `--${option} must be ${list}${near ? `; did you mean ${near}?` : ''}`;
+}
+
 /** One line for a parseArgs error: the option and what it needs, never its value or Node's multi-line advice. */
 function usageMessage(e: Error & { code?: string }): string {
   const option = /'(?:-\w, )?(-[^'=\s,]*)/.exec(e.message)?.[1];
   if (option && e.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
+    // An option and its value in one argv word ("--stdio node x.mjs" from a script or an exec-form CMD): the first
+    // word is a known option, so say how to split it (C-05). The rest of the word is not shown.
+    const raw = /'(?:-\w, )?(-[^']*)'/.exec(e.message)?.[1] ?? option;
+    const known = Object.hasOwn(OPTIONS, option.replace(/^--/, '')) ? OPTIONS[option.replace(/^--/, '') as keyof typeof OPTIONS] : undefined;
+    if (/\s/.test(raw) && known) {
+      return known.type === 'string'
+        ? `${option} and its value were passed as one argument; pass two arguments or write ${option}=<value>`
+        : `${option} and the text after it were passed as one argument; pass each option as its own argument`;
+    }
     const near = closestOption(option);
     return `unknown option ${option}${near ? `; did you mean ${near}?` : ''}`;
   }
@@ -338,10 +332,10 @@ function rerunCommand(argv: string[], redactor: Redactor): string {
   return ['npx mcp-review-check', ...args.map((a) => (/^[\w@%+=:,./«»-]+$/.test(a) ? a : quote(a)))].join(' ');
 }
 
-/** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE with its BOM. */
+/** --tool-args as Windows editors save it, too: UTF-8 with or without a BOM, or UTF-16LE or UTF-16BE with its BOM. */
 function readToolArgs(file: string): Record<string, unknown> {
   const raw = readInputFile(file); // regular file, non-blocking open, 16 MiB cap: a FIFO cannot hang the run
-  return JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
+  return JSON.parse(decodeText(raw));
 }
 
 /** One warning line per --tool-args entry that no --active call used, with the reason, so typos and non-read-only tools show. */
@@ -415,6 +409,62 @@ function canonical(p: string): string {
   return process.platform === 'win32' || process.platform === 'darwin' ? full.toLowerCase() : full;
 }
 
+/** The files a run reads that an output must not overwrite (I-A01-3): the config file, --tool-args, the
+ *  --openai-manifest file and the MCP configuration beside it, and the files read from --plugin-dir. */
+function inputPaths(values: { 'tool-args'?: string; 'openai-manifest'?: string; 'plugin-dir'?: string }, cfg: LoadedConfig | undefined): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  if (cfg) out.push([cfg.given ? '--config' : 'the config file', cfg.file]);
+  if (values['tool-args']) out.push(['--tool-args', values['tool-args']]);
+  const manifest = values['openai-manifest'];
+  if (manifest) {
+    out.push(['--openai-manifest', manifest]);
+    const d = dirname(manifest);
+    const root = ['.codex-plugin', '.agent-plugin', '.claude-plugin'].includes(basename(d)) ? dirname(d) : d;
+    for (const c of ['mcp.json', '.mcp.json']) out.push(['--openai-manifest', join(root, c)]);
+  }
+  const dir = values['plugin-dir'];
+  if (dir) {
+    out.push(['--plugin-dir', join(dir, '.claude-plugin', 'plugin.json')], ['--plugin-dir', join(dir, '.mcp.json')]);
+    // README, LICENSE and package-manager files at the folder root, as the listing loader reads them.
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { /* checked later as a usage error */ }
+    for (const n of names) if (/^readme(\.[a-z0-9]+)?$/i.test(n) || /^(licen[cs]e|copying)([.-][a-z0-9.-]+)?$/i.test(n) || PACKAGE_CONFIG_FILES.has(n)) out.push(['--plugin-dir', join(dir, n)]);
+  }
+  return out;
+}
+
+/** Why `path` cannot be written, or undefined: it is a directory, or the nearest existing directory above it is not
+ *  a writable directory (a missing parent is created at write time). Checked before connecting (I-A10-1). */
+function unwritable(path: string): string | undefined {
+  const abs = resolve(path);
+  let self;
+  try { self = statSync(abs, { throwIfNoEntry: false }); } catch { /* ENOTDIR: found below */ }
+  if (self?.isDirectory()) return 'it is a directory';
+  // An existing file (or /dev/stdout, /dev/null) is written in place: its own permission counts, not its directory's.
+  if (self) { try { accessSync(abs, constants.W_OK); return undefined; } catch { return 'it is not writable'; } }
+  let dir = dirname(abs);
+  for (;;) {
+    let st;
+    try { st = statSync(dir, { throwIfNoEntry: false }); } catch { st = undefined; }
+    if (st) {
+      if (!st.isDirectory()) return 'a part of its directory path is a file';
+      try { accessSync(dir, constants.W_OK); } catch { return 'its directory is not writable'; }
+      return undefined;
+    }
+    const up = dirname(dir);
+    if (up === dir) return 'its directory does not exist';
+    dir = up;
+  }
+}
+
+/** All of stderr but our annotations, line by line through ciSafeLine, and no legacy "##[" anywhere in a line: a
+ *  warning that quotes a path or server text cannot start a workflow command or move the cursor (I-A07-1). */
+function guardStderr(text: string): string {
+  if (!text) return text;
+  const lines = text.split('\n');
+  return lines.map((l, i) => (i === lines.length - 1 && l === '' ? l : neutralizeCommands(ciSafeLine(l)))).join('\n');
+}
+
 /** A line of server text for stderr that a GitHub runner cannot read as a workflow command ("::error ...",
  *  "::add-mask::", "##[group]"): the leading ':' or '#' shown as \u{3A} or \u{23}, as the text report does (F135);
  *  control and format characters (ESC, CR, bidi overrides) as \u{..} through visibleText. */
@@ -456,6 +506,10 @@ export const phaseLineWanted = (stderrTty: boolean, env: NodeJS.ProcessEnv) => s
  */
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.env, isTty = !!process.stdout.isTTY, interrupted?: AbortSignal, stderrTty = false): Promise<CliResult> {
   let stderr = '';
+  /** Our own GitHub annotations: appended after the guarded stderr, as the only workflow commands we mean. */
+  let ann = '';
+  /** The result, every stderr line but the annotations made safe for a terminal and a CI log (I-A07-1). */
+  const done = (code: number, stdout: string, more = ''): CliResult => ({ code, stdout, stderr: guardStderr(stderr + more) + ann });
   let redactor: Redactor | undefined;
   let cfg: LoadedConfig | undefined;
   const fromConfig: Record<string, string> = {}; // option name (or url, stdio) → the config key it came from
@@ -499,7 +553,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       proxyOnCheck = false;
       try { m.proxy.installProxy(); } catch (e) {
         if (!(e instanceof m.proxy.ProxyConfigError)) throw e;
-        return { code: 2, stdout: '', stderr: `${stderr}error: ${e.message}\nRun with --help for usage.\n` };
+        return done(2, '', `error: ${e.message}\nRun with --help for usage.\n`);
       }
     }
     const { buildSnapshot, redactorFor } = m.connect;
@@ -561,12 +615,17 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         if (cfg.url !== undefined) { positionals = [cfg.url]; fromConfig.url = 'url'; }
         if (cfg.stdio !== undefined) { values.stdio = cfg.stdio; fromConfig.stdio = 'stdio'; }
         if (cfg.command) { command = cfg.command; fromConfig.stdio = 'stdio'; }
-      } else if (positionals.length) {
-        // A <url> on the command line replaces a file written for a stdio server: its stdio-only keys are not used.
-        for (const opt of STDIO_ONLY) drop(opt, 'the <url> on the command line is not a --stdio server');
       } else {
-        for (const opt of HTTP_ONLY) drop(opt, 'the --stdio server on the command line is not a <url>');
+        // A <url> on the command line replaces a file written for a stdio server: its stdio-only keys are not used.
+        if (positionals.length) for (const opt of STDIO_ONLY) drop(opt, 'the <url> on the command line is not a --stdio server');
+        else for (const opt of HTTP_ONLY) drop(opt, 'the --stdio server on the command line is not a <url>');
+        // The file's server is replaced by the command line's: said in the note, not silently (I-A01-2).
+        if (cfg.url !== undefined) unused.push('key "url" (a server is given on the command line)');
+        if (cfg.stdio !== undefined || cfg.command) unused.push('key "stdio" (a server is given on the command line)');
       }
+      // A listing-only run lists no tools, so a shared file's failOnDrift would fail it every time (A01-04).
+      const fileListingOnly = positionals.length === 0 && values.stdio === undefined && !command && (values['plugin-dir'] !== undefined || values['openai-manifest'] !== undefined);
+      if (fileListingOnly) drop('fail-on-drift', 'a listing-only run lists no tools');
       if (unused.length) stderr += `${visibleText(`mcp-review-check: not used from ${cfg.file}: ${unused.join(', ')}`)}\n`;
       // One line names the file applied, and the key the server came from, so a file's effect is never silent.
       const server = fromConfig.url ? ' (the server from its key "url")' : fromConfig.stdio ? ' (the server from its key "stdio")' : '';
@@ -597,15 +656,17 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       for (const [opt, on] of [['--bearer', values.bearer !== undefined], ['--header', !!values.header?.length], ['--env', !!values.env?.length], ['--cwd', values.cwd !== undefined], ['--active', !!values.active], ['--active-auth', !!values['active-auth']], ['--tool-args', !!values['tool-args']]] as const) {
         if (on) throw new UsageError(`${opt} needs a <url> or --stdio target; a listing-only run connects to nothing`);
       }
+      // From the command line only: the config file's failOnDrift was dropped above with a note (A01-04).
+      if (values['fail-on-drift']) throw new UsageError('--fail-on-drift needs a <url> or --stdio target; a listing-only run lists no tools');
     }
     const target = values.target!.toLowerCase() as TargetOpt;
-    if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError('--target must be claude, chatgpt or all');
-    if (!['text', 'json', 'markdown', 'sarif', 'junit'].includes(format)) throw new UsageError('--format must be text, json, markdown, sarif or junit');
+    if (!['claude', 'chatgpt', 'all'].includes(target)) throw new UsageError(enumMessage('target', target, ['claude', 'chatgpt', 'all'], 'claude, chatgpt or all'));
+    if (!['text', 'json', 'markdown', 'sarif', 'junit'].includes(format)) throw new UsageError(enumMessage('format', format, ['text', 'json', 'markdown', 'sarif', 'junit'], 'text, json, markdown, sarif or junit'));
     const sarifLocation = values['sarif-location'] ?? SARIF_LOCATION;
     // Code scanning takes repository-relative paths only: no scheme (C: included), no leading / or \, no "..".
     if (!sarifLocation || /^([a-z][a-z0-9+.-]*:|[\\/])/i.test(sarifLocation) || sarifLocation.split(/[\\/]/).includes('..')) throw new UsageError('--sarif-location must be a relative path without a scheme or ".." (the value is not shown)');
     const failOn = values['fail-on']!.toLowerCase() as FailOn;
-    if (!['error', 'warning', 'never'].includes(failOn)) throw new UsageError('--fail-on must be error, warning or never');
+    if (!['error', 'warning', 'never'].includes(failOn)) throw new UsageError(enumMessage('fail-on', failOn, ['error', 'warning', 'never'], 'error, warning or never'));
     // Digits only: Number() would also take 0x10, 1e2, 1.5 and blanks.
     const timeoutMs = /^\d+$/.test(values.timeout!) ? Number(values.timeout) : NaN;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new UsageError('--timeout must be a positive whole number of milliseconds');
@@ -627,8 +688,19 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       return [[`--${opt}`, path] as const];
     });
     // --output in another format over the --baseline file would leave a text (or markdown, SARIF, JUnit) report that the
-    // next --baseline run rejects; --save-baseline or --output in --format json over it is the intended refresh.
+    // next --baseline run rejects; --save-baseline or --output in --format json over it is the intended refresh, which a
+    // run that exits 3 or 4 does not make (see `unsaved` below, A01-02).
     if (values.output !== undefined && values.baseline && format !== 'json' && samePath(values.baseline, values.output)) throw new UsageError(`--baseline and --output name the same file; --output would replace the baseline with the --format ${format} report (use --save-baseline to refresh it)`);
+    // Every file this run writes: none may be a file it reads (I-A01-3), and each must be writable before anything
+    // connects (I-A10-1), so a slow check does not end in exit 2 over a typo in a path.
+    const outputs: Array<readonly [string, string]> = [...(values.output !== undefined ? [['--output', values.output] as const] : []), ...jsonOutputs];
+    for (const [flag, path] of outputs) {
+      for (const [input, inPath] of inputPaths(values, cfg)) {
+        if (samePath(path, inPath)) throw new UsageError(`${flag} and ${input} name the same file; ${flag} would overwrite an input of this run`);
+      }
+      const why = unwritable(path);
+      if (why) throw new UsageError(`cannot write ${flag} ${visibleText(path)}: ${why} (checked before connecting; no report was written)`);
+    }
     const known = new Set([...RULES, ...MANUAL_ITEMS].map((x) => x.id));
     // "--ignore A,B" as many linters take it, besides --ignore A --ignore B.
     const ignore = (values.ignore ?? []).flatMap((v) => v.split(',')).map((v) => v.trim());
@@ -717,8 +789,9 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     if (values['active-auth']) stderr += 'Notice: --active-auth creates a DCR client on your authorization server and sends bogus /authorize and /token requests.\n';
     // Accepted for scripts that share one option set, but said: the user should not think they took effect.
-    if (toolArgs && !values.active) stderr += 'warning: --tool-args has no effect without --active\n';
-    if (values['sarif-location'] !== undefined && format !== 'sarif') stderr += 'warning: --sarif-location applies only to --format sarif\n';
+    // Only for an option typed on the command line: one config file serves runs in several formats and modes (A12-08).
+    if (toolArgs && !values.active && cliGiven.has('tool-args')) stderr += 'warning: --tool-args has no effect without --active\n';
+    if (cliGiven.has('sarif-location') && format !== 'sarif') stderr += 'warning: --sarif-location applies only to --format sarif\n';
     stderr += formatWarnings(format, cliGiven, values as Record<string, unknown>, env);
 
     const opts: BuildOptions = {
@@ -753,7 +826,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       ?? { snap: emptySnapshot({ kind: 'listing' }, { target, active: false, activeAuth: false }), stderrTail: undefined, tracer: undefined };
     if (interrupted?.aborted) {
       const n = typeof interrupted.reason === 'number' ? interrupted.reason : 2;
-      return { code: 128 + n, stdout: '', stderr: `${stderr}mcp-review-check: interrupted by a signal; no report written\n` };
+      return done(128 + n, '', 'mcp-review-check: interrupted by a signal; no report written\n');
     }
     if (toolArgs && snap.active) stderr += unusedToolArgs(toolArgs, snap);
     // --active-auth: the DCR client it registered, so it can be deleted (A03-03). Only client_id and the endpoint, redacted.
@@ -766,7 +839,8 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
         values['openai-manifest'] !== undefined ? loadOpenAiManifest(values['openai-manifest']) : undefined,
       );
       attachListing(snap, listing);
-      for (const e of listing.errors) stderr += `warning: ${e.source === 'plugin' ? '--plugin-dir' : '--openai-manifest'} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}\n`;
+      // The path comes from file content (a manifest's mcpServers, a file name): one line, no workflow command (A07-01).
+      for (const e of listing.errors) stderr += `${ciSafeLine(`warning: ${e.source === 'plugin' ? '--plugin-dir' : '--openai-manifest'} ${scrub(e.path, redactor)} ${scrub(e.message, redactor)}`)}\n`;
     }
     // --max-duration bounds the rules too (A09-04): the ones not started by the deadline are skipped and the run is
     // stopped during "rules" (exit 4). They get at least RULES_GRACE_MS, so a run whose connect phases used up the time
@@ -795,7 +869,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     // Tool fingerprints (the JSON report's and the drift's) over the snapshot the rules saw: secrets scrubbed, but not
     // the run's other --env values, so the digests do not depend on the command line (A01-05). Names stay redacted.
     pinFingerprints(report.snap, snap);
-    const drift: Drift | undefined = baseline && compareTools(baseline.tools, report.snap);
+    const drift: Drift | undefined = baseline && compareTools(baseline.tools, report.snap, baseline.listingOnly);
     const changes = driftCount(drift);
 
     // FORCE_COLOR as in Node: '', 1, 2, 3 or true colour without a TTY and over NO_COLOR; other values turn colour off.
@@ -810,11 +884,19 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const rerun = rerunCommand(argv, redactor);
     const body = render(report, format, textOpts, rerun, sarifLocation, baselined);
     if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
-      for (const a of annotations(report)) stderr += `${a}\n`;
-      if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
+      // Appended after every other line, outside the stderr guard: they are the only workflow commands we mean (I-A07-1).
+      for (const a of annotations(report)) ann += `${a}\n`;
+      // An output that names the job summary file writes it itself; appending as well would give the report twice.
+      const summaryOut = env.GITHUB_STEP_SUMMARY ? outputs.find(([, path]) => samePath(path, env.GITHUB_STEP_SUMMARY!)) : undefined;
+      if (summaryOut) stderr += `mcp-review-check: the report is not appended to $GITHUB_STEP_SUMMARY, as ${summaryOut[0]} writes that file\n`;
+      else if (env.GITHUB_STEP_SUMMARY) stderr += appendStepSummary(env.GITHUB_STEP_SUMMARY, markdownReport(report, { cta: textOpts.cta, verbose: textOpts.verbose, rerun, drift, failOnDrift: textOpts.failOnDrift }, baselined, textOpts.diffOnly));
     }
     if (values.verbose) {
       if (snap.listing) stderr += `[listing]\n${listingDump(snap.listing, ciSafeLine)}\n`;
+      if (!listingOnly && spec.kind === 'http') {
+        const route = M!.proxy.proxyRouteLine(new URL(spec.url), env);
+        if (route) stderr += ciSafeLine(route) + '\n';
+      }
       // Server-controlled text (a URL, an error message, the stderr tail) shows control and format characters as
       // \u{..}, so an ESC sequence, a CR or a bidi override cannot rewrite the terminal or a CI log (F135), and no
       // line of it starts a GitHub workflow command (A07-04).
@@ -842,22 +924,35 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     const jsonDoc = !jsonOutputs.length ? '' : format === 'json' ? body : render(report, 'json', textOpts, rerun, sarifLocation, baselined);
     const written: string[] = [];
     let writeErrors = '';
-    // --save-baseline is not written by a run that did not connect (exit 3) or was stopped (exit 4): it would replace
-    // an accepted baseline with a connect failure and no tool fingerprints (A01-02). --json-output is still written.
-    const unsaved = snap.fatal ? 'the run did not connect' : snap.limits?.stopped ? 'the run was stopped by --max-duration' : undefined;
-    const saving = jsonOutputs.some(([flag]) => flag === '--save-baseline');
-    if (saving && unsaved) stderr += `warning: --save-baseline not written: ${unsaved}; the earlier baseline, if any, is kept\n`;
-    if (saving && !unsaved) {
+    // No baseline is written by a run that did not connect (exit 3), was stopped (exit 4) or, with --fail-on-incomplete,
+    // was partial (exit 3): it would replace an accepted baseline with a report that has no tool fingerprints (A01-02,
+    // A01-03). That holds for every output naming the --baseline or --save-baseline file (--output in --format json,
+    // --json-output), so the earlier baseline really is kept; --json-output to another file is still written.
+    const unsaved = snap.fatal ? 'the run did not connect' : snap.limits?.stopped ? 'the run was stopped by --max-duration'
+      : values['fail-on-incomplete'] && partial ? `the check is partial (${snap.coverage.toolLevel}) and --fail-on-incomplete is set` : undefined;
+    const saveTo = jsonOutputs.find(([flag]) => flag === '--save-baseline')?.[1];
+    const baselineFiles = [values.baseline, saveTo].filter((x): x is string => !!x);
+    const keeps = (flag: string, path: string) => !!unsaved && (flag === '--save-baseline' || baselineFiles.some((b) => samePath(path, b)));
+    for (const [flag, path] of outputs) {
+      if (keeps(flag, path)) stderr += `warning: ${flag} not written: ${unsaved}; ${flag === '--save-baseline' ? 'the earlier baseline' : 'it names the baseline file, and the earlier baseline'}, if any, is kept${flag === '--output' ? ' (the report is printed to stdout instead)' : ''}\n`;
+    }
+    if (saveTo && !unsaved) {
       const noTools = incompleteTools(report.snap);
       if (noTools) stderr += `warning: --save-baseline: ${noTools}, so the baseline records no tool fingerprints and --fail-on-drift cannot compare tools against it\n`;
       // --baseline reads at most INPUT_FILE_CAP: a larger baseline would be exit 2 on every later run (A01-08).
       const bytes = Buffer.byteLength(jsonDoc);
       if (bytes > INPUT_FILE_CAP) stderr += `warning: --save-baseline: the report is ${(bytes / 1024 / 1024).toFixed(1)} MiB, over the ${INPUT_FILE_CAP / 1024 / 1024} MiB that --baseline reads, so a later --baseline run cannot use it\n`;
     }
+    // A missing parent directory is created, as the documented first --save-baseline .mcp-review-check/baseline.json
+    // needs in a fresh repository (A12-04); its writability was checked before connecting.
+    const write = (path: string, text: string) => {
+      mkdirSync(dirname(resolve(path)), { recursive: true });
+      writeFileSync(path, text);
+    };
     for (const [flag, path] of jsonOutputs) {
-      if (flag === '--save-baseline' && unsaved) continue;
+      if (keeps(flag, path)) continue;
       try {
-        writeFileSync(path, jsonDoc);
+        write(path, jsonDoc);
         if (!written.includes(path)) written.push(path);
       } catch (e) {
         writeErrors += `error: cannot write ${flag} ${path}: ${(e as Error).message}\n`;
@@ -865,37 +960,38 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     }
     const jsonNote = written.length ? `JSON report written to ${written.join(', ')}` : '';
     const finalCode = writeErrors ? 2 : code;
-    if (values.output) {
+    if (values.output && !keeps('--output', values.output)) {
       try {
-        writeFileSync(values.output, body);
+        write(values.output, body);
       } catch (e) {
         // The server was checked: print the report instead of losing it, and report the write failure as exit 2.
-        return { code: 2, stdout: body, stderr: `${stderr}${writeErrors}error: cannot write --output ${values.output}: ${(e as Error).message}\n` };
+        return done(2, body, `${writeErrors}error: cannot write --output ${values.output}: ${(e as Error).message} (the report is printed to stdout instead)\n`);
       }
-      return { code: finalCode, stdout: '', stderr: stderr + writeErrors + summaryLine + ` · report written to ${values.output}${jsonNote ? ` · ${jsonNote}` : ''}\n` };
+      return done(finalCode, '', writeErrors + summaryLine + ` · report written to ${values.output}${jsonNote ? ` · ${jsonNote}` : ''}\n`);
     }
-    return { code: finalCode, stdout: body, stderr: stderr + writeErrors + (jsonNote ? `mcp-review-check: ${jsonNote}\n` : '') };
+    return done(finalCode, body, writeErrors + (jsonNote ? `mcp-review-check: ${jsonNote}\n` : ''));
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code?.startsWith?.('ERR_PARSE_ARGS')) {
       // parseArgs names an option without its "=value"; the rest of its message is not repeated.
       const message = configNote(e instanceof UsageError ? e.message : usageMessage(e as Error & { code?: string }), cfg, fromConfig);
-      return { code: 2, stdout: '', stderr: `${stderr}error: ${message}\nRun with --help for usage.\n` };
+      return done(2, '', `error: ${message}\nRun with --help for usage.\n`);
     }
     if (e instanceof ReportTooLargeError) {
       // Not an internal bug: the server was checked but its report does not fit one string. A message with a hint, no stack.
       const message = redactor && M ? M.redact.scrub(e.message, redactor) : e.message;
-      const ann = env.GITHUB_ACTIONS === 'true' ? `::error title=mcp-review-check::${escapeCommand(message)}\n` : '';
-      return { code: 3, stdout: '', stderr: `${stderr}error: ${message}\n${ann}` };
+      if (env.GITHUB_ACTIONS === 'true') ann += `::error title=mcp-review-check::${escapeCommand(message)}\n`;
+      return done(3, '', `error: ${message}\n`);
     }
     // In GitHub Actions this exit 3 also gets one ::error, with the first line of the redacted error.
     const first = env.GITHUB_ACTIONS === 'true' ? `fatal: ${(e as Error)?.message ?? e}` : '';
     // An error message can carry server text: control and format characters show as \u{..}, and no line of the stack
     // starts a workflow command (A07-04).
     const scrubbed = (x: string) => (redactor && M ? M.redact.scrub(x, redactor) : x);
-    const ann = first ? `::error title=mcp-review-check::${escapeCommand(visibleText(scrubbed(first).split('\n')[0]))}\n` : '';
+    if (first) ann += `::error title=mcp-review-check::${escapeCommand(visibleText(scrubbed(first).split('\n')[0]))}\n`;
     const raw = `fatal: ${(e as Error).stack ?? e}`;
     const fatal = scrubbed(raw).split('\n').map(ciSafeLine).join('\n');
-    return { code: 3, stdout: '', stderr: `${scrubbed(stderr)}${fatal}\n${ann}` };
+    stderr = scrubbed(stderr);
+    return done(3, '', `${fatal}\n`);
   }
 }
 

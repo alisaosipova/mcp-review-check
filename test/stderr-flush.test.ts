@@ -62,6 +62,8 @@ describe('the CLI exits after stdout and stderr are written', () => {
     const lines = r.stderr.split('\n');
     expect(lines.filter((l) => /^::(error|warning) title=/.test(l)).length).toBe(expected);
     expect(lines[lines.length - 1]).toBe('');
-    expect(lines[lines.length - 2]).toMatch(/^mcp-review-check: score .* report written to /);
+    // 1.2.0 (I-A07-1): our annotations come after every other stderr line, so the stream ends with a whole annotation.
+    expect(lines[lines.length - 2]).toMatch(/^::(error|warning) title=/);
+    expect(lines.filter((l) => /^mcp-review-check: score .* report written to /.test(l))).toHaveLength(1);
   }, 90000);
 });

@@ -51,11 +51,16 @@ describe('--json-output: the JSON report besides another format', () => {
     expect(r.stdout + r.stderr).not.toContain(SECRET);
   });
 
-  it('an unwritable file is exit 2 with the report still printed; an empty path or the --output file is a usage error', async () => {
-    const r = await run(['--format', 'text', '--json-output', join(dir, 'no', 'such', 'dir', 'r.json'), ...server]);
+  it('a missing folder is created; a path through a file, an empty path or the --output file is a usage error', async () => {
+    // 1.2.0 (A12-04, I-A10-1): the parent folder is created, and a path that cannot be written is exit 2 before connecting.
+    const made = await run(['--format', 'text', '--json-output', join(dir, 'no', 'such', 'dir', 'r.json'), ...server]);
+    expect(made.code, made.stderr).toBe(1); // the bad server's findings; the write succeeded
+    expect(readFileSync(join(dir, 'no', 'such', 'dir', 'r.json'), 'utf8')).toContain('"schemaVersion"');
+    writeFileSync(join(dir, 'file'), 'x');
+    const r = await run(['--format', 'text', '--json-output', join(dir, 'file', 'r.json'), ...server]);
     expect(r.code).toBe(2);
-    expect(r.stdout).toMatch(/^Score /m);
-    expect(r.stderr).toMatch(/error: cannot write --json-output .*r\.json/);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toMatch(/error: cannot write --json-output .*r\.json: a part of its directory path is a file/);
     expect((await run(['--json-output', '', ...server])).stderr).toMatch(/--json-output needs a file path/);
     const same = join(dir, 'x');
     const clash = await run(['--format', 'text', '--output', same, '--save-baseline', same, ...server]);

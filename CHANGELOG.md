@@ -10,6 +10,9 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 - JSON `coverage.diagnosis.kind` can be `no-answer`: the server accepted the connection but answered neither the unauthenticated `initialize` nor the handshake; the summary names host:port and the wait (A10-03).
 - `proxyRouteLine` (`src/proxy.ts`) builds the `--verbose` route line, `proxy: <proxy> via <variable> (SOCKS5 | CONNECT tunnel | plain forwarding; NO_PROXY: ...)`, with credentials removed (I-A02-3).
+- The `not used from <file>` note names the config file's `url` or `stdio` key when the command line gives the server (I-A01-2).
+- Config, `--baseline` and `--tool-args` files may be UTF-16BE with a BOM (I-A01-5).
+- "Did you mean" for a misspelt `--format`, `--target` or `--fail-on` value (`--format jsn`: `did you mean json?`) (I-A10-3).
 
 ### Fixed
 
@@ -22,6 +25,15 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The auth probe runs at most once per run: with `--active-auth` a token rejected on `tools/list` no longer registers a second DCR client that no notice named, and the metadata, TLS and timing requests are not repeated (A03-02).
 - The `--active-auth` DCR notice is printed even when `--max-duration` stops the run after the registration (I-A03-6).
 - stdio messages are read in linear time: a 62 MB `tools/list` is read in about a second instead of timing out, and a message bigger than the snapshot budget stops the run while it is being read (A09-05).
+- A run that did not connect, was stopped by `--max-duration` or, with `--fail-on-incomplete`, was partial no longer overwrites the baseline through another output: `--json-output` or `--output` in `--format json` naming the `--baseline` or `--save-baseline` file is skipped with the same `not written` warning, and the "earlier baseline is kept" message is now true (A01-02). `--save-baseline` is no longer written by a partial check that exits 3 under `--fail-on-incomplete` (A01-03).
+- A listing-only run with `--fail-on-drift` no longer always exits 1: on the command line it is a usage error (exit 2), from a config file it is not used, with a note; a listing-only baseline used for a server run is named as such (A01-04).
+- The baseline pass for `«redacted»` subjects is linear (a glob match by `indexOf`, entries indexed by prefix and suffix): 10,000 entries took 73 s, a long tool name against a many-mark entry 28 s (A01-05).
+- A NUL character in a config file string (an `env` value, a `stdio` argument, `bearer`, `cwd`) is a usage error that does not show the value, instead of a secret echoed in the report or an internal error (A01-06).
+- A `--plugin-dir` / `--openai-manifest` warning on stderr can no longer start a GitHub workflow command or carry ESC: a manifest's `mcpServers` text is shown on one line with control characters escaped (A07-01).
+- `--save-baseline .mcp-review-check/baseline.json`, the documented first step, works in a fresh repository: the parent folder of `--save-baseline`, `--json-output` and `--output` is created (A12-04).
+- A config file's `sarifLocation` (or `toolArgs` without `--active`) no longer warns on every run in another format; only the option typed on the command line does (A12-08).
+- `"--stdio node server.js"` passed as one argument says how to split it instead of "unknown option --stdio; did you mean --stdio?" (C-05).
+- Tool fingerprints canonicalize each tool once and each snapshot is fingerprinted once per run, with the same digests (I-A09-5).
 - The `<script type="importmap">` scan of UI HTML (APPS-007, APPS-013) is linear: 2 MB of unclosed importmap openers took about 85 s and ran past `--max-duration`; an opener inside an earlier map body is now read as script text, and a map with no `</script` is parsed once (A09-01).
 - Every field of a `resources/read` content item is capped, not only `text` and `blob`: `uri` at ID_CAP, `mimeType` and `_meta` at TEXT_CAP, each cut listed in `limits.truncated`; the MIME normalization of APPS-003 splits a parameter on its first `=` instead of a regex that was quadratic on a long run of spaces (A09-03).
 - A run stopped by `--max-duration` or the snapshot budget builds the INJ, POL and DATA corpus once, as a complete run does, instead of once per rule (A09-06).
@@ -45,6 +57,13 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The manual checklist keeps MAN-020 and MAN-021 whole when the package's mcp.json does not parse or names no server: it said "the rest is checked by LST-022" when LST-022 had checked nothing (A06-07).
 - The `--verbose` [listing] dump redacts a one-string server `command` (`node server.js --api-key ... --password=...`, quoted values such as `--header "Authorization: Bearer ..."` included) like an argv, split as `--stdio` splits it, and the userinfo of a URL after `--flag=` or inside a string (A06-08).
 - The listings guide says which files `--plugin-dir` reads, lists and skips (I-A06-8).
+
+### Changed
+
+- Every stderr line but the tool's own GitHub annotations goes through one guard (control characters escaped, no line starts a workflow command), and the annotations come last (I-A07-1).
+- `--output`, `--json-output` and `--save-baseline` paths are checked before connecting: a directory, a path through a file or an unwritable folder is exit 2 at once, with no server started, instead of after the whole check (I-A10-1). A write that still fails says the report was printed to stdout.
+- No output may overwrite a file the run reads (the config file, `--tool-args`, the `--openai-manifest` file and its `mcp.json`, the files `--plugin-dir` reads): exit 2. An output naming `$GITHUB_STEP_SUMMARY` is written once, without the automatic append (I-A01-3).
+- `--help` is 84 lines: `--stdio "<command>"` is listed under Options and the `--no-*` opposites share one entry (I-A10-6).
 
 ## [1.1.0] - 2026-11-04
 

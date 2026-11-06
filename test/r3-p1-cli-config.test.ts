@@ -148,7 +148,8 @@ describe('A01-04 / A07-06: a listing-only run records and compares no tools', ()
     expect(r.stderr).toMatch(/warning: --save-baseline: no server was checked \(a listing-only run\), so the baseline records no tool fingerprints/);
     // Used as a baseline against a server: not compared, no "added" tools.
     const s = await run(['--no-config', '--baseline', bl, '--format', 'json', '--fail-on', 'never', ...good]);
-    expect(JSON.parse(s.stdout).baseline).toEqual({ toolChanges: null, notCompared: 'the baseline run did not list every tool, so it recorded no tool fingerprints' });
+    // 1.2.0 (review round 4 A01-04): a listing-only baseline is named as such.
+    expect(JSON.parse(s.stdout).baseline).toEqual({ toolChanges: null, notCompared: 'the baseline is a listing-only report (no server was checked), so it recorded no tool fingerprints' });
   });
 
   it('A07-06 a 1.0.0 listing-only baseline (toolFingerprints []) is read as no tool list', async () => {
@@ -164,11 +165,14 @@ describe('A01-04 / A07-06: a listing-only run records and compares no tools', ()
   it('A01-04 a listing-only --baseline run does not report every baseline tool as removed', async () => {
     const base = at('base.json');
     expect((await run(['--no-config', '--save-baseline', base, '--fail-on', 'never', ...good])).code).toBe(0);
-    const r = await run(['--no-config', '--plugin-dir', PLUGIN, '--baseline', base, '--fail-on-drift', '--format', 'json']);
+    const r = await run(['--no-config', '--plugin-dir', PLUGIN, '--baseline', base, '--format', 'json']);
     const doc = JSON.parse(r.stdout);
     expect(doc.baseline.toolChanges).toBeNull();
     expect(doc.baseline.notCompared).toBe('this run did not list every tool: no server was checked (a listing-only run)');
-    expect(r.stderr).toMatch(/--fail-on-drift: tool definitions not compared \(this run did not list every tool: no server was checked/);
+    // 1.2.0 (review round 4 A01-04): --fail-on-drift in a listing-only run is a usage error, not an exit 1 every time.
+    const drift = await run(['--no-config', '--plugin-dir', PLUGIN, '--baseline', base, '--fail-on-drift', '--format', 'json']);
+    expect(drift.code).toBe(2);
+    expect(drift.stderr).toContain('--fail-on-drift needs a <url> or --stdio target; a listing-only run lists no tools');
   });
 });
 

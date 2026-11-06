@@ -3,7 +3,7 @@
 // module adds the known ones to each format (JSON `baselined`, SARIF `baselineState`, one line in text and markdown),
 // and the tool-definition drift against the baseline's `toolFingerprints` (JSON `baseline`, SARIF BASE-001 results).
 import { createHash } from 'node:crypto';
-import { inputFileProblem, readInputFile } from './input-file.js';
+import { decodeText, inputFileProblem, readInputFile } from './input-file.js';
 import { sortFindings } from './rules/engine.js';
 import type { Finding } from './rules/types.js';
 import { REDACTED_MARK } from './rules/util/net.js';
@@ -26,11 +26,13 @@ const isOptStr = (v: unknown) => v === undefined || v === null || typeof v === '
 export interface Baseline {
   findings: FindingKey[];
   tools: ToolFingerprint[] | null | undefined;
+  /** The baseline is a listing-only report (no server was checked), so its tools are null (A01-04). */
+  listingOnly?: boolean;
 }
 
 /**
- * Reads a JSON report as `--format json` writes it (UTF-8 with or without a BOM, or UTF-16LE with its BOM, as Windows
- * editors save it) and returns the identity of each of its findings. Ignored findings and manual items are not known.
+ * Reads a JSON report as `--format json` writes it (UTF-8 with or without a BOM, or UTF-16LE or UTF-16BE with its BOM, as
+ * Windows editors save it) and returns the identity of each of its findings. Ignored findings and manual items are not known.
  */
 export function loadBaseline(file: string): FindingKey[] {
   return readBaseline(file).findings;
@@ -46,7 +48,7 @@ export function readBaseline(file: string): Baseline {
   }
   let doc: unknown;
   try {
-    doc = JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
+    doc = JSON.parse(decodeText(raw));
   } catch {
     // A JSON syntax error message quotes the file: name the problem only.
     throw new BaselineError('--baseline is not valid JSON; give a report written by mcp-review-check --format json');
@@ -80,7 +82,7 @@ export function readBaseline(file: string): Baseline {
     if (!ok) throw notReport(`findings[${i}] lacks ruleId, platforms or a string tool, resource or path`);
     return { ruleId: x.ruleId as string, platforms: x.platforms as Finding['platforms'], tool: (x.tool ?? undefined) as string | undefined, resource: (x.resource ?? undefined) as string | undefined, path: (x.path ?? undefined) as string | undefined, message: (x.message ?? undefined) as string | undefined };
   });
-  return { findings, tools };
+  return { findings, tools, ...(listingOnly ? { listingOnly } : {}) };
 }
 
 /** Rule, tool or resource and path: the SARIF partialFingerprints basis. Messages are left out, as their wording and
@@ -95,7 +97,46 @@ type Cursor = { idx: number[]; first: number };
 /** The baseline entries of one subject with one platform set: all of them, and by wording. */
 type Group = { platforms: Set<string>; all: Cursor; byWord: Map<string, Cursor> };
 
-const escapeRe = (s: string) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+/** A baseline entry whose subject holds the redaction mark: its subject and wording split on the mark. */
+type WildEntry = { i: number; b: FindingKey; pieces: string[]; words: string[] };
+/** The wildcard entries with one rule, literal prefix and literal suffix; `first` moves only forward past used entries. */
+type WildBucket = { list: WildEntry[]; first: number };
+
+/**
+ * Whether `s` is the literal `pieces` with a non-empty gap at each split (the mark stood for a value there), as the
+ * regex ^p0(?:G)+?p1...pn$ would say, in linear time: each piece is taken at its leftmost place after the previous one
+ * (indexOf), which is correct for a glob of "*" gaps. With `inString` (a subject key, a JSON array of strings) a gap is
+ * also confined to one JSON string: it holds no unescaped '"' and does not end inside a backslash escape.
+ */
+export function globMatch(pieces: readonly string[], s: string, inString: boolean): boolean {
+  const last = pieces.length - 1;
+  if (last === 0) return s === pieces[0];
+  if (!s.startsWith(pieces[0]) || !s.endsWith(pieces[last])) return false;
+  const end = s.length - pieces[last].length; // where the last piece starts
+  let pos = pieces[0].length; // the start of the current gap
+  for (let p = 1; p <= last; p++) {
+    // The gap runs from pos to the next piece; a scanner walks it once, moving only forward over the candidates.
+    let scan = pos;
+    let at = p === last ? (end >= pos + 1 ? end : -1) : s.indexOf(pieces[p], pos + 1);
+    for (;;) {
+      if (at < 0 || at > end) return false;
+      if (!inString) break;
+      let ok = true;
+      while (scan < at) {
+        const c = s.charCodeAt(scan);
+        if (c === 0x22) return false; // a '"' closes the string: no later place of the piece can help
+        scan += c === 0x5c ? 2 : 1;
+      }
+      if (scan > at) ok = false; // the place splits a backslash escape: try the next one
+      if (ok) break;
+      if (p === last) return false;
+      at = s.indexOf(pieces[p], at + 1);
+    }
+    pos = at + pieces[p].length;
+    if (p < last && pos > end) return false;
+  }
+  return true;
+}
 
 /**
  * Which findings are known: each one takes an unused baseline finding with the same rule and subject whose platforms
@@ -158,23 +199,54 @@ export function knownFindings(findings: FindingKey[], baseline: FindingKey[], al
     take(false, alt);
   }
   // A redacted value in a baseline subject stands for any value inside the same JSON string. Tried last, only for
-  // findings still new and against free entries, so no finding that matched before becomes new.
-  const wild = baseline.flatMap((b, i) => {
+  // findings still new and against free entries, so no finding that matched before becomes new. Linear (A01-05 of
+  // review round 4): a glob match by indexOf, and the entries indexed by rule, literal prefix and literal suffix, so a
+  // finding looks only at entries whose ends fit it.
+  // Buckets: rule -> "prefix length,suffix length" -> prefix NUL suffix -> the entries in baseline order.
+  const wild = new Map<string, Map<string, Map<string, WildBucket>>>();
+  let wildCount = 0;
+  baseline.forEach((b, i) => {
     const k = subjectKey(b);
-    if (!k.includes(REDACTED_MARK)) return [];
-    const re = new RegExp(`^${k.split(REDACTED_MARK).map(escapeRe).join('(?:[^"\\\\]|\\\\.)+?')}$`);
-    const wordRe = new RegExp(`^${wording(b.message).split(REDACTED_MARK).map(escapeRe).join('.+?')}$`, 's');
-    return [{ i, b, re, wordRe }];
+    if (!k.includes(REDACTED_MARK)) return;
+    const pieces = k.split(REDACTED_MARK);
+    const [head, tail] = [pieces[0], pieces[pieces.length - 1]];
+    let byShape = wild.get(b.ruleId);
+    if (!byShape) wild.set(b.ruleId, byShape = new Map());
+    const shape = `${head.length},${tail.length}`;
+    let byEnds = byShape.get(shape);
+    if (!byEnds) byShape.set(shape, byEnds = new Map());
+    const ends = `${head}\u0000${tail}`;
+    const entry: WildEntry = { i, b, pieces, words: wording(b.message).split(REDACTED_MARK) };
+    const bucket = byEnds.get(ends);
+    if (bucket) bucket.list.push(entry); else byEnds.set(ends, { list: [entry], first: 0 });
+    wildCount++;
   });
-  if (wild.length && known.includes(false)) {
-    const byRule = new Map<string, typeof wild>();
-    for (const x of wild) byRule.set(x.b.ruleId, [...(byRule.get(x.b.ruleId) ?? []), x]);
+  if (wildCount && known.includes(false)) {
     for (const sameWording of [true, false]) for (const list of forms) list.forEach((f, n) => {
       if (known[n] || f.ruleId === 'SRV-020') return;
+      const byShape = wild.get(f.ruleId);
+      if (!byShape) return;
       const k = subjectKey(f);
-      const x = byRule.get(f.ruleId)?.find((x) => !used[x.i] && f.platforms.every((p) => x.b.platforms.includes(p)) && x.re.test(k) && (!sameWording || x.wordRe.test(wording(f.message))));
-      if (!x) return;
-      used[x.i] = true;
+      const w = sameWording ? wording(f.message) : '';
+      // The first free entry in baseline order among those whose literal prefix and suffix fit the subject.
+      let best: WildEntry | undefined;
+      for (const [shape, byEnds] of byShape) {
+        const [hl, tl] = shape.split(',').map(Number);
+        if (hl + tl + 1 > k.length) continue;
+        const bucket = byEnds.get(`${k.slice(0, hl)}\u0000${k.slice(k.length - tl)}`);
+        if (!bucket) continue;
+        while (bucket.first < bucket.list.length && used[bucket.list[bucket.first].i]) bucket.first++;
+        for (let j = bucket.first; j < bucket.list.length; j++) {
+          const x = bucket.list[j];
+          if (best && x.i > best.i) break; // a bucket is in baseline order
+          if (used[x.i] || !f.platforms.every((p) => x.b.platforms.includes(p))) continue;
+          if (!globMatch(x.pieces, k, true) || (sameWording && !globMatch(x.words, w, false))) continue;
+          best = x;
+          break;
+        }
+      }
+      if (!best) return;
+      used[best.i] = true;
       known[n] = true;
     });
   }

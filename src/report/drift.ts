@@ -70,12 +70,21 @@ export function canonicalJson(value: unknown): string {
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
+/** TOOL_FIELDS in canonical key order (by UTF-16 code unit), so the whole-tool string is built from the field strings. */
+const SORTED_FIELDS = [...TOOL_FIELDS].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+/**
+ * The fingerprint of one tool. Each present field is canonicalized once; the whole-tool canonical JSON is assembled
+ * from those strings in sorted key order, which is byte for byte what canonicalJson of the picked fields gives (I-A09-5).
+ */
 export function toolFingerprint(t: Record<string, unknown>): ToolFingerprint {
-  const present = TOOL_FIELDS.filter((f) => t[f] !== undefined);
+  const canon = new Map<ToolField, string>();
+  for (const f of TOOL_FIELDS) if (t[f] !== undefined) canon.set(f, canonicalJson(t[f]));
+  const whole = `{${SORTED_FIELDS.filter((f) => canon.has(f)).map((f) => `${JSON.stringify(f)}:${canon.get(f)}`).join(',')}}`;
   return {
     name: toolName(t),
-    sha256: sha256(canonicalJson(Object.fromEntries(present.map((f) => [f, t[f]])))),
-    fields: Object.fromEntries(present.map((f) => [f, sha256(canonicalJson(t[f]))])),
+    sha256: sha256(whole),
+    fields: Object.fromEntries([...canon].map(([f, c]) => [f, sha256(c)])),
   };
 }
 
@@ -95,9 +104,12 @@ export function incompleteTools(snap: Snapshot): string | undefined {
 
 /** Fingerprints set by pinFingerprints for a (redacted) report snapshot. */
 const pinned = new WeakMap<Snapshot, ToolFingerprint[] | null>();
+/** The report snapshot's own fingerprints, kept by pinFingerprints for compareTools (the 1.0.0 form). */
+const own = new WeakMap<Snapshot, ToolFingerprint[] | null>();
 
-/** The fingerprints of the snapshot as it is, ignoring a pin. */
+/** The fingerprints of the snapshot as it is, ignoring a pin (computed once per snapshot when pinned). */
 function ownFingerprints(snap: Snapshot): ToolFingerprint[] | null {
+  if (own.has(snap)) return own.get(snap)!;
   return incompleteTools(snap) ? null : snap.tools.map(toolFingerprint);
 }
 
@@ -105,11 +117,13 @@ function ownFingerprints(snap: Snapshot): ToolFingerprint[] | null {
  * Sets the fingerprints of the report's snapshot `report` from `rules`, the snapshot the rules saw (strong secrets
  * scrubbed, strings over the input cap cut, but no run-specific --env values redacted), so that a non-secret --env
  * value echoed in a tool does not make the digest depend on the command line (A01-05). The names stay the report's
- * (redacted), as the JSON report and the drift lines print them.
+ * (redacted), as the JSON report and the drift lines print them. Each snapshot is fingerprinted once per run: the
+ * report's own fingerprints are kept for compareTools (I-A09-5).
  */
 export function pinFingerprints(report: Snapshot, rules: Snapshot): void {
   const raw = ownFingerprints(rules);
   const shown = ownFingerprints(report);
+  own.set(report, shown);
   pinned.set(report, raw && shown && raw.length === shown.length ? raw.map((f, i) => ({ ...f, name: shown[i].name })) : shown);
 }
 
@@ -127,11 +141,13 @@ function changedFields(a: ToolFingerprint, b: ToolFingerprint): ToolField[] {
 /**
  * `baseline`: the baseline's fingerprints; undefined when the baseline report has none (0.3 or older), null when its
  * tools/list did not finish. Tools are paired by name; two tools with one name pair in their tools/list order, and
- * the extra ones are added or removed.
+ * the extra ones are added or removed. `baselineListingOnly`: the baseline is a listing-only report.
  */
-export function compareTools(baseline: ToolFingerprint[] | null | undefined, snap: Snapshot): Drift {
+export function compareTools(baseline: ToolFingerprint[] | null | undefined, snap: Snapshot, baselineListingOnly = false): Drift {
   const now = toolFingerprints(snap);
   if (baseline === undefined) return { toolChanges: null, notCompared: 'tool fingerprints were not recorded in the baseline (a report of mcp-review-check 0.3 or older); write it again with --save-baseline', notComparedBy: 'baseline', tools: 0 };
+  // A listing-only baseline checked no server: said as such, not as a run that failed to list (A01-04).
+  if (baseline === null && baselineListingOnly) return { toolChanges: null, notCompared: 'the baseline is a listing-only report (no server was checked), so it recorded no tool fingerprints', notComparedBy: 'baseline', tools: 0 };
   if (baseline === null) return { toolChanges: null, notCompared: 'the baseline run did not list every tool, so it recorded no tool fingerprints', notComparedBy: 'baseline', tools: 0 };
   if (now === null) return { toolChanges: null, notCompared: `this run did not list every tool: ${incompleteTools(snap)}`, notComparedBy: 'run', tools: 0 };
   // A baseline written by 1.0.0 hashed the report's snapshot (run-specific --env values redacted): a tool whose digest

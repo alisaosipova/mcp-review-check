@@ -3,7 +3,7 @@
 // each value into the string or list the flag would give, so the file goes through the same validation as the flags,
 // and a flag on the command line overrides the file's key. Errors name the file and the key, never a value.
 import { statSync } from 'node:fs';
-import { inputFileProblem, readInputFile } from './input-file.js';
+import { decodeText, inputFileProblem, readInputFile } from './input-file.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 /** The files looked for, in this order, when --config is not given (and --no-config is not). */
@@ -78,7 +78,7 @@ const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x)
 const isStrMap = (v: unknown): v is Record<string, string> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === 'string');
 
 /**
- * Reads and checks a config file (UTF-8 with or without a BOM, or UTF-16LE with its BOM, as Windows editors save it).
+ * Reads and checks a config file (UTF-8 with or without a BOM, or UTF-16LE or UTF-16BE with its BOM, as Windows editors save it).
  * `given` is true for --config: the CLI names the option in the messages.
  */
 export function loadConfig(file: string, given: boolean): LoadedConfig {
@@ -89,7 +89,7 @@ export function loadConfig(file: string, given: boolean): LoadedConfig {
   }
   let doc: unknown;
   try {
-    doc = JSON.parse((raw[0] === 0xff && raw[1] === 0xfe ? raw.toString('utf16le') : raw.toString('utf8')).replace(/^\uFEFF/, ''));
+    doc = JSON.parse(decodeText(raw));
   } catch {
     // A JSON syntax error message quotes the file (which may hold a token): name the problem only.
     throw new ConfigError(`${where} is not valid JSON`);
@@ -99,6 +99,13 @@ export function loadConfig(file: string, given: boolean): LoadedConfig {
   const out: LoadedConfig = { file, options: {}, keys: {}, warnings: [], given, ignoredKeys: [] };
   const wrong = (key: string, what: string) => new ConfigError(`${where}: key ${shownKey(key)} must be ${what} (the value is not shown)`);
   const d = doc as Record<string, unknown>;
+  // JSON can hold U+0000 ("\u0000"), a command line cannot: spawn and the file system reject it with a message that
+  // quotes the value (a secret the redactor no longer recognises), or as an internal error. Refused here, unshown (A01-06).
+  for (const [key, value] of Object.entries(d)) {
+    const strings = typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((x) => typeof x === 'string')
+      : typeof value === 'object' && value !== null ? Object.entries(value).flat().filter((x) => typeof x === 'string') : [];
+    if (strings.some((x) => x.includes('\u0000'))) throw new ConfigError(`${where}: key ${shownKey(key)} must not contain a NUL character (the value is not shown)`);
+  }
 
   for (const [key, value] of Object.entries(d)) {
     if (TARGET_KEYS.has(key)) continue;
