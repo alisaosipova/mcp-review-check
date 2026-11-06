@@ -46,7 +46,7 @@ export interface PluginListing {
   /** The skipped dependency, VCS and build folders found (relative paths, at most 20; 1.1.1, A06-06). */
   skippedDirs?: string[];
   /** The MCP configuration files plugin.json names in `mcpServers` (a `.json` string or array element), in the order
-   *  written (1.1.1, A06-01). Their findings are info until 1.3.0. */
+   *  written (1.1.1, A06-01). Their findings are at rule severity since 1.3.0 (info in 1.1.1 to 1.2.x). */
   mcpFiles?: PluginMcpFile[];
 }
 
@@ -89,7 +89,8 @@ export interface ListingImage {
   height?: number;
   /** Why no size is known: not-a-path, outside (not a ./ path inside the package), link, not-file, missing, too-large,
    *  unreadable (detail: error code), unknown-format (no PNG/JPEG/WebP/SVG signature), no-dimensions (SVG without
-   *  numeric width/height/viewBox, or a header the reader could not parse). */
+   *  numeric width/height/viewBox, or a header the reader could not parse). For an SVG, `detail` is `no-start-tag` or
+   *  `units` when the reader could not tell (src/listing/image.ts svgMeasure; 1.3.0, A06-03). */
   problem?: 'not-a-path' | 'outside' | 'link' | 'not-file' | 'missing' | 'too-large' | 'unreadable' | 'unknown-format' | 'no-dimensions';
   detail?: string;
 }

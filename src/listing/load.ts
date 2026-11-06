@@ -241,7 +241,7 @@ function walk(root: string, maxDepth: number, cap: number, source: ListingError[
 /** The MCP configuration files plugin.json names in `mcpServers` (a `.json` string, or the `.json` strings of an
  *  array), read like the ChatGPT declared file: a `./` path with no `..`, inside the real root, never through a link
  *  (A06-01). The root `.mcp.json` is read already and is not read twice. Read problems are carried on the entry for
- *  LST-006, not printed as warnings: in 1.1.1 these files only add info findings. */
+ *  LST-006, not printed as warnings (1.3.0: at the rule's severity). */
 function pluginMcpFiles(realRoot: string, manifest: ListingJson | undefined, listing: Listing): PluginMcpFile[] | undefined {
   const j = manifest?.json;
   if (!isObj(j)) return undefined;
@@ -379,6 +379,9 @@ export function loadOpenAiManifest(given: string): Listing {
   let mcp: ListingJson | undefined;
   if (format === 'mcp-config') mcp = manifest;
   else if (isObj(manifest.json) && typeof manifest.json.mcpServers === 'string') mcp = declaredMcp(realRoot, manifest.json.mcpServers, listing);
+  // An inline mcpServers object is read as the server map, so its URLs and headers are checked; LST-024 reports that
+  // the portal wants a string path (1.3.0, A06-02).
+  else if (isObj(manifest.json) && isObj(manifest.json.mcpServers)) mcp = { path: rel, json: { mcpServers: manifest.json.mcpServers } };
   else {
     for (const c of ['mcp.json', '.mcp.json']) {
       mcp = readJson(join(realRoot, c), c, 'openai', listing, realRoot);

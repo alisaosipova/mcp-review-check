@@ -5,7 +5,8 @@
 import type { Snapshot } from '../snapshot.js';
 import type { ListingEntry, ListingImage, OpenAiListing, PluginListing } from '../listing/types.js';
 import { defineRule, type RawFinding } from './types.js';
-import { hostOf, isObj, isStr, listPreview, toolNames, type Obj } from './util/access.js';
+import { unmetNeed } from './engine.js';
+import { hasUi, hostOf, isObj, isStr, listPreview, toolNames, type Obj } from './util/access.js';
 import { displayUrl, isKnownToken, isSecretName } from './util/net.js';
 import { snippet, wordCount } from './util/text.js';
 
@@ -28,11 +29,6 @@ function pluginManifest(p: PluginListing): Obj | undefined {
 
 export interface ServerEntry { name: string; cfg: Obj; where: string; /** Read from a file plugin.json names in mcpServers (A06-01). */ fromFile?: true }
 
-/** 1.1.1 is a patch: what the plugin.json mcpServers files add is reported at info, whatever the rule (A06-01). */
-export const DEFERRED_NOTE = ' (reported at rule severity from 1.3.0)';
-const deferred = (f: RawFinding): RawFinding => ({ ...f, severity: 'info', message: `${f.message}${DEFERRED_NOTE}` });
-/** A server's findings, at info when the server comes from a plugin.json mcpServers file. */
-const capFor = (s: ServerEntry, out: RawFinding[]): RawFinding[] => (s.fromFile ? out.map(deferred) : out);
 
 /** An MCP configuration's server map: `{ "mcpServers": {...} }` or the bare map. */
 function serverMap(json: unknown): Obj | undefined {
@@ -43,7 +39,8 @@ function serverMap(json: unknown): Obj | undefined {
 
 /** Server entries of `.mcp.json`, of plugin.json's inline mcpServers (object, or array with objects) and, unless
  *  `withFiles` is false, of the `.json` files plugin.json names in mcpServers, in that order (marked `fromFile`). A
- *  file server with the name of an earlier one is listed too (1.1.1 does not replace entries; A06-01). */
+ *  file server with the name of an earlier one is listed too: every entry is checked, so a later one cannot hide an
+ *  earlier one's problem (A06-01). Since 1.3.0 their findings are at the rule's own severity. */
 export function pluginServers(p: PluginListing, withFiles = true): ServerEntry[] {
   const out: ServerEntry[] = [];
   const add = (map: Obj | undefined, where: string, fromFile?: true) => {
@@ -324,7 +321,7 @@ const RESERVED_PREFIX = /^(claude|anthropic|anthropics|cc-plugin)-/;
 export const LST_002 = defineRule(
   {
     id: 'LST-002', title: 'Plugin name: lowercase letters, digits and hyphens, ≤64, not reserved', severity: { claude: 'error' }, needs: ['plugin-dir'],
-    rationale: 'The directory blocks a non-ASCII or reserved plugin name (claude, anthropic, official, plugin, mcp, test, or one that passes as Anthropic\'s own) and warns on any other name outside the lowercase-hyphen pattern of up to 64 characters.',
+    rationale: 'The directory blocks a non-ASCII or reserved plugin name (claude, anthropic, official, plugin, mcp, test, or one that passes as Anthropic\'s own), warns on claude, anthropic or anthropics as a whole word anywhere else (mcp-for-claude) and on any other name outside the lowercase-hyphen pattern of up to 64 characters.',
     fix: 'Use a distinctive kebab-case name built around your product, up to 64 characters, starting and ending with a letter or digit.',
     sources: [C_PSC, `${C_PREF}#name`],
   },
@@ -337,10 +334,14 @@ export const LST_002 = defineRule(
     if (RESERVED_WHOLE.has(norm) || RESERVED_PREFIX.test(norm) || /(^|-)official(-|$)/.test(norm) && /(^|-)(claude|anthropic)(-|$)/.test(norm)) {
       return [{ path, message: `name ${q(name)} is reserved or passes as one of Anthropic's own` }];
     }
+    const out: RawFinding[] = [];
+    // The plugins reference warns on these words anywhere else in the name, such as mcp-for-claude (A06-10).
+    const word = /(^|-)(claude|anthropic|anthropics)(-|$)/.exec(norm)?.[2];
+    if (word) out.push({ path, severity: 'warning', message: `name ${q(name)} has "${word}" as a whole word; the plugins reference warns on claude, anthropic or anthropics anywhere in a name` });
     if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(name)) {
-      return [{ path, severity: 'warning', message: `name ${q(name)} is not lowercase letters, digits and hyphens of up to 64 characters starting and ending with a letter or digit` }];
+      out.push({ path, severity: 'warning', message: `name ${q(name)} is not lowercase letters, digits and hyphens of up to 64 characters starting and ending with a letter or digit` });
     }
-    return [];
+    return out;
   },
 );
 
@@ -414,13 +415,14 @@ export const LST_006 = defineRule(
     else if (p.mcp && !serverMap(p.mcp.json)) out.push({ path: p.mcp.path, message: '.mcp.json is not an object of MCP servers ({ "mcpServers": { ... } })' });
     const map = serverMap(p.mcp?.json);
     for (const [name, cfg] of Object.entries(map ?? {})) if (!isObj(cfg)) out.push({ path: '.mcp.json', message: `server "${name}" in .mcp.json is not an object` });
-    // The files plugin.json names in mcpServers (A06-01): a path outside the plugin, a missing file, one that does not
-    // parse or is not a server map; every finding they cause is info in 1.1.1.
+    // The files plugin.json names in mcpServers (A06-01): a path that is not ./, leaves the plugin or does not exist, a
+    // file that does not parse or is not a server map. Errors since 1.3.0; this tool's own guards (read cap, a linked
+    // folder) stay warnings.
     for (const f of p.mcpFiles ?? []) {
-      if (f.problem) out.push(deferred({ path: '.claude-plugin/plugin.json', message: `mcpServers names ${q(f.ref)}, which ${f.error}` }));
-      else if (f.error) out.push(deferred({ path: f.path, message: `${f.path} (named in plugin.json mcpServers) ${f.error}` }));
-      else if (!serverMap(f.json)) out.push(deferred({ path: f.path, message: `${f.path} (named in plugin.json mcpServers) is not an object of MCP servers ({ "mcpServers": { ... } })` }));
-      else for (const [name, cfg] of Object.entries(serverMap(f.json)!)) if (!isObj(cfg)) out.push(deferred({ path: f.path, message: `server "${name}" in ${f.path} is not an object` }));
+      if (f.problem) out.push({ path: '.claude-plugin/plugin.json', message: `mcpServers names ${q(f.ref)}, which ${f.error}` });
+      else if (f.error) out.push({ path: f.path, ...(f.level ? { severity: f.level } : {}), message: `${f.path} (named in plugin.json mcpServers) ${f.error}` });
+      else if (!serverMap(f.json)) out.push({ path: f.path, message: `${f.path} (named in plugin.json mcpServers) is not an object of MCP servers ({ "mcpServers": { ... } })` });
+      else for (const [name, cfg] of Object.entries(serverMap(f.json)!)) if (!isObj(cfg)) out.push({ path: f.path, message: `server "${name}" in ${f.path} is not an object` });
     }
     for (const s of pluginServers(p)) {
       const mine: RawFinding[] = [];
@@ -429,7 +431,7 @@ export const LST_006 = defineRule(
       if (!hasCmd && !hasUrl) mine.push({ path: s.where, message: `${subject(s)} has neither "command" nor "url"` });
       else if (hasCmd && hasUrl) mine.push({ path: s.where, message: `${subject(s)} has both "command" and "url"` });
       if (s.cfg.args !== undefined && !(Array.isArray(s.cfg.args) && s.cfg.args.every(isStr))) mine.push({ path: s.where, message: `${subject(s)}: "args" is not an array of strings` });
-      out.push(...capFor(s, mine));
+      out.push(...mine);
     }
     return out;
   },
@@ -458,7 +460,7 @@ export const LST_007 = defineRule(
     if (!['http', 'sse', 'ws'].includes(String(s.cfg.type))) out.push({ path: s.where, message: `${subject(s)} has type ${JSON.stringify(s.cfg.type ?? null)}; a remote server needs "http", "sse" or "ws"` });
     if (!isStr(s.cfg.url)) out.push({ path: s.where, message: `${subject(s)} has no string "url"` });
     else if (!acceptedRemoteUrl(s.cfg.url)) out.push({ path: s.where, message: `${subject(s)} url ${q(displayUrl(s.cfg.url))} is not an absolute https:// or wss:// URL (blocks: MCP server URL is not https)` });
-    return capFor(s, out);
+    return out;
   }),
 );
 
@@ -472,8 +474,8 @@ export const LST_008 = defineRule(
   (snap) => pluginServers(plugin(snap)).flatMap((s): RawFinding[] => {
     const l = launcherOf(argvOf(s.cfg));
     if (!l || l.pinned) return [];
-    if (l.launcher === 'uv run') return capFor(s, [{ path: s.where, message: `${subject(s)} runs uv run without --locked or --frozen` }]);
-    return capFor(s, [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.kind === 'npx' || l.kind === 'uvx' ? ` (blocks: Unpinned ${l.kind} launcher)` : ''}` }]);
+    if (l.launcher === 'uv run') return [{ path: s.where, message: `${subject(s)} runs uv run without --locked or --frozen` }];
+    return [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.kind === 'npx' || l.kind === 'uvx' ? ` (blocks: Unpinned ${l.kind} launcher)` : ''}` }];
   }),
 );
 
@@ -581,14 +583,9 @@ export const LST_009 = defineRule(
   },
   (snap) => {
     const p = plugin(snap);
-    const uses = (servers: ServerEntry[]) => servers.some((s) => launcherOf(argvOf(s.cfg)));
-    // Only a launcher in a plugin.json mcpServers file: info in 1.1.1 (A06-01).
-    const own = uses(pluginServers(p, false));
-    if (!own && !uses(pluginServers(p).filter((s) => s.fromFile))) return [];
-    return p.packageConfigs.filter(setsPackageSource).map((c) => {
-      const f: RawFinding = { path: c.path, message: `${c.path} sets a package source (registry, index or proxy) in a plugin that uses a package launcher` };
-      return own ? f : deferred(f);
-    });
+    // A launcher in .mcp.json, inline or in a plugin.json mcpServers file (A06-01) counts.
+    if (!pluginServers(p).some((s) => launcherOf(argvOf(s.cfg)))) return [];
+    return p.packageConfigs.filter(setsPackageSource).map((c) => ({ path: c.path, message: `${c.path} sets a package source (registry, index or proxy) in a plugin that uses a package launcher` }));
   },
 );
 
@@ -641,7 +638,7 @@ export const LST_011 = defineRule(
     };
     check('header', s.cfg.headers);
     check('env', s.cfg.env);
-    return capFor(s, out);
+    return out;
   }),
 );
 
@@ -745,11 +742,8 @@ export const LST_015 = defineRule(
     sources: [C_PSC],
   },
   (snap) => {
-    // The 1.1.0 result over .mcp.json and the inline servers, plus at info what the mcpServers files add (A06-01).
-    const p = plugin(snap);
-    const own = hostMismatch(snap, pluginServers(p, false).filter((s) => isRemote(s.cfg)));
-    const added = mismatched(snap, pluginServers(p).filter((s) => isRemote(s.cfg))).filter((m) => m.s.fromFile);
-    return [...own, ...added.map((m) => deferred(m.f))];
+    // .mcp.json, the inline servers and the plugin.json mcpServers files (A06-01) together.
+    return hostMismatch(snap, pluginServers(plugin(snap)).filter((s) => isRemote(s.cfg)));
   },
 );
 
@@ -1070,14 +1064,21 @@ export const LST_023 = defineRule(
 export const LST_024 = defineRule(
   {
     id: 'LST-024', title: 'ChatGPT package: one remote MCP server with an https URL', severity: { chatgpt: 'warning' }, needs: ['openai-manifest'],
-    rationale: 'Plugin-level review test cases require exactly one MCP server, and local MCP configuration is excluded unless the organization is approved.',
-    fix: 'Configure exactly one remote MCP server with an https:// url in mcp.json, or declare the test cases per server.',
+    rationale: 'Plugin-level review test cases require exactly one MCP server, and local MCP configuration is excluded unless the organization is approved. The manifest\'s mcpServers must be a string path for the root .mcp.json; an inline object or another path is rejected.',
+    fix: 'Configure exactly one remote MCP server with an https:// url in the root .mcp.json and set "mcpServers": "./.mcp.json", or declare the test cases per server.',
     sources: [O_SUBMIT, O_ERRORS],
   },
   (snap) => {
     const o = oai(snap);
     const servers = openAiServers(o);
     const out: RawFinding[] = [];
+    // The submission-errors page: "mcpServers must be a string path for the root .mcp.json" (1.3.0, A06-02). An inline
+    // object is still read as the server map (src/listing/load.ts), so the checks below cover it.
+    const j = o.format === 'mcp-config' ? undefined : o.manifest.json;
+    const ref = isObj(j) ? j.mcpServers : undefined;
+    const mpath = o.manifest.path;
+    if (ref !== undefined && !isStr(ref)) out.push({ path: mpath, severity: 'error', message: `${mpath} has ${isObj(ref) ? 'an inline mcpServers object' : `mcpServers of type ${Array.isArray(ref) ? 'array' : ref === null ? 'null' : typeof ref}`}; mcpServers must be a string path for the root .mcp.json ("./.mcp.json")` });
+    else if (isStr(ref) && !['./.mcp.json', '.mcp.json'].includes(ref)) out.push({ path: mpath, severity: 'error', message: `${mpath} has mcpServers ${q(displayUrl(ref))}; mcpServers must be a string path for the root .mcp.json ("./.mcp.json")` });
     if (o.mcp?.error) out.push({ path: o.mcp.path, severity: o.mcp.level ?? 'error', message: `${o.mcp.path} ${o.mcp.error}` });
     const tc = openAiExt(o)?.review;
     if (servers.length > 1 && isObj(tc) && tc.test_cases !== undefined) out.push({ path: o.mcp!.path, message: `${o.mcp!.path} has ${servers.length} servers; plugin-level review.test_cases requires exactly one${man('MAN-020')}` });
@@ -1155,7 +1156,9 @@ const refLeavesPackage = (ref: string) => {
 };
 
 /** Findings for a file that could not be measured; undefined when it has a size or another rule owns the problem.
- *  SVG without a size is only info (it scales); any other recognised file whose header could not be parsed is a
+ *  An SVG icon without a numeric width/height or viewBox is an error, as the portal rejects it (1.3.0, A06-03); one
+ *  whose start tag was not read or whose width and height have another unit is a warning (our reader cannot tell);
+ *  an SVG screenshot is already a format error of LST-028, so its size stays info. Any other recognised file whose header could not be parsed is a
  *  warning (our reader, not a vendor rule). A ref that is not a ./ path inside the package is a warning, as in LST-021;
  *  for icons LST-021 reports it, and a wrong file type, itself. This tool's own read cap is a warning (not checked). */
 function unmeasured(at: string, im: ListingImage, id: string, icon: boolean): RawFinding | undefined {
@@ -1165,9 +1168,14 @@ function unmeasured(at: string, im: ListingImage, id: string, icon: boolean): Ra
   const text = `${label} ${PROBLEM_TEXT[im.problem]}${detail}${man(id)}`;
   switch (im.problem) {
     case 'no-dimensions':
-      return im.format === 'svg'
-        ? { severity: 'info', message: `${label} has no numeric width/height or viewBox; its size cannot be checked${man(id)}` }
-        : { severity: 'warning', message: `${label} is a ${im.format} file whose size could not be read from its header; check it by hand${man(id)}` };
+      if (im.format === 'svg') {
+        // A screenshot must not be an SVG at all (the format error below); its size stays a note, as before.
+        if (!icon) return { severity: 'info', message: `${label} has no numeric width/height or viewBox; its size cannot be checked${man(id)}` };
+        if (im.detail === 'no-start-tag') return { severity: 'warning', message: `${label} is an SVG whose <svg> start tag could not be read in the first 256 KiB, so its size was not checked; check it by hand${man(id)}` };
+        if (im.detail === 'units') return { severity: 'warning', message: `${label} is an SVG whose width and height use a unit other than px and that has no viewBox, so its size was not checked; add a square numeric viewBox${man(id)}` };
+        return { message: `${label} is an SVG without numeric dimensions; SVG must define a numeric viewBox or numeric width and height${man(id)}` };
+      }
+      return { severity: 'warning', message: `${label} is a ${im.format} file whose size could not be read from its header; check it by hand${man(id)}` };
     case 'not-a-path':
       return icon ? undefined : { message: text };
     case 'outside':
@@ -1216,7 +1224,7 @@ export const LST_027 = defineRule(
 export const LST_028 = defineRule(
   {
     id: 'LST-028', title: 'ChatGPT screenshots: PNG or JPEG, 706 px wide, 400-860 px tall (read from the image files)', severity: { chatgpt: 'error' }, needs: ['openai-manifest'],
-    rationale: 'Screenshots are allowed only with a custom UI: one PNG or JPEG per starter prompt, exactly 706 px wide and 400 to 860 px tall. The sizes are read from the file headers.',
+    rationale: 'Screenshots are allowed only with a custom UI: a skills-only package must not include them, and with a server checked they need a UI output template. One PNG or JPEG per starter prompt, exactly 706 px wide and 400 to 860 px tall. The sizes are read from the file headers.',
     fix: 'Export each screenshot as a PNG or JPEG exactly 706 px wide and between 400 and 860 px tall, one per starter prompt, inside the package.',
     sources: [O_ERRORS, O_SUBMIT],
   },
@@ -1236,6 +1244,13 @@ export const LST_028 = defineRule(
       if (im.width === undefined || im.height === undefined) continue;
       if (im.width !== 706) out.push({ path, message: `${label} is ${im.width} px wide; screenshots must be exactly 706 px wide${man('MAN-024')}` });
       if (im.height < 400 || im.height > 860) out.push({ path, message: `${label} is ${im.height} px tall; screenshots must be 400 to 860 px tall${man('MAN-024')}` });
+    }
+    // Where screenshots are allowed at all (1.3.0, A06-09): not in a skills-only package (no MCP server, and the MCP
+    // configuration did not fail to read), and with a server checked only when it reports a UI template. Without a
+    // server target the UI part stays manual (MAN-024).
+    if (Array.isArray(i.screenshots) && i.screenshots.length) {
+      if (!o.mcp?.error && !openAiServers(o).length) out.push({ path, message: `${at}.screenshots is set in a package without an MCP server; skills-only packages must not include interface.screenshots (screenshots require With MCP and custom UI)${man('MAN-024')}` });
+      else if (unmetNeed(snap, 'tools') === undefined && !hasUi(snap)) out.push({ path, message: `${at}.screenshots is set, but the checked server reports no UI output template; screenshots are allowed only with custom UI${man('MAN-024')}` });
     }
     const prompts = Array.isArray(i.defaultPrompt) ? i.defaultPrompt.length : undefined;
     if (prompts !== undefined && shots.length > prompts) out.push({ path, severity: 'warning', message: `${shots.length} screenshots for ${prompts} starter prompt${prompts === 1 ? '' : 's'}; the checklist asks for one per starter prompt${man('MAN-024')}` });

@@ -1,5 +1,5 @@
 // 1.1.1, package P6 (review round 4): listings. A09-02 and A09-04 (linear pyproject header and env -S), A06-01 (the
-// plugin.json mcpServers files, info only in 1.1.x), A06-06 (dependency folders skipped), I-A06-7 (opendir walk),
+// plugin.json mcpServers files; info only in 1.1.x and 1.2.x, rule severity since 1.3.0), A06-06 (dependency folders skipped), I-A06-7 (opendir walk),
 // A06-07 (MAN-020/021 kept whole), A06-08 (--verbose dump redaction), I-A06-8 (guide) and the listing variant of the
 // regex-complexity guard.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -184,43 +184,42 @@ function pluginBase(): PluginListing {
   return l.plugin!;
 }
 
-describe('A06-01: the files plugin.json names in mcpServers, info only in 1.1.x', () => {
-  it('the fixture: an unpinned npx gives an info LST-008, ../outside.json an info LST-006, and no warning or error at all', () => {
+// 1.3.0 (block B2): what these files add is reported at the rule's own severity; the 1.1.x info level and its note
+// are gone. test/r130-b2-listings.test.ts holds the 1.3.0 tests that fail on 1.2.0.
+describe('A06-01: the files plugin.json names in mcpServers, at rule severity since 1.3.0', () => {
+  it('the fixture: an unpinned npx gives an LST-008 error, ../outside.json and a missing file LST-006 errors', () => {
     const l = loadPluginDir(join(FIX, 'plugin-mcpfiles'));
     expect(l.plugin!.mcpFiles!.map((f) => [f.ref, f.problem ?? 'read'])).toEqual([['./config/mcp.json', 'read'], ['../outside.json', 'escapes'], ['./config/missing.json', 'not-found']]);
     expect(l.errors).toEqual([]);
     const f = lst(rulesOn(l).r);
-    expect(f.filter((x) => x.severity !== 'info')).toEqual([]);
-    const by = (id: string) => f.filter((x) => x.ruleId === id).map((x) => x.message);
-    expect(by('LST-008')).toEqual([`server "acme-extra" in config/mcp.json runs npx "some-unpinned-pkg" without an exact version (blocks: Unpinned npx launcher) ${NOTE}`]);
+    expect(f.some((x) => x.message.includes(NOTE))).toBe(false);
+    const by = (id: string) => f.filter((x) => x.ruleId === id).map((x) => [x.severity, x.message]);
+    expect(by('LST-008')).toEqual([['error', 'server "acme-extra" in config/mcp.json runs npx "some-unpinned-pkg" without an exact version (blocks: Unpinned npx launcher)']]);
     expect(by('LST-006')).toEqual([
-      `mcpServers names "../outside.json", which is outside the plugin folder (path escapes plugin folder), so it was not read ${NOTE}`,
-      `mcpServers names "./config/missing.json", which does not exist in the plugin folder (Path not found), so it was not read ${NOTE}`,
+      ['error', 'mcpServers names "../outside.json", which is outside the plugin folder (path escapes plugin folder), so it was not read'],
+      ['error', 'mcpServers names "./config/missing.json", which does not exist in the plugin folder (Path not found), so it was not read'],
     ]);
-    // LST-007 (http://), LST-009 (.npmrc next to a launcher only the file uses) and LST-011 (literal credential-like
-    // env) come from the file: info too. LST-015 stays quiet: .mcp.json points at the checked host.
-    for (const id of ['LST-007', 'LST-009', 'LST-011']) expect(by(id), id).toEqual([expect.stringMatching(/\(reported at rule severity from 1\.3\.0\)$/)]);
+    // LST-007 (http://) and LST-009 (.npmrc next to a launcher only the file uses) are errors; LST-011 (a literal under
+    // a credential name) is the rule's warning. LST-015 stays quiet: .mcp.json points at the checked host.
+    expect(by('LST-007').map((x) => x[0])).toEqual(['error']);
+    expect(by('LST-009').map((x) => x[0])).toEqual(['error']);
+    expect(by('LST-011').map((x) => x[0])).toEqual(['warning']);
     expect(by('LST-015')).toEqual([]);
   });
 
-  it('LST-015 for a file server on another host is info; the same server in .mcp.json is a warning (negative)', () => {
+  it('LST-015 for a file server on another host is a warning, as for the same server in .mcp.json', () => {
     const root = copy('host', 'plugin-mcpfiles');
     write(root, { '.mcp.json': '{ "mcpServers": {} }' });
     const f = lst(rulesOn(loadPluginDir(root)).r).filter((x) => x.ruleId === 'LST-015');
-    expect(f.map((x) => [x.severity, x.message])).toEqual([['info', `server "acme-remote" in config/mcp.json points at "http://mcp.other.test/mcp", not at the checked server host mcp.acme.test ${NOTE}`]]);
+    expect(f.map((x) => [x.severity, x.message])).toEqual([['warning', 'server "acme-remote" in config/mcp.json points at "http://mcp.other.test/mcp", not at the checked server host mcp.acme.test']]);
     write(root, { '.mcp.json': JSON.stringify({ mcpServers: { r: { type: 'http', url: 'https://mcp.other.test/mcp' } } }) });
-    expect(lst(rulesOn(loadPluginDir(root)).r).filter((x) => x.ruleId === 'LST-015').map((x) => x.severity)).toEqual(['warning', 'info']);
+    expect(lst(rulesOn(loadPluginDir(root)).r).filter((x) => x.ruleId === 'LST-015').map((x) => x.severity)).toEqual(['warning', 'warning']);
   });
 
-  it('a URL run with --fail-on warning: a file pointing at another host and a .npmrc registry still pass (critique; negative)', () => {
-    const { r } = rulesOn(loadPluginDir(join(FIX, 'plugin-mcpfiles')));
-    expect(r.findings.filter((x) => x.platforms.includes('claude') && x.severity !== 'info')).toEqual([]);
-  });
-
-  it('the CLI exits 0 at --fail-on warning and reports the info findings', async () => {
-    const out = await runCli(['--plugin-dir', join(FIX, 'plugin-mcpfiles'), '--target', 'claude', '--fail-on', 'warning', '--format', 'json', '--no-config'], {}, false);
-    expect(out.code).toBe(0);
-    expect(json(out.stdout).findings.filter((f) => f.ruleId === 'LST-008').map((f) => f.severity)).toEqual(['info']);
+  it('the CLI exits 1 at the default --fail-on and reports the LST-008 error', async () => {
+    const out = await runCli(['--plugin-dir', join(FIX, 'plugin-mcpfiles'), '--target', 'claude', '--format', 'json', '--no-config'], {}, false);
+    expect(out.code).toBe(1);
+    expect(json(out.stdout).findings.filter((f) => f.ruleId === 'LST-008').map((f) => f.severity)).toEqual(['error']);
     expect(out.stderr).not.toMatch(/warning: --plugin-dir/);
   });
 
@@ -231,21 +230,22 @@ describe('A06-01: the files plugin.json names in mcpServers, info only in 1.1.x'
     expect(f.map((x) => [x.severity, x.message.endsWith(NOTE)])).toEqual([['error', false]]);
   });
 
-  it('a string mcpServers, a bad file, an absolute path, a non-./ path and a linked folder are all info', () => {
+  it('a string mcpServers, a bad file, an absolute path, a non-./ path or a URL is an LST-006 error; a linked folder a warning', () => {
     const root = copy('shapes');
     const m = JSON.parse(readFileSync(join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
     write(root, { 'bad.json': '{ "mcpServers": ', 'list.json': '[1, 2]', 'outside/x.json': '{"mcpServers":{"o":{"command":"npx","args":["p"]}}}' });
     mkdirSync(join(dir, 'elsewhere'));
     writeFileSync(join(dir, 'elsewhere', 'x.json'), '{"mcpServers":{"o":{"command":"npx","args":["p"]}}}');
     symlinkSync(join(dir, 'elsewhere'), join(root, 'linked'));
-    for (const refs of [['./bad.json'], ['./list.json'], ['/etc/x.json'], ['outside/x.json'], ['./linked/x.json'], ['https://x.test/m.json'], './bad.json']) {
+    const cases: Array<[unknown, string]> = [[['./bad.json'], 'error'], [['./list.json'], 'error'], [['/etc/x.json'], 'error'], [['outside/x.json'], 'error'], [['./linked/x.json'], 'warning'], [['https://x.test/m.json'], 'error'], ['./bad.json', 'error']];
+    for (const [refs, level] of cases) {
       writeFileSync(join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ ...m, mcpServers: refs }));
       const l = loadPluginDir(root);
       expect(l.errors, JSON.stringify(refs)).toEqual([]);
       const f = lst(rulesOn(l).r);
-      // LST-013 warns on the link itself (a 1.1.0 finding of the folder, not of the mcpServers file).
-      expect(f.filter((x) => x.severity !== 'info' && x.ruleId !== 'LST-013'), JSON.stringify(refs)).toEqual([]);
-      expect(f.filter((x) => x.ruleId === 'LST-006').map((x) => x.message.endsWith(NOTE)), JSON.stringify(refs)).toEqual([true]);
+      expect(f.filter((x) => x.ruleId === 'LST-006').map((x) => [x.severity, x.message.endsWith(NOTE)]), JSON.stringify(refs)).toEqual([[level, false]]);
+      // No server of those files was read, so no other rule reports them.
+      expect(f.filter((x) => ['LST-008', 'LST-009'].includes(x.ruleId)), JSON.stringify(refs)).toEqual([]);
     }
   });
 
@@ -382,7 +382,8 @@ describe('I-A06-8: the listings guide says which files --plugin-dir reads', () =
     const section = guide.slice(guide.indexOf('## Which files --plugin-dir reads'));
     for (const d of load.SKIPPED_DIRS) expect(section, d).toContain(`\`${d}\``);
     for (const f of load.PACKAGE_CONFIG_FILES) expect(section, f).toContain(`\`${f}\``);
-    expect(section).toContain(NOTE);
+    // 1.3.0: the 1.1.x info note is gone from the guide.
+    expect(section).not.toContain(NOTE);
   });
 });
 

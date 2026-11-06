@@ -109,7 +109,8 @@ describe('A06-03 files behind a linked folder are not read', () => {
     symlinkSync(join('..', 'outside'), join(dir, 'pkg', 'cfg'));
     const r = await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json']);
     expect(r.stdout).not.toContain('inner.corp.example');
-    expect(findings(r.stdout).find((f) => f.ruleId === 'LST-024')).toMatchObject({ severity: 'warning', message: expect.stringMatching(/behind a symbolic link/) });
+    // 1.3.0 (A06-02): the path itself is also an error, as the portal wants the root .mcp.json.
+    expect(findings(r.stdout).find((f) => f.ruleId === 'LST-024' && /symbolic link/.test(f.message))).toMatchObject({ severity: 'warning', message: expect.stringMatching(/behind a symbolic link/) });
   });
 });
 
@@ -200,7 +201,8 @@ describe('A06-05 one finding at the LST-021 level for an icon ref', () => {
 
   it('a screenshot URL is a warning in LST-028, as in LST-021', async () => {
     const m = pkg({ 'i.png': png(64, 64) }, { logo: './assets/i.png', composerIcon: './assets/i.png', defaultPrompt: ['a'], screenshots: ['https://cdn.example.com/s.png'] });
-    const f = findings((await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json'])).stdout).filter((x) => x.ruleId === 'LST-028');
+    // 1.3.0 (A06-09): screenshots in a package without a server are also an error; not the subject here.
+    const f = findings((await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json'])).stdout).filter((x) => x.ruleId === 'LST-028' && !/skills-only/.test(x.message));
     expect(f.map((x) => x.severity)).toEqual(['warning']);
   });
 });
@@ -225,7 +227,7 @@ describe('A06-10 this tool\'s read caps are warnings (not checked), not vendor e
     const f = findings((await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json'])).stdout).filter((x) => /LST-02[78]/.test(x.ruleId));
     expect(f.filter((x) => x.ruleId === 'LST-027').map((x) => x.message).every((t) => /over the 5 MiB limit/.test(t))).toBe(true);
     expect(f.filter((x) => x.ruleId === 'LST-027')).toHaveLength(2);
-    expect(f.filter((x) => x.ruleId === 'LST-028').map((x) => x.severity)).toEqual(['warning']);
+    expect(f.filter((x) => x.ruleId === 'LST-028' && !/skills-only/.test(x.message)).map((x) => x.severity)).toEqual(['warning']);
   });
 
   it('a manifest over the 1 MiB read cap is a warning that says it was not checked', async () => {
@@ -334,7 +336,7 @@ describe('A06-09 a declared mcpServers path is used alone', () => {
     const l = loadOpenAiManifest(m);
     expect(l.openai!.mcp).toMatchObject({ path: 'config/missing.json', error: expect.stringMatching(/does not exist/), level: 'warning' });
     const f = findings((await run(['--openai-manifest', m, '--target', 'chatgpt', '--format', 'json'])).stdout);
-    expect(f.find((x) => x.ruleId === 'LST-024')).toMatchObject({ severity: 'warning', message: expect.stringMatching(/config\/missing\.json does not exist/) });
+    expect(f.find((x) => x.ruleId === 'LST-024' && /does not exist/.test(x.message))).toMatchObject({ severity: 'warning', message: expect.stringMatching(/config\/missing\.json does not exist/) });
   });
 
   it('a declared path out of the package is not read and not replaced', () => {
@@ -351,6 +353,7 @@ describe('A06-09 a declared mcpServers path is used alone', () => {
     writeFileSync(join(dir, 'pkg', 'config', 'mcp.json'), JSON.stringify({ mcpServers: { s: { url: 'https://declared.example/mcp' } } }));
     const l = loadOpenAiManifest(m);
     expect(l.openai!.mcp).toMatchObject({ path: 'config/mcp.json' });
-    expect(runRules(listingSnap(l), RULES).findings.filter((x) => x.ruleId === 'LST-024')).toEqual([]);
+    // 1.3.0 (A06-02): read and checked, but a path other than the root .mcp.json is an error of its own.
+    expect(runRules(listingSnap(l), RULES).findings.filter((x) => x.ruleId === 'LST-024').map((x) => [x.severity, x.message])).toEqual([['error', 'plugin.json has mcpServers "./config/mcp.json"; mcpServers must be a string path for the root .mcp.json ("./.mcp.json")']]);
   });
 });

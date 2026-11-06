@@ -6,7 +6,17 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
-Nothing yet.
+### Severity raised
+
+- `--plugin-dir`: findings on servers from the MCP files `plugin.json` names in `mcpServers` (LST-006, 007, 008, 009, 011 and LST-015) are reported at the rule's own severity instead of info, and the "(reported at rule severity from 1.3.0)" suffix is gone. A path that is not `./`, leaves the plugin folder or does not exist is an LST-006 error; a file behind a linked folder or over the read cap stays a warning (A06-01, second half).
+- LST-024: a ChatGPT/Codex manifest whose `mcpServers` is an inline object, another non-string value, or a path other than `./.mcp.json` / `.mcp.json` is an error; an inline object is now read, so LST-022/023/024/026 check its servers instead of skipping them (A06-02).
+- LST-027: an SVG icon without a numeric `viewBox` or numeric `width` and `height` is an error ("SVG must define a numeric viewBox or numeric width and height"), was info; an SVG whose start tag is not closed in the first 256 KiB, or whose width and height use a non-px unit without a viewBox, is a warning, was info (A06-03).
+- LST-028: screenshots in a package without an MCP server (skills-only) are an error, and so are screenshots when the checked server reports no UI output template (A06-09).
+- LST-002: a plugin name with `claude`, `anthropic` or `anthropics` as a whole word after the start (`mcp-for-claude`) is a warning, as the plugins reference says (A06-10, name part).
+
+### Fixed
+
+- The SVG size reader ends the root `<svg>` start tag at the first `>` outside a quoted attribute value, so `aria-label="a > b"` no longer hides the `width`, `height` and `viewBox` after it (A06-04).
 
 ## [1.2.0] - 2026-11-06
 

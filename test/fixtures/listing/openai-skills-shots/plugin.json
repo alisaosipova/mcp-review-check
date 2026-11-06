@@ -1,0 +1,49 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "acme-notes",
+  "version": "1.0.0",
+  "description": "Search and summarize notes from your Acme workspace.",
+  "author": {
+    "name": "Acme",
+    "url": "https://acme.test"
+  },
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Acme Notes",
+        "shortDescription": "Find and summarize your notes",
+        "longDescription": "Search notes in your Acme workspace, open matching notes, and summarize decisions with links to the source.",
+        "developerName": "Acme",
+        "category": "Productivity",
+        "capabilities": [
+          "Search notes",
+          "Read notes"
+        ],
+        "websiteURL": "https://acme.test/notes",
+        "supportURL": "https://acme.test/support",
+        "privacyPolicyURL": "https://acme.test/privacy",
+        "termsOfServiceURL": "https://acme.test/terms",
+        "defaultPrompt": [
+          "Find my notes about the launch.",
+          "Summarize the decisions in my launch notes.",
+          "Open the project kickoff notes."
+        ],
+        "brandColor": "#2357C6",
+        "brandColorDark": "#8CB4FF",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png",
+        "screenshots": [
+          "./assets/s1.png"
+        ]
+      },
+      "publication": {
+        "countries": [
+          "US",
+          "GB"
+        ],
+        "release_notes": "Initial release with note search, reading, and summaries."
+      }
+    }
+  }
+}

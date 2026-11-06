@@ -104,27 +104,58 @@ function px(v: string | undefined): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-/** width and height of the root <svg>, else the viewBox size; undefined when neither gives numbers. An <svg tag in a
- *  comment or the doctype is never the root; only text without a root svg element falls back to the first tag. */
-export function svgSize(text: string): Dimensions | undefined {
-  const root = svgRootAt(text);
-  const tag = /<svg(?=[\s>/])([^>]*)>/i.exec(root === undefined ? text : text.slice(root))?.[1];
-  if (tag === undefined) return undefined;
-  const attr = (name: string) => new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find((x) => x !== undefined);
-  const w = px(attr('width'));
-  const h = px(attr('height'));
-  if (w !== undefined && h !== undefined) return { width: w, height: h };
-  const vb = attr('viewBox')?.trim().split(/[\s,]+/).map(Number);
-  if (vb && vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) return { width: vb[2], height: vb[3] };
+/** The attribute text of the root <svg start tag (after "<svg", before its '>'), read up to the first '>' outside a
+ *  quoted value, which XML allows inside one (1.3.0, A06-04). An <svg tag in a comment or the doctype is never the
+ *  root; only text without a root svg element falls back to the first tag. Undefined when there is no tag or it is not
+ *  closed in the text read. */
+export function svgStartTag(text: string): string | undefined {
+  let at = svgRootAt(text);
+  if (at === undefined) at = /<svg(?=[\s>/])/i.exec(text)?.index;
+  if (at === undefined) return undefined;
+  let quote = '';
+  for (let j = at + 4; j < text.length; j++) {
+    const c = text[j];
+    if (quote) { if (c === quote) quote = ''; continue; }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === '>') return text.slice(at + 4, j);
+  }
   return undefined;
 }
 
+/** Why an SVG has no size: its start tag was not read (`no-start-tag`: none, or not closed within the bytes read), or
+ *  width and height carry a non-pixel unit (`units`: 2em, 1in) and there is no viewBox. Neither means the file breaks
+ *  the documented rule; an SVG with neither reason has no numeric width/height or viewBox at all. */
+export type SvgUnmeasured = 'no-start-tag' | 'units';
+
+const LENGTH_UNIT = /^\s*(?:\d+(?:\.\d+)?|\.\d+)\s*(em|ex|ch|rem|pt|pc|cm|mm|in|q|vw|vh|vmin|vmax)\s*$/i;
+
+/** The size of an SVG (width and height of the root <svg>, else the viewBox size) or why it has none. */
+export function svgMeasure(text: string): { size?: Dimensions; why?: SvgUnmeasured } {
+  const tag = svgStartTag(text);
+  if (tag === undefined) return { why: 'no-start-tag' };
+  const attr = (name: string) => new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find((x) => x !== undefined);
+  const w = px(attr('width'));
+  const h = px(attr('height'));
+  if (w !== undefined && h !== undefined) return { size: { width: w, height: h } };
+  const vb = attr('viewBox')?.trim().split(/[\s,]+/).map(Number);
+  if (vb && vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) return { size: { width: vb[2], height: vb[3] } };
+  const unit = (v: string | undefined) => v !== undefined && (px(v) !== undefined || LENGTH_UNIT.test(v));
+  return unit(attr('width')) && unit(attr('height')) ? { why: 'units' } : {};
+}
+
+/** width and height of the root <svg>, else the viewBox size; undefined when neither gives numbers. */
+export function svgSize(text: string): Dimensions | undefined {
+  return svgMeasure(text).size;
+}
+
 /** Format and size from the first bytes of a file. */
-export function imageInfo(b: Buffer): { format?: ImageFormat; size?: Dimensions } {
+export function imageInfo(b: Buffer): { format?: ImageFormat; size?: Dimensions; svgWhy?: SvgUnmeasured } {
   const format = sniffFormat(b);
   if (!format) return {};
-  const size = format === 'png' ? pngSize(b) : format === 'jpeg' ? jpegSize(b) : format === 'webp' ? webpSize(b) : svgSize(b.toString('utf8').replace(/^﻿/, ''));
-  return { format, ...(size && size.width > 0 && size.height > 0 ? { size } : {}) };
+  const svg = format === 'svg' ? svgMeasure(b.toString('utf8').replace(/^﻿/, '')) : undefined;
+  const size = format === 'png' ? pngSize(b) : format === 'jpeg' ? jpegSize(b) : format === 'webp' ? webpSize(b) : svg!.size;
+  if (size && size.width > 0 && size.height > 0) return { format, size };
+  return { format, ...(svg?.why ? { svgWhy: svg.why } : {}) };
 }
 
 const codeOf = (err: unknown) => String((err as NodeJS.ErrnoException)?.code ?? (err as Error)?.name ?? 'error');
@@ -157,9 +188,9 @@ export function examineImage(root: string, source: ListingImage['source'], key: 
       if (n === 0) break;
       off += n;
     }
-    const { format, size } = imageInfo(buf.subarray(0, off));
+    const { format, size, svgWhy } = imageInfo(buf.subarray(0, off));
     if (!format) return { ...base, bytes: fst.size, problem: 'unknown-format' };
-    if (!size) return { ...base, bytes: fst.size, format, problem: 'no-dimensions' };
+    if (!size) return { ...base, bytes: fst.size, format, problem: 'no-dimensions', ...(svgWhy ? { detail: svgWhy } : {}) };
     return { ...base, bytes: fst.size, format, width: size.width, height: size.height };
   } catch (err) {
     const code = codeOf(err);
