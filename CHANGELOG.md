@@ -57,6 +57,11 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The manual checklist keeps MAN-020 and MAN-021 whole when the package's mcp.json does not parse or names no server: it said "the rest is checked by LST-022" when LST-022 had checked nothing (A06-07).
 - The `--verbose` [listing] dump redacts a one-string server `command` (`node server.js --api-key ... --password=...`, quoted values such as `--header "Authorization: Bearer ..."` included) like an argv, split as `--stdio` splits it, and the userinfo of a URL after `--flag=` or inside a string (A06-08).
 - The listings guide says which files `--plugin-dir` reads, lists and skips (I-A06-8).
+- `--active` on a 2026-07-28 server sends the `Mcp-Param-{Name}` headers for `x-mcp-header` parameters, so a conforming server no longer rejects the calls with `-32020` and RT-003 no longer reports a false positive; a tool whose `x-mcp-header` breaks TOOL-021 is not called there, as a Streamable HTTP client drops it (A03-01).
+- `Mcp-Name` uses the spec's `=?base64?...?=` form (non-ASCII, control characters, edge whitespace, a sentinel look-alike) instead of percent-encoding, shared with `Mcp-Param-{Name}` (A03-03).
+- The `--tool-args` "not used" warning names the real reason: `readOnlyHint`, `destructiveHint`, the write verb in the name, a duplicate name, the cap of 50 tools, or a `--max-duration` stop (A03-04).
+- The `--active` name filter skips more write verbs (upsert, append, restore, migrate, unpublish, charge, sign, vote, follow, retweet, launch, scale, resize, mount, format, encrypt/decrypt, rotate, configure, store, attach/detach, broadcast, alert, escalate, acknowledge, resolve_incident and the like) and splits names on any non-alphanumeric character after NFKC folding (`read&delete`, a zero-width-space join) (I-A03-1).
+- A `--max-duration` stop during the third clientInfo listing keeps the two finished variants for RT-012 (I-A03-3).
 
 ### Changed
 

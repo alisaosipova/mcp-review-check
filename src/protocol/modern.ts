@@ -44,6 +44,8 @@ export interface ModernRequestOptions {
   abortAfterHeaders?: boolean;
   /** Client capabilities for this request instead of the client's own. */
   capabilities?: Record<string, unknown>;
+  /** More request headers (the Mcp-Param-{Name} headers of a tools/call); the protocol headers above win. */
+  extraHeaders?: Record<string, string>;
 }
 
 const NAME_PARAM: Record<string, 'name' | 'uri'> = {
@@ -54,13 +56,52 @@ const NAME_PARAM: Record<string, 'name' | 'uri'> = {
   'resources/unsubscribe': 'uri',
 };
 
-/** The Mcp-Name header value a 2026-07-28 request must carry (params.name or params.uri), if any. */
+const SENTINEL_START = '=?base64?';
+const SENTINEL_END = '?=';
+
+/**
+ * A value for Mcp-Name or Mcp-Param-{Name} (2026-07-28 streamable-http, Value Encoding): sent as is when it is plain
+ * visible ASCII and space without leading or trailing whitespace, otherwise (non-ASCII, a control character or tab,
+ * edge whitespace, or a plain value that already looks like the sentinel) as `=?base64?{UTF-8 Base64}?=`.
+ */
+export function encodeHeaderValue(v: string): string {
+  const plain = /^[\x20-\x7E]*$/.test(v) && !/^\s|\s$/.test(v) && !(v.startsWith(SENTINEL_START) && v.endsWith(SENTINEL_END));
+  return plain ? v : `${SENTINEL_START}${Buffer.from(v, 'utf8').toString('base64')}${SENTINEL_END}`;
+}
+
+/** The Mcp-Name header value a 2026-07-28 request must carry (params.name or params.uri), if any, encoded. */
 export function mcpNameOf(method: string, params: Record<string, unknown>): string | undefined {
   const key = NAME_PARAM[method];
   const v = key ? params[key] : undefined;
-  if (typeof v !== 'string') return undefined;
-  // Header values must be ByteStrings: percent-encode anything outside visible ASCII and space.
-  return v.replace(/[^\x20-\x7E]/gu, (c) => encodeURIComponent(c));
+  return typeof v === 'string' ? encodeHeaderValue(v) : undefined;
+}
+
+/** Depth cut-off for the properties chain walked for x-mcp-header. */
+const MAX_HEADER_DEPTH = 32;
+
+/**
+ * The Mcp-Param-{Name} headers of a 2026-07-28 tools/call (streamable-http, Schema Extension and Client Behavior): for
+ * each `x-mcp-header` on a plain `properties` chain of the input schema, the argument value at that path as a string
+ * (string as is, integer in decimal, boolean lowercase), encoded by encodeHeaderValue. A missing or null value, or a
+ * value of another JSON type, sends no header. Header names are lower-case, as Node records them.
+ */
+export function mcpParamHeaders(inputSchema: unknown, args: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (schema: unknown, value: unknown, depth: number) => {
+    if (!isObj(schema) || !isObj(schema.properties) || depth > MAX_HEADER_DEPTH) return;
+    for (const [k, sub] of Object.entries(schema.properties)) {
+      if (!isObj(sub)) continue;
+      const v = isObj(value) && Object.prototype.hasOwnProperty.call(value, k) ? value[k] : undefined;
+      const h = sub['x-mcp-header'];
+      if (typeof h === 'string' && h) {
+        const s = typeof v === 'string' ? v : typeof v === 'boolean' ? String(v) : typeof v === 'number' && Number.isFinite(v) ? String(v) : undefined;
+        if (s !== undefined) out[`mcp-param-${h.toLowerCase()}`] = encodeHeaderValue(s);
+      }
+      walk(sub, v, depth + 1);
+    }
+  };
+  walk(inputSchema, args, 0);
+  return out;
 }
 
 export class ModernClient {
@@ -92,6 +133,7 @@ export class ModernClient {
     };
     const headers: Record<string, string> = {
       ...this.headers,
+      ...opts.extraHeaders,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
       'mcp-protocol-version': version,

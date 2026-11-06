@@ -16,6 +16,9 @@ export interface ModernOptions {
   listen?: 'sse' | 'json' | 'rpcerror';
   /** tools/list streams a notifications/message before its result. `declared`: the server declares logging; `level`: the notification's level (default 'info'; null leaves it out). */
   logging?: { declared: boolean; level?: string | null };
+  /** List two more read-only tools on the second page: get_forecast, whose `region` parameter has x-mcp-header
+   *  "Region" (a tools/call must carry a matching Mcp-Param-Region), and a non-ASCII name (m\u00e9t\u00e9o). */
+  headerTools?: boolean;
 }
 
 const VERSION = '2026-07-28';
@@ -36,6 +39,26 @@ const TOOLS = [
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
 ];
+
+const HEADER_TOOLS = [
+  {
+    name: 'get_forecast', description: 'Get the weather forecast for a region and a city.',
+    inputSchema: { type: 'object', properties: { region: { type: 'string', 'x-mcp-header': 'Region' }, city: { type: 'string' } }, required: ['region', 'city'] },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'm\u00e9t\u00e9o', description: 'Get the weather for a city.',
+    inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+];
+
+/** A Mcp-Name or Mcp-Param-{Name} value, decoded from the =?base64?...?= form as the 2026-07-28 spec requires. */
+function decodeHeader(v: string | string[] | undefined): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const m = /^=\?base64\?(.*)\?=$/s.exec(v);
+  return m ? Buffer.from(m[1], 'base64').toString('utf8') : v;
+}
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -73,7 +96,7 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
     if (mh !== msg.method) return err(400, -32020, 'Mcp-Method header does not match the request body');
     // Like Context7 and Hugging Face: requests that name a tool or resource must repeat it in Mcp-Name.
     const named = msg.method === 'tools/call' ? msg.params?.name : msg.method === 'resources/read' ? msg.params?.uri : undefined;
-    if (named !== undefined && req.headers['mcp-name'] !== named) return err(400, -32020, `the body carries ${String(named)} but the required Mcp-Name header is absent or different`);
+    if (named !== undefined && decodeHeader(req.headers['mcp-name']) !== named) return err(400, -32020, `the body carries ${String(named)} but the required Mcp-Name header is absent or different`);
     const cache = (scope = 'public') => (opts.bad ? { resultType: 'complete', cacheScope: scope } : { resultType: 'complete', ttlMs: 60000, cacheScope: scope });
     // A conforming 2026-07-28 server identifies itself in every result (SPEC-022); opts.bad leaves it out.
     const SERVER_INFO = { 'io.modelcontextprotocol/serverInfo': { name: 'acme-docs', title: 'Acme Docs', version: '2.0.0' } };
@@ -110,7 +133,8 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
         }
         const page = msg.params?.cursor === 'p2' ? 1 : 0;
         const extra = page === 0 ? Array.from({ length: opts.extraTools ?? 0 }, (_, i) => ({ ...TOOLS[0], name: `search_docs_${i}`, description: `${TOOLS[0].description} `.repeat(10).trim() })) : [];
-        return ok({ ...cache(opts.bad && page === 1 ? 'private' : 'public'), tools: [TOOLS[page], ...extra], ...(page === 0 ? { nextCursor: 'p2' } : {}) });
+        const more = page === 1 && opts.headerTools ? HEADER_TOOLS : [];
+        return ok({ ...cache(opts.bad && page === 1 ? 'private' : 'public'), tools: [TOOLS[page], ...extra, ...more], ...(page === 0 ? { nextCursor: 'p2' } : {}) });
       }
       case 'resources/list':
         return ok({ ...cache(), resources: [] });
@@ -120,7 +144,20 @@ export async function startModernServer(opts: ModernOptions = {}): Promise<Start
         return err(200, -32602, `Resource not found: ${String(msg.params?.uri)}`);
       case 'tools/call': {
         const name = msg.params?.name;
-        if (!TOOLS.some((t) => t.name === name)) return err(200, -32602, `Unknown tool: ${String(name)}`);
+        const def = [...TOOLS, ...(opts.headerTools ? HEADER_TOOLS : [])].find((t) => t.name === name);
+        if (!def) return err(200, -32602, `Unknown tool: ${String(name)}`);
+        // Mcp-Param-{Name} must match the argument it mirrors (the header is absent when the argument is).
+        const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+        for (const [k, p] of Object.entries(def.inputSchema.properties as Record<string, Record<string, unknown>>)) {
+          const h = p['x-mcp-header'];
+          if (typeof h !== 'string') continue;
+          const v = args[k];
+          const sent = decodeHeader(req.headers[`mcp-param-${h.toLowerCase()}`]);
+          if ((v === undefined || v === null) ? sent !== undefined : sent !== String(v)) return err(400, -32020, `Mcp-Param-${h} does not match argument ${k}`);
+        }
+        // The header tools validate their arguments and answer bad input with isError (the original tools do not).
+        const missing = HEADER_TOOLS.some((t) => t === def) ? def.inputSchema.required.filter((r) => typeof args[r] !== 'string') : [];
+        if (missing.length) return ok({ resultType: 'complete', content: [{ type: 'text', text: `invalid arguments: ${missing.join(', ')}` }], isError: true });
         return ok({ resultType: 'complete', content: [{ type: 'text', text: 'ok' }] });
       }
       default:

@@ -1,10 +1,11 @@
 // --active: read-only tool calls, argument synthesis, clientInfo variants (§2.9).
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ActiveCall, Snapshot } from '../snapshot.js';
-import type { ModernClient } from '../protocol/modern.js';
+import { mcpParamHeaders, type ModernClient } from '../protocol/modern.js';
 import { rpc } from '../protocol/legacy.js';
 import { HARD_DESTRUCTIVE, READ_VERBS, WRITE_VERBS } from '../rules/lexicon.js';
 import { CLAUDE_TOOL_TIMEOUT_MS } from '../rules/runtime.js';
+import { TOOL_021 } from '../rules/schema.js';
 import { annotations, isObj, properties, toolName, type Obj } from '../rules/util/access.js';
 import { tokenize } from '../rules/util/text.js';
 
@@ -17,6 +18,15 @@ const PROBE_WRITE_VERBS = new Set([
   'exec', 'kill', 'stop', 'restart', 'reboot', 'shutdown', 'deploy', 'push', 'commit', 'apply', 'install',
   'uninstall', 'rollback', 'clear', 'flush', 'unlink', 'rm', 'notify', 'reply', 'lock', 'unlock', 'grant', 'ban',
   'block', 'enable', 'activate', 'subscribe', 'pause', 'resume', 'toggle',
+  // 1.2.0 (I-A03-1)
+  'upsert', 'append', 'restore', 'migrate', 'unpublish', 'charge', 'sign', 'vote', 'follow', 'unfollow', 'retweet', 'launch',
+  'scale', 'resize', 'mount', 'unmount', 'format', 'encrypt', 'decrypt', 'rotate', 'configure', 'store', 'attach', 'detach',
+  'broadcast', 'alert', 'escalate', 'acknowledge',
+]);
+/** `resolve` is a READ verb (resolve_library_id), but resolving one of these things changes its state (I-A03-1). */
+const RESOLVED_THINGS = new Set([
+  'incident', 'incidents', 'ticket', 'tickets', 'issue', 'issues', 'alert', 'alerts', 'case', 'cases', 'conflict', 'conflicts',
+  'thread', 'threads', 'comment', 'comments', 'bug', 'bugs', 'dispute', 'disputes',
 ]);
 const isWriteVerb = (t: string) => WRITE_VERBS.has(t) || PROBE_WRITE_VERBS.has(t);
 /** Glued words that start with a hard-destructive verb but name a thing (droplet_info, dropdown_options). */
@@ -37,30 +47,63 @@ function stems(t: string, first: boolean): string[] {
 /** Words that join a second action to a name's first verb (get_and_kill, fetch_then_restart). */
 const CONJUNCTIONS = new Set(['and', 'then', 'or', 'also', 'plus']);
 
-/** A probe-only verb, an inflected write verb or a glued hard-destructive word (DELETEFILE) in this token. */
-const mutatingToken = (t: string, verbPosition: boolean) =>
-  isWriteVerb(t)
-  || stems(t, verbPosition).some(isWriteVerb)
-  || (!GLUED_NOUNS.test(t) && [...HARD_DESTRUCTIVE].some((v) => t.length > v.length && t.startsWith(v)));
+/** The probe-only verb, inflected write verb or glued hard-destructive verb (DELETEFILE) in this token, if any. */
+const mutatingVerb = (t: string, verbPosition: boolean): string | undefined =>
+  (isWriteVerb(t) ? t : undefined)
+  ?? stems(t, verbPosition).find(isWriteVerb)
+  ?? (GLUED_NOUNS.test(t) ? undefined : [...HARD_DESTRUCTIVE].find((v) => t.length > v.length && t.startsWith(v)));
+
+/** The name's words: NFKC-folded, split on every character that is not a letter or digit (read+delete, a zero-width
+ *  space join), then on camelCase and letter-digit boundaries (I-A03-1). */
+const probeTokens = (name: string) => tokenize(name.normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' '));
 
 /** A write verb in the name. A name that starts with a read verb (get_order_status, list_commits) keeps the exact
  *  WRITE_VERBS token check of 1.0.0 up to a conjunction; the tokens after one (get_and_kill_process) and every token
  *  of any other name are also checked for the probe-only verbs, inflected forms and an all-caps or glued name that
  *  starts with a hard-destructive verb (DELETEFILE). */
 export function hasWriteVerb(name: string): boolean {
-  const tokens = tokenize(name);
-  if (tokens.some((t) => WRITE_VERBS.has(t))) return true;
-  if (tokens.length === 0) return false;
+  return writeVerbOf(name) !== undefined;
+}
+
+/** The write verb hasWriteVerb finds in the name (its base form), or undefined. */
+export function writeVerbOf(name: string): string | undefined {
+  const tokens = probeTokens(name);
+  const exact = tokens.find((t) => WRITE_VERBS.has(t));
+  if (exact) return exact;
+  if (tokens.length === 0) return undefined;
+  if (tokens[0] === 'resolve' && RESOLVED_THINGS.has(tokens[1])) return 'resolve';
+  const first = (ts: string[]) => {
+    for (let i = 0; i < ts.length; i++) {
+      if (CONJUNCTIONS.has(ts[i])) continue;
+      const v = mutatingVerb(ts[i], i === 0);
+      if (v) return v;
+    }
+    return undefined;
+  };
   if (READ_VERBS.has(tokens[0])) {
     const joined = tokens.findIndex((t) => CONJUNCTIONS.has(t));
-    return joined > 0 && tokens.slice(joined + 1).some((t, i) => !CONJUNCTIONS.has(t) && mutatingToken(t, i === 0));
+    return joined > 0 ? first(tokens.slice(joined + 1)) : undefined;
   }
-  return tokens.some((t, i) => mutatingToken(t, i === 0));
+  return first(tokens);
+}
+
+/** Why the tool itself is not safe to call (annotations, then the name), or undefined. */
+function unsafeReason(tool: Obj): string | undefined {
+  const a = annotations(tool);
+  if (a.readOnlyHint !== true) return 'the tool is not read-only (readOnlyHint is not true)';
+  if (a.destructiveHint === true) return 'destructiveHint is true';
+  const verb = writeVerbOf(toolName(tool));
+  return verb ? `the name contains the write verb ${JSON.stringify(verb)}` : undefined;
 }
 
 export function isSafeToCall(tool: Obj): boolean {
-  const a = annotations(tool);
-  return a.readOnlyHint === true && a.destructiveHint !== true && !hasWriteVerb(toolName(tool));
+  return unsafeReason(tool) === undefined;
+}
+
+/** A Streamable HTTP client drops a tool whose x-mcp-header annotations break the rules (TOOL-021), so a 2026-07-28
+ *  client cannot call it (A03-01). */
+export function droppedByModernClient(tool: Obj): boolean {
+  return TOOL_021.check({ tools: [tool] } as unknown as Snapshot).length > 0;
 }
 
 /** Sample values for string formats, so a format-validating server accepts the synthesized argument. */
@@ -193,12 +236,13 @@ export interface ActiveContext {
   modern?: ModernClient;
   /** Opens a fresh legacy client with the given clientInfo.name and lists tool names. */
   listWithClientName?: (name: string) => Promise<string[] | undefined>;
-  /** Filled as the run goes (each call when it finishes, the clientInfo variants at the end) and returned: a
+  /** Filled as the run goes (each call and each clientInfo variant from the second on, when it finishes) and returned: a
    *  --max-duration stop keeps the calls already made. */
   into?: NonNullable<Snapshot['active']>;
 }
 
-async function call(ctx: ActiveContext, tool: string, kind: ActiveCall['kind'], args: unknown): Promise<ActiveCall> {
+async function call(ctx: ActiveContext, def: Obj, kind: ActiveCall['kind'], args: unknown): Promise<ActiveCall> {
+  const tool = toolName(def);
   const timeout = Math.min(ctx.timeoutMs, MAX_CALL_MS);
   const params = { name: tool, arguments: args };
   if (ctx.client) {
@@ -208,7 +252,8 @@ async function call(ctx: ActiveContext, tool: string, kind: ActiveCall['kind'], 
     return { tool, kind, args, result: obs.result, jsonRpcError: obs.error, durationMs: obs.durationMs };
   }
   const started = ctx.now();
-  const r = await ctx.modern!.request('tools/call', params, { label: `active ${tool}`, timeoutMs: timeout });
+  // A 2026-07-28 client mirrors the x-mcp-header arguments into Mcp-Param-{Name} headers (A03-01).
+  const r = await ctx.modern!.request('tools/call', params, { label: `active ${tool}`, timeoutMs: timeout, extraHeaders: mcpParamHeaders(def.inputSchema, args) });
   const durationMs = ctx.now() - started;
   if (!r.result && !r.error && r.exchange.error) return { tool, kind, args, transportError: `${r.exchange.error.name}: ${r.exchange.error.message}`, httpStatus: r.exchange.status, durationMs };
   if (!r.result && !r.error) return { tool, kind, args, transportError: `no JSON-RPC response (HTTP ${r.exchange.status ?? '?'})`, httpStatus: r.exchange.status, durationMs };
@@ -219,33 +264,56 @@ async function call(ctx: ActiveContext, tool: string, kind: ActiveCall['kind'], 
  * The tools --active may call, one entry per name. tools/call addresses a tool by name only, so a name listed more than
  * once is called only when every entry with it is safe: the server, not the linter, picks the implementation.
  */
-export function callableTools(tools: readonly Obj[]): Obj[] {
+export function callableTools(tools: readonly Obj[], modern = false): Obj[] {
   const byName = new Map<string, Obj[]>();
   for (const t of tools) {
     const entries = byName.get(toolName(t));
     if (entries) entries.push(t);
     else byName.set(toolName(t), [t]);
   }
-  return [...byName.values()].filter((entries) => entries.every(isSafeToCall)).map((entries) => entries[0]);
+  const ok = (t: Obj) => isSafeToCall(t) && !(modern && droppedByModernClient(t));
+  return [...byName.values()].filter((entries) => entries.every(ok)).map((entries) => entries[0]);
+}
+
+const SKIPPED = ', so --active does not call it';
+
+/**
+ * Why --active made no call to this tool (A03-04): its annotations or name, invalid x-mcp-header annotations on a
+ * 2026-07-28-only server, another unsafe entry with the same name, the cap on tools, or a --max-duration stop before
+ * the call. undefined when none applies (the tool was called).
+ */
+export function activeSkipReason(tool: Obj, all: readonly Obj[], limits?: Snapshot['limits'], opts: { modern?: boolean } = {}): string | undefined {
+  const own = unsafeReason(tool);
+  if (own) return own + SKIPPED;
+  const modern = !!opts.modern;
+  if (modern && droppedByModernClient(tool)) return `its x-mcp-header annotations are invalid (TOOL-021), so a Streamable HTTP client drops it and --active does not call it`;
+  const name = toolName(tool);
+  if (all.some((t) => toolName(t) === name && (!isSafeToCall(t) || (modern && droppedByModernClient(t))))) {
+    return `the name is listed more than once and not every entry is read-only${SKIPPED}`;
+  }
+  if (callableTools(all, modern).findIndex((t) => toolName(t) === name) >= MAX_TOOLS) return `the tool was past the cap of ${MAX_TOOLS} tools on --active calls`;
+  const stopped = limits?.stopped;
+  if (stopped && (stopped.unfinished ?? [stopped.phase]).includes('active tool calls')) return 'the run stopped before this call';
+  return undefined;
 }
 
 export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapshot['active']>> {
   const result: NonNullable<Snapshot['active']> = ctx.into ?? { calls: [] };
   const calls: ActiveCall[] = result.calls;
-  const tools = callableTools(ctx.snap.tools).slice(0, MAX_TOOLS);
+  const tools = callableTools(ctx.snap.tools, !ctx.client && !!ctx.modern).slice(0, MAX_TOOLS);
   for (const t of tools) {
     const name = toolName(t);
     // Own keys only: a tool named "constructor" or "__proto__" must not pick up Object.prototype members.
     const provided = ctx.toolArgs && Object.prototype.hasOwnProperty.call(ctx.toolArgs, name) ? ctx.toolArgs[name] : undefined;
     const args = provided !== undefined ? provided : synthesizeArgs(t.inputSchema);
-    calls.push(await call(ctx, name, provided !== undefined ? 'valid' : 'synthetic', args));
+    calls.push(await call(ctx, t, provided !== undefined ? 'valid' : 'synthetic', args));
     const required = requiredOf(t.inputSchema);
     if (required.length) {
-      calls.push(await call(ctx, name, 'invalid-missing', {}));
+      calls.push(await call(ctx, t, 'invalid-missing', {}));
       const first = required[0];
       const wrong = wrongTypeValue(properties(t.inputSchema)[first]);
       // Without a value the schema certainly rejects, a success would not show that invalid input is accepted (RT-002).
-      if (wrong !== undefined) calls.push(await call(ctx, name, 'invalid-type', { ...(isObj(args) ? args : {}), [first]: wrong }));
+      if (wrong !== undefined) calls.push(await call(ctx, t, 'invalid-type', { ...(isObj(args) ? args : {}), [first]: wrong }));
     }
   }
   if (ctx.listWithClientName) {
@@ -253,8 +321,10 @@ export async function runActive(ctx: ActiveContext): Promise<NonNullable<Snapsho
     for (const n of ['mcp-review-check', 'claude-ai', 'Anthropic']) {
       const names = await ctx.listWithClientName(n);
       if (names) variants[n] = names;
+      // Into the result as each one finishes, from two on (I-A03-3): a stop during the third keeps two. A new object
+      // each time, so a stopped snapshot's shallow copy is not changed by the abandoned run.
+      if (Object.keys(variants).length > 1) result.clientInfoVariants = { ...variants };
     }
-    if (Object.keys(variants).length > 1) result.clientInfoVariants = variants;
   }
   return result;
 }

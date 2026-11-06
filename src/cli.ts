@@ -343,7 +343,9 @@ function unusedToolArgs(toolArgs: Record<string, unknown>, snap: Snapshot): stri
   const used = new Set(snap.active?.calls.filter((c) => c.kind === 'valid').map((c) => c.tool));
   return Object.keys(toolArgs).filter((name) => !used.has(name)).map((name) => {
     const tool = snap.tools.find((t) => toolName(t) === name);
-    const why = !tool ? 'the server lists no tool by that name' : !M!.active.isSafeToCall(tool) ? 'the tool is not read-only (readOnlyHint: true), so --active does not call it' : 'the tool was past the cap on --active calls';
+    // The real reason (A03-04): annotations, the write-verb name filter, a duplicate name, the cap or a stop.
+    const why = !tool ? 'the server lists no tool by that name'
+      : M!.active.activeSkipReason(tool, snap.tools, snap.limits, { modern: snap.era === 'modern' }) ?? 'the call was not made';
     return `warning: --tool-args entry ${JSON.stringify(name)} was not used: ${why}\n`;
   }).join('');
 }

@@ -175,7 +175,7 @@ describe('protocol and redaction helpers: edge cases', () => {
 
   it('mcpNameOf takes params.name or params.uri', () => {
     expect(mcpNameOf('tools/call', { name: 'search' })).toBe('search');
-    expect(mcpNameOf('resources/read', { uri: 'ui://w/é.html' })).toBe('ui://w/%C3%A9.html');
+    expect(mcpNameOf('resources/read', { uri: 'ui://w/é.html' })).toBe(`=?base64?${Buffer.from('ui://w/é.html').toString('base64')}?=`); // A03-03
     expect(mcpNameOf('tools/list', {})).toBeUndefined();
   });
 
