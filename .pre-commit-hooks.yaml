@@ -7,7 +7,7 @@
 - id: mcp-review-check
   name: mcp-review-check
   description: Lint an MCP server against the Claude and ChatGPT directory criteria and the MCP spec
-  entry: npx --yes mcp-review-check@1.1
+  entry: npx --yes mcp-review-check@1.2
   language: system
   pass_filenames: false
   always_run: false

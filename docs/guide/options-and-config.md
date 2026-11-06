@@ -123,7 +123,7 @@ Drift is informational: it does not change the verdicts, the counts or the exit 
 [`schema/report.schema.json`](../../schema/report.schema.json) (JSON Schema draft 2020-12) describes the JSON report and ships in the npm package (`node_modules/mcp-review-check/schema/report.schema.json`). Its `$id`, which every JSON report names in `$schema`, is the URL of the schema at the tag of the installed release, `https://raw.githubusercontent.com/alisaosipova/mcp-review-check/v<version>/schema/report.schema.json` (`v<version>` is the version `mcp-review-check --version` prints). Fields added after 0.1 say since which release in their `description`. Objects do not allow other properties, so a field this schema does not know fails validation; `schemaVersion` is bumped on a breaking change. To check the report in CI, for example with [ajv-cli](https://github.com/ajv-validator/ajv-cli):
 
 ```bash
-npx mcp-review-check@1.1 --fail-on never --json-output report.json --stdio -- node dist/server.js
+npx mcp-review-check@1.2 --fail-on never --json-output report.json --stdio -- node dist/server.js
 npx -y -p ajv-cli@5 -p ajv-formats@3 ajv validate --spec=draft2020 -c ajv-formats -s node_modules/mcp-review-check/schema/report.schema.json -d report.json
 ```
 

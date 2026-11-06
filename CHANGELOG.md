@@ -6,6 +6,20 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.0] - 2026-11-06
+
+Rule catalog dated 2026-11-02, 180 rules, no rule added. This release fixes the 88 confirmed findings of review round 4 that the 1.x policy allows before the planned feature releases ([docs/review/2026-11-05](docs/review/2026-11-05/FINDINGS.md), [progress](docs/review/2026-11-05/PROGRESS.md)). It is a minor release, not a patch, for three reasons:
+- some failing runs now read FAIL in every format (`--fail-on-drift`);
+- a crashed rule now shows as an internal error;
+- the engine has new needs (`handshake`, `url`, `transport`), so some rules now report skipped where 1.1.0 counted them as passed.
+
+All three high findings are fixed:
+- A06-01: the MCP files `plugin.json` names are read. Their findings stay at info until 1.3.0.
+- A09-01: the importmap scan is linear.
+- A09-02: the `pyproject.toml` scan is linear.
+
 ### Added
 
 - JSON `summary.internalErrors` (since 1.2): how many rules threw; absent when none (A13-02).
@@ -676,7 +690,8 @@ First public release.
 - AUTH-010 gives the DNS fix ("Publish public DNS records …") only when an authorization server host does not resolve; for a refused connection, no route or another network code the fix is that cause's own hint ("Nothing is listening there: …", "Check the address, VPN and firewall …"). The README says the Windows `rerun:` line is quoted for cmd.exe, and that in PowerShell an argument with `"`, `$` or a backtick needs quoting again.
 - Redaction also masks a token in a known format inside a stdio argument or an `--env` value, wherever it stands as a word of its own: in a JSON value (`--config '{"apiKey":"sk-…"}'`), a comma list (`--keys=ghp_…,ghp_…`) or after a space; it was shown in the target label, `server.command`, the `rerun:` line, SRV-018 and stdio stderr, and the server's echo of it was not masked. After Ctrl+C (or SIGTERM, SIGHUP, SIGQUIT) a stdio server the check starts is killed at once, so a fresh connection begun after the signal no longer outlives the CLI. The README says that on Windows a `rerun:` argument that holds both `"` and one of `& | < > ^` may split in cmd.exe and needs checking before you run the pasted line.
 
-[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/alisaosipova/mcp-review-check/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/alisaosipova/mcp-review-check/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/alisaosipova/mcp-review-check/compare/v0.7.0...v1.0.0

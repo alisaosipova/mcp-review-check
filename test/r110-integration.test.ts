@@ -84,10 +84,10 @@ describe('CHANGELOG: the 1.1.0 section', () => {
   });
   it('the compare links name v1.1.0', () => {
     const repo = 'https://github.com/alisaosipova/mcp-review-check/compare';
-    expect(log).toContain(`[Unreleased]: ${repo}/v1.1.0...HEAD\n[1.1.0]: ${repo}/v1.0.1...v1.1.0\n[1.0.1]:`);
+    expect(log).toContain(`[1.1.0]: ${repo}/v1.0.1...v1.1.0\n[1.0.1]:`);
   });
-  it('the package version is the released 1.1.0', () => {
-    expect(JSON.parse(read('package.json')).version).toBe('1.1.0');
+  it('the package version is 1.1.0 or later', () => {
+    expect(JSON.parse(read('package.json')).version).toMatch(/^1\.([1-9]|\d{2,})\./);
   });
 });
 
