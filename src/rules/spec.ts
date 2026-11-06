@@ -47,7 +47,7 @@ export const SPEC_001 = defineRule(
 
 export const SPEC_002 = defineRule(
   {
-    id: 'SPEC-002', title: 'Capabilities declared for served primitives', severity: { spec: 'error' }, needs: [],
+    id: 'SPEC-002', title: 'Capabilities declared for served primitives', severity: { spec: 'error' }, needs: ['handshake'],
     rationale: 'Clients only call list methods for declared capabilities.',
     fix: 'Declare tools/resources/prompts capabilities for every primitive you serve.',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/tools#capabilities'],
@@ -188,7 +188,7 @@ export const SPEC_007 = defineRule(
 
 export const SPEC_008 = defineRule(
   {
-    id: 'SPEC-008', title: 'Unknown method → -32601', severity: { spec: 'error' }, needs: [],
+    id: 'SPEC-008', title: 'Unknown method → -32601', severity: { spec: 'error' }, needs: ['handshake'],
     rationale: 'JSON-RPC reserves -32601 for "method not found".',
     fix: 'Return error code -32601 (and HTTP 404 on 2026-07-28) for unknown methods.',
     sources: [SHTTP, 'https://www.jsonrpc.org/specification'],
@@ -383,7 +383,7 @@ export const SPEC_015 = defineRule(
 
 export const SPEC_016 = defineRule(
   {
-    id: 'SPEC-016', title: 'JSON-RPC error codes and ids valid', severity: { spec: 'error' }, needs: [],
+    id: 'SPEC-016', title: 'JSON-RPC error codes and ids valid', severity: { spec: 'error' }, needs: ['handshake'],
     rationale: 'Error codes in the reserved range have defined meanings; ids must echo the request.',
     fix: 'Use integer codes from the spec and echo the request id (or null).',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic#error-codes', 'https://www.jsonrpc.org/specification'],
@@ -422,7 +422,7 @@ const ICON_MIME = new Set(['image/png', 'image/jpeg', 'image/svg+xml', 'image/we
 
 export const SPEC_017 = defineRule(
   {
-    id: 'SPEC-017', title: 'Icons well-formed', severity: { spec: 'warning' }, needs: [],
+    id: 'SPEC-017', title: 'Icons well-formed', severity: { spec: 'warning' }, needs: ['handshake'],
     rationale: 'Hosts drop malformed icons.',
     fix: 'Use https: or data:image/...;base64 src, an image mimeType (png, jpeg, svg+xml or webp render everywhere), sizes like "48x48" and theme light|dark.',
     sources: [SCHEMA_TS],
@@ -499,7 +499,7 @@ export function metaKeyProblem(key: string): string | undefined {
 
 export const SPEC_018 = defineRule(
   {
-    id: 'SPEC-018', title: '_meta key syntax and reserved prefixes', severity: { spec: 'warning' }, needs: [],
+    id: 'SPEC-018', title: '_meta key syntax and reserved prefixes', severity: { spec: 'warning' }, needs: ['handshake'],
     rationale: '_meta keys follow a reverse-DNS prefix/name syntax; MCP prefixes are reserved.',
     fix: 'Use your own reverse-DNS prefix, e.g. com.example/key.',
     sources: [SCHEMA_TS],
@@ -563,7 +563,7 @@ export function listFailureReported(snap: Snapshot, method: string): boolean {
 
 export const SPEC_020 = defineRule(
   {
-    id: 'SPEC-020', title: 'List methods for declared capabilities succeed', severity: { spec: 'error', claude: 'error', chatgpt: 'error' }, needs: [],
+    id: 'SPEC-020', title: 'List methods for declared capabilities succeed', severity: { spec: 'error', claude: 'error', chatgpt: 'error' }, needs: ['handshake'],
     rationale: 'A server that declares a capability must answer its list method; when tools/list fails no host can use the server and no tool check can run.',
     fix: 'Make the list method answer with a result (check errors, crashes, timeouts and pagination loops).',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/tools#listing-tools', 'https://modelcontextprotocol.io/specification/2026-07-28/server/resources#listing-resources'],
@@ -643,7 +643,7 @@ const DEPRECATED_REQUESTS = new Map<string, string>([
 
 export const SPEC_021 = defineRule(
   {
-    id: 'SPEC-021', title: 'Deprecated protocol features in use', severity: { spec: 'info' }, needs: [],
+    id: 'SPEC-021', title: 'Deprecated protocol features in use', severity: { spec: 'info' }, needs: ['handshake'],
     rationale: 'Deprecated features stay in the specification for at least twelve months, but new implementations should not adopt them and existing ones should migrate before removal.',
     fix: 'Follow the migration path in the deprecated features registry: drop the logging capability (stderr or OpenTelemetry), take roots as tool parameters, call an LLM API instead of sampling, omit includeContext or use "none", and serve Streamable HTTP instead of HTTP+SSE.',
     sources: [DEPRECATED, 'https://modelcontextprotocol.io/specification/2026-07-28/changelog#deprecated'],
@@ -703,7 +703,7 @@ export const SPEC_022 = defineRule(
 
 export const SPEC_023 = defineRule(
   {
-    id: 'SPEC-023', title: 'capabilities.extensions well-formed', severity: { spec: 'error' }, needs: [],
+    id: 'SPEC-023', title: 'capabilities.extensions well-formed', severity: { spec: 'error' }, needs: ['handshake'],
     rationale: 'Clients look extensions up by identifier: capabilities.extensions maps "{vendor-prefix}/{name}" identifiers, which must follow the _meta key rules with a mandatory prefix, to settings objects.',
     fix: 'Declare extensions as an object such as { "io.modelcontextprotocol/ui": {} }, keyed by prefixed identifiers (your own reverse-DNS prefix for third-party extensions), each with an object of settings ({} for none).',
     sources: [SCHEMA_TS, EXTENSIONS, TASKS_EXT],

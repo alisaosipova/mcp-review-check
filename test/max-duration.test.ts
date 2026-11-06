@@ -4,14 +4,17 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
+import { defaultDeps } from '../src/probe/network.js';
 import { cli } from './cli-runner.js';
 
 const STUBBORN = fileURLToPath(new URL('./fixtures/stubborn-server.mjs', import.meta.url));
 const THROWER = fileURLToPath(new URL('./fixtures/throw-server.mjs', import.meta.url));
+/** Makes the built CLI's run clock throw: the stdio check then throws after the handshake (see the fixture). */
+const THROW_PRELOAD = { NODE_OPTIONS: `--import=${pathToFileURL(fileURLToPath(new URL('./fixtures/throw-after-handshake-preload.mjs', import.meta.url))).href}` };
 const dirs: string[] = [];
 
 function pidsOf(pidFile: string): number[] {
@@ -23,11 +26,11 @@ function alive(pid: number): boolean {
 }
 
 /** Run the CLI against stubborn-server.mjs; the pid file lists every server process the run started. */
-async function run(flags: string[], args: string[], server = STUBBORN) {
+async function run(flags: string[], args: string[], server = STUBBORN, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'mrc-stubborn-'));
   dirs.push(dir);
   const pidFile = join(dir, 'pids');
-  const r = await cli(['--stdio', `node "${server}" "${pidFile}" ${flags.join(' ')}`, '--format', 'json', '--timeout', '20000', ...args]);
+  const r = await cli(['--stdio', `node "${server}" "${pidFile}" ${flags.join(' ')}`, '--format', 'json', '--timeout', '20000', ...args], env);
   return { r, pids: pidsOf(pidFile) };
 }
 
@@ -103,12 +106,12 @@ describe('no stdio server outlives the CLI', () => {
     expect(pids.filter(alive)).toEqual([]);
   });
 
-  // An exception in the check after the handshake (here a tool name that cannot become a
-  // string) skipped the cleanup, and a server that ignores EOF outlived the CLI with ppid 1.
+  // An exception in the check after the handshake skipped the cleanup, and a server that ignores EOF outlived the CLI
+  // with ppid 1. The trigger is the preload's throwing clock (a tool name that cannot become a string was, until A13-01).
   it.each([[[] as string[]], [['--max-duration', '20000']]])('the check throws after the handshake (%j): exit 3 and the server is gone', async (args) => {
-    const { r, pids } = await run([], ['--timeout', '5000', ...args], THROWER);
+    const { r, pids } = await run([], ['--timeout', '5000', ...args], THROWER, THROW_PRELOAD);
     expect(r.code, r.stderr).toBe(3);
-    expect(r.stderr).toMatch(/^fatal: TypeError/m);
+    expect(r.stderr).toMatch(/^fatal: TypeError: test: the clock throws after the handshake/m);
     expect(pids).toHaveLength(1);
     expect(pids.filter(alive)).toEqual([]);
   });
@@ -120,13 +123,17 @@ describe('no stdio server outlives the CLI', () => {
     dirs.push(dir);
     const pidFile = join(dir, 'pids');
     const close = vi.spyOn(StdioClientTransport.prototype, 'close');
+    // The run's clock throws: on a stdio target its first call is the wire probe's, after the handshake.
+    const now = vi.spyOn(defaultDeps, 'now').mockImplementation(() => { throw new TypeError('test: the clock throws after the handshake'); });
     try {
       const r = await runCli(['--stdio', `node "${THROWER}" "${pidFile}"`, '--format', 'json', '--timeout', '5000'], {});
       expect(r.code, r.stderr).toBe(3);
-      expect(r.stderr).toMatch(/^fatal: TypeError/m);
+      expect(r.stderr).toMatch(/^fatal: TypeError: test: the clock throws after the handshake/m);
+      expect(now).toHaveBeenCalled();
       expect(close).toHaveBeenCalledTimes(1);
       expect(pidsOf(pidFile).filter(alive)).toEqual([]);
     } finally {
+      now.mockRestore();
       close.mockRestore();
     }
   }, 30000);

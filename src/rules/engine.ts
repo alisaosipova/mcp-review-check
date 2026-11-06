@@ -1,7 +1,7 @@
 // Rule engine: needs evaluation, platform filtering, severity, ignore, sorting (§1.2, §4.2).
 import { PHASES, type Platform, type Severity, type Snapshot, type TargetOpt } from '../snapshot.js';
-import { hasUi } from './util/access.js';
-import { maxSeverity, SEVERITY_RANK, type Finding, type Need, type Rule } from './types.js';
+import { hasUi, safeStr } from './util/access.js';
+import { LISTING_NEEDS, maxSeverity, NO_TRANSPORT_NEEDS, SEVERITY_RANK, type Finding, type Need, type Rule } from './types.js';
 
 export function activePlatforms(target: TargetOpt): Platform[] {
   if (target === 'claude') return ['claude', 'spec'];
@@ -29,19 +29,36 @@ export function authReason(snap: Snapshot): string | undefined {
 /** The skip reason of a rule that needs the server's answers when no transport worked (A10-05). */
 export const CONNECT_REASON = 'could not connect';
 
-/** Rules that judge the entered URL or its DNS alone (and SRV-003, which reports the connect failure itself): finding
- *  nothing is a pass for them even when the server could not be reached. Every other rule that finds nothing in a run
- *  without a working transport is skipped, not counted as run (A10-05). */
-const URL_ONLY = new Set(['SRV-001', 'SRV-003', 'SRV-004', 'SRV-005', 'SRV-017', 'AUTH-001']);
-
 /** The skip reason of every rule that needs a server in a listing-only run. */
 export const LISTING_ONLY_REASON = 'no server target (listing-only run)';
+
+/** The skip reason of a rule that throws (A13-02), followed by the error message. */
+export const INTERNAL_REASON = 'internal error';
+
+/** No transport worked: nothing the server would have answered is there (A10-05). */
+export const noTransport = (snap: Snapshot): boolean => !!snap.fatal || snap.coverage.toolLevel === 'connect-failed';
+
+/** Needs about the server's answers: on a run without a working transport they all read "could not connect" (or the
+ *  auth reason), not a need-specific reason such as "server did not request auth" or "era unknown" (A04-06). An auth
+ *  probe that ran is evidence of its own (a 403 challenge with no handshake): `auth` is then met. */
+const SERVER_NEEDS: ReadonlySet<Need> = new Set(['auth', 'legacy', 'modern', 'ui', 'tools', 'resources', 'prompts', 'handshake']);
+
+const isListingNeed = (n: Need) => LISTING_NEEDS.includes(n);
 
 /** Returns undefined when the need is met, otherwise the skip reason. */
 export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
   const isHttp = snap.target.kind === 'http';
-  if (snap.target.kind === 'listing' && need !== 'plugin-dir' && need !== 'openai-manifest') return LISTING_ONLY_REASON;
+  if (snap.target.kind === 'listing' && !isListingNeed(need)) return LISTING_ONLY_REASON;
+  if (need === 'auth' && !isHttp) return 'stdio target';
+  if (SERVER_NEEDS.has(need) && noTransport(snap) && !(need === 'auth' && snap.authProbe)) return authReason(snap) ?? CONNECT_REASON;
   switch (need) {
+    case 'handshake':
+      return snap.initializeRaw !== undefined || snap.discoverRaw !== undefined ? undefined : authReason(snap) ?? 'no handshake result';
+    case 'url':
+      return isHttp ? undefined : 'stdio target';
+    case 'transport':
+      // A stdio target is judged only when it did not start (the failure is the finding); one that ran has no HTTP transport to judge.
+      return isHttp || snap.fatal ? undefined : 'stdio target';
     case 'tools':
     case 'resources':
     case 'prompts':
@@ -72,6 +89,17 @@ export function unmetNeed(snap: Snapshot, need: Need): string | undefined {
     case 'openai-manifest':
       return snap.listing?.openai ? undefined : 'needs --openai-manifest';
   }
+}
+
+/** The skip reason of a rule with these needs, or undefined when it runs. In a listing-only run a rule without a
+ *  listing need reads the server, so it is skipped whatever its other needs (also with none); computed here only (I-A13-3). */
+export function needsReason(snap: Snapshot, needs: readonly Need[]): string | undefined {
+  if (snap.target.kind === 'listing' && !needs.some(isListingNeed)) return LISTING_ONLY_REASON;
+  for (const n of needs) {
+    const r = unmetNeed(snap, n);
+    if (r !== undefined) return r;
+  }
+  return undefined;
 }
 
 /** The skip reason of a rule that read data of a phase a --max-duration stop cut short and found nothing in it. */
@@ -152,6 +180,11 @@ export interface EngineResult {
   scored?: Finding[];
   /** Set when `deadline` passed during the rules (A09-04): the first rule not run and how many were not run. */
   stopped?: { atRule: string; rulesNotRun: number };
+  /** How many rules threw (A13-02), whatever --target: each is skipped with "internal error: <message>", not counted
+   *  as run, and leaves an INTERNAL info finding. Set only when not 0. Not read by the report yet: P7 (1.2.0) makes a
+   *  report with it partial (INCOMPLETE verdicts, score null) without changing coverage.toolLevel, summary.failed or
+   *  the exit code. */
+  internalErrors?: number;
 }
 
 export interface EngineOptions {
@@ -186,6 +219,15 @@ export function sortFindings(list: Finding[]): Finding[] {
   );
 }
 
+/** The message of anything a rule threw, without throwing itself (a thrown object can be hostile too). */
+function errorMessage(err: unknown): string {
+  try {
+    return err instanceof Error ? safeStr(err.message) : safeStr(err);
+  } catch {
+    return 'unprintable error';
+  }
+}
+
 export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}): EngineResult {
   const active = activePlatforms(snap.options.target);
   const ignore = new Set((opts.ignore ?? []).map((s) => s.toUpperCase()));
@@ -197,6 +239,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
   const unfinished = unfinishedPhases(snap);
   const now = opts.now ?? (() => performance.now());
   let stopped: EngineResult['stopped'];
+  let internalErrors = 0;
 
   for (const rule of rules) {
     const rulePlatforms = Object.keys(rule.severity) as Platform[];
@@ -210,9 +253,10 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       if (applies) skipped.push({ ruleId: rule.id, reason: STOPPED_REASON });
       continue;
     }
-    let reason = rule.needs.map((n) => unmetNeed(snap, n)).find((r) => r !== undefined);
-    // A rule without a listing need reads the server: nothing to judge in a listing-only run.
-    if (!reason && snap.target.kind === 'listing' && !rule.needs.some((n) => n === 'plugin-dir' || n === 'openai-manifest')) reason = LISTING_ONLY_REASON;
+    // `handshake` is a soft need: the rule runs without it, since some of its data exists before a handshake (observed
+    // JSON-RPC errors, an SSE-only transport); finding nothing then is skipped with the need's reason, not passed.
+    const reason = needsReason(snap, rule.needs.filter((n) => n !== 'handshake'));
+    const soft = rule.needs.includes('handshake') ? unmetNeed(snap, 'handshake') : undefined;
     if (reason) {
       if (applies) skipped.push({ ruleId: rule.id, reason });
       continue;
@@ -223,11 +267,14 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     try {
       raw = rule.check(unfinished ? tracked(snap, unfinished, hit, partial) : snap);
     } catch (err) {
-      if (applies) rulesRun++;
-      // Also for a rule outside --target: it runs for the score, which is then short of its findings (spec is always active).
+      // A rule that threw checked nothing: skipped, not run (A13-02). Counted also for a rule outside --target, whose
+      // findings the score is then short of; the INTERNAL finding stays for visibility (spec is always active).
+      internalErrors++;
+      const message = errorMessage(err);
+      if (applies) skipped.push({ ruleId: rule.id, reason: `${INTERNAL_REASON}: ${message}` });
       findings.push({
         ruleId: INTERNAL.id, title: INTERNAL.title, severity: 'info', platforms: ['spec'],
-        message: `${rule.id} threw: ${(err as Error).message}`, fix: INTERNAL.fix, docs: [],
+        message: `${rule.id} threw: ${message}`, fix: INTERNAL.fix, docs: [],
       });
       continue;
     }
@@ -237,8 +284,13 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       if (applies) skipped.push({ ruleId: rule.id, reason: snap.limits?.budgetExhausted ? BUDGET_REASON : STOPPED_REASON });
       continue;
     }
-    // Without a working transport only the URL and DNS rules can pass: any other rule found nothing because it saw nothing.
-    if ((snap.fatal || snap.coverage.toolLevel === 'connect-failed') && raw.length === 0 && !URL_ONLY.has(rule.id)) {
+    if (soft && raw.length === 0) {
+      if (applies) skipped.push({ ruleId: rule.id, reason: soft });
+      continue;
+    }
+    // Without a working transport only the rules that judge the URL, its DNS or the transport itself can pass (a `url` or
+    // `transport` need): any other rule found nothing because it saw nothing.
+    if (noTransport(snap) && raw.length === 0 && !rule.needs.some((n) => NO_TRANSPORT_NEEDS.includes(n))) {
       if (applies) skipped.push({ ruleId: rule.id, reason: authReason(snap) ?? CONNECT_REASON });
       continue;
     }
@@ -261,5 +313,8 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
       (ignore.has(rule.id) ? ignored : findings).push({ ...finding, platforms: mine, severityByPlatform: own, severity: maxSeverity(Object.values(own)) ?? 'info' });
     }
   }
-  return { findings: sortFindings(findings), ignored, skipped, rulesRun, scored, ...(stopped ? { stopped } : {}) };
+  return {
+    findings: sortFindings(findings), ignored: sortFindings(ignored), skipped, rulesRun, scored,
+    ...(stopped ? { stopped } : {}), ...(internalErrors ? { internalErrors } : {}),
+  };
 }

@@ -60,6 +60,16 @@ Each rule declares the data it needs. When the snapshot lacks that data, the eng
 | `active` | `--active` was given (calls read-only tools) |
 | `active-auth` | `--active-auth` was given (DCR registration, /authorize and /token probes) |
 | `plugin-dir` / `openai-manifest` | `--plugin-dir` / `--openai-manifest` was given (0.4.0, §3.8) |
+| `handshake` | the server answered the handshake: `initializeRaw` or `discoverRaw` is set (1.2.0). A soft need: the rule runs without it and keeps what it finds (observed JSON-RPC errors and an SSE-only transport exist before a handshake); finding nothing without it is skipped with the need's reason, never passed |
+| `url` | HTTP target, judged on the entered URL or its DNS alone (1.2.0; was `http`) |
+| `transport` | HTTP target, or a stdio target that did not start (1.2.0; SRV-003 only) |
+
+**1.2.0 notes (review round 4, block P3).**
+- A rule that reads the handshake, serverInfo, capabilities, instructions or a list declares `handshake` (or `tools`/`resources`/`prompts`/`ui`): SRV-011..015, SPEC-002, SPEC-008, SPEC-016..018, SPEC-020, SPEC-021, SPEC-023 and POL-005 had no need and counted as passed in an auth-required or token-rejected run; finding nothing there, they are now skipped with the auth reason (A04-03), and findings made on data that exists without a handshake are kept (SPEC-016 on a 401's JSON-RPC error, SPEC-021 on an SSE-only server). The `handshake` skip reason is the auth reason, else `could not connect` on a failed connect, else `no handshake result`.
+- In a run without a working transport (`fatal`, or `coverage.toolLevel` connect-failed) the needs `auth`, `legacy`, `modern`, `ui`, `tools`, `resources`, `prompts` and `handshake` read the auth reason or `could not connect`, not `server did not request auth` or `era unknown` (A04-06). Two exceptions: `auth` is met when the auth probe ran (a 403 challenge without a handshake keeps AUTH-002/004/015/016), and on a non-HTTP target `auth` reads `stdio target`.
+- SRV-003 needs `transport`: a stdio server that started has no HTTP transport to judge and is skipped with `stdio target`, not passed (A10-06); a stdio server that did not start is still reported.
+- The rules that may pass without a working transport are those with a `url` or `transport` need (SRV-001, SRV-003, SRV-004, SRV-005, SRV-017, AUTH-001); the engine keeps no ID list (I-A13-3). The listing-only skip is decided in one place (`needsReason`).
+- `test/r111-p3-needs-selftest.test.ts` runs every rule through a read-recording Proxy on the auth-required, token-rejected, connect-failed (HTTP and stdio) and listing-only snapshots and fails when a rule reads a missing list, handshake field, `resourceReads` or `authProbe` its needs do not guarantee and still counts as run (I-A13-2). It watches top-level snapshot keys only, not `transport.*`. `test/r111-p3-fuzz.test.ts` sets each of these fields in turn to null, a number, a boolean, an array, `{}`, `{"toString":"x"}`, `{"toString":"x","valueOf":"y"}`, a parsed `__proto__` object and the strings `__proto__` and `constructor`, and fails on any rule that throws (I-A13-1): a tool's `name`, `title`, `description`, `inputSchema` (and its `properties`, `required`, `type`, `$defs`, one property, its `description`, `type`, `items`, `enum`), `outputSchema`, `annotations` (and `readOnlyHint`, `destructiveHint`, `title`), `_meta` (and `ui`, `ui.resourceUri`, `openai/outputTemplate`), `icons`, `execution`; a resource's `uri`, `name`, `title`, `description`, `mimeType`, `_meta` (and `ui`, `ui.csp`, `ui.csp.connectDomains`), `icons`, `annotations`; a prompt's `name`, `title`, `description`, `arguments` (an argument and its `name`), `_meta`, `icons`; `serverInfo` and its `name`, `title`, `version`, `description`, `icons`, `websiteUrl`; `capabilities` and its `tools`, `resources`, `prompts`, `logging`, `extensions` (and the UI extension), `experimental`, `completions`; `instructions`; `initializeRaw`, its `_meta` and `protocolVersion`; and a UI resource read's `raw`, `contents` and the first item's `text`, `mimeType`, `_meta`. Wire probes, observed errors and the auth probe are not fuzzed.
 
 ### 1.4 Local mode
 The snapshot sets `localMode = true` when the HTTP host is `localhost`, `*.localhost`, `127.0.0.0/8`, or `::1`, and for every stdio target. In local mode:
@@ -70,6 +80,7 @@ This lets developers lint before deploying without getting a wall of errors.
 
 ### 1.5 Shared helpers
 These live in `src/rules/util/*` and are used by many rules. Each is defined once.
+- **`safeStr(x)`** (1.2.0, A13-01): any server value as text without throwing: a string as is, else `JSON.stringify`, else `String()`, else the `Object.prototype.toString` tag, cut to 200 characters. `toolName` uses it, so a tool named `{"toString":"x"}` no longer stops the run with exit 3.
 - **`tokenize(name)`**: split on `[_\-.\s/:]` and on camelCase or digit boundaries, then lowercase.
 - **`firstVerb(name)`**: the first token that appears in `READ_VERBS ∪ WRITE_VERBS`.
 - **Lexicon** (`lexicon.ts`): the union of the vocabularies from all researched sources.
@@ -1499,11 +1510,11 @@ interface Limits {                                // snap.limits, also in the JS
 
 - The engine:
   - evaluates `needs` and records skipped rules with their reasons; on a snapshot with `limits.stopped`, also skips a rule that read data of an unfinished phase and found nothing (§3.3)
-  - catches exceptions thrown by a rule and turns them into an `INTERNAL` info finding
-  - in a run without a working transport (`fatal`, or `coverage.toolLevel` connect-failed), skips a rule that finds nothing with `could not connect`, except the rules that judge only the entered URL or its DNS (SRV-001, SRV-004, SRV-005, SRV-017, AUTH-001) and SRV-003, which reports the failure; findings are never dropped (1.0.1). After a stop, a rule that reads the run-wide data (`transport.notifications`, `transport.stdio`, `observedErrors`, `modernResults`) and finds nothing is skipped, not passed
+  - catches exceptions thrown by a rule and turns them into an `INTERNAL` info finding. Since 1.2.0 (A13-02) such a rule is also skipped with `internal error: <message>` and not counted in `rulesRun`, and `EngineResult.internalErrors` counts the rules that threw (whatever `--target`; absent when 0). Not yet read by the report: block P7 of 1.2.0 is to make a report with it partial (INCOMPLETE verdicts, score null, §5.2); until then the verdict and score are as before. `coverage.toolLevel`, `summary.failed`, `--fail-on-incomplete` and the exit code do not change until 1.4.0
+  - in a run without a working transport (`fatal`, or `coverage.toolLevel` connect-failed), skips a rule that finds nothing with `could not connect`, except the rules with a `url` need, which judge only the entered URL or its DNS (SRV-001, SRV-004, SRV-005, SRV-017, AUTH-001), and SRV-003 (`transport` need), which reports the failure; findings are never dropped (1.0.1). After a stop, a rule that reads the run-wide data (`transport.notifications`, `transport.stdio`, `observedErrors`, `modernResults`) and finds nothing is skipped, not passed
   - applies §1.2 platform filtering and severity
   - applies `--ignore`
-  - sorts the findings
+  - sorts the findings, and since 1.2.0 the ignored findings in the same order (I-A13-5)
 - All I/O lives in `connect.ts` and `probe/*`. Rules are pure functions over the snapshot. This makes them unit-testable from JSON snapshots.
 - `catalog.test.ts` asserts:
   - IDs are unique and match `/^(SRV|SPEC|TOOL|INJ|DATA|POL|APPS|AUTH|RT|LST|MAN)-\d{3}$/`

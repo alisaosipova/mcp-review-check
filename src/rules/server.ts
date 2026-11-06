@@ -22,7 +22,7 @@ function localize(snap: Snapshot, f: RawFinding): RawFinding {
 
 export const SRV_001 = defineRule(
   {
-    id: 'SRV-001', title: 'Remote server served over HTTPS', severity: { claude: 'error', chatgpt: 'error' }, needs: ['http'],
+    id: 'SRV-001', title: 'Remote server served over HTTPS', severity: { claude: 'error', chatgpt: 'error' }, needs: ['url'],
     rationale: 'Both directories accept only https:// URLs, and hosts reject certificates that are not publicly trusted.',
     fix: 'Deploy behind TLS with a publicly trusted certificate.',
     sources: [SUBMISSION, OAI_MCP],
@@ -82,7 +82,7 @@ export function stdioStartFix(snap: Snapshot): string {
 
 export const SRV_003 = defineRule(
   {
-    id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: [],
+    id: 'SRV-003', title: 'Streamable HTTP transport available', severity: { claude: 'warning', chatgpt: 'warning', spec: 'warning' }, needs: ['transport'],
     severityNote: 'spec=error when no transport works (connect failure, exit 3); the directory verdicts then read INCOMPLETE.',
     rationale: 'SSE has been deprecated since 2025-03-26; both directories expect Streamable HTTP. When no transport works at all (the server could not be reached, did not start or did not complete a handshake), this rule reports that as a spec error, because nothing else could be checked.',
     fix: 'Serve Streamable HTTP at the registered URL.',
@@ -110,7 +110,7 @@ export const SRV_003 = defineRule(
 
 export const SRV_004 = defineRule(
   {
-    id: 'SRV-004', title: 'Hostname resolves to public IPv4', severity: { claude: 'error', chatgpt: 'error' }, needs: ['http'],
+    id: 'SRV-004', title: 'Hostname resolves to public IPv4', severity: { claude: 'error', chatgpt: 'error' }, needs: ['url'],
     rationale: 'Claude reaches connectors over IPv4 only. Private addresses are unreachable from both hosts.',
     fix: 'Publish public A records.',
     sources: ['https://claude.com/docs/connectors/building/troubleshooting'],
@@ -145,7 +145,7 @@ export const SRV_004 = defineRule(
 
 export const SRV_005 = defineRule(
   {
-    id: 'SRV-005', title: 'Temporary tunnel or shared hosting domain', severity: { chatgpt: 'error', claude: 'warning' }, needs: ['http'],
+    id: 'SRV-005', title: 'Temporary tunnel or shared hosting domain', severity: { chatgpt: 'error', claude: 'warning' }, needs: ['url'],
     rationale: 'ChatGPT forbids tunnels for public submission. Claude expects the server domain to match the service domain.',
     fix: 'Serve the endpoint from your own domain.',
     sources: [OAI_MCP, 'https://claude.com/docs/connectors/building/review-criteria'],
@@ -318,7 +318,7 @@ const SUFFIX_RE = /(\b|[\s_-])(mcp([\s_-]?server)?|plugin)\s*$/i;
 
 export const SRV_011 = defineRule(
   {
-    id: 'SRV-011', title: 'Server name ends with "MCP", "MCP Server" or "Plugin"', severity: { chatgpt: 'warning' }, needs: [],
+    id: 'SRV-011', title: 'Server name ends with "MCP", "MCP Server" or "Plugin"', severity: { chatgpt: 'warning' }, needs: ['handshake'],
     rationale: 'OpenAI guidelines ask for the bare product name.',
     fix: 'Use the bare product name.',
     sources: [OAI_GUIDE],
@@ -335,7 +335,7 @@ const GENERIC_NAMES = new Set(['search', 'travel', 'notes', 'chess', 'weather', 
 
 export const SRV_012 = defineRule(
   {
-    id: 'SRV-012', title: 'Overly generic single-word name', severity: { chatgpt: 'info' }, needs: [],
+    id: 'SRV-012', title: 'Overly generic single-word name', severity: { chatgpt: 'info' }, needs: ['handshake'],
     rationale: 'Generic names are hard to distinguish in the directory.',
     fix: 'Tie the name to your brand.',
     sources: [OAI_GUIDE],
@@ -358,7 +358,7 @@ export function serverInfoProblems(si: unknown): Array<{ key: string; severity?:
 
 export const SRV_013 = defineRule(
   {
-    id: 'SRV-013', title: 'serverInfo present with name and version', severity: { spec: 'error' }, needs: [],
+    id: 'SRV-013', title: 'serverInfo present with name and version', severity: { spec: 'error' }, needs: ['handshake'],
     rationale: 'The lifecycle requires serverInfo with name and version.',
     fix: 'Return serverInfo { name, version } (legacy initialize) or the io.modelcontextprotocol/serverInfo _meta (server/discover).',
     sources: ['https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle'],
@@ -393,7 +393,7 @@ export const SRV_013 = defineRule(
 
 export const SRV_014 = defineRule(
   {
-    id: 'SRV-014', title: 'Server instructions quality', severity: { chatgpt: 'warning', spec: 'info' }, needs: [],
+    id: 'SRV-014', title: 'Server instructions quality', severity: { chatgpt: 'warning', spec: 'info' }, needs: ['handshake'],
     rationale: 'Key guidance belongs in the first 512 characters; instructions should not duplicate tool descriptions.',
     fix: 'Keep instructions short and cross-tool; leave per-tool details in tool descriptions.',
     sources: [OAI_MCP],
@@ -415,7 +415,7 @@ export const SRV_014 = defineRule(
 
 export const SRV_015 = defineRule(
   {
-    id: 'SRV-015', title: 'Server depends on features Claude does not support', severity: { claude: 'info' }, needs: [],
+    id: 'SRV-015', title: 'Server depends on features Claude does not support', severity: { claude: 'info' }, needs: ['handshake'],
     rationale: 'Claude does not support resource subscriptions, tasks (capabilities.tasks, or the 2026-07-28 io.modelcontextprotocol/tasks extension), sampling or experimental capabilities.',
     fix: 'Make sure core functionality works without these features.',
     sources: ['https://claude.com/docs/connectors/building'],
@@ -464,7 +464,7 @@ export function canonicalUrl(raw: string): string {
 
 export const SRV_017 = defineRule(
   {
-    id: 'SRV-017', title: 'Canonical server URL form', severity: { spec: 'warning', claude: 'info' }, needs: ['http'],
+    id: 'SRV-017', title: 'Canonical server URL form', severity: { spec: 'warning', claude: 'info' }, needs: ['url'],
     rationale: 'Resource indicators and token audiences use the canonical server URI.',
     fix: 'Register the canonical URL: lowercase scheme and host, no default port, no query, fragment or trailing slash.',
     sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#canonical-server-uri', 'https://claude.com/docs/connectors/building/troubleshooting'],

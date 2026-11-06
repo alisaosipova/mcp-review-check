@@ -54,7 +54,7 @@ function localDeployHost(snap: Snapshot, raw: string): boolean {
 
 export const AUTH_001 = defineRule(
   {
-    id: 'AUTH-001', title: 'Token in the server URL query', severity: { claude: 'error', chatgpt: 'error', spec: 'error' }, needs: ['http'],
+    id: 'AUTH-001', title: 'Token in the server URL query', severity: { claude: 'error', chatgpt: 'error', spec: 'error' }, needs: ['url'],
     rationale: 'Credentials in URLs leak into logs and are not supported by either directory.',
     fix: 'Use OAuth; never put credentials in the server URL.',
     sources: [CLAUDE_AUTH],

@@ -150,7 +150,7 @@ export const POL_004 = defineRule(
 
 export const POL_005 = defineRule(
   {
-    id: 'POL-005', title: 'Unofficial wrapper, demo or test server', severity: { chatgpt: 'info' }, needs: [],
+    id: 'POL-005', title: 'Unofficial wrapper, demo or test server', severity: { chatgpt: 'info' }, needs: ['handshake'],
     rationale: 'OpenAI rejects unofficial third-party wrappers, demos and tests.',
     fix: 'Submit only production servers for services you own or are authorized to represent.',
     sources: [OAI_GUIDE],

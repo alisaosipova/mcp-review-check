@@ -11,6 +11,8 @@ const NEED_LABEL: Record<Need, string> = {
   http: 'a <url> target', stdio: 'a --stdio target', auth: 'the server asks for OAuth', legacy: 'a 2025-11-25 (or earlier) server',
   modern: 'a 2026-07-28 server', active: '--active', 'active-auth': '--active-auth (<url> only)',
   'plugin-dir': '--plugin-dir <dir>', 'openai-manifest': '--openai-manifest <file>',
+  handshake: 'the server answered the handshake (initialize or discover)', url: 'a <url> target (judged on the URL alone)',
+  transport: 'a <url> target, or a --stdio command that did not start',
 };
 const needsText = (needs: Need[]) => needs.map((n) => NEED_LABEL[n]).join(', ');
 const FEATURE_LABEL = { ui: 'the server has UI resources', oauth: 'the server asks for OAuth' } as const;

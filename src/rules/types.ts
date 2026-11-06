@@ -3,7 +3,18 @@ export type { Platform, Severity } from '../snapshot.js';
 
 export type Need =
   | 'tools' | 'resources' | 'prompts' | 'ui' | 'http' | 'stdio' | 'auth'
-  | 'legacy' | 'modern' | 'active' | 'active-auth' | 'plugin-dir' | 'openai-manifest';
+  | 'legacy' | 'modern' | 'active' | 'active-auth' | 'plugin-dir' | 'openai-manifest'
+  /** The server answered the handshake (initializeRaw or discoverRaw is set; 1.2.0, A04-03). */
+  | 'handshake'
+  /** An HTTP target, judged on the entered URL or its DNS alone: such a rule can pass without a working transport (1.2.0, I-A13-3). */
+  | 'url'
+  /** The transport itself: an HTTP target, or a stdio target that did not start (SRV-003 reports that failure; 1.2.0, A10-06). */
+  | 'transport';
+
+/** Needs whose rules judge data that exists without a working transport: finding nothing is a pass for them (I-A13-3). */
+export const NO_TRANSPORT_NEEDS: readonly Need[] = ['url', 'transport'];
+/** Needs met by a listing input: the only rules that run in a listing-only run. */
+export const LISTING_NEEDS: readonly Need[] = ['plugin-dir', 'openai-manifest'];
 
 export interface RuleMeta {
   id: string;

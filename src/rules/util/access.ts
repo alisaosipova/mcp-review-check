@@ -8,8 +8,27 @@ export const isStr = (x: unknown): x is string => typeof x === 'string';
 export const isNonEmptyStr = (x: unknown): x is string => typeof x === 'string' && x.trim().length > 0;
 export const isStrArray = (x: unknown): x is string[] => Array.isArray(x) && x.every(isStr);
 
+/** The longest text safeStr returns for a value that is not a string. */
+export const SAFE_STR_MAX = 200;
+
+/**
+ * Any server value as text, without throwing (A13-01): a string as is, anything else as JSON or String(), cut to
+ * SAFE_STR_MAX characters. String() alone throws for an object such as {"toString":"x"}, and JSON.stringify throws for a
+ * BigInt or a cycle; both fall back to the Object.prototype.toString tag.
+ */
+export function safeStr(x: unknown): string {
+  if (typeof x === 'string') return x;
+  let s: string;
+  try {
+    s = JSON.stringify(x) ?? String(x);
+  } catch {
+    try { s = String(x); } catch { s = Object.prototype.toString.call(x); }
+  }
+  return s.length > SAFE_STR_MAX ? `${s.slice(0, SAFE_STR_MAX)}...` : s;
+}
+
 export function toolName(t: Obj): string {
-  return typeof t.name === 'string' ? t.name : String(t.name);
+  return safeStr(t.name);
 }
 
 export function annotations(t: Obj): Obj {
