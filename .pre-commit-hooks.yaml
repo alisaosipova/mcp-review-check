@@ -1,8 +1,14 @@
+# The hook runs the published npm package through npx (language: system, which pre-commit 4.4 and newer also call
+# `unsupported`). It used to be `language: node`, which makes pre-commit install this repository as a global git
+# dependency; the package builds itself in prepack, and that nested build raced the outer global install and failed
+# with ENOTEMPTY ("git dep preparation failed", review round 4 A08-01), so the hook never ran. The npm package also
+# installs the dependency tree of its npm-shrinkwrap.json, which a git install ignores.
+# The version is the action's `version` default (action.yml), raised with it on each minor release (CONTRIBUTING.md).
 - id: mcp-review-check
   name: mcp-review-check
   description: Lint an MCP server against the Claude and ChatGPT directory criteria and the MCP spec
-  entry: mcp-review-check
-  language: node
+  entry: npx --yes mcp-review-check@1.1
+  language: system
   pass_filenames: false
   always_run: false
   files: '(^|/)(mcp-review-check\.config\.json|\.mcp-review-check\.json|plugin\.json|\.mcp\.json|mcp\.json)$'

@@ -6,7 +6,7 @@ Please report vulnerabilities privately through GitHub: [open a security advisor
 
 Include the version (`mcp-review-check --version`), the command you ran (with tokens removed) and what happened. We will acknowledge the report, agree a disclosure date with you, and ship the fix in a patch release.
 
-Only the latest published minor version receives security fixes while the project is 0.x.
+Only the latest published 1.x minor receives security fixes, and a fix ships as a patch of that minor (for example 1.2.1 when 1.2 is the latest minor). Older minors get no backports: release tags must be on `main`, so a fix for an older minor is not released; upgrade to the latest minor (read the CHANGELOG first, since a minor can add rules). Pin the GitHub Action to a full release tag or a commit SHA: there is no moving `v1` ref.
 
 ## What the tool sends
 

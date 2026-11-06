@@ -2,7 +2,7 @@
 // GitHub repository yet), so this reads .github/workflows/*.yml line by line, by indentation, without a YAML
 // dependency: every `uses:` is pinned to a commit SHA, every job has timeout-minutes, only the publish jobs get
 // id-token: write or contents: write and they run no install scripts, tests or builds, checkout keeps no token,
-// and npm is installed at an exact version.
+// no job installs npm itself, and every container image is pinned by digest.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,7 +92,11 @@ describe('GitHub workflows', () => {
     }
     const all = jobs();
     const writers = Object.fromEntries(all.filter((j) => writes(j).length).map((j) => [`${j.file}: ${j.name}`, writes(j)]));
-    expect(writers).toEqual({ 'docker.yml: push': ['packages: write'], 'release.yml: publish': ['id-token: write'], 'release.yml: gh-release': ['contents: write'] });
+    expect(writers).toEqual({
+      'docker.yml: push': ['packages: write', 'id-token: write', 'attestations: write'],
+      'release.yml: publish': ['id-token: write'],
+      'release.yml: gh-release': ['contents: write'],
+    });
     for (const j of all.filter((x) => writes(x).length)) {
       const run = j.lines.join('\n');
       expect(run, `${j.name} runs install scripts, tests or a build`).not.toMatch(/\bnpm\s+(ci|test|run\s+build|pack|install(?!\s+-g\s+npm@))\b/);
@@ -110,9 +114,22 @@ describe('GitHub workflows', () => {
     expect(checkouts.filter(({ s }) => !s.some((l) => /^\s*persist-credentials:\s*false$/.test(l))).map(({ at }) => at)).toEqual([]);
   });
 
-  it('npm install -g npm@ takes an exact version, not a range', () => {
-    const installs = jobs().flatMap((j) => j.lines.map((l) => l.match(/npm install -g (npm@\S*)/)?.[1]).filter((v): v is string => !!v));
-    expect(installs.length).toBeGreaterThan(0);
-    expect(installs.filter((v) => !/^npm@\d+\.\d+\.\d+$/.test(v))).toEqual([]);
+  it('no job installs npm itself; the publish job pins an exact Node release instead (I-A08-4)', () => {
+    expect(jobs().filter((j) => j.lines.some((l) => /npm (?:install|i) (?:-g|--global) npm@/.test(l))).map((j) => `${j.file}: ${j.name}`)).toEqual([]);
+    const publish = jobs().find((j) => j.file === 'release.yml' && j.name === 'publish');
+    expect(publish?.lines.join('\n')).toMatch(/node-version: '\d+\.\d+\.\d+'/);
+  });
+
+  it('every container image a workflow runs is pinned by digest (A08-04)', () => {
+    const images = FILES.flatMap((f) => code(readFileSync(join(DIR, f), 'utf8'))
+      .map((l) => l.match(/^\s*(?:-\s+)?image(?::\s+|=)(?!["'])(\S+)/)?.[1]).filter((u): u is string => !!u).map((u) => `${f}: ${u}`));
+    // registry:2, binfmt and BuildKit in docker.yml (a YAML `image:` key or a driver-opts `image=` line; the shell's
+    // image="localhost:5000/...@$DIGEST" is the tested digest, not a pull).
+    expect(images.length).toBeGreaterThanOrEqual(3);
+    expect(images.filter((u) => !/@sha256:[0-9a-f]{64}$/.test(u))).toEqual([]);
+    // The two docker/setup-* actions pull an image of their own unless told which.
+    const docker = code(readFileSync(join(DIR, 'docker.yml'), 'utf8')).join('\n');
+    expect(docker).toMatch(/setup-qemu-action@[0-9a-f]{40}\n\s+with:\n\s+image: \S+@sha256:/);
+    expect(docker).toMatch(/setup-buildx-action@[0-9a-f]{40}\n\s+with:\n\s+driver-opts: \|\n(?:\s+\S+\n)*?\s+image=\S+@sha256:/);
   });
 });

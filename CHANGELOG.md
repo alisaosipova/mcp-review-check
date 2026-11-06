@@ -13,6 +13,9 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The `not used from <file>` note names the config file's `url` or `stdio` key when the command line gives the server (I-A01-2).
 - Config, `--baseline` and `--tool-args` files may be UTF-16BE with a BOM (I-A01-5).
 - "Did you mean" for a misspelt `--format`, `--target` or `--fail-on` value (`--format jsn`: `did you mean json?`) (I-A10-3).
+- Each Docker image pushed to ghcr.io gets a build provenance attestation for the tested digest (`actions/attest-build-provenance`, stored with the image); check it with `gh attestation verify oci://ghcr.io/alisaosipova/mcp-review-check:<version> --owner alisaosipova` (I-A08-2).
+- `scripts/check-tree.mjs <package dir>` checks an installed mcp-review-check against its npm-shrinkwrap.json (missing, other-version and extra packages, hoisted layouts included); the CI pack smoke and the Docker smoke run it on every platform (I-A08-3).
+- Dependabot watches the Dockerfile's `node:22-alpine` digest (`package-ecosystem: docker`, Node majors ignored) (I-A08-1).
 
 ### Fixed
 
@@ -69,6 +72,12 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The `--tool-args` "not used" warning names the real reason: `readOnlyHint`, `destructiveHint`, the write verb in the name, a duplicate name, the cap of 50 tools, or a `--max-duration` stop (A03-04).
 - The `--active` name filter skips more write verbs (upsert, append, restore, migrate, unpublish, charge, sign, vote, follow, retweet, launch, scale, resize, mount, format, encrypt/decrypt, rotate, configure, store, attach/detach, broadcast, alert, escalate, acknowledge, resolve_incident and the like) and splits names on any non-alphanumeric character after NFKC folding (`read&delete`, a zero-width-space join) (I-A03-1).
 - A `--max-duration` stop during the third clientInfo listing keeps the two finished variants for RT-012 (I-A03-3).
+- The pre-commit hook can be installed. As `language: node`, pre-commit installed the repository as a global git dependency whose `prepack` build raced that install (`git dep preparation failed`, `ENOTEMPTY`; reproduced with pre-commit 4.7.0 and npm 11.20.0), so the hook never ran. Decision: the hook (same id) is now `language: system` with `entry: npx --yes mcp-review-check@<MAJOR.MINOR>`, the action's `version` default, so it runs the published package with its shrinkwrap and builds nothing. Rejected: `language: docker_image`, which cannot start a `--stdio` server on the host, the hook's main use; keeping `language: node` with the local npx recipe as the only working option. A CI job installs and runs the hook through pre-commit from the tested commit (A08-01).
+- The Action rejects a `target` that is not an `http://` or `https://` URL (exit 2): a value such as `--stdio=<command>`, for example from deployment event data, was read as an option and started a command on the runner (A08-03, CWE-88). An empty `target` with `stdio` is unchanged.
+- `--format`, `--output` or `--json-output` in the Action's `extra-args` no longer replace its SARIF file or JSON report: the action's own options now come after `extra-args` and win, and a `::warning` names the option and points at the `sarif-file` input. Not a usage error, so a workflow that passed keeps passing (A12-09).
+- The CI pack smoke installs the tree the package ships: it extracts the tarball and runs `npm ci --omit=dev --ignore-scripts` in it, because `npm install <tarball>` ignores npm-shrinkwrap.json and re-resolves the ranges (A08-02).
+- Docs: README and SECURITY.md describe 1.x (no moving `v1` ref, pin a tag or a commit SHA; only the latest 1.x minor gets security fixes, as a patch of that minor) instead of 0.x (A08-05, I-A08-6); the Action input table in docs/guide/ci.md is generated from action.yml (`node scripts/action-inputs.mjs --write`) and checked by the docs test (it said the `version` default was 1.0); `--plugin-dir` and `--openai-manifest` run listing-only without a target; both `--fail-on-drift` advice texts are quoted; the local-mode banner goes to stderr for junit too; the preflight is not retried after a timeout; the `--save-baseline` paragraph says when the earlier baseline is kept and that the folder is created (A12-06, A01-02, A12-04).
+- The GitLab recipe fails on drift only in merge requests, so an intended tool change merged to the default branch becomes the new baseline instead of failing every default-branch job, and a manual `mcp-review-check-refresh` job re-saves the baseline (A12-07).
 
 ### Changed
 
@@ -76,6 +85,8 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - `--output`, `--json-output` and `--save-baseline` paths are checked before connecting: a directory, a path through a file or an unwritable folder is exit 2 at once, with no server started, instead of after the whole check (I-A10-1). A write that still fails says the report was printed to stdout.
 - No output may overwrite a file the run reads (the config file, `--tool-args`, the `--openai-manifest` file and its `mcp.json`, the files `--plugin-dir` reads): exit 2. An output naming `$GITHUB_STEP_SUMMARY` is written once, without the automatic append (I-A01-3).
 - `--help` is 84 lines: `--stdio "<command>"` is listed under Options and the `--no-*` opposites share one entry (I-A10-6).
+- The image build pins the privileged `tonistiigi/binfmt` (qemu-v10.2.3) and `moby/buildkit` (v0.34.2) images by digest instead of `latest` and `buildx-stable-1` (A08-04).
+- The npm publish job runs on Node 24.22.2, whose bundled npm 11.19.1 supports trusted publishing, and checks `npm --version` instead of running `npm install -g npm@...` in the job that holds `id-token: write` (I-A08-4).
 
 ## [1.1.0] - 2026-11-04
 

@@ -2,9 +2,10 @@
 // (Dockerfile, .github/workflows/docker.yml). The action script runs in bash with a fake CLI and fake npm/npx on
 // PATH, so no test reaches the network.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const root = new URL('../', import.meta.url);
@@ -107,7 +108,8 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
     expect(r.code, r.log).toBe(0);
     expect(r.cli).toHaveLength(1);
     const argv = r.cli[0]!.argv;
-    expect(argv.join(' ')).toContain('--timeout 60000 --ignore TOOL-013 --fail-on-incomplete --max-duration 30 --stdio node x.mjs');
+    expect(argv.join(' ')).toContain('--timeout 60000 --ignore TOOL-013 --fail-on-incomplete --max-duration 30 --format sarif');
+    expect(argv.slice(-2)).toEqual(['--stdio', 'node x.mjs']);
     // A CR from Windows line endings does not stick to a token.
     expect(argv.filter((a) => /[\r\n\t ]/.test(a) && a !== 'node x.mjs')).toEqual([]);
   });
@@ -203,6 +205,63 @@ describe.skipIf(process.platform === 'win32')('action.yml script (review round 3
       expect(r.log).not.toContain('::add-mask::');
       expect(r.cli).toEqual([]);
       expect(r.outputs['exit-code']).toBe('2');
+    }
+  });
+
+  it('A08-03 (round 4): a target that is not an http(s) URL is refused with exit 2 and starts nothing', () => {
+    for (const target of ['--stdio=touch PWNED', '--stdio', '-h', 'ftp://example.invalid/mcp', 'example.com/mcp', 'file:///etc/passwd']) {
+      const r = run({ INPUT_STDIO: '', INPUT_TARGET: target });
+      expect(r.code, target).toBe(2);
+      expect(r.log).toContain('::error title=mcp-review-check::target must be an http:// or https:// URL');
+      expect(r.cli, target).toEqual([]);
+      expect(r.outputs).toEqual({ 'exit-code': '2', 'sarif-file': '', 'report-json': '' });
+    }
+  });
+
+  it('A08-03 (round 4): an http(s) target is passed as the last word, and an empty target with stdio still works', () => {
+    for (const target of ['https://mcp.example.invalid/mcp', 'http://localhost:8080/mcp']) {
+      const r = run({ INPUT_STDIO: '', INPUT_TARGET: target });
+      expect(r.code, r.log).toBe(0);
+      expect(r.cli[0]!.argv.at(-1)).toBe(target);
+    }
+    const stdio = run({ INPUT_TARGET: '', INPUT_STDIO: 'node x.mjs' });
+    expect(stdio.code, stdio.log).toBe(0);
+    expect(stdio.cli[0]!.argv.slice(-2)).toEqual(['--stdio', 'node x.mjs']);
+  });
+
+  it('A12-09 (round 4): --format, --output and --json-output in extra-args warn and lose to the action\'s own, without exit 2', () => {
+    const r = run({ INPUT_EXTRA_ARGS: '--format json\n--output=other.sarif\n--json-output mine.json --timeout 5000' });
+    expect(r.code, r.log).toBe(0);
+    const argv = r.cli[0]!.argv;
+    // The last value of each reserved option is the action's.
+    const last = (opt: string) => argv.reduce<string | undefined>((v, a, i) => (a === opt ? argv[i + 1] : a.startsWith(`${opt}=`) ? a.slice(opt.length + 1) : v), undefined);
+    expect(last('--format')).toBe('sarif');
+    expect(last('--output')).toMatch(/r\.sarif$/);
+    expect(last('--json-output')).toMatch(/mcp-review-check-\d+\.json$/);
+    expect(argv).toContain('--timeout');
+    for (const opt of ['--format', '--output', '--json-output']) {
+      expect(r.stdout).toContain(`::warning title=mcp-review-check::extra-args ${opt} is ignored`);
+    }
+    expect(r.stdout).toContain('sarif-file input');
+    // No reserved option, no warning.
+    const plain = run({ INPUT_EXTRA_ARGS: '--timeout 5000 --ignore TOOL-013' });
+    expect(plain.log).not.toContain('::warning');
+  });
+
+  it('A12-09 (round 4): with the real CLI, extra-args --format markdown --output elsewhere still writes SARIF to sarif-file', () => {
+    const cli = fileURLToPath(new URL('dist/cli.js', root));
+    const server = fileURLToPath(new URL('test/fixtures/good-server.mjs', root));
+    const dir = mkdtempSync(join(tmpdir(), 'r111-p9-sarif-'));
+    try {
+      const sarif = join(dir, 'action.sarif');
+      const r = run({ INPUT_CLI_PATH: cli, INPUT_STDIO: `node ${server}`, INPUT_SARIF_FILE: sarif, INPUT_EXTRA_ARGS: `--format markdown --output ${join(dir, 'elsewhere.md')}` });
+      expect(r.code, r.log).toBe(0);
+      expect(r.outputs['sarif-file']).toBe(sarif);
+      const doc = JSON.parse(readFileSync(sarif, 'utf8')) as { version?: string };
+      expect(doc.version).toBe('2.1.0');
+      expect(existsSync(join(dir, 'elsewhere.md'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

@@ -62,11 +62,20 @@ jobs:
           [ "$(npm view "mcp-review-check@$VERSION" version 2>/dev/null)" = "$VERSION" ] || { echo "::error::mcp-review-check@$VERSION is not on the npm registry, although the Release run succeeded"; exit 1; }
       # docker/* actions: SHAs of the newest tags listed by `ls-remote` on 2026-11-03 (setup-qemu-action on 2026-11-04).
       # QEMU runs the arm64 variant on the amd64 runner, for the build and for the smoke test.
+      # The two privileged images these actions run are pinned by digest like every other image here (review round 4
+      # A08-04); without them the actions pull tonistiigi/binfmt:latest and moby/buildkit:buildx-stable-1. Both are
+      # multi-arch index digests read from registry-1.docker.io on 2026-11-05 (qemu-v10.2.3, v0.34.2). Refresh them
+      # with the other pins (the Dockerfile base image, registry:2): look up the newest tag's index digest, e.g.
+      # `docker buildx imagetools inspect moby/buildkit:<tag>`, and update the tag and date in these comments.
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
       # network=host: BuildKit reaches the runner's registry on localhost:5000.
       - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
         with:
-          driver-opts: network=host
+          driver-opts: |
+            network=host
+            image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
       # The only build of the image. OCI media types, so the archive below keeps every manifest byte for byte.
       - id: build
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
@@ -82,8 +91,10 @@ jobs:
         run: |
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the build reported no image digest"; exit 1; }
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-      # Every platform of that digest: the version matches the tag, the CPU is the platform's, a listing-only run
-      # exits 0, a report can be written into a host mount as the runner's user, the default user is not root.
+      # Every platform of that digest: the version matches the tag, the CPU is the platform's, the installed
+      # dependency tree is the package's npm-shrinkwrap.json (scripts/check-tree.mjs of the tagged commit), a
+      # listing-only run exits 0, a report can be written into a host mount as the runner's user, the default user is
+      # not root.
       - name: Smoke test
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
@@ -97,6 +108,7 @@ jobs:
             run() { docker run --rm --pull always --platform "$platform" "$@"; }
             run "$image" --version | grep -F "$version"
             [ "$(run --entrypoint uname "$image" -m)" = "$arch" ]
+            run -v "$PWD/scripts:/scripts:ro" --entrypoint node "$image" /scripts/check-tree.mjs /usr/local/lib/node_modules/mcp-review-check
             # Listing-only run: no network, read-only mount.
             run -v "$PWD/test/fixtures/listing:/listing:ro" "$image" --plugin-dir /listing/plugin-valid
             # The documented recipe for writing a report: --user as the host user, a host folder mounted at /out.
@@ -133,6 +145,8 @@ jobs:
     permissions:
       contents: read
       packages: write # push to ghcr.io with the job's GITHUB_TOKEN
+      id-token: write # sign the build provenance attestation (Sigstore)
+      attestations: write # store the attestation for the pushed digest
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
@@ -163,3 +177,20 @@ jobs:
             [ "$pushed" = "$DIGEST" ] || { echo "::error::$IMAGE:$tag is $pushed, not the tested $DIGEST"; exit 1; }
             echo "$IMAGE:$tag -> $DIGEST"
           done
+      # A build provenance attestation for the digest that was tested and pushed, stored with the image on ghcr.io and
+      # in the repository's attestations (review round 4 I-A08-2). Verify with
+      # `gh attestation verify oci://ghcr.io/alisaosipova/mcp-review-check:<version> --owner alisaosipova`.
+      # push-to-registry reads the Docker credentials, so the job logs Docker in for this step only.
+      - name: Log Docker in to ghcr.io for the attestation
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # SHA of the newest tag (v4.2.2) listed by `git ls-remote` on 2026-11-05.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          push-to-registry: true
+      - name: Log Docker out
+        if: always()
+        run: docker logout ghcr.io || true

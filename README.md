@@ -110,7 +110,7 @@ mcp-review-check is a command-line tool only: the package has no supported progr
 Annotations, the job summary and a SARIF upload to code scanning (needs `security-events: write`). Every input and
 output, with defaults: [CI and automation](docs/guide/ci.md#ci-recipes).
 
-There is no moving `v0` ref: pin a full release tag (as above) or a commit SHA. Since 1.1.0 the npm package ships npm-shrinkwrap.json, so each release installs the dependency tree it was tested with, but the action's `version` input is still a range that takes new 1.x.y patches unless you pin it exactly (`version: 1.1.0`).
+There is no moving `v1` ref, and there will not be one: moving a tag means force-updating it, which this repository never does. Pin a full release tag (as above) or a commit SHA; Dependabot's `github-actions` ecosystem raises either. Since 1.1.0 the npm package ships npm-shrinkwrap.json, so each release installs the dependency tree it was tested with, but the action's `version` input is still a range that takes new 1.x.y patches unless you pin it exactly (`version: 1.1.0`).
 
 ### Badge: "no automated blockers"
 

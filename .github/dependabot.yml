@@ -19,3 +19,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The node:22-alpine digest in both Dockerfile stages: update PRs for Node 22 security releases (review round 4
+  # I-A08-1). Images pinned inside workflows (registry:2, binfmt, buildkit) are refreshed by hand (docker.yml).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The image stays on Node 22, the oldest supported line (engines >=22.12); digests and patch tags only.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

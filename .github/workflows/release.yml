@@ -76,12 +76,19 @@ jobs:
     permissions:
       id-token: write # npm trusted publishing and provenance
     steps:
+      # An exact Node 24 release whose bundled npm (11.19.1, per nodejs.org/dist/index.json on 2026-11-05) supports
+      # trusted publishing, which needs npm 11.5.1 or newer. The job that holds id-token: write installs nothing from
+      # the registry (review round 4 I-A08-4: it used to install a newer npm globally). Raise it with Node 24 security
+      # releases.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '24'
+          node-version: '24.22.2'
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or newer; an exact version, so the release does not pick up whatever is newest.
-      - run: npm install -g npm@11.21.0
+      - name: Bundled npm supports trusted publishing (11.5.1 or newer)
+        run: |
+          v="$(npm --version)"
+          echo "npm $v"
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$v" || { echo "::error::npm $v is older than 11.5.1, which trusted publishing needs"; exit 1; }
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: package

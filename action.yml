@@ -12,7 +12,7 @@ branding:
 # a script, so no input value is parsed as shell code.
 inputs:
   target:
-    description: URL of the MCP server to check. Required unless `stdio` is given; not both.
+    description: URL of the MCP server to check, http:// or https:// (anything else is a usage error, exit 2). Required unless `stdio` is given; not both.
     required: false
     default: ''
   stdio:
@@ -52,11 +52,11 @@ inputs:
     required: false
     default: mcp-review-check.sarif
   upload-sarif:
-    description: Upload the SARIF report to code scanning with github/codeql-action/upload-sarif (needs `security-events write`). Runs also when the check fails.
+    description: 'Upload the SARIF report to code scanning with github/codeql-action/upload-sarif (needs `security-events: write`). Runs also when the check fails. Set false on pull requests from forks, which cannot write code scanning results.'
     required: false
     default: 'true'
   extra-args:
-    description: More CLI options, split on whitespace, newlines included (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`. A YAML block scalar (`|`) may put one option per line.
+    description: More CLI options, split on whitespace, newlines included (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`. A YAML block scalar (`|`) may put one option per line. `--format`, `--output` and `--json-output` here are overridden by the action's own (a warning names them); use `sarif-file` and the `report-json` output.
     required: false
     default: ''
 
@@ -115,11 +115,14 @@ runs:
         command -v node > /dev/null || usage "node is not on PATH: add actions/setup-node (Node 22.12 or newer) before this action"
         if [ -n "$INPUT_TARGET" ] && [ -n "$INPUT_STDIO" ]; then usage "give either target or stdio, not both"; fi
         if [ -z "$INPUT_TARGET" ] && [ -z "$INPUT_STDIO" ]; then usage "give target (a URL) or stdio (a command)"; fi
+        # target is the last argv word, so a value such as "--stdio=<command>" (from event data) would be read as an
+        # option and start a command: only an http(s) URL is accepted (CWE-88). Empty is fine when stdio is given.
+        case "$INPUT_TARGET" in ''|http://*|https://*) ;; *) usage "target must be an http:// or https:// URL";; esac
         platform="$INPUT_PLATFORM"; [ "$platform" = both ] && platform=all
         # The JSON report for the outputs, in the runner's temp directory; the PID keeps two uses of the action in one
         # job apart.
         json_file="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mcp-review-check-$$.json"
-        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON" --format sarif --output "$INPUT_SARIF_FILE" --json-output "$json_file")
+        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON")
         [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
         [ "$INPUT_ACTIVE" = true ] && args+=(--active)
         # Split on whitespace, newlines and CR included, so a block scalar keeps every line (read -a does no globbing
@@ -127,6 +130,16 @@ runs:
         # runners) treats an empty array as unbound.
         extra=()
         if [ -n "$INPUT_EXTRA_ARGS" ]; then IFS=$' \t\r\n' read -r -d '' -a extra <<< "$INPUT_EXTRA_ARGS" || true; args+=(${extra[@]+"${extra[@]}"}); fi
+        # --format, --output and --json-output belong to the action (the SARIF upload and the outputs read them). They
+        # come after extra-args, so they win (the CLI keeps the last value), and a reserved one in extra-args is
+        # named in a warning instead of silently replacing the SARIF file.
+        for a in ${extra[@]+"${extra[@]}"}; do
+          case "$a" in
+            --format|--format=*|--output|--output=*|--json-output|--json-output=*)
+              echo "::warning title=mcp-review-check::extra-args ${a%%=*} is ignored: the action sets --format sarif, --output and --json-output itself; choose the SARIF path with the sarif-file input and read the JSON report from the report-json output";;
+          esac
+        done
+        args+=(--format sarif --output "$INPUT_SARIF_FILE" --json-output "$json_file")
         if [ -n "$INPUT_STDIO" ]; then args+=(--stdio "$INPUT_STDIO"); else args+=("$INPUT_TARGET"); fi
         # Checked before anything is echoed: ::add-mask:: masks only the first line of a value, so the rest of a
         # multi-line token would be printed as plain text. The CLI rejects such a token anyway.

@@ -97,7 +97,7 @@ jobs:
         # main (and manual runs) run it here, and audit.yml runs it weekly, so an advisory shows up without a push.
         if: github.event_name != 'pull_request'
         run: npm audit --omit=dev --audit-level=high
-      - name: Pack, install the tarball and run it
+      - name: Pack, install the shipped tree from the tarball and run it
         run: |
           rm -rf dist
           npm pack --pack-destination "$RUNNER_TEMP"
@@ -105,13 +105,72 @@ jobs:
           # pipefail, grep leaving early could fail tar with SIGPIPE.
           tar -tzf "$RUNNER_TEMP"/mcp-review-check-*.tgz | grep -x package/npm-shrinkwrap.json > /dev/null
           test ! -e "$GITHUB_WORKSPACE/npm-shrinkwrap.json"
-          mkdir "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
-          npm init -y > /dev/null
-          npm install "$RUNNER_TEMP"/mcp-review-check-*.tgz
-          test "$(npx mcp-review-check --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
+          # `npm install <tarball>` ignores a shrinkwrap (only a registry manifest carries _hasShrinkwrap), so it would
+          # test whatever the ranges resolve to today. npm ci in the extracted package installs exactly the
+          # shrinkwrap, as npx, a global install, the Action and the Docker image do. devDependencies are dropped
+          # first: the shrinkwrap has none (a dependency's devDependencies are never installed) and npm ci would
+          # call the lock out of sync.
+          mkdir "$RUNNER_TEMP/smoke" && tar -xzf "$RUNNER_TEMP"/mcp-review-check-*.tgz -C "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke/package"
+          npm pkg delete devDependencies
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
           cd "$GITHUB_WORKSPACE"
-          "$RUNNER_TEMP/smoke/node_modules/.bin/mcp-review-check" --stdio "node test/fixtures/good-server.mjs" --format json > "$RUNNER_TEMP/report.json"
+          node scripts/check-tree.mjs "$RUNNER_TEMP/smoke/package"
+          test "$(node "$RUNNER_TEMP/smoke/package/dist/cli.js" --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
+          node "$RUNNER_TEMP/smoke/package/dist/cli.js" --stdio "node test/fixtures/good-server.mjs" --format json > "$RUNNER_TEMP/report.json"
           node -e "const r=require(process.argv[1]); if (r.schemaVersion!==1||r.summary.errors!==0) { console.error(r.summary); process.exit(1) }" "$RUNNER_TEMP/report.json"
+
+  pre-commit:
+    # The published hook (.pre-commit-hooks.yaml), installed by pre-commit from this commit and run in a fixture
+    # repository (review round 4 A08-01: the old language: node hook could not be installed). npx is replaced by a
+    # stub that runs this checkout's dist/cli.js, so the job needs no registry and works before the version the hook
+    # names is published; the stub fails on any other npx call.
+    name: pre-commit hook
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Install pre-commit
+        run: pipx install pre-commit==4.7.0
+      - name: The hook installs and runs from this commit
+        run: |
+          set -euo pipefail
+          pre-commit validate-manifest .pre-commit-hooks.yaml
+          sha="$(git rev-parse HEAD)"
+          stub="$RUNNER_TEMP/stub" && mkdir -p "$stub"
+          cat > "$stub/npx" <<EOF
+          #!/usr/bin/env bash
+          [ "\$1" = --yes ] && [[ "\$2" == mcp-review-check@* ]] || { echo "unexpected npx \$*" >&2; exit 97; }
+          echo "\$2" >> "$RUNNER_TEMP/npx-calls"
+          shift 2
+          exec node "$GITHUB_WORKSPACE/dist/cli.js" "\$@"
+          EOF
+          chmod +x "$stub/npx"
+          fixture() {
+            mkdir "$RUNNER_TEMP/fx-$1" && cd "$RUNNER_TEMP/fx-$1"
+            git init -q && echo '{"mcpServers":{}}' > .mcp.json
+            printf 'repos:\n  - repo: %s\n    rev: %s\n    hooks:\n      - id: mcp-review-check\n        args: [--target, claude, --stdio, --, node, %s]\n' \
+              "$GITHUB_WORKSPACE" "$sha" "$GITHUB_WORKSPACE/test/fixtures/$1-server.mjs" > .pre-commit-config.yaml
+            git add . && git -c user.name=ci -c user.email=ci@example.invalid commit -qm fixture
+          }
+          export PRE_COMMIT_HOME="$RUNNER_TEMP/pre-commit-home" PATH="$stub:$PATH"
+          fixture good
+          pre-commit run --all-files
+          fixture bad
+          if pre-commit run --all-files; then echo "::error::the hook passed a server with errors"; exit 1; fi
+          cd "$GITHUB_WORKSPACE"
+          # The hook ran twice, both times with the version the action runs by default.
+          want="mcp-review-check@$(sed -n "/^  version:/,/default:/s/^ *default: '\(.*\)'$/\1/p" action.yml)"
+          test "$(sort -u "$RUNNER_TEMP/npx-calls")" = "$want"
+          test "$(wc -l < "$RUNNER_TEMP/npx-calls")" -eq 2
 
   action:
     # The composite action in action.yml, on every OS (its script runs in bash, also bash 3.2 on macOS and Git Bash

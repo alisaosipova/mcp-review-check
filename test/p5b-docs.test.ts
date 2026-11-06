@@ -101,7 +101,8 @@ describe('YAML files', () => {
   it('the pre-commit hook has the documented shape', () => {
     const t = read(join(ROOT, '.pre-commit-hooks.yaml'));
     expect(t).toMatch(/^- id: mcp-review-check$/m);
-    for (const l of ['entry: mcp-review-check', 'language: node', 'pass_filenames: false', 'always_run: false']) expect(t).toContain(l);
+    // Since 1.2.0 (review round 4 A08-01) the hook runs the published package through npx; language: node could not be installed.
+    for (const l of ['entry: npx --yes mcp-review-check@', 'language: system', 'pass_filenames: false', 'always_run: false']) expect(t).toContain(l);
     const files = /^ {2}files: '(.*)'$/m.exec(t)?.[1];
     expect(files).toBeDefined();
     const re = new RegExp(files!);

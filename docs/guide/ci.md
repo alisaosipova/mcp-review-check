@@ -54,7 +54,7 @@ npx mcp-review-check@1.1 --target claude --fail-on never --save-baseline .mcp-re
       - run: npx -y mcp-review-check@1.1 --target claude --baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
 ```
 
-`--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline.
+`--save-baseline` writes the same document as `--format json --output <file>`, besides the report you chose, so one run can print the text report and refresh the baseline. A missing `.mcp-review-check/` folder is created (since 1.2.0; older recipes ran `mkdir -p` first, which is no longer needed). A run that could not be trusted as the accepted state does not replace the baseline: when the server did not connect (exit 3), `--max-duration` stopped it (exit 4) or, with `--fail-on-incomplete`, the check was partial, `--save-baseline` is not written, and neither is a `--json-output` or a `--format json --output` naming the `--baseline` or `--save-baseline` file; stderr says `not written` and the earlier baseline is kept.
 
 **Catch tool-definition changes** — the same baseline also holds a fingerprint of every tool, so the job reports which tools were added, removed or changed since it was saved ([Tool-definition drift](options-and-config.md#tool-definition-drift)). Add `--fail-on-drift` to fail the job on any change until the baseline is refreshed, and `--diff-only` to keep the text or markdown report to what is new:
 
@@ -123,20 +123,24 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
           fail-on: warning
 ```
 
-| Input | Default | Notes |
+<!-- ACTION-INPUTS:START -->
+| Input | Default | Description |
 |---|---|---|
-| `target` | | Server URL. Give `target` or `stdio`, not both. |
-| `stdio` | | Command that starts a local server, as `--stdio "<command>"` (split without a shell). |
-| `platform` | `all` | `--target`: `claude`, `chatgpt` or `all` (`both` = `all`). |
-| `fail-on` | `error` | `error`, `warning` or `never`. |
-| `fail-on-spec` | `false` | Also fail on MCP spec findings. |
-| `active` | `false` | `--active`: calls the tools annotated `readOnlyHint: true`. |
-| `bearer` | | Token, passed only as `MCP_REVIEW_CHECK_TOKEN`, never on the command line. Empty keeps one set in the job's `env`. |
-| `version` | `1.0` | npm version or range of mcp-review-check to run; 0.3 or newer (the outputs read the report written with `--json-output`). |
+| `target` | | URL of the MCP server to check, http:// or https:// (anything else is a usage error, exit 2). Required unless `stdio` is given; not both. |
+| `stdio` | | Command that starts a local MCP server over stdio (split by the CLI without a shell, as `--stdio "<command>"`). Required unless `target` is given. |
+| `platform` | `all` | Directory to gate on, the CLI's `--target`: claude, chatgpt or all (`both` is accepted as all). |
+| `fail-on` | `error` | Exit 1 threshold, the CLI's `--fail-on`: error, warning or never. |
+| `fail-on-spec` | `false` | Also count MCP spec findings toward `fail-on` (`--fail-on-spec`). |
+| `active` | `false` | Opt-in runtime checks (`--active`), which call the tools annotated readOnlyHint true. |
+| `bearer` | | Access token for the server. Pass a secret; it reaches the CLI only as MCP_REVIEW_CHECK_TOKEN, never on its command line. Empty keeps a MCP_REVIEW_CHECK_TOKEN set by the job. |
+| `version` | `1.1` | npm version or range of mcp-review-check to run, 0.3 or newer (the outputs need --json-output; bump with each release, see CONTRIBUTING.md). |
+| `cli-path` | | Path to a built dist/cli.js to run with node instead of the npm package (for testing a checkout). Overrides `version`. |
 | `sarif-file` | `mcp-review-check.sarif` | Where the SARIF report is written. |
-| `upload-sarif` | `true` | Upload it with `github/codeql-action/upload-sarif` (needs `security-events: write`), also when the check fails. Set `false` on pull requests from forks, which cannot write code scanning results. |
-| `extra-args` | | More options, split on whitespace (no quoting), for example `--timeout 60000 --ignore TOOL-013`. |
-| `cli-path` | | Run `node <path>` (a built `dist/cli.js`) instead of the npm package. |
+| `upload-sarif` | `true` | Upload the SARIF report to code scanning with github/codeql-action/upload-sarif (needs `security-events: write`). Runs also when the check fails. Set false on pull requests from forks, which cannot write code scanning results. |
+| `extra-args` | | More CLI options, split on whitespace, newlines included (no quoting, no globbing), for example `--timeout 60000 --ignore TOOL-013`. A YAML block scalar (`\|`) may put one option per line. `--format`, `--output` and `--json-output` here are overridden by the action's own (a warning names them); use `sarif-file` and the `report-json` output. |
+<!-- ACTION-INPUTS:END -->
+
+The table is generated from `action.yml` (`node scripts/action-inputs.mjs --write`; `test/docs.test.ts` fails when it is stale). Set `upload-sarif: false` on pull requests from forks. `target` takes only an `http://` or `https://` URL, so a value from event data (such as `environment_url`) cannot become an option. `extra-args` cannot change where the reports go: the action's `--format sarif`, `--output <sarif-file>` and `--json-output` come last and win, with a warning that names the option you gave.
 
 | Output | Value |
 |---|---|
@@ -160,7 +164,7 @@ Every output except `exit-code` and `sarif-file` is empty when no report was wri
         run: echo "score ${{ steps.review.outputs.score }}, ${{ steps.review.outputs.verdict }}, ${{ steps.review.outputs.new-findings }} new"
 ```
 
-The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.1.0` or a commit SHA. Since 1.1.0 the npm package ships npm-shrinkwrap.json, so each release installs the dependency tree it was tested with, but the action's `version` input is still a range that takes new 1.x.y patches unless you pin it exactly (`version: 1.1.0`).
+The action needs Node 22.12 or newer on the runner (GitHub-hosted runners have it; add `actions/setup-node` otherwise). Pin a full tag such as `@v1.1.0` or a commit SHA: there is no moving `v1` ref (moving a tag means force-updating it, which this repository never does). Since 1.1.0 the npm package ships npm-shrinkwrap.json, so each install from the registry (npx, a global install, the action, the Docker image) gets the dependency tree it was tested with, but the action's `version` input is still a range that takes new 1.x.y patches unless you pin it exactly (`version: 1.1.0`). An install from a tarball or a git URL does not read the shrinkwrap and resolves the ranges again.
 
 ## GitHub Actions
 
@@ -193,7 +197,7 @@ A service with a [profile](https://docs.docker.com/compose/how-tos/profiles/) do
 
 ## GitLab CI
 
-A complete `.gitlab-ci.yml` for a stdio server: the JUnit report shows in the merge request and the pipeline's Tests tab, and the baseline is cached so merge requests fail only on **new** findings. The default branch refreshes the baseline after every successful run.
+A complete `.gitlab-ci.yml` for a stdio server: the JUnit report shows in the merge request and the pipeline's Tests tab, and the baseline is cached so merge requests fail only on **new** findings or a changed tool definition. The default branch records the accepted state: it refreshes the baseline after every successful run and does not fail on drift, so an intended tool change, once merged, becomes the new baseline. A manual `mcp-review-check-refresh` job re-saves the baseline from the default branch when you want to accept the current state by hand.
 
 ```yaml
 stages: [review]
@@ -219,11 +223,11 @@ mcp-review-check:
       args="--target claude --stdio -- node dist/server.js"
       common="--format junit --output mcp-review-check.xml --json-output mcp-review-check.json"
       if [ -f .mcp-review-check/baseline.json ]; then
-        # Known findings do not fail the job; a new finding or a changed tool definition does.
-        npx -y "mcp-review-check@$MCP_REVIEW_CHECK_VERSION" $common --baseline .mcp-review-check/baseline.json --fail-on-drift $args
+        # Known findings do not fail the job; a new finding does, and in a merge request a changed tool definition too.
+        drift=""; [ "$CI_PIPELINE_SOURCE" = merge_request_event ] && drift="--fail-on-drift"
+        npx -y "mcp-review-check@$MCP_REVIEW_CHECK_VERSION" $common --baseline .mcp-review-check/baseline.json $drift $args
       else
-        # First run: record the accepted state and do not fail.
-        mkdir -p .mcp-review-check
+        # First run: record the accepted state and do not fail (the CLI creates .mcp-review-check/).
         npx -y "mcp-review-check@$MCP_REVIEW_CHECK_VERSION" $common --fail-on never --save-baseline .mcp-review-check/baseline.json $args
       fi
   after_script:
@@ -239,12 +243,31 @@ mcp-review-check:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Accept the current state by hand (Run the job from the default branch's pipeline): writes a new baseline whatever it
+# finds, and the cache keeps it.
+mcp-review-check-refresh:
+  stage: review
+  image: node:22
+  cache:
+    - key: npm-$CI_COMMIT_REF_SLUG
+      paths: [.npm/]
+    - key: mcp-review-check-baseline
+      paths: [.mcp-review-check/]
+      policy: push
+  script:
+    - npm ci && npm run build
+    - npx -y "mcp-review-check@$MCP_REVIEW_CHECK_VERSION" --target claude --fail-on never --save-baseline .mcp-review-check/baseline.json --stdio -- node dist/server.js
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
 ```
 
 Notes:
 
 - For a deployed server give the URL instead of `--stdio -- ...` and keep the token in a masked, protected CI/CD variable named `MCP_REVIEW_CHECK_TOKEN` (the tool reads it; it is redacted in the report). Add `--fail-on-incomplete` so an expired token fails the job.
-- The default-branch job overwrites the cached baseline with its own report, which accepts whatever it found. To review baseline changes like code, commit `.mcp-review-check/baseline.json` instead of caching it and refresh it by hand with `--save-baseline` ([baselines](options-and-config.md#options)).
+- The default-branch job overwrites the cached baseline with its own report, which accepts whatever it found; a run that did not connect or was stopped writes no report to copy and keeps the old one. A new finding on the default branch still fails the job and keeps the old baseline: fix it, or accept it with the manual refresh job (or *CI/CD > Pipelines > Clear runner caches*, after which the next run takes the first-run branch). To review baseline changes like code, commit `.mcp-review-check/baseline.json` instead of caching it and refresh it by hand with `--save-baseline` ([baselines](options-and-config.md#options)).
 - GitLab caches are best effort: when the cache is missing, the job takes the first-run branch and passes. If that is not acceptable, commit the baseline.
 - A shell runner without Docker works the same way; replace `image:` with a runner that has Node 22.12 or newer.
 
@@ -267,6 +290,12 @@ The image's user is `reviewer` (uid 10001). On a Linux engine a bind-mounted fol
 
 Limits: the container cannot start a `--stdio` server that lives on your host (use `npx` for that, or build your own image from this one), and `localhost` inside the container is the container; for a server on the host use `--network host` (Linux) or `http://host.docker.internal:PORT/mcp`. A host without a dot runs in [local mode](options-and-config.md#local-mode). Behind a corporate proxy pass `-e HTTPS_PROXY -e NO_PROXY` ([Troubleshooting](troubleshooting.md#corporate-proxy)). The `Dockerfile` in the repository builds the image from the published npm package: `docker build --build-arg VERSION=1.1.0 -t mcp-review-check .`.
 
+From 1.2.0 each pushed image carries a build provenance attestation for the digest that was tested, signed in the release workflow. Check it before you use the image:
+
+```bash
+gh attestation verify oci://ghcr.io/alisaosipova/mcp-review-check:1.2.0 --owner alisaosipova
+```
+
 ## pre-commit
 
 The repository ships a [pre-commit](https://pre-commit.com) hook (`.pre-commit-hooks.yaml`, hook id `mcp-review-check`). It runs the CLI with the options you give in `args`, once per commit (it does not pass file names), and only when a changed file matches `mcp-review-check.config.json`, `.mcp-review-check.json` or a plugin manifest (`plugin.json`, `.mcp.json`, `mcp.json`):
@@ -274,15 +303,15 @@ The repository ships a [pre-commit](https://pre-commit.com) hook (`.pre-commit-h
 ```yaml
 repos:
   - repo: https://github.com/alisaosipova/mcp-review-check
-    rev: v1.1.0
+    rev: v1.2.0 # the hook is installable from v1.2.0
     hooks:
       - id: mcp-review-check
         args: [--target, claude, --stdio, --, node, dist/server.js]
 ```
 
-The hook needs Node 22.12 or newer (pre-commit builds a Node environment for `language: node`) and a built server for `--stdio`. A config file next to the hook keeps the arguments short: with `mcp-review-check.config.json` holding the server and options, `args: [--config, mcp-review-check.config.json]` is enough (a file found without `--config` sets options only, not the server: see [Trust](options-and-config.md#config-file)). Run it on demand with `pre-commit run mcp-review-check --all-files`; it can also be set to `stages: [pre-push]` when a check on every commit is too slow. Do not give it a token on the command line: export `MCP_REVIEW_CHECK_TOKEN` in your shell.
+The hook runs the published npm package with `npx --yes mcp-review-check@<MAJOR.MINOR>`: the release you pin with `rev` names the minor (`v1.2.0` runs the newest 1.2.x, with the dependency tree of its npm-shrinkwrap.json). It needs Node 22.12 or newer and `npx` on `PATH`, network access to the npm registry on the first run (npx caches the package), and a built server for `--stdio`. A config file next to the hook keeps the arguments short: with `mcp-review-check.config.json` holding the server and options, `args: [--config, mcp-review-check.config.json]` is enough (a file found without `--config` sets options only, not the server: see [Trust](options-and-config.md#config-file)). Run it on demand with `pre-commit run mcp-review-check --all-files`; it can also be set to `stages: [pre-push]` when a check on every commit is too slow. Do not give it a token on the command line: export `MCP_REVIEW_CHECK_TOKEN` in your shell.
 
-pre-commit installs a `language: node` hook by packing the cloned repository, and the package builds itself in `prepack` (`tsc`), so the first run needs network access and a working `npm` toolchain. If that is a problem in your environment (an offline runner, a locked-down npm), use a local hook that runs the published package instead:
+Until 1.1.x the hook was `language: node`: pre-commit installed this repository as a global git dependency, the package's `prepack` build ran as a second install into the same folder, and the install failed (`git dep preparation failed`, `ENOTEMPTY`), so that hook could not be installed. From 1.2.0 the hook id is the same and nothing is built; CI runs it through pre-commit on every change. To pin an exact CLI version (or on an older `rev`), use a local hook:
 
 ```yaml
 repos:
@@ -290,8 +319,8 @@ repos:
     hooks:
       - id: mcp-review-check
         name: mcp-review-check
-        entry: npx -y mcp-review-check@1.1 --target claude --stdio -- node dist/server.js
+        entry: npx --yes mcp-review-check@1.2.0 --target claude --stdio -- node dist/server.js
         language: system
         pass_filenames: false
-        files: '(^|/)(mcp-review-check\.config\.json|plugin\.json|\.mcp\.json)$'
+        files: '(^|/)(mcp-review-check\.config\.json|\.mcp-review-check\.json|plugin\.json|\.mcp\.json|mcp\.json)$'
 ```

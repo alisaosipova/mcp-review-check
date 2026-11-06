@@ -93,3 +93,69 @@ describe('README: the stdio server environment', () => {
     expect(GUIDE.options).toMatch(/TMPDIR[^\n]*--env|--env[^\n]*TMPDIR/);
   });
 });
+
+// Review round 4, P9: docs that contradicted action.yml or the CLI, and release wording left from 0.x.
+describe('docs match action.yml and the CLI (review round 4, P9)', () => {
+  const SPEC = readFileSync(path('docs/design/spec.md'), 'utf8');
+  const SECURITY = readFileSync(path('SECURITY.md'), 'utf8');
+
+  it('A12-06: the Action input table in docs/guide/ci.md is the one generated from action.yml', async () => {
+    const { actionInputs, actionInputsTable, START, END } = await import('../scripts/action-inputs.mjs');
+    const block = GUIDE.ci.split(START)[1]?.split(END)[0];
+    expect(block, 'docs/guide/ci.md has the ACTION-INPUTS markers').toBeDefined();
+    expect(block!.trim()).toBe(actionInputsTable());
+    // Every input, and the version default of action.yml (the guide said 1.0 while action.yml said 1.1).
+    const inputs = actionInputs();
+    expect(inputs.map((i) => i.name)).toEqual(expect.arrayContaining(['target', 'stdio', 'version', 'extra-args', 'cli-path']));
+    const version = inputs.find((i) => i.name === 'version')!.default;
+    expect(block).toContain(`| \`version\` | \`${version}\` |`);
+  });
+
+  it('A08-05, I-A08-6: no 0.x or v0 release wording outside the CHANGELOG; the no-moving-ref and 1.x support policy are stated', () => {
+    const files: Record<string, string> = { 'README.md': README, 'SECURITY.md': SECURITY };
+    for (const [name, text] of Object.entries(GUIDE)) files[`docs/guide/${name}.md`] = text;
+    const stale = Object.entries(files).flatMap(([name, text]) => text.split('\n').map((l, i) => [name, i + 1, l] as const)
+      .filter(([, , l]) => /\b0\.x\b|`v0`|@v0\b|\bv0 ref/.test(l)).map(([n, i, l]) => `${n}:${i}: ${l.slice(0, 80)}`));
+    expect(stale).toEqual([]);
+    expect(README).toMatch(/There is no moving `v1` ref[^\n]*pin a full release tag[^\n]*or a commit SHA/i);
+    expect(SECURITY).toMatch(/Only the latest published 1\.x minor receives security fixes, and a fix ships as a patch of that minor/);
+  });
+
+  it('A12-07: the GitLab recipe fails on drift only in merge requests and has a manual refresh job', () => {
+    const gitlab = section('GitLab CI', GUIDE.ci)!;
+    expect(gitlab).toMatch(/drift=""; \[ "\$CI_PIPELINE_SOURCE" = merge_request_event \] && drift="--fail-on-drift"/);
+    // --fail-on-drift appears only through that variable.
+    expect(gitlab.match(/--fail-on-drift/g)).toHaveLength(1);
+    expect(gitlab).toMatch(/^mcp-review-check-refresh:$/m);
+    const refresh = gitlab.slice(gitlab.indexOf('mcp-review-check-refresh:'));
+    expect(refresh).toMatch(/--fail-on never --save-baseline \.mcp-review-check\/baseline\.json/);
+    expect(refresh).toMatch(/when: manual/);
+    expect(refresh).toMatch(/policy: push/);
+    // A12-04: the CLI creates the folder, so the recipe has no mkdir before --save-baseline any more.
+    expect(gitlab).not.toMatch(/^\s+mkdir -p \.mcp-review-check$/m);
+  });
+
+  it('A12-06, A01-02, A01-04 handoffs: listing-only, both drift advices, junit banner, preflight and baseline wording', () => {
+    for (const opt of ['--plugin-dir', '--openai-manifest']) {
+      const row = GUIDE.options.split('\n').find((l) => l.startsWith(`| \`${opt} `))!;
+      expect(row, opt).toMatch(/alone it runs listing-only/);
+      expect(row, opt).not.toMatch(/needs a `<url>` or `--stdio` target/);
+    }
+    expect(SPEC).not.toContain('listing-only run is not implemented');
+    const drift = GUIDE.options.split('\n').find((l) => l.startsWith('| `--fail-on-drift` '))!;
+    expect(drift).toContain('re-save the baseline with --save-baseline');
+    expect(drift).toContain('fix this run (see the coverage line) before saving a baseline from it');
+    expect(GUIDE.options).toContain('(on stderr for `json`, `sarif` and `junit`)');
+    expect(GUIDE.options).toMatch(/in the preflight except after a timeout/);
+    expect(GUIDE.options).not.toMatch(/retried \(at most 3 attempts, a timeout only once\) in the preflight,/);
+    expect(GUIDE.ci).toMatch(/`--save-baseline` is not written[^\n]*the earlier baseline is kept/);
+    expect(GUIDE.ci).toMatch(/A missing `\.mcp-review-check\/` folder is created \(since 1\.2\.0[^\n]*no longer needed\)/);
+  });
+
+  it('A08-01: the pre-commit section describes the npx hook, not a packed build', () => {
+    const pc = section('pre-commit', GUIDE.ci)!;
+    expect(pc).not.toMatch(/by packing the cloned repository/);
+    expect(pc).toMatch(/npx --yes mcp-review-check@<MAJOR\.MINOR>/);
+    expect(pc).toMatch(/rev: v1\.2\.0/);
+  });
+});
