@@ -10,7 +10,7 @@ Nothing yet.
 
 ## [1.2.0] - 2026-11-06
 
-Rule catalog dated 2026-11-02, 180 rules, no rule added. This release fixes the 88 confirmed findings of review round 4 that the 1.x policy allows before the planned feature releases ([docs/review/2026-11-05](docs/review/2026-11-05/FINDINGS.md), [progress](docs/review/2026-11-05/PROGRESS.md)). It is a minor release, not a patch, for three reasons:
+Rule catalog dated 2026-11-02, 180 rules, no rule added. This release fixes 70 of the 89 confirmed findings of review round 4, plus 3 duplicates; the other 19 need new detection or raised severities and ship in 1.3.0 ([docs/review/2026-11-05](docs/review/2026-11-05/FINDINGS.md), [progress](docs/review/2026-11-05/PROGRESS.md)). It is a minor release, not a patch, for three reasons:
 - some failing runs now read FAIL in every format (`--fail-on-drift`);
 - a crashed rule now shows as an internal error;
 - the engine has new needs (`handshake`, `url`, `transport`), so some rules now report skipped where 1.1.0 counted them as passed.
