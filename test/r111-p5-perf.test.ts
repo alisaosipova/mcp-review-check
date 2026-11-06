@@ -140,7 +140,7 @@ describe('A09-07: uiResources is built once per snapshot and is linear', () => {
   });
 });
 
-describe('A09-08: pointers in messages and the path field are bounded', () => {
+describe('A09-08: pointers in messages are bounded, the path field is kept', () => {
   const nested = (name: string, depth: number) => {
     let node: Record<string, unknown> = { type: 'string' };
     for (let i = 0; i < depth; i++) node = { type: 'object', properties: { [`${name}${i}`]: node } };
@@ -153,12 +153,12 @@ describe('A09-08: pointers in messages and the path field are bounded', () => {
     expect(f[0].message.length).toBeLessThanOrEqual(2048);
     expect(f[0].message).toMatch(/^4 parameter\(s\) without description: \/properties\/n{48}\u2026n{59}3, /u);
   });
-  it('a $ref under a long path keeps a bounded path field and message', () => {
+  it('a $ref under a long path keeps a bounded message and the full path (baselines match on it)', () => {
     const schema = nested('p'.repeat(100 * 1024), 3);
     (schema.properties as Record<string, Record<string, unknown>>)[`${'p'.repeat(100 * 1024)}2`] = { $ref: '#/$defs/missing' };
     const f = runRules(snap({ tools: [tool({ inputSchema: schema })] }), [TOOL_036]).findings;
     expect(f).toHaveLength(1);
-    expect(f[0].path!.length).toBeLessThanOrEqual(4096);
+    expect(f[0].path!.length).toBeGreaterThan(100 * 1024);
     expect(f[0].message.length).toBeLessThanOrEqual(2048);
   });
   it('ordinary pointers are shown in full', () => {
