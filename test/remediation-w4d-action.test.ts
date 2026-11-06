@@ -55,8 +55,10 @@ describe('action.yml (F168)', () => {
 
   it('defaults to the CLI defaults and to the current minor release', () => {
     const def = (input: string) => new RegExp(`^ {2}${input}:\\n(?: {4}.*\\n)*? {4}default: (.*)$`, 'm').exec(ACTION)?.[1];
-    expect(def('platform')).toBe('all');
-    expect(def('fail-on')).toBe('error');
+    // 1.3.0 (A12-02): empty, so a config file's target and failOn apply; without a config file the step passes all and
+    // error (test/r130-b3-sarif-action.test.ts).
+    expect(def('platform')).toBe("''");
+    expect(def('fail-on')).toBe("''");
     expect(def('active')).toBe("'false'");
     expect(def('upload-sarif')).toBe("'true'");
     expect(def('sarif-file')).toBe('mcp-review-check.sarif');

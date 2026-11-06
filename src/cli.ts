@@ -288,7 +288,7 @@ type RenderOptions = TextOptions & { diffOnly?: boolean };
 
 /** `known` (with --baseline): the findings of the baseline report, which `r.findings` (the new ones) leaves out;
  *  `opts.drift`: the comparison of the tool definitions with the baseline's. */
-function render(r: Report, format: string, opts: RenderOptions, rerun: string, sarifLocation: string, known?: Finding[]): string {
+function render(r: Report, format: string, opts: RenderOptions, rerun: string, sarifLocation: string, known?: Finding[], exitCode?: number): string {
   const { addBaselineToText, renderJsonWithBaseline, renderSarifWithBaseline } = M!.baseline;
   const { renderSarif } = M!.sarif;
   const { renderJunit } = M!.junit;
@@ -296,7 +296,7 @@ function render(r: Report, format: string, opts: RenderOptions, rerun: string, s
   switch (format) {
     case 'json': return known ? renderJsonWithBaseline(r, known, opts.drift) : renderJson(r);
     case 'markdown': return markdownReport(r, { cta: opts.cta, verbose: opts.verbose, rerun, drift: opts.drift, failOnDrift: opts.failOnDrift }, known, opts.diffOnly); // --quiet and --checklist are text only
-    case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation, opts.drift) : renderSarif(r, sarifLocation);
+    case 'sarif': return known ? renderSarifWithBaseline(r, known, sarifLocation, opts.drift, { exitCode }) : renderSarif(r, sarifLocation, { exitCode });
     case 'junit': return renderJunit(r, known, opts.drift);
     default: {
       if (opts.diffOnly) return renderText({ ...r, manual: [] }, opts);
@@ -886,7 +886,15 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       drift, failOnDrift: !!values['fail-on-drift'] && changes > 0, diffOnly: !!values['diff-only'],
     };
     const rerun = rerunCommand(argv, redactor);
-    const body = render(report, format, textOpts, rerun, sarifLocation, baselined);
+    // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
+    // A partial check (no or a rejected token, tools/list failed, an exhausted snapshot byte budget) follows --fail-on unless --fail-on-incomplete.
+    // --fail-on-drift: a tool change is exit 1 like a finding over --fail-on; drift alone never changes the code.
+    // A comparison that could not be made (a baseline without fingerprints, a partial tools/list) must not pass a
+    // --fail-on-drift gate silently: exit 1 with a warning, unless 3 or 4 already says more. Computed before rendering:
+    // the SARIF invocation carries it (1.3.0, A07-08).
+    const notCompared = values['fail-on-drift'] ? drift?.notCompared : undefined;
+    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0;
+    const body = render(report, format, textOpts, rerun, sarifLocation, baselined, code);
     if (env.GITHUB_ACTIONS === 'true') { // annotations go to stderr, so stdout stays the document
       // Appended after every other line, outside the stderr guard: they are the only workflow commands we mean (I-A07-1).
       for (const a of annotations(report)) ann += `${a}\n`;
@@ -908,17 +916,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       if (stderrTail) stderr += `[stdio stderr]\n${stderrTail.split(/\r?\n/).map(ciSafeLine).join('\n')}\n`;
       stderr = scrub(stderr, redactor);
     }
-    // A stop after the handshake is exit 4 at any --fail-on, so CI can tell "too slow" (4) from "unreachable" (3).
-    // A partial check (no or a rejected token, tools/list failed, an exhausted snapshot byte budget) follows --fail-on unless --fail-on-incomplete.
-    // --fail-on-drift: a tool change is exit 1 like a finding over --fail-on; drift alone never changes the code.
-    // A comparison that could not be made (a baseline without fingerprints, a partial tools/list) must not pass a
-    // --fail-on-drift gate silently: exit 1 with a warning, unless 3 or 4 already says more.
-    const notCompared = values['fail-on-drift'] ? drift?.notCompared : undefined;
     // The advice depends on the side: a baseline without fingerprints is re-saved; a partial run must be fixed first, as
     // saving it would record no fingerprints either (A01-07).
     const advice = drift?.notComparedBy === 'run' ? 'fix this run (see the coverage line) before saving a baseline from it' : 're-save the baseline with --save-baseline';
     if (notCompared) stderr += `--fail-on-drift: tool definitions not compared (${notCompared.replace(/;? ?write it again with --save-baseline$/, '')}); ${advice}\n`;
-    const code = snap.fatal ? 3 : snap.limits?.stopped ? 4 : values['fail-on-incomplete'] && partial ? 3 : report.summary.failed || textOpts.failOnDrift || notCompared ? 1 : 0;
     const s = report.summary;
     const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
     const fromBaseline = baselined ? ` · ${baselined.length} known from baseline${changes ? ` · ${plural(changes, 'tool change')}${textOpts.failOnDrift ? ' (--fail-on-drift)' : ''}` : ''}` : '';

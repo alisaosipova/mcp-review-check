@@ -20,13 +20,13 @@ inputs:
     required: false
     default: ''
   platform:
-    description: 'Directory to gate on, the CLI''s `--target`: claude, chatgpt or all (`both` is accepted as all).'
+    description: 'Directory to gate on, the CLI''s `--target`: claude, chatgpt or all (`both` is accepted as all). Empty (the default): the config file''s `target` when a config file is found or named with `--config` in extra-args (a notice says so), else all.'
     required: false
-    default: all
+    default: ''
   fail-on:
-    description: 'Exit 1 threshold, the CLI''s `--fail-on`: error, warning or never.'
+    description: 'Exit 1 threshold, the CLI''s `--fail-on`: error, warning or never. Empty (the default): the config file''s `failOn` when a config file is found or named with `--config` in extra-args (a notice says so), else error.'
     required: false
-    default: error
+    default: ''
   fail-on-spec:
     description: Also count MCP spec findings toward `fail-on` (`--fail-on-spec`).
     required: false
@@ -122,14 +122,47 @@ runs:
         # The JSON report for the outputs, in the runner's temp directory; the PID keeps two uses of the action in one
         # job apart.
         json_file="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mcp-review-check-$$.json"
-        args=(--target "$platform" --fail-on "$INPUT_FAIL_ON")
-        [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
-        [ "$INPUT_ACTIVE" = true ] && args+=(--active)
         # Split on whitespace, newlines and CR included, so a block scalar keeps every line (read -a does no globbing
         # or quote removal; -d '' reads to the end and returns 1 there). ${x[@]+...}: under set -u, bash 3.2 (macOS
         # runners) treats an empty array as unbound.
         extra=()
-        if [ -n "$INPUT_EXTRA_ARGS" ]; then IFS=$' \t\r\n' read -r -d '' -a extra <<< "$INPUT_EXTRA_ARGS" || true; args+=(${extra[@]+"${extra[@]}"}); fi
+        if [ -n "$INPUT_EXTRA_ARGS" ]; then IFS=$' \t\r\n' read -r -d '' -a extra <<< "$INPUT_EXTRA_ARGS" || true; fi
+        # The config file the CLI will read (spec s3.7 discovery): --config in extra-args, none with --no-config, else
+        # the first of the two names in --cwd or the working directory. --target and --fail-on in extra-args are seen
+        # too, so the notice below does not name a setting that extra-args already chose.
+        config=""; no_config=false; cfg_dir="."; x_target=false; x_fail_on=false; prev=""
+        for a in ${extra[@]+"${extra[@]}"}; do
+          case "$prev" in --config) config="$a";; --cwd) cfg_dir="$a";; esac
+          prev=""
+          case "$a" in
+            --config|--cwd) prev="$a";;
+            --config=*) config="${a#--config=}";;
+            --cwd=*) cfg_dir="${a#--cwd=}";;
+            --no-config) no_config=true;;
+            --target|--target=*) x_target=true;;
+            --fail-on|--fail-on=*) x_fail_on=true;;
+          esac
+        done
+        if [ -z "$config" ] && [ "$no_config" = false ]; then
+          for n in mcp-review-check.config.json .mcp-review-check.json; do
+            if [ -e "$cfg_dir/$n" ]; then config="$cfg_dir/$n"; break; fi
+          done
+        fi
+        # platform and fail-on: a set input always wins over the config file. An empty input (the default) is passed
+        # as the old default (all, error) only when there is no config file, so a run without one is unchanged; with
+        # one, the file's target and failOn apply as they do locally, and a notice names what decided (A12-02).
+        args=()
+        if [ -n "$platform" ]; then args+=(--target "$platform"); elif [ -z "$config" ]; then args+=(--target all); fi
+        if [ -n "$INPUT_FAIL_ON" ]; then args+=(--fail-on "$INPUT_FAIL_ON"); elif [ -z "$config" ]; then args+=(--fail-on error); fi
+        if [ -n "$config" ]; then
+          from=""
+          [ -z "$platform" ] && [ "$x_target" = false ] && from="--target"
+          [ -z "$INPUT_FAIL_ON" ] && [ "$x_fail_on" = false ] && from="${from:+$from and }--fail-on"
+          if [ -n "$from" ]; then echo "::notice title=mcp-review-check::the config file decides $from (its target and failOn keys, else the CLI defaults all and error) because the platform and fail-on inputs are empty; set an input to override the file"; fi
+        fi
+        [ "$INPUT_FAIL_ON_SPEC" = true ] && args+=(--fail-on-spec)
+        [ "$INPUT_ACTIVE" = true ] && args+=(--active)
+        args+=(${extra[@]+"${extra[@]}"})
         # --format, --output and --json-output belong to the action (the SARIF upload and the outputs read them). They
         # come after extra-args, so they win (the CLI keeps the last value), and a reserved one in extra-args is
         # named in a warning instead of silently replacing the SARIF file.

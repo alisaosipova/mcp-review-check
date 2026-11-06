@@ -128,8 +128,8 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
 |---|---|---|
 | `target` | | URL of the MCP server to check, http:// or https:// (anything else is a usage error, exit 2). Required unless `stdio` is given; not both. |
 | `stdio` | | Command that starts a local MCP server over stdio (split by the CLI without a shell, as `--stdio "<command>"`). Required unless `target` is given. |
-| `platform` | `all` | Directory to gate on, the CLI's `--target`: claude, chatgpt or all (`both` is accepted as all). |
-| `fail-on` | `error` | Exit 1 threshold, the CLI's `--fail-on`: error, warning or never. |
+| `platform` | | Directory to gate on, the CLI's `--target`: claude, chatgpt or all (`both` is accepted as all). Empty (the default): the config file's `target` when a config file is found or named with `--config` in extra-args (a notice says so), else all. |
+| `fail-on` | | Exit 1 threshold, the CLI's `--fail-on`: error, warning or never. Empty (the default): the config file's `failOn` when a config file is found or named with `--config` in extra-args (a notice says so), else error. |
 | `fail-on-spec` | `false` | Also count MCP spec findings toward `fail-on` (`--fail-on-spec`). |
 | `active` | `false` | Opt-in runtime checks (`--active`), which call the tools annotated readOnlyHint true. |
 | `bearer` | | Access token for the server. Pass a secret; it reaches the CLI only as MCP_REVIEW_CHECK_TOKEN, never on its command line. Empty keeps a MCP_REVIEW_CHECK_TOKEN set by the job. |
@@ -141,6 +141,25 @@ For a deployed server, give `target` instead of `stdio` and pass the token as a 
 <!-- ACTION-INPUTS:END -->
 
 The table is generated from `action.yml` (`node scripts/action-inputs.mjs --write`; `test/docs.test.ts` fails when it is stale). Set `upload-sarif: false` on pull requests from forks. `target` takes only an `http://` or `https://` URL, so a value from event data (such as `environment_url`) cannot become an option. `extra-args` cannot change where the reports go: the action's `--format sarif`, `--output <sarif-file>` and `--json-output` come last and win, with a warning that names the option you gave.
+
+**The action and your config file** (since 1.3.0). `platform` and `fail-on` are empty by default. A set input always wins over the config file, as a command-line option does. An empty one is passed as `--target all` / `--fail-on error` only when there is no config file: a run without one behaves as before. When the step finds `mcp-review-check.config.json` or `.mcp-review-check.json` (in the working directory, or in `--cwd` from `extra-args`), or `extra-args` names one with `--config`, the file's `target` and `failOn` keys apply, as they do in a local run, and the step prints a `::notice` that the config file decides them (the CLI defaults `all` and `error` apply where the file has no such key). `--no-config` in `extra-args` turns this off. Before 1.3.0 the action always passed `--target all --fail-on error`, so the file's keys were ignored; to keep that, set `platform: all` and `fail-on: error`.
+
+**Code scanning categories** (since 1.3.0). Code scanning replaces the alerts of one category with each upload, so each checked server gets its own category: the SARIF `automationDetails.id` is `mcp-review-check/<sarif-location>/<server slug>/<run time>`. The slug is the URL's host and path, or `stdio-` and the command, made safe for an id, plus 8 hex digits of a hash of the redacted target, so it holds no query, credential or token. Two action steps (or matrix jobs) that check two servers in one repository no longer mark each other's alerts fixed. A server whose URL or command changes starts a new category; the old one keeps its alerts until you delete that configuration in code scanning. To choose the category yourself, pass `--sarif-location <path>` in `extra-args` (the path is also the location every result points at). The upload step passes no `category` of its own: `upload-sarif` uses the id in the file.
+
+**A run that did not finish** (since 1.3.0). When the server could not be checked (exit 3), `--max-duration` stopped the run (exit 4), the check was partial (no or a rejected token, `tools/list` failed, the snapshot budget ran out) or a rule threw, the SARIF says so: `runs[0].invocations[0].executionSuccessful` is `false`, `exitCode` is the CLI's exit code and each cause is a `toolExecutionNotifications` entry at level `error`. A complete run has `executionSuccessful: true`, also at exit 1 (findings over `--fail-on` are a result, not a failed run). The action still uploads such a report; set `upload-sarif: false` or gate the job on `exit-code` if a partial run should not replace the last complete analysis.
+
+Several servers in one repository, as a matrix:
+
+```yaml
+    strategy:
+      matrix:
+        server: [servers/a, servers/b]
+    steps:
+      # checkout, setup-node and build as above
+      - uses: alisaosipova/mcp-review-check@v1.2.0
+        with:
+          stdio: node ${{ matrix.server }}/dist/server.js
+```
 
 | Output | Value |
 |---|---|

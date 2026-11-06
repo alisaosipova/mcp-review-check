@@ -14,6 +14,15 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - LST-028: screenshots in a package without an MCP server (skills-only) are an error, and so are screenshots when the checked server reports no UI output template (A06-09).
 - LST-002: a plugin name with `claude`, `anthropic` or `anthropics` as a whole word after the start (`mcp-for-claude`) is a warning, as the plugins reference says (A06-10, name part).
 
+### Added
+
+- SARIF: `runs[0].invocations[0]` says whether the analysis completed. A run that could not connect (exit 3), was stopped by `--max-duration` (exit 4), was partial (tool checks skipped) or had a rule throw has `executionSuccessful: false` and one `toolExecutionNotifications` entry per cause; every run carries the CLI's `exitCode`. Code scanning consumers can tell a failed run from a clean one instead of reading the missing results as fixed (A07-08).
+
+### Changed
+
+- SARIF: the code-scanning category (`automationDetails.id` up to its last `/`) now includes a slug of the checked server, `mcp-review-check/<sarif-location>/<host-path or stdio-command>-<8 hex>/`, so two servers checked in one repository no longer replace each other's alerts. The first upload after upgrading starts a new category; the alerts of the old `mcp-review-check/<sarif-location>/` category stay until that configuration is deleted in code scanning. `--sarif-location` still sets the location part (A12-03).
+- Action: the `platform` and `fail-on` inputs default to empty. A set input wins over the config file as before; an empty one is passed as `--target all` / `--fail-on error` only when no config file is present, so a workflow without one behaves as in 1.2. With `mcp-review-check.config.json`, `.mcp-review-check.json` or `--config` in `extra-args`, the file's `target` and `failOn` now apply, as in a local run, and a `::notice` says so. **Upgrade note:** if your config file sets a stricter `failOn` (for example `warning`) or another `target` than the Action defaults, a job that passed on 1.2 can now fail; that is the config you wrote, which 1.2 silently overrode. Decision: this compatible form was chosen over defaulting to the config unconditionally, since a breaking input change would be a major (CONTRIBUTING.md); to keep the 1.2 gate with a config file, set `platform: all` and `fail-on: error` (A12-02).
+
 ### Fixed
 
 - The SVG size reader ends the root `<svg>` start tag at the first `>` outside a quoted attribute value, so `aria-label="a > b"` no longer hides the `width`, `height` and `viewBox` after it (A06-04).

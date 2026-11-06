@@ -8,7 +8,7 @@ import { sortFindings } from './rules/engine.js';
 import type { Finding } from './rules/types.js';
 import { REDACTED_MARK } from './rules/util/net.js';
 import { JSON_SCHEMA_VERSION, toJson } from './report/json.js';
-import { artifactUri, SARIF_LOCATION, sarifText, toSarif } from './report/sarif.js';
+import { artifactUri, SARIF_LOCATION, sarifText, toSarif, type SarifRunInfo } from './report/sarif.js';
 import { stringifyReport, type Report } from './report/index.js';
 import { DRIFT_RULE, driftItems, driftJson, driftWhat, TOOL_FIELDS, type Drift, type ToolFingerprint } from './report/drift.js';
 
@@ -280,9 +280,9 @@ const DRIFT_SARIF_RULE = {
 
 /** SARIF: every result, with the SARIF 2.1.0 `baselineState` "unchanged" (known) or "new", and one `note` result
  *  per tool-definition change under BASE-001 (`baselineState` "new"; the summary counts are of the findings only). */
-export function renderSarifWithBaseline(report: Report, known: Finding[], location?: string, drift?: Drift): string {
+export function renderSarifWithBaseline(report: Report, known: Finding[], location?: string, drift?: Drift, info?: SarifRunInfo): string {
   const { all, isKnown } = everything(report, known);
-  const doc = toSarif({ ...report, findings: all }, location);
+  const doc = toSarif({ ...report, findings: all }, location, info);
   const run = (doc.runs as Record<string, unknown>[])[0];
   run.results = (run.results as Record<string, unknown>[]).map((r, i) => ({ ...r, baselineState: isKnown.has(all[i]) ? 'unchanged' : 'new' }));
   const items = drift ? driftItems(drift) : [];
