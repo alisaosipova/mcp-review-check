@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, isStr, toolNames } from './util/access.js';
-import { corpus, foldInvisible, foldNote, invisibleOutsideCf, locationOf, scanEntry, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
+import { corpus, foldInvisible, foldNote, invisibleOutsideCf, lineForm, locationOf, scanEntry, snippet, type CorpusEntry, type CorpusScope } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
@@ -86,8 +86,25 @@ function emojiNeighbor(cps: string[], i: number, step: 1 | -1): string {
   return cps[j] ?? '';
 }
 
-/** Printable ASCII and ordinary whitespace: no hidden character and no other script, the common case, skipped fast. */
-const PLAIN_ASCII = /^[\x20-\x7e\t\n\r]*$/;
+/**
+ * Printable ASCII and ordinary whitespace: no hidden character and no other script, the common case, skipped fast. A CR
+ * counts only before an LF (A05-02): a bare CR returns the terminal cursor and lets later text overwrite earlier text.
+ */
+const PLAIN_ASCII = /^(?:[\x20-\x7e\t\n]|\r\n)*$/;
+
+/**
+ * A control character (\p{Cc}) by severity (A05-02, Trail of Bits 2025, "Deceiving users with ANSI terminal codes in
+ * MCP"): ESC and the C1 controls U+0080-009F (CSI U+009B among them) start terminal escape sequences that hide or
+ * rewrite text in a terminal host → hard; DEL and the other C0 controls except tab, LF and CR, and a CR not followed by
+ * an LF → soft. Undefined for any other character.
+ */
+function controlChar(cps: string[], i: number, cp: number): 'hard' | 'soft' | undefined {
+  if (cp === 0x1b || (cp >= 0x80 && cp <= 0x9f)) return 'hard';
+  if (cp === 0x0d) return cps[i + 1] === '\n' ? undefined : 'soft';
+  if ((cp < 0x20 && cp !== 0x09 && cp !== 0x0a) || cp === 0x7f) return 'soft';
+  return undefined;
+}
+const isControlCode = (hex: string) => /^\\u\{([0-9A-F]|1[0-9A-F]|7F|[89][0-9A-F])\}$/.test(hex);
 
 /**
  * Code point indexes of the tag characters of an RGI subdivision flag (A05-07): U+1F3F4 followed by the tag spelling
@@ -161,6 +178,10 @@ export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
     const hex = `\\u{${cp.toString(16).toUpperCase()}}`;
     if ((cp >= 0xe0000 && cp <= 0xe007f) || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)) {
       if (!flagTags?.has(i)) hard.push(hex);
+    } else if (cp < 0xa0 && (cp < 0x20 || cp >= 0x7f)) {
+      const kind = controlChar(cps, i, cp);
+      if (kind === 'hard') hard.push(hex);
+      else if (kind === 'soft') soft.push(hex);
     } else if (/\p{Cf}/u.test(ch)) {
       if (cp === 0x200d && PICTO.test(emojiNeighbor(cps, i, -1)) && PICTO.test(emojiNeighbor(cps, i, 1))) return; // emoji ZWJ sequence
       if (orthographicFormat(cps, i, cp, () => (crowded ??= crowdedJoiners(cps)))) return;
@@ -176,6 +197,15 @@ export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
 }
 
 /** At most 16 code points in a message: a smuggled run can hold hundreds of distinct variation selectors. */
+/** What the hard characters are, for the message. ESC and C1 controls are named as terminal controls (A05-02). */
+function hardLabel(hard: string[]): string {
+  const control = hard.some(isControlCode);
+  const other = hard.filter((h) => !isControlCode(h));
+  const base = other.some((h) => /^\\u\{(FE0|E01)/.test(h)) ? 'tag, bidi control or variation selector' : 'tag or bidi control';
+  if (!control) return base;
+  return other.length ? `terminal control (ESC or C1), ${base}` : 'terminal control (ESC or C1)';
+}
+
 const codeList = (xs: string[]) => (xs.length > 16 ? `${xs.slice(0, 16).join(' ')} … (+${xs.length - 16} more)` : xs.join(' '));
 
 export const INJ_001 = defineRule(
@@ -190,8 +220,8 @@ export const INJ_001 = defineRule(
     for (const e of corpus(snap, { samples: true, keys: true })) {
       const { hard, soft } = hiddenChars(e.text);
       const base = { tool: e.tool, path: e.path };
-      if (hard.length) out.push({ ...base, message: `${locationOf(e)}: ${hard.some((h) => /^\\u\{(FE0|E01)/.test(h)) ? 'tag, bidi control or variation selector' : 'tag or bidi control'} characters ${codeList(hard)}: "${snippet(e.text)}"` });
-      if (soft.length) out.push({ ...base, severity: 'warning', message: `${locationOf(e)}: invisible format characters ${codeList(soft)}` });
+      if (hard.length) out.push({ ...base, message: `${locationOf(e)}: ${hardLabel(hard)} characters ${codeList(hard)}: "${snippet(e.text)}"` });
+      if (soft.length) out.push({ ...base, severity: 'warning', message: `${locationOf(e)}: invisible ${soft.some(isControlCode) ? 'format or control' : 'format'} characters ${codeList(soft)}` });
     }
     return out;
   },
@@ -253,8 +283,23 @@ export const INJ_002 = defineRule(
   },
 );
 
-// Bounded so that server-controlled text with many '<system' openers and no '>' cannot backtrack quadratically.
-const PSEUDO_TAG = /<\/?(system|important|instructions?|admin|assistant|secret|hidden)\b[^>]{0,200}>/i;
+// Bounded so that server-controlled text with many '<system' openers and no '>' cannot backtrack quadratically. The
+// second branch (1.3.0, A05-10) is the spaced form "< system >", "</ system >": a space after '<' or before the name
+// allows no attributes, so a comparison ("a < system limit") does not match.
+const TAG_NAMES = 'system|important|instructions?|admin|assistant|secret|hidden';
+const PSEUDO_TAG = new RegExp(`<(\\/?(${TAG_NAMES})\\b[^>]{0,200}| ?\\/? ?(${TAG_NAMES}) ?)>`, 'i');
+/**
+ * Chat-template role markers (A05-10): ChatML and its relatives (`<|im_start|>`, `<|eot_id|>`), Llama 2 `[INST]` and
+ * `<<SYS>>`. They fake a role boundary inside tool metadata.
+ */
+const CHAT_MARKER = /<\|(im_start|im_end|im_sep|system|user|assistant|endoftext|eot_id|start_header_id|end_header_id|begin_of_text)\|>|\[\/?INST\]|<<\/?SYS>>/i;
+/** A tokenizer or model tool naming the marker as a token ("Stops at the <|endoftext|> token"). */
+const NAMED_AS_TOKEN = /^ ?(special )?(tokens?|markers?|delimiters?|separators?)\b/i;
+/**
+ * A fake conversation turn (A05-10): "Human:", "Assistant:" or "System:" at the start of a line after a blank line, the
+ * legacy completion format. Run on lineForm, which keeps line breaks; case-sensitive, so "system: linux" does not match.
+ */
+const ROLE_TURN = /\n[ \t\r]*\n[ \t]*(Human|Assistant|System)[ \t]*:/;
 /** The tag is named as markup ("Returns the <Secret> element of the KeyVault XML response"), not used as one. */
 const NAMED_AS_MARKUP = /^\s+(xml |html )?(elements?|tags?|nodes?|attributes?|fields?)\b/i;
 
@@ -307,16 +352,35 @@ export const INJ_003 = defineRule(
     const out: RawFinding[] = [];
     for (const e of corpus(snap, { samples: true })) {
       const text = scanEntry(e);
-      if (!text.includes('<')) continue; // both forms start with '<'
-      const comment = htmlComment(text);
-      const tag = comment ? null : pseudoTag(text);
-      const m = comment ?? tag?.m;
+      if (!text.includes('<') && !text.includes('[') && !e.text.includes('\n')) continue; // every form starts with one of them
+      const comment = text.includes('<') ? htmlComment(text) : null;
+      const tag = comment || !text.includes('<') ? null : pseudoTag(text);
+      let m = comment ?? (tag?.placeholder ? null : tag?.m);
+      if (!m) {
+        // Chat-template markers and role turns (A05-10) rank above a placeholder, which is only informational.
+        const marker = CHAT_MARKER.exec(text);
+        if (marker) {
+          const f = finding(e, text, marker);
+          if (NAMED_AS_TOKEN.test(text.slice(marker.index + marker[0].length))) {
+            f.severity = 'info';
+            f.message += ' (named as a token: fine when it documents a model or tokenizer format)';
+          }
+          out.push(f);
+          continue;
+        }
+        if (e.text.includes('\n')) {
+          const lines = lineForm(e.text);
+          const turn = ROLE_TURN.exec(lines);
+          if (turn) { out.push(finding(e, lines, turn)); continue; }
+        }
+        m = tag?.m ?? null;
+      }
       if (!m) continue;
       const f = finding(e, text, m);
       if (tag?.placeholder) {
         f.severity = 'info';
         f.message += ' (an unclosed <name-word> reads as a placeholder: fine when it stands for a value)';
-      } else if (!comment && NAMED_AS_MARKUP.test(text.slice(m.index + m[0].length))) {
+      } else if (!comment && tag && NAMED_AS_MARKUP.test(text.slice(m.index + m[0].length))) {
         f.severity = 'info';
         f.message += ' (named as a markup element: fine when it documents a data format)';
       }
@@ -362,7 +426,8 @@ export const INJ_004 = defineRule(
   },
   (snap) => {
     const out: RawFinding[] = [];
-    for (const e of corpus(snap)) {
+    // Not names (A11-01): a resource or server name is an identifier, and a hash or an ID in one is not a payload.
+    for (const e of corpus(snap, { names: false })) {
       const text = scanEntry(e);
       if (text.length < 24) continue; // shorter than the shortest run (8 escapes of 3 characters, 40 base64 characters)
       let hit: RegExpExecArray | null = null;
@@ -389,6 +454,10 @@ const RAW_DATA_OBJECT = /\b(raw|ids?|identifiers?|uuids?|json|stack ?traces?|deb
 // instructions, and "don't tell the user". Broader wording is a regex heuristic, so it is a warning.
 export const INJ_005_PATTERNS: Pattern[] = [
   { re: /ignore (all |any )?(previous|prior|above|earlier|system) (instructions|prompts?|rules)/i },
+  // With a determiner or a wider noun set (A05-04): "Ignore the previous instructions", "ignore all of your prior
+  // directions", "Ignore your instructions". A qualifier or "your" keeps it an explicit marker.
+  { re: /\bignore (all |any )?(of )?(the |these |those |my |your )?(previous|prior|above|earlier|preceding|system|original) (instructions|prompts?|rules|directions|guidelines)\b/i },
+  { re: /\bignore (all |any )?(of )?your (instructions|prompts?|rules|directions|guidelines)\b/i },
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b((system|platform|host|assistant'?s?|model'?s?) (instructions|prompts?|rules|message|safeguards|guardrails)|safety (instructions|rules|guidelines|guardrails|filters|policies)|(your|all|any|previous|prior|earlier) instructions)\b/i },
   { re: /\b(do not|don't|never) (tell|inform|notify|alert) the user\b/i, unless: SECRET_OBJECT },
   { re: /\b(disregard|override|bypass|forget)\b[^.]{0,30}\b(instructions|system prompt|guardrails)\b/i, severity: 'warning' },
@@ -398,6 +467,8 @@ export const INJ_005_PATTERNS: Pattern[] = [
   // A role change, not a status report: "You are now connected to the workspace" is not a persona switch.
   { re: /\b(you are now(?! (connected|signed|logged|authenticated|authorized|subscribed|registered|enrolled|ready|done|online|offline|disconnected)\b)|from now on,? you)\b/i, severity: 'warning' },
   { re: /\b(system prompt|developer message)\b/i, severity: 'warning' },
+  // "Ignore everything above" (A05-04) only where the clause ends: "ignore everything above 100 MB" is a filter.
+  { re: /\bignore (everything|anything|all) (above|before this)(?= ?([.,;:!)]|and\b|$))/i, severity: 'warning' },
 ];
 
 export const INJ_005 = defineRule(
@@ -520,7 +591,8 @@ export const INJ_008 = defineRule(
   },
   // "for every query" counts only after a call verb in the same clause: "returns at most 20 matches for any query" is a limit, not a claim.
   // A topic after the quantifier narrows the trigger: "for any question about billing" is a scope hint.
-  (snap) => scanCorpus(snap, [{ re: new RegExp(String.raw`(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b${NOT_TOPIC}|\b(use|call|invoke|run|trigger)\b[^.;:]{0,40}\bfor (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|\b(should|must) be (used|called|invoked) (for|on) (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|call (this|me) first|at the start of every`, 'i') }]),
+  // Not names (A11-01): a trigger claim is prose; a resource called "use this for all files" is not a tool's scope.
+  (snap) => scanCorpus(snap, [{ re: new RegExp(String.raw`(use|call|invoke|run) (this|me)( tool)? (for|on|with|whenever|before) (any|every|all)\b${NOT_TOPIC}|\b(use|call|invoke|run|trigger)\b[^.;:]{0,40}\bfor (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|\b(should|must) be (used|called|invoked) (for|on) (every|any|all) (request|message|query|question|prompt|conversation)s?\b${NOT_TOPIC}|call (this|me) first|at the start of every`, 'i') }], undefined, undefined, { names: false }),
 );
 
 export const INJ_009_PATTERNS: Pattern[] = [

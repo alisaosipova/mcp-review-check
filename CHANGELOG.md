@@ -18,6 +18,16 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 - The SVG size reader ends the root `<svg>` start tag at the first `>` outside a quoted attribute value, so `aria-label="a > b"` no longer hides the `width`, `height` and `viewBox` after it (A06-04).
 
+### Detection widened (more matches at the existing severity)
+
+Review round 4, block 1.3.0-B1 ([findings](docs/review/2026-11-05/FINDINGS.md); spec §1.5 corpus and §2.4 INJ-001, INJ-003, INJ-005 amendments). No rule changes its level; these servers now get findings they did not get in 1.2.0. On the real-server fixtures and the good-server fixture the findings are unchanged.
+- INJ, DATA and POL corpus: a `description` on any schema node, not only on a property (the root, `items`, an `anyOf`/`oneOf` branch, `$defs`, `additionalProperties`), as `schema.description` (A05-01).
+- INJ, DATA and POL corpus: serverInfo `name`, `title` and `description` (from initialize and `server/discover`), resource and resource template `name` and `title`, prompt `name`, `title` and argument `title` (A11-01). INJ-004 and INJ-008 skip the names; the SRV-015 sampling check reads the new fields too.
+- INJ-001 (error): ESC and the C1 controls (U+0080-009F), which start terminal escape sequences that hide text in terminal hosts; at warning, the other C0 controls except tab, LF and CR, DEL, and a CR not followed by LF (A05-02).
+- INJ-003 (warning): chat-template role markers (`<|im_start|>`, `<|eot_id|>`, `[INST]`, `<<SYS>>`), a fake `Human:`/`Assistant:`/`System:` turn after a blank line, and spaced pseudo-tags (`< system >`); a marker named as a token is info (A05-10).
+- INJ-005 (error): "Ignore the previous instructions", "Ignore your instructions", "ignore all of your prior directions" and similar; at warning, "Ignore everything above" ending a clause (A05-04).
+- All regex rules (INJ-003..010, DATA, POL): a double space, tab or line break between words no longer defeats a phrase; the scan form collapses each whitespace run to one space and reads NEL as a space (A05-03).
+
 ## [1.2.0] - 2026-11-06
 
 Rule catalog dated 2026-11-02, 180 rules, no rule added. This release fixes 70 of the 89 confirmed findings of review round 4, plus 3 duplicates; the other 19 need new detection or raised severities and ship in 1.3.0 ([docs/review/2026-11-05](docs/review/2026-11-05/FINDINGS.md), [progress](docs/review/2026-11-05/PROGRESS.md)). It is a minor release, not a patch, for three reasons:

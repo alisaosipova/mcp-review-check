@@ -197,7 +197,9 @@ describe('regex-complexity guard: every rule over large server-controlled fields
   const SIZE = 200 * 1024;
   const UNITS = ['A', '0', 'a', 'Aa', 'A0', '-', '_', ' ', '.', '/', '%', 'url(', '<a ', '<!--', '<system', '`', '"', "'", '(', '{{', '${', 'https://', 'http://a', 'а', 'α', 'A' + 'α'.repeat(30) + 'b', 'A' + 'α'.repeat(30) + 'b ', 'call ', 'use the ', 'always ', '0% off', '\\', '​',
     // Round 4 (I-A09-3): multi-token units the single-character ones missed (A09-01, A09-03).
-    '<script type=importmap>', '<script type=importmap>{', 'text/html;a ', '[a '];
+    '<script type=importmap>', '<script type=importmap>{', 'text/html;a ', '[a ',
+    // 1.3.0-B1: role markers, spaced tags, control characters, whitespace runs and the new INJ-005 phrasings.
+    '<|', '<|im_start', '[INST', '<<SYS', '< ', '< /', '\n', '\n\n', '\n\nHuman', ' \t', '\r', '\x1b[', '\u0085', 'ignore ', 'ignore all of the ', 'ignore everything '];
 
   for (const unit of UNITS) {
     it(`unit ${JSON.stringify(unit)} in every field runs all rules in under 5 s`, () => {
@@ -205,14 +207,19 @@ describe('regex-complexity guard: every rule over large server-controlled fields
       const uiUri = 'ui://acme/board.html';
       const s = snap({
         tools: [
-          toolWithProps(big, { [big]: { type: 'string', description: big }, host: { type: 'string', description: big } }, { title: big, description: big, annotations: { title: big, readOnlyHint: true, openWorldHint: false } }),
+          toolWithProps(big, { [big]: { type: 'string', description: big }, host: { type: 'string', description: big }, list: { type: 'array', items: { type: 'string', description: big } } }, { title: big, description: big, annotations: { title: big, readOnlyHint: true, openWorldHint: false } }),
           tool({ name: 'show_board', description: big, _meta: { ui: { resourceUri: uiUri } } }),
         ],
         resources: [{ uri: uiUri, name: big, description: big, mimeType: 'text/html;profile=mcp-app' }, { uri: `file:///${big}`, name: 'r', description: big }],
         prompts: [{ name: big, description: big, arguments: [{ name: big, description: big }] }],
         set: (x) => {
-          x.resourceTemplates = [{ uriTemplate: `acme://${big}/{id}`, name: big, description: big }];
+          x.resourceTemplates = [{ uriTemplate: `acme://${big}/{id}`, name: big, title: big, description: big }];
           x.instructions = big;
+          // Server, resource, template and prompt names and titles are in the corpus from 1.3.0 (A11-01).
+          x.serverInfo = { name: big, title: big, description: big, version: '1' };
+          x.discoverRaw = { serverInfo: { name: `${big}x`, title: `${big}x`, description: `${big}x` } };
+          x.resources = x.resources.map((r) => ({ ...r, title: big }));
+          x.prompts = [{ name: big, title: big, description: big, arguments: [{ name: big, title: big, description: big }] }];
           // Every field of the read item, not only its text (A09-03): mimeType and _meta are server data too.
           const meta = { ui: { domain: big, csp: { connectDomains: [big], resourceDomains: [big], frameDomains: [big] } }, 'openai/widgetCSP': { connect_domains: [big], redirect_domains: [big] }, 'openai/widgetDomain': big };
           x.resourceReads[uiUri] = { ok: true, durationMs: 1, raw: { contents: [{ uri: uiUri, mimeType: `text/html;a${big}x`, text: big.repeat(4), _meta: meta }, { uri: big, mimeType: big, blob: big, _meta: meta }] } };

@@ -100,7 +100,8 @@ describe('F109: a corpus finding on a prompt names the prompt', () => {
   it('locationOf names the prompt for prompt.description and prompt.argument.description', () => {
     const s = snap({ prompts });
     const where = corpus(s).filter((e) => e.where.startsWith('prompt.')).map(locationOf);
-    expect(where).toEqual(['prompt "summarize" description', 'prompt "login" description', 'prompt "login" argument creds description']);
+    // Prompt names are corpus entries from 1.3.0 (A11-01).
+    expect(where).toEqual(['prompt "summarize" name', 'prompt "summarize" description', 'prompt "login" name', 'prompt "login" description', 'prompt "login" argument creds description']);
   });
 
   it('INJ-005 and DATA-003 messages carry the prompt name, once', () => {

@@ -26,7 +26,7 @@ Run `npx mcp-review-check https://mcp.example.com/mcp` (no install, no account).
 | **SRV** endpoint and deployment | HTTPS, public IPv4, tunnels, cross-host redirects, DNS-rebinding `Invalid Host`, Origin handling, WAF challenges, latency, server naming |
 | **SPEC** protocol conformance | initialize / `server/discover` shape, declared capabilities, content types, 202 for notifications, session ids, version negotiation, error codes, `_meta` keys, icons, 2026-07-28 caching hints |
 | **TOOL** tool metadata and schemas | name rules, titles, descriptions, parameter descriptions, `readOnlyHint` / `destructiveHint` / `openWorldHint`, contradictory or misleading hints, schema validity, catch-all HTTP tools, dispatchers, OpenAI `_meta` keys |
-| **INJ** prompt injection | hidden Unicode, homoglyphs, HTML comments, encoded payloads, "ignore previous instructions", steering away from other tools |
+| **INJ** prompt injection | hidden Unicode and terminal escape codes, homoglyphs, HTML comments, fake system tags and chat-template role markers, encoded payloads, "ignore previous instructions", steering away from other tools |
 | **DATA** data collection | conversation history, secrets, payment cards / government IDs, precise location |
 | **POL** unsupported use cases | money transfer, AI media generation, ads and upsells, demo servers |
 | **APPS** MCP Apps widgets | `ui://` links, MIME type, CSP coverage of the origins the HTML uses, widget domains (Claude hash and `openai/widgetDomain`), visibility, sandbox-blocked APIs |

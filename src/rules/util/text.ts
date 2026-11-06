@@ -95,10 +95,23 @@ export function invisibleOutsideCf(cps: string[], i: number): 'hard' | 'soft' | 
 /**
  * The form the regex rules scan (INJ-003..010, DATA, POL): NFKC, then invisible characters folded so they cannot split
  * a keyword (A05-02). Format characters, control characters other than whitespace, combining joiners and variation
- * selectors are removed ("ig\u200Bnore" reads "ignore"; whitespace stays); blanks that render as a space (Hangul fillers, the Braille blank)
- * become a space ("Ignore\u3164previous" reads "Ignore previous"). INJ-001 still reports each of them on the raw text.
+ * selectors are removed ("ig\u200Bnore" reads "ignore"); blanks that render as a space (Hangul fillers, the Braille
+ * blank, NEL) become a space ("Ignore\u3164previous" reads "Ignore previous"). INJ-001 still reports each of them on the
+ * raw text. From 1.3.0 every run of whitespace then becomes one space (A05-03): the rules write their phrases with
+ * single spaces, so "Ignore  all\nprevious instructions" must read the same as the single-spaced form.
  */
 export function scanForm(text: string): string {
+  return collapseSpace(foldInvisible(nfkc(text)));
+}
+
+/** Every whitespace run as one space (A05-03). U+FEFF is \s too, but foldInvisible has removed it by now. */
+const SPACE_RUN = /\s+/g;
+function collapseSpace(text: string): string {
+  return text.replace(SPACE_RUN, ' ');
+}
+
+/** foldInvisible(nfkc(text)) with line breaks kept: for the patterns that need a line structure (INJ-003 role turns). */
+export function lineForm(text: string): string {
   return foldInvisible(nfkc(text));
 }
 
@@ -112,7 +125,8 @@ export function scanEntry(e: CorpusEntry): string {
 
 /** scanForm without NFKC: for INJ-002, where NFKC would erase the fullwidth and mathematical letters it looks for. */
 // U+FEFF is \s in JavaScript but invisible, so only real whitespace is kept (review R110-Q1-02).
-const FOLD_BLANK = /[\u3164\uFFA0\u115F\u1160\u2800]/gu;
+// NEL (U+0085) is a line break in some renderers but not \s in JavaScript: a space, so it cannot join two words (A05-03).
+const FOLD_BLANK = /[\u3164\uFFA0\u115F\u1160\u2800\u0085]/gu;
 const FOLD_DROP = /(?![\t\n\v\f\r ])[\p{Cf}\p{Cc}\u034F\u17B4\u17B5\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu;
 export function foldInvisible(text: string): string {
   return text.replace(FOLD_BLANK, ' ').replace(FOLD_DROP, '');
@@ -149,14 +163,19 @@ export function foldNote(raw: string, match?: { index: number; length: number })
  */
 function foldedWithin(raw: string, start: number, end: number): boolean {
   let pos = 0;
+  let space = false; // the last kept character was whitespace: a following one is collapsed into it (A05-03)
   for (const ch of nfkc(raw)) {
     if (pos >= end) return false;
     if (ch.replace(FOLD_BLANK, ' ') !== ch) {
-      if (pos >= start) return true;
-      pos += 1;
+      if (pos >= start && !space) return true;
+      if (!space) pos += 1;
+      space = true;
     } else if (ch.replace(FOLD_DROP, '') === '') {
       if (pos > start) return true;
-    } else pos += ch.length;
+    } else if (/^\s$/.test(ch)) {
+      if (!space) pos += 1;
+      space = true;
+    } else { pos += ch.length; space = false; }
   }
   return false;
 }
@@ -193,7 +212,10 @@ export type CorpusWhere =
   | 'tool.name' | 'tool.title' | 'tool.annotations.title' | 'tool.description' | 'param.description'
   | 'param.title' | 'param.enum' | 'param.default' | 'param.examples' | 'param.name'
   | 'instructions' | 'prompt.description' | 'prompt.argument.description' | 'resource.description'
-  | 'resourceTemplate.description';
+  | 'resourceTemplate.description'
+  // From 1.3.0 (A05-01, A11-01).
+  | 'schema.description' | 'server.name' | 'server.title' | 'server.description' | 'prompt.name' | 'prompt.title'
+  | 'prompt.argument.title' | 'resource.name' | 'resource.title' | 'resourceTemplate.name' | 'resourceTemplate.title';
 
 export interface CorpusEntry {
   text: string;
@@ -213,7 +235,13 @@ export interface CorpusEntry {
  * - `keys`: property names (`param.name`), read by INJ-001 only (TOOL-033 does not cover their characters).
  * Schema `title`s (`param.title`) are always in.
  */
-export interface CorpusScope { values?: boolean; samples?: boolean; keys?: boolean }
+export interface CorpusScope { values?: boolean; samples?: boolean; keys?: boolean; names?: boolean }
+
+/**
+ * Names of the server, prompts, resources and templates (A11-01): identifiers, not prose. On by default (INJ-001..003
+ * read them); a rule whose wording does not apply to a name opts out with `names: false`.
+ */
+const NAME_WHERE: ReadonlySet<CorpusWhere> = new Set(['server.name', 'prompt.name', 'resource.name', 'resourceTemplate.name']);
 
 const SCHEMA_VALUE: ReadonlySet<CorpusWhere> = new Set(['param.enum']);
 const SCHEMA_SAMPLE: ReadonlySet<CorpusWhere> = new Set(['param.default', 'param.examples']);
@@ -239,7 +267,7 @@ function stringLeaves(value: unknown, path: string, out: Array<[string, string]>
  */
 const CORPUS_MEMO = new WeakMap<object, { sig: unknown[]; entries: CorpusEntry[] }>();
 const corpusSig = (snap: Snapshot): unknown[] =>
-  [snap.tools, snap.tools.length, snap.prompts, snap.prompts.length, snap.resources, snap.resources.length, snap.resourceTemplates, snap.resourceTemplates.length, snap.instructions];
+  [snap.tools, snap.tools.length, snap.prompts, snap.prompts.length, snap.resources, snap.resources.length, snap.resourceTemplates, snap.resourceTemplates.length, snap.instructions, snap.serverInfo, snap.discoverRaw];
 
 export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
   const sig = corpusSig(snap);
@@ -254,8 +282,8 @@ export function corpus(snap: Snapshot, scope: CorpusScope = {}): CorpusEntry[] {
     queueMicrotask(() => { if (CORPUS_MEMO.get(key) === built) CORPUS_MEMO.delete(key); });
   }
   const all = memo.entries;
-  const { values = true, samples = false, keys = false } = scope;
-  return all.filter((e) => (values || !SCHEMA_VALUE.has(e.where)) && (samples || !SCHEMA_SAMPLE.has(e.where)) && (keys || e.where !== 'param.name'));
+  const { values = true, samples = false, keys = false, names = true } = scope;
+  return all.filter((e) => (values || !SCHEMA_VALUE.has(e.where)) && (samples || !SCHEMA_SAMPLE.has(e.where)) && (keys || e.where !== 'param.name') && (names || !NAME_WHERE.has(e.where)));
 }
 
 function buildCorpus(snap: Snapshot): CorpusEntry[] {
@@ -272,7 +300,9 @@ function buildCorpus(snap: Snapshot): CorpusEntry[] {
     walkSchema(t.inputSchema, (v) => {
       const n = v.node;
       const at = v.path === '/' ? '' : v.path;
-      if (v.viaProperty) push(n.description, 'param.description', { tool: name, path: v.path });
+      // A property's description, or (A05-01) one on any other node: the root, items, a combinator branch, $defs. The
+      // walker visits each node once, so a $ref target is not pushed again.
+      push(n.description, v.viaProperty ? 'param.description' : 'schema.description', { tool: name, path: v.path });
       push(n.title, 'param.title', { tool: name, path: `${at}/title` });
       if (Array.isArray(n.enum)) n.enum.forEach((x, i) => push(x, 'param.enum', { tool: name, path: `${at}/enum/${i}` }));
       push(n.const, 'param.enum', { tool: name, path: `${at}/const` });
@@ -286,15 +316,42 @@ function buildCorpus(snap: Snapshot): CorpusEntry[] {
     });
   }
   push(snap.instructions, 'instructions');
-  for (const p of snap.prompts) {
-    const name = isStr(p.name) ? p.name : undefined;
-    push(p.description, 'prompt.description', { subject: name });
-    if (Array.isArray(p.arguments)) {
-      for (const a of p.arguments) if (isObj(a)) push(a.description, 'prompt.argument.description', { subject: name, path: isStr(a.name) ? a.name : undefined });
+  // serverInfo from initialize and from server/discover (A11-01); a discover value equal to the initialize one is not repeated.
+  const infos = [snap.serverInfo, isObj(snap.discoverRaw) ? snap.discoverRaw.serverInfo : undefined];
+  for (const key of ['name', 'title', 'description'] as const) {
+    const seen = new Set<unknown>();
+    for (const info of infos) {
+      if (!isObj(info) || seen.has(info[key])) continue;
+      seen.add(info[key]);
+      push(info[key], `server.${key}`);
     }
   }
-  for (const r of snap.resources) push(r.description, 'resource.description', { subject: isStr(r.uri) ? r.uri : undefined });
-  for (const r of snap.resourceTemplates) push(r.description, 'resourceTemplate.description', { subject: isStr(r.uriTemplate) ? r.uriTemplate : undefined });
+  for (const p of snap.prompts) {
+    const name = isStr(p.name) ? p.name : undefined;
+    push(p.name, 'prompt.name', { subject: name });
+    push(p.title, 'prompt.title', { subject: name });
+    push(p.description, 'prompt.description', { subject: name });
+    if (Array.isArray(p.arguments)) {
+      for (const a of p.arguments) {
+        if (!isObj(a)) continue;
+        const path = isStr(a.name) ? a.name : undefined;
+        push(a.title, 'prompt.argument.title', { subject: name, path });
+        push(a.description, 'prompt.argument.description', { subject: name, path });
+      }
+    }
+  }
+  for (const r of snap.resources) {
+    const subject = isStr(r.uri) ? r.uri : undefined;
+    push(r.name, 'resource.name', { subject });
+    push(r.title, 'resource.title', { subject });
+    push(r.description, 'resource.description', { subject });
+  }
+  for (const r of snap.resourceTemplates) {
+    const subject = isStr(r.uriTemplate) ? r.uriTemplate : undefined;
+    push(r.name, 'resourceTemplate.name', { subject });
+    push(r.title, 'resourceTemplate.title', { subject });
+    push(r.description, 'resourceTemplate.description', { subject });
+  }
   return out;
 }
 
@@ -306,8 +363,9 @@ function buildCorpus(snap: Snapshot): CorpusEntry[] {
 export function locationOf(e: CorpusEntry): string {
   if (e.where.startsWith('prompt.') && e.subject !== undefined) {
     const prompt = `prompt ${JSON.stringify(e.subject)}`;
-    if (e.where === 'prompt.argument.description') return `${prompt} argument${e.path ? ` ${shortPointer(e.path)}` : ''} description`;
-    return `${prompt} description`;
+    const field = e.where.slice(e.where.lastIndexOf('.') + 1);
+    if (e.where.startsWith('prompt.argument.')) return `${prompt} argument${e.path ? ` ${shortPointer(e.path)}` : ''} ${field}`;
+    return `${prompt} ${field}`;
   }
   return e.path ? `${e.where} ${shortPointer(e.path)}` : e.where;
 }

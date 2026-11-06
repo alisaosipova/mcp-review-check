@@ -1,7 +1,7 @@
 // 1.1.0 Q1: INJ-001 invisible characters outside \p{Cf} (A05-02); INJ-002 fullwidth, mathematical and Armenian lookalikes (A05-10).
 import { describe, expect, it } from 'vitest';
 import { hiddenChars, injectionRules, mixedScript } from '../src/rules/injection.js';
-import { escapeHidden, scanForm } from '../src/rules/util/text.js';
+import { escapeHidden, foldInvisible, scanForm } from '../src/rules/util/text.js';
 import { evaluate, snap, tool } from './helpers.js';
 
 const byId = (id: string) => injectionRules.find((r) => r.id === id)!;
@@ -44,10 +44,12 @@ describe('A05-02 INJ-001 sees invisible characters outside \\p{Cf}', () => {
       expect(run('INJ-005', `Search notes. ${d}`).map((x) => x.severity), d).toEqual(['error']);
     }
   });
-  it('scanForm keeps ordinary whitespace and text', () => {
-    expect(scanForm('a\tb\nc\u000Bd')).toBe('a\tb\nc\u000Bd');
+  it('scanForm keeps ordinary whitespace as a word break and text', () => {
+    // From 1.3.0 (A05-03) each whitespace run reads as one space; foldInvisible still keeps it as written.
+    expect(scanForm('a\tb\nc\u000Bd')).toBe('a b c d');
+    expect(foldInvisible('a\tb\nc\u000Bd')).toBe('a\tb\nc\u000Bd');
     expect(scanForm('ｆｕｌｌ')).toBe('full');
-    expect(scanForm('a\fb\rc d')).toBe('a\fb\rc d');
+    expect(scanForm('a\fb\rc d')).toBe('a b c d');
   });
   it('U+FEFF (a \\s character in JavaScript) is folded away (review R110-Q1-02)', () => {
     expect(scanForm('Ig\uFEFFnore')).toBe('Ignore');
