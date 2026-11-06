@@ -1,7 +1,7 @@
 // Connection diagnostics: turn "fetch failed" and HTML error pages into a cause and a next step.
 import type { ConnectDiagnosis } from './snapshot.js';
 import { displayUrl } from './rules/util/net.js';
-import { proxyForUrl, proxyLabel } from './proxy.js';
+import { isSocksProxy, proxyForUrl, proxyKind, proxyLabel, proxyTunnels, proxyVarFor } from './proxy.js';
 
 const TLS_CODE = /^(CERT_|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_(GET|VERIFY)|ERR_TLS_|ERR_SSL_|HOSTNAME_MISMATCH)/;
 
@@ -23,12 +23,47 @@ export function isTlsCode(code: string | undefined): boolean {
 }
 
 const PROXY_HOP = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_PRX_TLS']);
+/** undici's SOCKS5 client errors (lib/core/socks5-client.js): the proxy hop failed or refused, not the target. */
+const SOCKS5_CODE = /^UND_ERR_SOCKS5/;
 
-function proxyAuth(proxyLabelText: string): ConnectDiagnosis {
+/** "set HTTPS_PROXY=http://user:pass@host:port" naming the variable that supplied the proxy, with its scheme. */
+function credentialsExample(variable: string, proxy: string): string {
+  const scheme = isSocksProxy(proxy) ? 'socks5' : /^https:/i.test(proxy) ? 'https' : 'http';
+  return `${variable}=${scheme}://user:pass@host:port`;
+}
+
+function proxyAuth(url: URL, proxy: string): ConnectDiagnosis {
+  const variable = proxyVarFor(url) ?? 'HTTPS_PROXY';
   return {
-    kind: 'http', status: 407, summary: `HTTP 407: the proxy ${proxyLabelText} requires authentication (Proxy Authentication Required)`,
-    hint: 'put the credentials in the proxy URL (HTTPS_PROXY=http://user:pass@host:port), or list the target in NO_PROXY',
+    kind: 'http', status: 407, summary: `HTTP 407: the ${proxyKind(proxy)} ${proxyLabel(proxy)} requires authentication (Proxy Authentication Required)`,
+    hint: `put the credentials in the proxy URL (${credentialsExample(variable, proxy)}), or list the target in NO_PROXY`,
   };
+}
+
+/** A failure inside the SOCKS5 exchange (UND_ERR_SOCKS5_*): the proxy rejected the credentials, or its reply named why
+ *  it could not reach the target (RFC 1928 s6 reply codes). */
+function socksFailure(url: URL, hostPort: string, proxy: string, code: string): ConnectDiagnosis {
+  const p = `the SOCKS5 proxy ${proxyLabel(proxy)}`;
+  const variable = proxyVarFor(url) ?? 'ALL_PROXY';
+  if (code === 'UND_ERR_SOCKS5_AUTH_FAILED') {
+    return { kind: 'other', code, summary: `${p} rejected the user name and password (${code})`, hint: `check the credentials in ${variable} (${credentialsExample(variable, proxy)})` };
+  }
+  if (code === 'UND_ERR_SOCKS5_AUTH_REJECTED' || code === 'UND_ERR_SOCKS5_AUTH_METHOD') {
+    return { kind: 'other', code, summary: `${p} requires an authentication method the proxy URL does not offer (${code})`, hint: `put the user name and password in ${variable} (${credentialsExample(variable, proxy)})` };
+  }
+  const reply = /^UND_ERR_SOCKS5_REPLY_(\d+)$/.exec(code)?.[1];
+  switch (reply) {
+    case '5':
+      return { kind: 'refused', code, summary: `${p} could not connect to ${hostPort}: connection refused (${code})`, hint: 'nothing is listening there: check that the server is running and the port is right' };
+    case '3':
+    case '4':
+      return { kind: 'other', code, summary: `${p} could not reach ${hostPort}: ${reply === '3' ? 'network' : 'host'} unreachable (${code})`, hint: 'check the address; the proxy has no route to it (list hosts to reach directly in NO_PROXY)' };
+    case '6':
+      return { kind: 'timeout', code, summary: `${p} could not reach ${hostPort}: TTL expired (${code})`, hint: 'check that the host is reachable from the proxy (firewall, VPN, WAF)' };
+    case '2':
+      return { kind: 'other', code, summary: `${p} does not allow a connection to ${hostPort}: not allowed by the proxy's rules (${code})`, hint: 'ask the proxy administrator to allow the target, or list it in NO_PROXY' };
+  }
+  return { kind: 'other', code, summary: `${p} failed to connect to ${hostPort} (${code})`, hint: `check ${variable}: the proxy address and port and that it speaks SOCKS5; list hosts to reach directly in NO_PROXY` };
 }
 
 /** Describe a network-level failure for `url` by its error code (falls back to the cause message). */
@@ -38,14 +73,19 @@ export function describeCause(url: URL, cause: { code?: string; message?: string
   const hostPort = `${url.hostname}:${url.port || (url.protocol === 'https:' ? 443 : 80)}`;
   // With a proxy in the way, the socket error comes from the proxy hop (or the proxy's refusal to tunnel), not from the target.
   const proxy = proxyForUrl(url);
-  const viaProxy = proxy && (PROXY_HOP.has(code ?? '') || /^Proxy response \(\d+\)|\b407\b/.test(message ?? ''));
+  const socks = !!proxy && isSocksProxy(proxy);
+  if (proxy && socks && SOCKS5_CODE.test(code ?? '')) return socksFailure(url, hostPort, proxy, code!);
+  const viaProxy = proxy && (PROXY_HOP.has(code ?? '') || (!socks && /^Proxy response \(\d+\)|\b407\b/.test(message ?? '')));
   if (proxy && viaProxy) {
     const p = proxyLabel(proxy);
-    if (/\b407\b/.test(message ?? '')) return proxyAuth(p);
+    if (!socks && /\b407\b/.test(message ?? '')) return proxyAuth(url, proxy);
     const kind = code === 'ECONNREFUSED' ? 'refused' : code === 'ENOTFOUND' || code === 'EAI_AGAIN' ? 'dns' : code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' ? 'timeout' : code === 'ECONNRESET' || code === 'EPIPE' || code === 'UND_ERR_SOCKET' ? 'reset' : 'other';
+    const variable = proxyVarFor(url) ?? 'HTTPS_PROXY / HTTP_PROXY';
+    // CONNECT only where undici tunnels (an https: target, or an https: proxy); plain forwarding and SOCKS5 use none.
+    const tunnel = proxyTunnels(url, proxy) ? ', that it is running and allows CONNECT to the target' : ' and that it is running';
     return {
-      kind, code, summary: `cannot reach ${hostPort} through the HTTP proxy ${p} (${code ?? 'proxy error'})`,
-      hint: 'check HTTPS_PROXY / HTTP_PROXY: the proxy address and port, that it is running and allows CONNECT to the target; list hosts to reach directly in NO_PROXY',
+      kind, code, summary: `cannot reach ${hostPort} through the ${proxyKind(proxy)} ${p} (${code ?? 'proxy error'})`,
+      hint: `check ${variable}: the proxy address and port${tunnel}; list hosts to reach directly in NO_PROXY`,
     };
   }
   switch (code) {
@@ -124,12 +164,14 @@ function serverError(url: URL, status: number, title: string | undefined, html: 
   const sdk = (message ?? '').replace(/[\s:]+$/, '');
   const page = html ? ` (${title ? `"${title}" ` : ''}HTML page)` : '';
   if (GATEWAY.has(status)) {
-    const via = proxyUrl ? `the HTTP proxy ${proxyLabel(proxyUrl)}` : 'the gateway or proxy in front of the server';
+    // A SOCKS5 proxy only relays bytes: a gateway status comes from behind it, not from the proxy.
+    const httpProxy = proxyUrl && !isSocksProxy(proxyUrl) ? proxyUrl : undefined;
+    const via = httpProxy ? `the ${proxyKind(httpProxy)} ${proxyLabel(httpProxy)}` : 'the gateway or proxy in front of the server';
     // A plain-text body ("upstream connect error ...", "no healthy upstream") often names the cause: keep it.
     const said = html ? '' : gatewayText(sdk, status);
     return {
       kind: 'http', status, summary: `HTTP ${status}${page}: ${via} could not reach ${hostPort}${said ? ` (it answered: ${said})` : ''}`,
-      hint: proxyUrl
+      hint: httpProxy
         ? 'check that the MCP server is running and that the proxy can reach it; list hosts to reach directly in NO_PROXY'
         : 'check that the MCP server behind it is running; the URL path is not the cause',
     };
@@ -141,7 +183,10 @@ function serverError(url: URL, status: number, title: string | undefined, html: 
   };
 }
 
-/** Describe an HTTP-level handshake failure: 404/405/410 or a non-5xx HTML page means the URL is not an MCP endpoint. */
+/** The handshake POST got a status that says no MCP endpoint is there: not found, gone, or POST not supported. */
+const NOT_MCP_STATUS = new Set([404, 405, 410, 501]);
+
+/** Describe an HTTP-level handshake failure: 404/405/410/501 or a non-5xx HTML page means the URL is not an MCP endpoint. */
 export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis {
   const html = /text\/html/i.test(f.contentType ?? '') || /<(!doctype|html|head|body)\b/i.test(f.body ?? '');
   const sse = /\/sse\/?$/i.test(url.pathname);
@@ -149,11 +194,15 @@ export function describeHttpFailure(url: URL, f: HttpFailure): ConnectDiagnosis 
   // The SDK reports an unexpected content type as code -1: that is not an HTTP status.
   const status = f.status !== undefined && f.status >= 100 ? f.status : undefined;
   // 407 is the proxy's answer, not the server's.
+  // A SOCKS5 proxy answers no HTTP status: a 407 then comes from the server or a gateway behind it.
   const proxy = status === 407 ? proxyForUrl(url) : undefined;
-  if (proxy) return proxyAuth(proxyLabel(proxy));
+  if (proxy && !isSocksProxy(proxy)) return proxyAuth(url, proxy);
+  // 501 (and 405) to the POST: the server does not take POST at that path (a static file server), so the URL is not an
+  // MCP endpoint; checked before the 5xx branch (A10-01).
+  const notMcpStatus = status !== undefined && NOT_MCP_STATUS.has(status);
   // A 5xx page (a gateway's "502 Bad Gateway", an app's error page) says the server behind the URL failed, not that the path is wrong.
-  if (status !== undefined && status >= 500) return serverError(url, status, html ? htmlTitle(f.body) : undefined, html, f.message);
-  if ((status !== undefined && [404, 405, 410].includes(status)) || html) {
+  if (status !== undefined && status >= 500 && !notMcpStatus) return serverError(url, status, html ? htmlTitle(f.body) : undefined, html, f.message);
+  if (notMcpStatus || html) {
     const title = html ? htmlTitle(f.body) : undefined;
     const what = `${status !== undefined ? `HTTP ${status}` : 'response'}${html ? ` with an HTML page${title ? ` ("${title}")` : ''}` : ''}`;
     const hint = sse
@@ -192,6 +241,31 @@ export function describeSseFailure(url: URL, message: string): ConnectDiagnosis 
   return {
     kind: 'http', summary: `${displayUrl(url.href)} serves the deprecated HTTP+SSE transport, but its handshake failed: ${message}`,
     hint: 'serve Streamable HTTP, or fix the SSE endpoint event (it must point to the same origin)',
+  };
+}
+
+/** What the HTTP connect wait is, for the hints below (src/connect.ts: connectTimeout). */
+const CONNECT_WAIT = 'HTTP connect waits min(--timeout, 15000) ms';
+
+/** The SDK initialize got no answer within `ms` although the server answered the raw probes (A02-04): kind `timeout`. */
+export function describeInitTimeout(ms: number): ConnectDiagnosis {
+  return {
+    kind: 'timeout', summary: `initialize got no answer within ${ms} ms`,
+    hint: `the server accepted the connection but did not answer; ${CONNECT_WAIT}; a cold-starting server may need a warm-up request first`,
+  };
+}
+
+/** No request got any answer: the unauthenticated initialize timed out and so did the handshake (A10-03). Through a
+ *  proxy the tool cannot tell whether the server accepted the connection, so the message names the proxy instead. */
+export function describeNoAnswer(url: URL, ms: number): ConnectDiagnosis {
+  const hostPort = `${url.hostname}:${url.port || (url.protocol === 'https:' ? 443 : 80)}`;
+  const proxy = proxyForUrl(url);
+  return {
+    kind: 'no-answer',
+    summary: proxy
+      ? `no answer to POST initialize from ${hostPort} through the ${proxyKind(proxy)} ${proxyLabel(proxy)} within ${ms} ms`
+      : `the server accepted the connection on ${hostPort} but did not answer POST initialize within ${ms} ms`,
+    hint: `check that the process serving this port is the MCP server and is not blocked; ${CONNECT_WAIT}, so raise --timeout for a slow cold start`,
   };
 }
 

@@ -94,9 +94,12 @@ export function unfinishedPhases(snap: Snapshot): Unfinished | undefined {
 
 const LISTS: Record<string, string> = { tools: 'tools', resources: 'resources', resourceTemplates: 'resourceTemplates', prompts: 'prompts' };
 /** Set as a whole when their step finished: missing means not observed (yet). */
-const ATOMIC: Record<string, string> = { toolsRelist: 'tools re-list', toolsFreshConnection: 'tools re-list', toolsWithoutUi: 'text-only tools/list', authProbe: 'auth probe' };
+const ATOMIC: Record<string, string> = { toolsRelist: 'tools re-list', toolsFreshConnection: 'tools re-list', toolsWithoutUi: 'text-only tools/list' };
 /** Filled step by step: partial while their phase runs. */
 const GROWING: Record<string, string> = { active: 'active tool calls' };
+/** On the snapshot while their phase runs, but judged only once it finished: a rule that reads one of an unfinished
+ *  phase is skipped even when it found something (a partial auth probe has no PRM yet, which is no AUTH-004 finding). */
+const PARTIAL: Record<string, string> = { authProbe: 'auth probe' };
 /** notifications (SPEC-024) and stdio (SRV-018: non-JSON-RPC stdout) are collected from every exchange too (A04-02). */
 const GROWING_TRANSPORT: Record<string, string> = { observedErrors: RUN_WIDE, modernResults: RUN_WIDE, notifications: RUN_WIDE, stdio: RUN_WIDE, tls: 'auth probe' };
 
@@ -107,7 +110,7 @@ const GROWING_TRANSPORT: Record<string, string> = { observedErrors: RUN_WIDE, mo
  * wrapped; everything below them is the snapshot's own objects. The exchange log and the latency samples are left out:
  * the rules judge them on the requests that were made.
  */
-function tracked(snap: Snapshot, unfinished: Unfinished, hit: Set<string>): Snapshot {
+function tracked(snap: Snapshot, unfinished: Unfinished, hit: Set<string>, partial: Set<string> = new Set()): Snapshot {
   const note = (phase: string) => { if (unfinished.has(phase)) hit.add(phase); };
   /** A map filled entry by entry during `phase`: a missing entry or a walk over all of them depends on it. */
   const keyed = <T extends object>(target: T, phase: string): T => new Proxy(target, {
@@ -134,6 +137,7 @@ function tracked(snap: Snapshot, unfinished: Unfinished, hit: Set<string>): Snap
       if (LISTS[k] && !t.listMeta[LISTS[k]]) note('listing');
       else if (ATOMIC[k] && v === undefined) note(ATOMIC[k]);
       else if (GROWING[k]) note(GROWING[k]);
+      else if (PARTIAL[k] && unfinished.has(PARTIAL[k])) { note(PARTIAL[k]); partial.add(PARTIAL[k]); }
       return v;
     },
   });
@@ -215,8 +219,9 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     }
     let raw;
     const hit = new Set<string>();
+    const partial = new Set<string>();
     try {
-      raw = rule.check(unfinished ? tracked(snap, unfinished, hit) : snap);
+      raw = rule.check(unfinished ? tracked(snap, unfinished, hit, partial) : snap);
     } catch (err) {
       if (applies) rulesRun++;
       // Also for a rule outside --target: it runs for the score, which is then short of its findings (spec is always active).
@@ -228,7 +233,7 @@ export function runRules(snap: Snapshot, rules: Rule[], opts: EngineOptions = {}
     }
     // After a --max-duration stop a rule that read data of an unfinished phase keeps what it found, but finding nothing
     // there is no pass: it is skipped instead of counted as run.
-    if (hit.size && raw.length === 0) {
+    if ((hit.size && raw.length === 0) || partial.size) {
       if (applies) skipped.push({ ruleId: rule.id, reason: snap.limits?.budgetExhausted ? BUDGET_REASON : STOPPED_REASON });
       continue;
     }

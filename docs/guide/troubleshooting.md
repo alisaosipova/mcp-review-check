@@ -10,8 +10,10 @@ Start with `--verbose`: it prints a redacted trace of the HTTP requests on stder
 |---|---|
 | The hostname does not resolve | Typo in the URL, a private DNS name that only your VPN resolves, a missing public DNS record. Try `nslookup <host>` from the same machine. |
 | Connection refused or timed out | The server is not listening on that port, a firewall drops the traffic, or you need a proxy ([Corporate proxy](#corporate-proxy)). |
+| `the server accepted the connection on host:port but did not answer POST initialize within N ms` (JSON kind `no-answer`, since 1.2.0) | Something accepts TCP on that port but never answers: another process holds the port, a debugger has paused the server, or a cold start takes longer than the connect wait. After the first unanswered request the run waits only 2 s for `server/discover` and the handshake, so it fails in about one connect wait (`min(--timeout, 15000)` ms) instead of four. |
+| `initialize got no answer within N ms` (kind `timeout`) | The server answered the first requests but not the handshake. HTTP connect waits `min(--timeout, 15000)` ms whatever `--timeout` is; a cold-starting server may need a warm-up request first. |
 | Certificate not trusted (`CERT_*`, self-signed) | See [Self-signed and corporate CA certificates](#self-signed-and-corporate-ca-certificates). |
-| 404, 405 or an HTML page | The URL is not the MCP endpoint. The report suggests one, usually `<url>/mcp`. |
+| 404, 405, 501 or an HTML page | The URL is not the MCP endpoint (501 is what a static file server answers to a POST). The report suggests one, usually `<url>/mcp`. |
 | 401 | Not an error: the auth checks run and the tool checks need a token ([Authentication](auth.md)). |
 
 A local server is reachable only from where the tool runs: inside Docker, `localhost` is the container ([CI and automation](ci.md#docker)).
@@ -41,10 +43,11 @@ npx mcp-review-check https://mcp.example.com/mcp
 ```
 
 - `HTTPS_PROXY` applies to `https://` targets and `HTTP_PROXY` to `http://` ones; when only `HTTP_PROXY` is set it is used for `https://` too, and `ALL_PROXY` is the fallback for both (lower-case names work as well). `NO_PROXY` is a comma-separated list of hosts and domain suffixes that connect directly.
-- `http://` targets are sent to an HTTP proxy as ordinary forwarded requests (absolute-URI), so a proxy that only forwards plain HTTP works for them. `https://` targets need `CONNECT` tunnelling, which all common corporate proxies support; a forward-only proxy cannot carry them.
+- `http://` targets are sent to an `http://` proxy as ordinary forwarded requests (absolute-URI), so a proxy that only forwards plain HTTP works for them. `https://` targets, and every target behind an `https://` proxy URL, need `CONNECT` tunnelling, which all common corporate proxies support; a forward-only proxy cannot carry them. A SOCKS5 proxy uses neither: every request goes through its own SOCKS connect. `--verbose` prints the route (proxy, variable and method, credentials removed) on a `proxy:` line.
 - SOCKS5 proxies work: `socks5://host:1080` and `socks5h://host:1080` (user:pass in the URL is used for username/password authentication). The target host name is always sent to the proxy, so it resolves the name (what curl calls `socks5h`); `socks5://` and `socks5h://` behave the same. SOCKS4 and SOCKS4a are not supported: such a value stops the run with a usage error (exit 2) that names the variable (`HTTPS_PROXY: unsupported proxy scheme "socks4://" ...`), without credentials. SOCKS5 support in the HTTP client is marked experimental upstream.
 - Credentials in the proxy URL (`http://user:pass@proxy:3128`) are accepted and redacted in every output. Set the variable in the environment, not in a script that gets logged.
-- A refused or unreachable proxy, or a `407 Proxy Authentication Required` answer, is named as the cause of the failure (credentials removed).
+- A refused or unreachable proxy, or a `407 Proxy Authentication Required` answer, is named as the cause of the failure (credentials removed), with the kind of proxy and the variable that set it (`HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY`). The hint mentions `CONNECT` only where the request is tunnelled.
+- SOCKS5 failures are named as the proxy's (since 1.2.0): rejected credentials (`UND_ERR_SOCKS5_AUTH_FAILED`) or a proxy that requires them (`UND_ERR_SOCKS5_AUTH_REJECTED`), and the proxy's reply when it could not reach the server: refused (`UND_ERR_SOCKS5_REPLY_5`), host or network unreachable (`_4`, `_3`), not allowed by its rules (`_2`).
 - A proxy that inspects TLS presents its own certificate: add its CA with `NODE_EXTRA_CA_CERTS` as above.
 - **The raw TLS check is inconclusive behind a proxy.** The tool opens its own TLS connection to measure the protocol version and the certificate chain (see [What the tool sends](privacy-and-requests.md)); that socket cannot go through an HTTP proxy, so for a proxied host the check is reported as inconclusive (info) with the reason instead of failing. Hosts listed in `NO_PROXY` are still checked. Re-run from a machine with direct access (a public CI runner) to get the TLS result.
 - The client library's `ExperimentalWarning` about its proxy support is not printed; every other warning still is.
@@ -56,7 +59,7 @@ A `403`, a challenge page ("Just a moment...", "Attention required") or a CAPTCH
 
 ## Timeouts and --max-duration
 
-`--timeout <ms>` is per request (default 30000). `--max-duration <ms>` is the deadline for the whole run: when it runs out the report covers what ran and says in which phase it stopped. Exit 3 means it stopped before the handshake (an unreachable or very slow server), exit 4 after it (a slow server that did answer). In CI, `|| [ $? -eq 4 ]` lets a slow run pass while still failing on everything else ([CI and automation](ci.md)). A first request to a serverless server can take many seconds because of a cold start: warm it up with one request, or raise `--timeout`.
+`--timeout <ms>` is per request (default 30000). `--max-duration <ms>` is the deadline for the whole run: when it runs out the report covers what ran and says in which phase it stopped. Exit 3 means it stopped before the handshake (an unreachable or very slow server), exit 4 after it (a slow server that did answer). In CI, `|| [ $? -eq 4 ]` lets a slow run pass while still failing on everything else ([CI and automation](ci.md)). A first request to a serverless server can take many seconds because of a cold start: warm it up with one request, or raise `--timeout`. The HTTP connect requests wait at most 15 s whatever `--timeout` is: a handshake that gets no answer in that time reads `initialize got no answer within <ms> ms`, and a server that answers nothing at all is reported as `no-answer` with its host and port.
 
 ## Exit 3 versus exit 4
 

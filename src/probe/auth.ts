@@ -14,6 +14,9 @@ export interface AuthProbeInput {
   deps: Deps;
   timeoutMs: number;
   activeAuth: boolean;
+  /** Called once with the probe object as soon as it exists; the probe fills it as it goes, so a stop (--max-duration)
+   *  keeps what was observed, the DCR registration included (I-A03-6). */
+  onProbe?: (probe: AuthProbe) => void;
 }
 
 /** The metadata GETs keep their parsed body (keepJson): the PRM and AS observations are that same object (F036). */
@@ -86,6 +89,7 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
     challenge: { status: input.challengeExchange.status ?? 0, raw, parsed: parsed.map((c) => ({ scheme: c.scheme, params: c.params })) },
     prmAttempts: [], as: [], timings: {},
   };
+  input.onProbe?.(probe);
   const bearer = parsed.find((c) => c.scheme === 'bearer' || c.scheme === 'dpop');
   const budget = { retries: METADATA_RETRY_BUDGET };
   const sampleTimeout = metadataTimeout(timeoutMs);
@@ -139,7 +143,7 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
   probe.invalidToken = await requestRetried(tracer, 'auth invalid-token', url, {
     method: 'POST', headers: { ...JSON_HEADERS, ...invalidAuth }, body: JSON.stringify(initializeBody()), timeoutMs,
   }, input.deps.sleep);
-  await closeProbeSession(tracer, url, probe.invalidToken, invalidAuth, timeoutMs);
+  closeProbeSession(tracer, url, probe.invalidToken, invalidAuth, timeoutMs);
 
   // DNS and TLS for the authorization server
   const tlsHosts = new Map<string, TlsHost>();
@@ -162,7 +166,8 @@ export async function runAuthProbe(input: AuthProbeInput): Promise<{ probe: Auth
     }
   }
 
-  if (input.activeAuth && first?.json) probe.active = await activeAuth(tracer, url, first.json, timeoutMs, probe.timings);
+  // probe.active is the object activeAuth fills: the DCR client is on the probe as soon as the registration answers.
+  if (input.activeAuth && first?.json) await activeAuth(tracer, url, first.json, timeoutMs, probe.timings, (probe.active = {}));
   return { probe, tlsHosts: [...tlsHosts.values()] };
 }
 
@@ -171,9 +176,8 @@ function pkce() {
   return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
 }
 
-/** --active-auth: creates a DCR client and probes /authorize and /token with bogus values. */
-async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown>, timeoutMs: number, timings: Record<string, number[]>): Promise<NonNullable<AuthProbe['active']>> {
-  const out: NonNullable<AuthProbe['active']> = {};
+/** --active-auth: creates a DCR client and probes /authorize and /token with bogus values, filling `out` as it goes. */
+async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown>, timeoutMs: number, timings: Record<string, number[]>, out: NonNullable<AuthProbe['active']>): Promise<void> {
   if (isStr(meta.registration_endpoint)) {
     const { exchange, json } = await tracer.request('auth dcr', meta.registration_endpoint, {
       method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, timeoutMs,
@@ -217,7 +221,6 @@ async function activeAuth(tracer: Tracer, url: URL, meta: Record<string, unknown
     timings['token'] = [code.durationMs];
     if (out.clientId) out.token.push(await post('auth token refresh', form({ grant_type: 'refresh_token', refresh_token: 'mcp-review-check-bogus-refresh', client_id: clientId })));
   }
-  return out;
 }
 
 /** Server-chosen text for one stderr line: printable ASCII only (anything else as \u{..}), at most 200 characters. */

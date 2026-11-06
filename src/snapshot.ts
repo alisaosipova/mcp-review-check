@@ -138,7 +138,7 @@ export interface TlsObservation {
 
 /** Why an HTTP handshake failed: the network cause or "not an MCP endpoint", with a hint. */
 export interface ConnectDiagnosis {
-  kind: 'dns' | 'refused' | 'timeout' | 'reset' | 'tls' | 'not-mcp' | 'http' | 'other';
+  kind: 'dns' | 'refused' | 'timeout' | 'no-answer' | 'reset' | 'tls' | 'not-mcp' | 'http' | 'other';
   summary: string;
   code?: string;
   status?: number;

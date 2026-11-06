@@ -6,8 +6,22 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 
 ## [Unreleased]
 
+### Added
+
+- JSON `coverage.diagnosis.kind` can be `no-answer`: the server accepted the connection but answered neither the unauthenticated `initialize` nor the handshake; the summary names host:port and the wait (A10-03).
+- `proxyRouteLine` (`src/proxy.ts`) builds the `--verbose` route line, `proxy: <proxy> via <variable> (SOCKS5 | CONNECT tunnel | plain forwarding; NO_PROXY: ...)`, with credentials removed (I-A02-3).
+
 ### Fixed
 
+- Session-ending DELETEs are no longer awaited one by one: each gets at most 1.5 s and they settle together at the end of the run, so a stateful server that never answers DELETE no longer adds 35 to 50 s to a run (A02-05).
+- A stopped run's session DELETE follows a same-origin 307/308 (`/mcp` → `/mcp/`, at most two hops, never to a URL that adds userinfo), so the session behind the redirect is ended (A02-01).
+- SOCKS5 proxy failures are diagnosed as the proxy's: rejected or missing credentials, and the proxy's refused, unreachable or not-allowed replies; proxy messages name the proxy kind and the variable that set it, and mention `CONNECT` only where the request is tunnelled (A02-02, I-A02-4).
+- An initialize that times out reads `initialize got no answer within <ms> ms` (kind `timeout`, with the HTTP connect-cap hint) instead of `MCP error -32001: Request timed out`, over HTTP and stdio (A02-04).
+- A 501 (or 405) to the handshake POST, as a static file server answers, is again `not an MCP endpoint` with the `<origin>/mcp` hint, instead of a server error (A10-01, a 1.0.1 regression).
+- A server that accepts TCP and never answers fails in about one connect wait instead of four: the preflight is not retried after a timeout, and `server/discover` and the handshake then wait 2 s each (A10-03).
+- The auth probe runs at most once per run: with `--active-auth` a token rejected on `tools/list` no longer registers a second DCR client that no notice named, and the metadata, TLS and timing requests are not repeated (A03-02).
+- The `--active-auth` DCR notice is printed even when `--max-duration` stops the run after the registration (I-A03-6).
+- stdio messages are read in linear time: a 62 MB `tools/list` is read in about a second instead of timing out, and a message bigger than the snapshot budget stops the run while it is being read (A09-05).
 - The `<script type="importmap">` scan of UI HTML (APPS-007, APPS-013) is linear: 2 MB of unclosed importmap openers took about 85 s and ran past `--max-duration`; an opener inside an earlier map body is now read as script text, and a map with no `</script` is parsed once (A09-01).
 - Every field of a `resources/read` content item is capped, not only `text` and `blob`: `uri` at ID_CAP, `mimeType` and `_meta` at TEXT_CAP, each cut listed in `limits.truncated`; the MIME normalization of APPS-003 splits a parameter on its first `=` instead of a regex that was quadratic on a long run of spaces (A09-03).
 - A run stopped by `--max-duration` or the snapshot budget builds the INJ, POL and DATA corpus once, as a complete run does, instead of once per rule (A09-06).

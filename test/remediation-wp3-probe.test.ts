@@ -6,7 +6,7 @@ import type { ModernClient } from '../src/protocol/modern.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { placeholder, runActive, synthesizeArgs, wrongTypeValue } from '../src/probe/active.js';
 import { METADATA_RETRY_BUDGET, METADATA_TIMEOUT_MS, prmCandidates, runAuthProbe } from '../src/probe/auth.js';
-import { closeProbeSession, defaultTlsCheck, originProbes, preflight, sameHostRedirect, TLS_TIMEOUT_MS, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
+import { closeProbeSession, defaultTlsCheck, originProbes, preflight, sameHostRedirect, settleSessionEnds, TLS_TIMEOUT_MS, tlsCheckWithRetry, type Deps } from '../src/probe/network.js';
 import { runWireProbes, sdkSessionGet } from '../src/probe/wire.js';
 import { RULES } from '../src/rules/index.js';
 import type { Snapshot } from '../src/snapshot.js';
@@ -154,6 +154,7 @@ describe('F030: sessions minted by raw initialize probes are closed', () => {
     const pf = await preflight(tracer, url, 5000, async () => {});
     expect(pf.status).toBe(200);
     await originProbes(tracer, url, { authorization: 'Bearer t' }, 'initialize', 5000, async () => {});
+    await settleSessionEnds(tracer); // sent without waiting since 1.2.0 (A02-05)
     const deletes = seen.filter((r) => r.method === 'DELETE');
     // preflight + 3 accepted Origins; the 403 to the foreign Origin minted nothing
     expect(deletes.map((r) => r.headers['mcp-session-id'])).toEqual([1, 2, 3, 4].map((i) => `probe-session-${i}-0123456789`));

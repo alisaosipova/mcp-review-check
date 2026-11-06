@@ -106,7 +106,9 @@ export function installProxy(env: Env = process.env): boolean {
   suppressProxyWarning();
   const { EnvHttpProxyAgent, fetch: undiciFetch, setGlobalDispatcher } = loadUndici();
   // noProxy is always given ("" when unset) so undici never rereads the environment and decides as bypassesProxy does.
-  // proxyTunnel: false sends http: targets as absolute-URI requests (plain forwarding); https: targets still use CONNECT.
+  // proxyTunnel: false makes undici send an http: target as an absolute-URI request (plain forwarding) only when the
+  // proxy itself is http:; with an https: proxy an http: target is still tunnelled with CONNECT, and https: targets always
+  // are. A SOCKS5 proxy forwards nothing: every target goes through its own SOCKS CONNECT (proxyTunnels below).
   const dispatcher = new EnvHttpProxyAgent({ httpProxy, httpsProxy, noProxy: c.noProxy ?? '', proxyTunnel: false });
   setGlobalDispatcher(dispatcher);
   // The fetch built into newer Node releases (24+) bundles a newer undici than the dependency and ignores a dispatcher
@@ -127,4 +129,46 @@ export function proxyForUrl(url: URL, env: Env = process.env): string | undefine
 /** A proxy URL for display: user:pass@ removed. */
 export function proxyLabel(proxy: string): string {
   try { return displayUrl(proxy); } catch { return '[proxy]'; }
+}
+
+/** A SOCKS proxy URL (socks5:, socks5h:, socks:). */
+export function isSocksProxy(proxy: string): boolean {
+  return /^socks(5h?)?:/i.test(proxy.trim());
+}
+
+/** The proxy kind for messages: "SOCKS5 proxy", "HTTPS proxy" (TLS to the proxy) or "HTTP proxy". */
+export function proxyKind(proxy: string): string {
+  return isSocksProxy(proxy) ? 'SOCKS5 proxy' : /^https:/i.test(proxy.trim()) ? 'HTTPS proxy' : 'HTTP proxy';
+}
+
+/** The request to `url` goes through an HTTP CONNECT tunnel of `proxy`, as undici decides it with proxyTunnel: false:
+ *  an https: target, or any target behind an https: proxy. Plain forwarding (an http: target behind an http: proxy)
+ *  and SOCKS5 use no CONNECT. */
+export function proxyTunnels(url: URL, proxy: string): boolean {
+  return !isSocksProxy(proxy) && (url.protocol === 'https:' || /^https:/i.test(proxy.trim()));
+}
+
+const setIn = (env: Env, upper: string): boolean => !!(env[upper]?.trim() || env[upper.toLowerCase()]?.trim());
+
+/** The variable that supplies the proxy for `url` (HTTPS_PROXY, HTTP_PROXY or ALL_PROXY, as proxyConfig falls back), or
+ *  undefined when no proxy is used for it. */
+export function proxyVarFor(url: URL, env: Env = process.env): string | undefined {
+  if (!proxyForUrl(url, env)) return undefined;
+  if (url.protocol === 'https:' && setIn(env, 'HTTPS_PROXY')) return 'HTTPS_PROXY';
+  return setIn(env, 'HTTP_PROXY') ? 'HTTP_PROXY' : 'ALL_PROXY';
+}
+
+/**
+ * The route a request to `url` takes, for --verbose: "proxy: socks5://host:1080 via ALL_PROXY (SOCKS5)", "proxy: http://host:3128
+ * via HTTPS_PROXY (CONNECT tunnel; NO_PROXY: ...)", or "proxy: none for host:port (NO_PROXY: ...)". Credentials are never
+ * shown. Undefined when no proxy variable is set.
+ */
+export function proxyRouteLine(url: URL, env: Env = process.env): string | undefined {
+  const c = proxyConfig(env);
+  if (!c) return undefined;
+  const no = c.noProxy ? `; NO_PROXY: ${c.noProxy}` : '';
+  const proxy = proxyForUrl(url, env);
+  if (!proxy) return `proxy: none for ${url.host} (direct${no})`;
+  const how = isSocksProxy(proxy) ? 'SOCKS5' : proxyTunnels(url, proxy) ? 'CONNECT tunnel' : 'plain forwarding';
+  return `proxy: ${proxyLabel(proxy)} via ${proxyVarFor(url, env)} (${how}${no})`;
 }

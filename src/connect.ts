@@ -2,11 +2,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport, SseError } from '@modelcontextprotocol/sdk/client/sse.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import crossSpawn from 'cross-spawn';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { isWithinOrigin, type Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { deserializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import { emptySnapshot, PHASES, type AuthProbe, type HttpExchange, type ObservedError, type Snapshot, type TargetOpt, type TlsObservation } from './snapshot.js';
-import { describeCause, describeForbidden, describeHttpFailure, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
+import { describeCause, describeForbidden, describeHttpFailure, describeInitTimeout, describeNoAnswer, describeSseFailure, diagnosisText, networkCause } from './diagnose.js';
 import { capSnapshot, charge, createBudget, ERROR_BODY_CAP, SNAPSHOT_BUDGET, UI_READS_CAP, type ByteBudget } from './limits.js';
 import { CLIENT_CAPABILITIES, TEXT_ONLY_CAPABILITIES } from './protocol/clientCaps.js';
 import { listAll, LooseResult } from './protocol/legacy.js';
@@ -15,11 +17,12 @@ import { RecordingTransport } from './protocol/recording.js';
 import { BUDGET_ERROR, createRedactor, createTracer, FULL_READ_CAP, scrub, summarizeJsonRpc, type Redactor, type Tracer } from './protocol/trace.js';
 import { runActive } from './probe/active.js';
 import { runAuthProbe } from './probe/auth.js';
-import { defaultDeps, lookupHost, preflight, sameHostRedirect, tlsCheckWithRetry, type Deps } from './probe/network.js';
+import { defaultDeps, deferSessionEnd, lookupHost, preflight, sameHostRedirect, SESSION_END_TIMEOUT_MS, settleSessionEnds, tlsCheckWithRetry, type Deps } from './probe/network.js';
 import { listingTimedOut, runWireProbes } from './probe/wire.js';
 import { buildRedactor, redactDeep } from './redact.js';
 import { isObj, isStr, toolName, uiUriOf } from './rules/util/access.js';
 import { isLocalTarget } from './rules/util/net.js';
+import { timedOut } from './rules/util/obs.js';
 
 export { VERSION } from './version.js';
 import { VERSION } from './version.js';
@@ -272,7 +275,12 @@ interface LegacyConn {
   sse?: { status?: number; message: string; reached: boolean };
   /** The Streamable HTTP session the server issued, until it is ended (Q4-SESSION). */
   open?: OpenSession;
+  /** initialize got no answer within the connect wait (A02-04): `message` says so. */
+  timedOut?: boolean;
 }
+
+/** The SDK's request timeout (McpError -32001) or withTimeout's own: the request got no answer in time. */
+const NO_ANSWER = /Request timed out|timed out after \d+ ms/;
 
 const MODERN_CODES = [-32020, -32021, -32022];
 /** A --header that carries credentials (an API key, a token, a cookie). */
@@ -308,9 +316,12 @@ async function connectLegacyHttp(url: URL, headers: Record<string, string>, trac
       if (e instanceof TypeError && attempt === 0) continue; // network error: retry once
       const status = e instanceof StreamableHTTPError ? (e as StreamableHTTPError).code : undefined;
       const failed = [...tracer.exchanges].reverse().find((x) => x.label === 'sdk initialize');
+      // A bare "MCP error -32001: Request timed out" names neither the request nor the wait (A02-04).
+      const noAnswer = status === undefined && NO_ANSWER.test((e as Error).message ?? '');
       last = {
-        ok: false, status, message: cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts
-        cause: status === undefined ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet, headers: failed?.headers,
+        ok: false, status, message: noAnswer ? `initialize got no answer within ${timeoutMs} ms` : cleanErrorMessage((e as Error).message, status, tracer.redactor), // masked before its cuts
+        cause: status === undefined && !noAnswer ? networkCause(e) : undefined, contentType: failed?.contentType, body: failed?.bodySnippet, headers: failed?.headers,
+        ...(noAnswer ? { timedOut: true } : {}),
       };
       if (allowSse && status !== undefined && [400, 404, 405].includes(status) && !modernErrorBody(tracer)) {
         const before = tracer.exchanges.length;
@@ -431,18 +442,23 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
   // see only the 3xx. SRV-006 still reports the redirect from the preflight to the URL as entered.
   const target = sameHostRedirect(url, pf) ?? url;
   const authPf = target === url ? pf : await preflight(tracer, target, connectTimeout, deps.sleep);
+  // The unauthenticated initialize got no answer at all within the connect wait (A10-03): server/discover and the SDK
+  // handshake wait only STALLED_TIMEOUT_MS each, so a server that accepts the connection and says nothing fails in about
+  // one connect wait instead of three or four.
+  const silent = pf.status === undefined && timedOut(pf);
+  const handshakeTimeout = silent ? stalledTimeout(connectTimeout) : connectTimeout;
   let trigger: AuthProbe['trigger'] | undefined = authPf.status === 401 ? 'preflight-401' : authPf.status === 403 && authPf.headers?.['www-authenticate'] ? 'preflight-403' : undefined;
 
   // 2. era detection
   const modern = new ModernClient(target, tracer, authHeaders, timeoutMs);
-  const disc = await modern.request('server/discover', {}, { label: 'discover', timeoutMs: connectTimeout, keepJson: true }); // a probe (SPEC-019)
+  const disc = await modern.request('server/discover', {}, { label: 'discover', timeoutMs: handshakeTimeout, keepJson: true }); // a probe (SPEC-019)
   snap.transport.probes.discover = disc.exchange;
   const discOk = disc.exchange.status === 200 && !!disc.result && Array.isArray(disc.result.supportedVersions);
   const discSignal = disc.exchange.status === 400 && MODERN_CODES.includes(Number(disc.error?.code));
   if (disc.result && disc.exchange.status === 200) snap.discoverRaw = disc.result;
 
   // 3. legacy connect (with SSE fallback)
-  const conn = await connectLegacyHttp(url, authHeaders, tracer, connectTimeout, {}, !discOk && !discSignal);
+  const conn = await connectLegacyHttp(url, authHeaders, tracer, handshakeTimeout, {}, !discOk && !discSignal);
   if (progress) progress.close = async () => { await conn.client?.close().catch(() => {}); };
   await tracer.flush();
   // A legacy SSE server can guard only its GET /sse route: the POST gets 404 or 405, the SSE fallback's GET the 401.
@@ -468,7 +484,10 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     snap.transport.observedErrors = collectErrors(tracer, conn.rec);
     if (Object.keys(tracer.notifications.methods).length) snap.transport.notifications = tracer.notifications;
     closing(progress);
-    await endSession(conn, tracer);
+    endSession(conn, tracer);
+    // Every session-ending DELETE of the run was sent without waiting; they settle here together, each within
+    // SESSION_END_TIMEOUT_MS (A02-05).
+    await settleSessionEnds(tracer);
     return { snap, tracer };
   };
 
@@ -479,16 +498,23 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     snap.coverage = credentials ? { toolLevel: 'token-rejected', reason: opts.bearer ? 'token rejected (401)' : 'supplied credentials rejected (401)' } : { toolLevel: 'auth-required', reason: 'server requires OAuth' };
     trigger ??= credentials ? 'bearer-rejected' : 'preflight-401';
   };
+  // The auth probe runs at most once per run (A03-02): a second run would repeat every metadata GET and TLS handshake
+  // and, with --active-auth, register a second DCR client that no notice names.
+  let authProbed = false;
   const probeAuth = async () => {
+    if (authProbed) return;
+    authProbed = true;
     checkpoint(progress, 'auth probe');
     // The unauthenticated preflight holds the challenge only when it started the probe (a 401, or a 403 with
     // WWW-Authenticate); otherwise the latest 401, preferably one with a challenge, from the requests that carried credentials.
     const last401 = [...tracer.exchanges].reverse().filter((e) => e.status === 401);
     const challengeExchange = trigger?.startsWith('preflight-') && (authPf.status === 401 || (authPf.status === 403 && authPf.headers?.['www-authenticate']))
       ? authPf : last401.find((e) => e.headers?.['www-authenticate']) ?? last401[0] ?? authPf;
-    const { probe, tlsHosts } = await runAuthProbe({ tracer, url: target, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth });
+    // The probe is on the snapshot from its start, so a stop keeps what it observed, the DCR client included (I-A03-6).
+    const { probe, tlsHosts } = await runAuthProbe({ tracer, url: target, trigger: trigger!, challengeExchange, deps, timeoutMs, activeAuth: !!opts.activeAuth, onProbe: (p) => { snap.authProbe = p; } });
     snap.authProbe = probe;
     for (const h of tlsHosts) {
+      if (tls.some((t) => t.role === 'as' && t.host === h.host)) continue;
       checkpoint(progress, 'auth probe'); // each AS host can take up to three handshakes
       tls.push({ host: h.host, role: 'as', ...(await tlsCheckWithRetry(deps, h.hostname, h.port, tlsOpts)) });
     }
@@ -501,6 +527,9 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     const d = conn.status === 403
       ? describeForbidden(conn)
       : conn.cause ? describeCause(url, conn.cause)
+      // Nothing answered: neither the unauthenticated initialize nor the handshake (A10-03).
+      : silent && conn.status === undefined && !discOk && disc.exchange.status === undefined ? describeNoAnswer(url, connectTimeout)
+      : conn.timedOut ? describeInitTimeout(handshakeTimeout)
       : conn.sse?.reached ? describeSseFailure(url, conn.sse.message)
       : describeHttpFailure(url, { status: conn.status, contentType: conn.contentType, body: conn.body, message: conn.message });
     snap.connectDiagnosis = d;
@@ -521,7 +550,7 @@ async function buildHttp(snap: Snapshot, urlAsEntered: string, opts: BuildOption
     if (snap.listMeta.tools?.error && tracer.exchanges.some((e) => e.status === 401 && isObj(e.requestJson) && e.requestJson.method === 'tools/list')) {
       rejected();
       snap.tools = []; snap.resources = []; snap.resourceTemplates = []; snap.prompts = []; snap.listMeta = {};
-      await probeAuth();
+      await probeAuth(); // nothing when the preflight's 401 already ran it: its result stands (A03-02)
       return finishHttp();
     }
     checkpoint(progress, 'UI resource reads');
@@ -591,31 +620,30 @@ async function freshTools(url: URL, headers: Record<string, string>, tracer: Tra
     const r = await listAll(conn.client!, 'tools/list', 'tools', timeoutMs, 100, budget);
     return r.error ? undefined : r.items;
   } finally {
-    await endSession(conn, tracer);
+    endSession(conn, tracer);
   }
 }
 
-/** The DELETE requests that ended the check's own sessions: kept in the trace, but not evidence for the rules. */
-const sessionEnds = new WeakSet<HttpExchange>();
-
-/** The run's HTTP exchanges for the snapshot (without the session-ending DELETEs: the SDK connections' and the
- *  raw probes' "(close session)" requests alike, since both end sessions the check itself opened). */
+/** The run's HTTP exchanges for the snapshot, without the session-ending DELETEs: the SDK connections' (the SDK sends
+ *  DELETE only in terminateSession) and the raw probes' "(close session)" requests alike, since both end sessions the
+ *  check itself opened. */
 function ruleExchanges(tracer: Tracer): HttpExchange[] {
-  return tracer.exchanges.filter((e) => !sessionEnds.has(e) && !(e.method === 'DELETE' && e.label.endsWith('(close session)')));
+  return tracer.exchanges.filter((e) => !(e.method === 'DELETE' && (e.label === 'sdk DELETE' || e.label.endsWith('(close session)'))));
 }
 
 /** Close a connection; a Streamable HTTP session is ended with DELETE first (the spec's SHOULD for a client that no
- *  longer needs it), so repeated checks leave no sessions behind on a stateful server. 405 means it does not support that. */
-async function endSession(conn: LegacyConn, tracer: Tracer): Promise<void> {
+ *  longer needs it), so repeated checks leave no sessions behind on a stateful server. 405 means it does not support that.
+ *  Not waited for (A02-05): the DELETE gets SESSION_END_TIMEOUT_MS, the client closes after it (closing first would
+ *  abort it), and settleSessionEnds waits for both at the end of the run. */
+function endSession(conn: LegacyConn, tracer: Tracer): void {
   const ended = !!conn.open && !untrackSession(conn, tracer); // a stop or the signal handler sent its DELETE already
   const inner = conn.rec?.inner;
+  const close = () => conn.client?.close().catch(() => {});
   if (!ended && conn.ok && conn.kind === 'streamable-http' && inner instanceof StreamableHTTPClientTransport && inner.sessionId) {
-    const before = tracer.exchanges.length;
-    await withTimeout(inner.terminateSession(), 5000, 'session DELETE').catch(() => {});
-    await tracer.flush();
-    for (const e of tracer.exchanges.slice(before)) if (e.method === 'DELETE') sessionEnds.add(e);
+    deferSessionEnd(tracer, withTimeout(inner.terminateSession(), SESSION_END_TIMEOUT_MS, 'session DELETE').catch(() => {}).then(close));
+  } else {
+    deferSessionEnd(tracer, Promise.resolve(close()));
   }
-  await conn.client?.close().catch(() => {});
 }
 
 /** A Streamable HTTP session the check opened and has not ended: what a DELETE needs once its client is closed. */
@@ -629,8 +657,9 @@ interface OpenSession {
   run?: Set<OpenSession>;
 }
 
-/** Bound on a stop's session DELETEs (--max-duration, the byte budget, SIGINT): one attempt each, in parallel. */
-export const SESSION_END_TIMEOUT_MS = 1500;
+/** Bound on a session DELETE (a stop's: --max-duration, the byte budget, SIGINT; and the regular ones, A02-05): one
+ *  attempt each, in parallel. Defined in probe/network.ts, which sends the raw probes' DELETEs. */
+export { SESSION_END_TIMEOUT_MS };
 
 /** The open sessions of each run (by its tracer), ended when --max-duration or the byte budget stops it. */
 const runSessions = new WeakMap<Tracer, Set<OpenSession>>();
@@ -658,10 +687,15 @@ function untrackSession(conn: LegacyConn, tracer: Tracer): boolean {
   return everySession.delete(conn.open);
 }
 
+/** Redirect hops a stop's DELETE follows (A02-01). */
+export const SESSION_END_MAX_REDIRECTS = 2;
+
 /**
  * End sessions after a stop (Q4-SESSION): the run's tracer sends nothing once the stop aborted it, so the DELETE goes
- * out on fetch directly, once, without following a redirect, within SESSION_END_TIMEOUT_MS; the answer (405, an
- * error, no answer) does not matter. Each session leaves both sets first, so a second stop sends no second DELETE.
+ * out on fetch directly, once, within SESSION_END_TIMEOUT_MS; the answer (405, an error, no answer) does not matter.
+ * A 307/308 within the same origin (/mcp -> /mcp/, where the SDK reached the session) is followed for up to
+ * SESSION_END_MAX_REDIRECTS hops inside the same bound, by the SDK's isWithinOrigin rule and never to a URL that adds
+ * userinfo (A02-01). Each session leaves both sets first, so a second stop sends no second DELETE.
  * Not recorded: the snapshot was copied at the stop, and these requests are no evidence for the rules.
  */
 async function endSessions(sessions: Iterable<OpenSession> | undefined, timeoutMs = SESSION_END_TIMEOUT_MS): Promise<void> {
@@ -670,18 +704,36 @@ async function endSessions(sessions: Iterable<OpenSession> | undefined, timeoutM
   await Promise.all(list.map(async (s) => {
     const headers: Record<string, string> = { ...s.headers, 'mcp-session-id': s.sessionId };
     if (s.protocolVersion) headers['mcp-protocol-version'] = s.protocolVersion;
+    const signal = AbortSignal.timeout(timeoutMs);
     try {
-      const res = await fetch(s.url, { method: 'DELETE', headers, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
-      await res.body?.cancel().catch(() => {});
+      let at = s.url;
+      for (let hop = 0; ; hop++) {
+        const res = await fetch(at, { method: 'DELETE', headers, redirect: 'manual', signal });
+        await res.body?.cancel().catch(() => {});
+        const next = hop < SESSION_END_MAX_REDIRECTS ? sameOriginRedirect(at, res) : undefined;
+        if (!next) return;
+        at = next;
+      }
     } catch { /* best effort: no answer within the bound, a network error, a refused connection */ }
   }));
+}
+
+/** The target of a 307/308 answer that stays within the origin of `from` and adds no userinfo, or undefined. */
+export function sameOriginRedirect(from: URL, res: Pick<Response, 'status' | 'headers'>): URL | undefined {
+  if (res.status !== 307 && res.status !== 308) return undefined;
+  const loc = res.headers.get('location');
+  let to: URL;
+  try { to = new URL(loc ?? '', from); } catch { return undefined; }
+  if (!loc || to.username || to.password || to.href === from.href || !isWithinOrigin(from, to)) return undefined;
+  return to;
 }
 
 /** End the open sessions of the run that `tracer` belongs to (the stop of withStops). */
 function endRunSessions(tracer: Tracer | undefined): Promise<void> {
   if (!tracer) return Promise.resolve();
   stoppedRuns.add(tracer);
-  return endSessions(runSessions.get(tracer));
+  // The DELETEs the run had already sent (each bounded) settle beside the stop's own.
+  return Promise.all([endSessions(runSessions.get(tracer)), settleSessionEnds(tracer)]).then(() => {});
 }
 
 // ---------- stdio ----------
@@ -704,6 +756,9 @@ export const NON_JSON_KEPT = 50;
 export const NON_JSON_LINE_CAP = 1024;
 /** Raw bytes kept from the start of a non-JSON line before masking and the NON_JSON_LINE_CAP cut. */
 const NON_JSON_HEAD = 4 * NON_JSON_LINE_CAP;
+/** The bytes kept from the end of a large JSON line (stdoutTap) to find a "jsonrpc" member written last. */
+const JSON_TAIL = 64;
+const JSONRPC_MARK = /"jsonrpc"\s*:\s*"2\.0"/;
 /** The SDK's stdio read buffer (default 10 MB), raised to what an HTTP response body may be. */
 export const STDIO_MAX_MESSAGE = FULL_READ_CAP;
 
@@ -725,7 +780,10 @@ function stdioObservation(nonJson: NonJsonStdout | undefined, stderrTail: string
 /** Collect the non-JSON-RPC lines of a stdio server's stdout. Lines are split as bytes and decoded afterwards (the SDK
  *  reads the same stream as Buffers, and a chunk can end inside a UTF-8 character); chunks are joined once per line,
  *  a non-JSON line keeps only its head, and a line over STDIO_MAX_MESSAGE is dropped (the SDK fails on it).
- *  `onMessage`: the size of each JSON-RPC message line, which the SDK parses and the run keeps (the byte budget, F146). */
+ *  `onMessage`: bytes of JSON-RPC message lines, which the SDK parses and the run keeps (the byte budget, F146). A short
+ *  line is counted whole at its end once it parses as JSON-RPC; a line past NON_JSON_HEAD that starts as JSON is
+ *  counted as its bytes arrive, so a message bigger than the budget stops the run while it is still being read, and
+ *  is neither kept here nor parsed a second time (A09-05). */
 export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { out: NonJsonStdout; push(chunk: Buffer): void } {
   const out: NonJsonStdout = { lines: [], total: 0 };
   let parts: Buffer[] = [];
@@ -733,6 +791,10 @@ export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { o
   /** Past NON_JSON_HEAD bytes a line is either a JSON message (kept whole up to STDIO_MAX_MESSAGE, then dropped:
    *  the SDK fails on it) or not JSON (kept as its head only). */
   let mode: 'line' | 'json' | 'head' | 'drop' = 'line';
+  /** In 'json' mode: the first NON_JSON_HEAD bytes and the last JSON_TAIL bytes of the line, enough to tell a JSON-RPC
+   *  message from a large JSON log line at its end without keeping or parsing the whole line. */
+  let jsonHead: Buffer | undefined;
+  let jsonTail = Buffer.alloc(0);
   const add = (raw: Buffer) => {
     const line = raw.toString('utf8').replace(/\r$/, '');
     if (!line.trim()) return;
@@ -744,8 +806,11 @@ export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { o
     }
   };
   const end = () => {
-    if (mode !== 'drop') add(Buffer.concat(parts, size));
-    parts = []; size = 0; mode = 'line';
+    if (mode === 'line' || mode === 'head') add(Buffer.concat(parts, size));
+    // A 'json' line was counted as it arrived; one with "jsonrpc": "2.0" in neither its head nor its tail is a JSON log
+    // line, which SRV-018 reports as foreign output (its head is kept, as for any long non-JSON line).
+    else if (mode === 'json' && jsonHead && !JSONRPC_MARK.test(jsonHead.toString('utf8')) && !JSONRPC_MARK.test(jsonTail.toString('utf8'))) add(jsonHead);
+    parts = []; size = 0; mode = 'line'; jsonHead = undefined; jsonTail = Buffer.alloc(0);
   };
   const take = (b: Buffer) => {
     if (mode === 'drop' || !b.length) return;
@@ -753,13 +818,18 @@ export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { o
       if (size < NON_JSON_HEAD) { const k = b.subarray(0, NON_JSON_HEAD - size); parts.push(k); size += k.length; }
       return;
     }
-    parts.push(b); size += b.length;
     if (mode === 'json') {
-      if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; parts = []; size = 0; }
-    } else if (size > NON_JSON_HEAD) {
+      jsonTail = b.length >= JSON_TAIL ? Buffer.from(b.subarray(b.length - JSON_TAIL)) : Buffer.concat([jsonTail, b]).subarray(-JSON_TAIL);
+      size += b.length;
+      if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; size = 0; return; } // the SDK fails on it: not kept, not counted further
+      onMessage?.(b.length);
+      return;
+    }
+    parts.push(b); size += b.length;
+    if (size > NON_JSON_HEAD) {
       const head = Buffer.concat(parts, size);
       const first = head.toString('utf8', 0, 64).trimStart()[0];
-      if (first === '{' || first === '[') { mode = 'json'; parts = [head]; }
+      if (first === '{' || first === '[') { mode = 'json'; jsonHead = head.subarray(0, NON_JSON_HEAD); jsonTail = Buffer.from(head.subarray(-JSON_TAIL)); parts = []; onMessage?.(size); }
       else { mode = 'head'; parts = [head.subarray(0, NON_JSON_HEAD)]; size = NON_JSON_HEAD; }
     }
   };
@@ -819,7 +889,9 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
     const ended = exitNote(child);
     await client.close().catch(() => {});
     const err = e as Error;
-    throw Object.assign(new Error(`${err.message}${rec.overflow ? ` (${rec.overflow})` : ''}${ended}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
+    // A bare "MCP error -32001: Request timed out" names neither the request nor the wait (A02-04).
+    const what = NO_ANSWER.test(err.message ?? '') ? `initialize got no answer within ${timeoutMs} ms` : err.message;
+    throw Object.assign(new Error(`${what}${rec.overflow ? ` (${rec.overflow})` : ''}${ended}${startupOutput(stderrTail, nonJson, r)}`), { stderrTail, nonJson });
   }
   return { client, rec, nonJson, stderr: () => stderrTail };
 }
@@ -1051,8 +1123,51 @@ export function endAllNow(kill = false): Promise<void> {
   return Promise.all([endChildren(everyChild), endSessions(everySession)]).then(() => {});
 }
 
+/**
+ * Splits a stdio stream into lines in linear time (A09-05): the chunks of the line being read are kept in a list, only
+ * the new chunk is searched for a newline, and they are joined once per line. The SDK's ReadBuffer joins the whole buffer
+ * on every 64 KB chunk and searches it from the start, which is quadratic: a 62 MB tools/list took minutes. A line over
+ * `max` bytes throws the SDK's own "ReadBuffer exceeded" error (RecordingTransport names it as the overflow).
+ */
+export class LineSplitter {
+  private parts: Buffer[] = [];
+  private size = 0;
+  constructor(private readonly max: number) {}
+
+  /** The complete lines `chunk` ends, without their newline (a CR before it is the caller's). */
+  push(chunk: Buffer): Buffer[] {
+    const out: Buffer[] = [];
+    let start = 0;
+    for (let i = chunk.indexOf(10); i >= 0; i = chunk.indexOf(10, start)) {
+      const piece = chunk.subarray(start, i);
+      this.grow(piece.length);
+      out.push(this.parts.length ? Buffer.concat([...this.parts, piece], this.size) : piece);
+      this.parts = []; this.size = 0;
+      start = i + 1;
+    }
+    if (start < chunk.length) { const rest = chunk.subarray(start); this.grow(rest.length); this.parts.push(rest); }
+    return out;
+  }
+
+  clear(): void { this.parts = []; this.size = 0; }
+
+  private grow(n: number): void {
+    this.size += n;
+    if (this.size > this.max) { this.clear(); throw new Error(`ReadBuffer exceeded maximum size of ${this.max} bytes`); }
+  }
+}
+
+/**
+ * Start a stdio server as the SDK does on each platform: on Windows through cross-spawn (the SDK's launcher), which
+ * resolves npx, pnpm and .cmd/.bat shims through PATHEXT and quotes their arguments, where child_process.spawn with
+ * shell: false fails with ENOENT; on POSIX child_process.spawn, as its own process group leader (detached).
+ */
+export function launchStdio(command: string, args: string[], options: SpawnOptions, platform: NodeJS.Platform = process.platform): ChildProcess {
+  return platform === 'win32' ? crossSpawn(command, args, options) : spawn(command, args, options);
+}
+
 /** The SDK 1.32.1 transport's private state that GroupStdioTransport works on (client/stdio.js). */
-type SdkStdio = { _process?: ChildProcess; _serverParams: ConstructorParameters<typeof StdioClientTransport>[0]; _readBuffer: { append(chunk: Buffer): void }; _stderrStream: NodeJS.WritableStream | null; processReadBuffer(): void };
+type SdkStdio = { _process?: ChildProcess; _serverParams: ConstructorParameters<typeof StdioClientTransport>[0]; _readBuffer: { append(chunk: Buffer): void; _maxBufferSize?: number }; _stderrStream: NodeJS.WritableStream | null; processReadBuffer(): void };
 
 /** The transport still has the private state GroupStdioTransport relies on (a test pins it for SDK bumps). */
 export function sdkStdioShape(t: object): boolean {
@@ -1061,25 +1176,34 @@ export function sdkStdioShape(t: object): boolean {
 }
 
 /** The SDK's stdio transport, but a server started through a wrapper (npx, .cmd, .bat, sh -c) ends with everything it
- *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper. */
+ *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper.
+ *  Its stdout is split into messages by LineSplitter, in linear time (A09-05). */
 export class GroupStdioTransport extends StdioClientTransport {
-  /** The SDK's start (client/stdio.js:60-107) with detached: true; Windows keeps it as is (no groups there). */
+  /** The SDK's start (client/stdio.js:60-107) with detached: true on POSIX (Windows has no groups: windowsHide, as the
+   *  SDK does) and the linear line reader instead of the SDK's ReadBuffer. */
   override async start(): Promise<void> {
     const self = this as unknown as SdkStdio;
     // An SDK whose private state differs (renamed in a release) keeps its own start: no process group, but a working check.
-    if (process.platform === 'win32' || !sdkStdioShape(self)) return super.start();
+    if (!sdkStdioShape(self)) return super.start();
     if (self._process) throw new Error('StdioClientTransport already started!');
     const p = self._serverParams;
-    let overflowed = false; // the SDK closes the transport on a read-buffer overflow; later chunks are not parsed again
+    const win = process.platform === 'win32';
+    const lines = new LineSplitter(self._readBuffer._maxBufferSize ?? STDIO_MAX_MESSAGE);
+    let overflowed = false; // the transport closes on a read-buffer overflow, as the SDK's does; later chunks are not parsed
     return new Promise((resolve, reject) => {
-      const proc = self._process = spawn(p.command, p.args ?? [], { env: { ...getDefaultEnvironment(), ...p.env }, stdio: ['pipe', 'pipe', p.stderr ?? 'inherit'], shell: false, cwd: p.cwd, detached: true });
+      const proc = self._process = launchStdio(p.command, p.args ?? [], { env: { ...getDefaultEnvironment(), ...p.env }, stdio: ['pipe', 'pipe', p.stderr ?? 'inherit'], shell: false, cwd: p.cwd, ...(win ? { windowsHide: true } : { detached: true }) });
       proc.on('error', (e) => { reject(e); this.onerror?.(e); });
       proc.on('spawn', () => resolve());
       proc.on('close', () => { self._process = undefined; this.onclose?.(); });
       proc.stdin?.on('error', (e) => this.onerror?.(e));
       proc.stdout?.on('data', (chunk: Buffer) => {
         if (overflowed) return;
-        try { self._readBuffer.append(chunk); self.processReadBuffer(); } catch (e) { overflowed = true; this.onerror?.(e as Error); this.close().catch(() => {}); }
+        let complete: Buffer[];
+        try { complete = lines.push(chunk); } catch (e) { overflowed = true; this.onerror?.(e as Error); this.close().catch(() => {}); return; }
+        // As the SDK's processReadBuffer: a line that is not a JSON-RPC message is an error, and reading goes on.
+        for (const line of complete) {
+          try { this.onmessage?.(deserializeMessage(line.toString('utf8').replace(/\r$/, ''))); } catch (e) { this.onerror?.(e as Error); }
+        }
       });
       proc.stdout?.on('error', (e) => this.onerror?.(e));
       if (self._stderrStream && proc.stderr) proc.stderr.pipe(self._stderrStream);
@@ -1113,6 +1237,8 @@ function stoppedSnapshot(live: Snapshot, cause: StopCause, progress: Progress): 
     listMeta: { ...live.listMeta }, resourceReads: { ...live.resourceReads }, coverage: { ...live.coverage },
     // The calls finished so far (the abandoned run may still push more).
     ...(live.active ? { active: { ...live.active, calls: [...live.active.calls] } } : {}),
+    // The auth probe as far as it got (it is on the snapshot from its start, I-A03-6), detached from the abandoned run.
+    ...(live.authProbe ? { authProbe: structuredClone(live.authProbe) } : {}),
     transport: { ...live.transport, probes: { ...live.transport.probes }, timings: { ...live.transport.timings }, exchanges: progress.tracer ? ruleExchanges(progress.tracer) : [...live.transport.exchanges] },
   };
   if (progress.tracer) snap.transport.timings = { ...progress.tracer.timings };

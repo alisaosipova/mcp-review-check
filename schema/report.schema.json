@@ -58,7 +58,7 @@
           "required": ["kind", "summary"],
           "description": "Why an HTTP handshake failed.",
           "properties": {
-            "kind": { "enum": ["dns", "refused", "timeout", "reset", "tls", "not-mcp", "http", "other"] },
+            "kind": { "enum": ["dns", "refused", "timeout", "no-answer", "reset", "tls", "not-mcp", "http", "other"] },
             "summary": { "type": "string" },
             "code": { "type": "string" },
             "status": { "type": "integer" },
