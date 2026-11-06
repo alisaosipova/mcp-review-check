@@ -26,7 +26,13 @@ function pluginManifest(p: PluginListing): Obj | undefined {
   return isObj(p.manifest?.json) ? p.manifest.json : undefined;
 }
 
-export interface ServerEntry { name: string; cfg: Obj; where: string }
+export interface ServerEntry { name: string; cfg: Obj; where: string; /** Read from a file plugin.json names in mcpServers (A06-01). */ fromFile?: true }
+
+/** 1.1.1 is a patch: what the plugin.json mcpServers files add is reported at info, whatever the rule (A06-01). */
+export const DEFERRED_NOTE = ' (reported at rule severity from 1.3.0)';
+const deferred = (f: RawFinding): RawFinding => ({ ...f, severity: 'info', message: `${f.message}${DEFERRED_NOTE}` });
+/** A server's findings, at info when the server comes from a plugin.json mcpServers file. */
+const capFor = (s: ServerEntry, out: RawFinding[]): RawFinding[] => (s.fromFile ? out.map(deferred) : out);
 
 /** An MCP configuration's server map: `{ "mcpServers": {...} }` or the bare map. */
 function serverMap(json: unknown): Obj | undefined {
@@ -35,15 +41,18 @@ function serverMap(json: unknown): Obj | undefined {
   return 'mcpServers' in json ? undefined : json;
 }
 
-/** Server entries of `.mcp.json` and of plugin.json's inline mcpServers (object, or array with objects). */
-export function pluginServers(p: PluginListing): ServerEntry[] {
+/** Server entries of `.mcp.json`, of plugin.json's inline mcpServers (object, or array with objects) and, unless
+ *  `withFiles` is false, of the `.json` files plugin.json names in mcpServers, in that order (marked `fromFile`). A
+ *  file server with the name of an earlier one is listed too (1.1.1 does not replace entries; A06-01). */
+export function pluginServers(p: PluginListing, withFiles = true): ServerEntry[] {
   const out: ServerEntry[] = [];
-  const add = (map: Obj | undefined, where: string) => {
-    for (const [name, cfg] of Object.entries(map ?? {})) if (isObj(cfg)) out.push({ name, cfg, where });
+  const add = (map: Obj | undefined, where: string, fromFile?: true) => {
+    for (const [name, cfg] of Object.entries(map ?? {})) if (isObj(cfg)) out.push({ name, cfg, where, ...(fromFile ? { fromFile } : {}) });
   };
   add(serverMap(p.mcp?.json), '.mcp.json');
   const inline = pluginManifest(p)?.mcpServers;
   for (const m of Array.isArray(inline) ? inline : [inline]) if (isObj(m)) add(m, '.claude-plugin/plugin.json');
+  if (withFiles) for (const f of p.mcpFiles ?? []) if (!f.error) add(serverMap(f.json), f.path, true);
   return out;
 }
 
@@ -116,6 +125,39 @@ const words = (cmd: string) => {
   return w[0] === 'exec' ? w.slice(1) : w;
 };
 
+/** The word an attached `-S<string>` / `--split-string=<string>` with no whitespace leaves, as repeated `words()` calls
+ *  would leave it (each removes one prefix, then the quotes around the word, then a stray leading or trailing quote; a
+ *  word `exec` is dropped), but on a window of the string, so `-S"-S"-S...` costs linear time, not a copy per prefix. */
+/** words() of a string with no whitespace: its one word with the quotes removed, undefined for none (`""` or `exec`). */
+function oneWord(w: string): string | undefined {
+  if (!w) return undefined;
+  const quote = (c: string | undefined) => c === '"' || c === "'";
+  let lo = 0;
+  let hi = w.length;
+  if (hi >= 2 && quote(w[0]) && w[hi - 1] === w[0]) { lo++; hi--; }
+  if (lo < hi && quote(w[lo])) lo++;
+  if (lo < hi && quote(w[hi - 1])) hi--;
+  const one = lo === 0 && hi === w.length ? w : w.slice(lo, hi);
+  return one === 'exec' ? undefined : one;
+}
+
+function attachedSplit(w: string): string | undefined {
+  let lo = 0;
+  let hi = w.length;
+  const quote = (c: string | undefined) => c === '"' || c === "'";
+  for (;;) {
+    if (hi - lo >= 15 && w.startsWith('--split-string=', lo)) lo += 15;
+    else if (hi - lo > 2 && w.startsWith('-S', lo)) lo += 2;
+    else return w.slice(lo, hi);
+    // An empty string has no word; a word of quotes only is an empty word.
+    if (lo === hi) return undefined;
+    if (hi - lo >= 2 && quote(w[lo]) && w[hi - 1] === w[lo]) { lo++; hi--; }
+    if (lo < hi && quote(w[lo])) lo++;
+    if (lo < hi && quote(w[hi - 1])) hi--;
+    if (hi - lo === 4 && w.startsWith('exec', lo)) return undefined;
+  }
+}
+
 /** argv without the wrappers in front of the launcher: `env [K=V ...]`, `cmd /c`, `cmd.exe /c` and `sh -c` / `bash -c`
  *  (the one command string is split into words). At most four wrappers are removed. */
 export function unwrapArgv(argv: string[]): string[] {
@@ -123,19 +165,33 @@ export function unwrapArgv(argv: string[]): string[] {
   for (let n = 0; n < 4 && a.length; n++) {
     const b0 = launcherBase(a[0]);
     if (b0 === 'env') {
-      let i = 1;
-      for (; i < a.length; i++) {
-        const w = a[i];
+      // The rest of argv as a stack (next word on top): a -S string is replaced by its words in place, so each word is
+      // handled once however many -S there are; rebuilding argv for every -S was quadratic (A09-04), and a limit on
+      // the expansions would let `-S '' -S '' ... -S 'npx pkg'` hide the launcher.
+      const stack = a.slice(1).reverse();
+      const pushWords = (str: string) => { const w = words(str); for (let k = w.length - 1; k >= 0; k--) stack.push(w[k]); };
+      while (stack.length) {
+        const w = stack.pop()!;
         // -S splits its string into words that env reads on, so K=V and options in the string are skipped too.
-        if (w === '-S' || w === '--split-string') { a = ['env', ...words(a[i + 1] ?? ''), ...a.slice(i + 2)]; i = 0; continue; }
-        if (w.startsWith('--split-string=')) { a = ['env', ...words(w.slice(15)), ...a.slice(i + 1)]; i = 0; continue; }
-        if (w.startsWith('-S') && w.length > 2) { a = ['env', ...words(w.slice(2)), ...a.slice(i + 1)]; i = 0; continue; }
-        if (w === '--') { i++; break; }
-        if (w.startsWith('-')) { if (ENV_VALUE_FLAGS.has(w)) i++; continue; }
+        if (w === '-S' || w === '--split-string') {
+          const str = stack.pop() ?? '';
+          // A string with no whitespace is at most one word: no split, no array (a run of -S stays cheap).
+          if (/\s/.test(str)) pushWords(str);
+          else { const one = oneWord(str); if (one !== undefined) stack.push(one); }
+          continue;
+        }
+        if (w.startsWith('--split-string=') || (w.startsWith('-S') && w.length > 2)) {
+          if (/\s/.test(w)) pushWords(w.slice(w.startsWith('-S') ? 2 : 15));
+          else { const one = attachedSplit(w); if (one !== undefined) stack.push(one); }
+          continue;
+        }
+        if (w === '--') break;
+        if (w.startsWith('-')) { if (ENV_VALUE_FLAGS.has(w)) stack.pop(); continue; }
         if (/^[A-Za-z_][\w]*=/.test(w)) continue;
+        stack.push(w);
         break;
       }
-      a = a.slice(i);
+      a = stack.reverse();
       continue;
     }
     if (b0 === 'cmd') {
@@ -210,7 +266,18 @@ export function launcherOf(given: string[]): Launcher | undefined {
   return { launcher, kind, spec, pinned: python ? PY_EXACT.test(spec) : NPM_EXACT.test(spec) };
 }
 
-const REF = /\$\{([^}]*)\}/g;
+/** The `${...}` references of a value, as /\$\{([^}]*)\}/g finds them, in linear time: with no `}` after a `${` there
+ *  is no later reference either, where the regex rescanned the rest from every `${` (`${${${...`). */
+function refs(v: string): Array<{ start: number; end: number; ref: string }> {
+  const out: Array<{ start: number; end: number; ref: string }> = [];
+  for (let i = v.indexOf('${'); i >= 0; i = v.indexOf('${', i)) {
+    const close = v.indexOf('}', i + 2);
+    if (close < 0) break;
+    out.push({ start: i, end: close + 1, ref: v.slice(i + 2, close) });
+    i = close + 1;
+  }
+  return out;
+}
 const USER_CONFIG = /^user_config\.[A-Za-z_]\w*$/;
 const PLUGIN_VAR = /^CLAUDE_(PLUGIN_ROOT|PLUGIN_DATA|PROJECT_DIR)$/;
 const PLACEHOLDER = /^(<[^>]*>|\[[^\]]*\]|\{[^}]*\}|your[-_ ]|x{3,}|\.{3}|\*{3,}|changeme|placeholder|example|redacted|todo|tbd)/i;
@@ -218,7 +285,10 @@ const SECRET_HEADER = /^(authorization|proxy-authorization|cookie|x-api-key|api-
 
 /** The literal credential part of a header or env value: the value without ${...} references and auth scheme words. */
 function literalPart(v: string): string {
-  return v.replace(REF, ' ').replace(/^\s*(bearer|basic|token|apikey|api-key)\b/i, ' ').trim();
+  let rest = '';
+  let at = 0;
+  for (const r of refs(v)) { rest += `${v.slice(at, r.start)} `; at = r.end; }
+  return (rest + v.slice(at)).replace(/^\s*(bearer|basic|token|apikey|api-key)\b/i, ' ').trim();
 }
 
 // ---------------------------------------------------------------- Claude plugin rules
@@ -295,7 +365,9 @@ export const LST_003 = defineRule(
 
 /** README text without fenced code blocks and inline code (words inside code blocks don't count). */
 export function readmeProse(text: string): string {
-  return text.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm, ' ').replace(/`[^`\n]*`/g, ' ');
+  // The lookahead first: a fence line with no line break after it is not an opener, and without it the run and the
+  // info string backtracked against each other on a long last line (quadratic; listing complexity guard).
+  return text.replace(/^ {0,3}(?=[^\n]*\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm, ' ').replace(/`[^`\n]*`/g, ' ');
 }
 
 export const LST_004 = defineRule(
@@ -342,12 +414,22 @@ export const LST_006 = defineRule(
     else if (p.mcp && !serverMap(p.mcp.json)) out.push({ path: p.mcp.path, message: '.mcp.json is not an object of MCP servers ({ "mcpServers": { ... } })' });
     const map = serverMap(p.mcp?.json);
     for (const [name, cfg] of Object.entries(map ?? {})) if (!isObj(cfg)) out.push({ path: '.mcp.json', message: `server "${name}" in .mcp.json is not an object` });
+    // The files plugin.json names in mcpServers (A06-01): a path outside the plugin, a missing file, one that does not
+    // parse or is not a server map; every finding they cause is info in 1.1.1.
+    for (const f of p.mcpFiles ?? []) {
+      if (f.problem) out.push(deferred({ path: '.claude-plugin/plugin.json', message: `mcpServers names ${q(f.ref)}, which ${f.error}` }));
+      else if (f.error) out.push(deferred({ path: f.path, message: `${f.path} (named in plugin.json mcpServers) ${f.error}` }));
+      else if (!serverMap(f.json)) out.push(deferred({ path: f.path, message: `${f.path} (named in plugin.json mcpServers) is not an object of MCP servers ({ "mcpServers": { ... } })` }));
+      else for (const [name, cfg] of Object.entries(serverMap(f.json)!)) if (!isObj(cfg)) out.push(deferred({ path: f.path, message: `server "${name}" in ${f.path} is not an object` }));
+    }
     for (const s of pluginServers(p)) {
+      const mine: RawFinding[] = [];
       const hasCmd = isStr(s.cfg.command) && s.cfg.command.trim() !== '';
       const hasUrl = isStr(s.cfg.url);
-      if (!hasCmd && !hasUrl) out.push({ path: s.where, message: `${subject(s)} has neither "command" nor "url"` });
-      else if (hasCmd && hasUrl) out.push({ path: s.where, message: `${subject(s)} has both "command" and "url"` });
-      if (s.cfg.args !== undefined && !(Array.isArray(s.cfg.args) && s.cfg.args.every(isStr))) out.push({ path: s.where, message: `${subject(s)}: "args" is not an array of strings` });
+      if (!hasCmd && !hasUrl) mine.push({ path: s.where, message: `${subject(s)} has neither "command" nor "url"` });
+      else if (hasCmd && hasUrl) mine.push({ path: s.where, message: `${subject(s)} has both "command" and "url"` });
+      if (s.cfg.args !== undefined && !(Array.isArray(s.cfg.args) && s.cfg.args.every(isStr))) mine.push({ path: s.where, message: `${subject(s)}: "args" is not an array of strings` });
+      out.push(...capFor(s, mine));
     }
     return out;
   },
@@ -376,7 +458,7 @@ export const LST_007 = defineRule(
     if (!['http', 'sse', 'ws'].includes(String(s.cfg.type))) out.push({ path: s.where, message: `${subject(s)} has type ${JSON.stringify(s.cfg.type ?? null)}; a remote server needs "http", "sse" or "ws"` });
     if (!isStr(s.cfg.url)) out.push({ path: s.where, message: `${subject(s)} has no string "url"` });
     else if (!acceptedRemoteUrl(s.cfg.url)) out.push({ path: s.where, message: `${subject(s)} url ${q(displayUrl(s.cfg.url))} is not an absolute https:// or wss:// URL (blocks: MCP server URL is not https)` });
-    return out;
+    return capFor(s, out);
   }),
 );
 
@@ -390,13 +472,16 @@ export const LST_008 = defineRule(
   (snap) => pluginServers(plugin(snap)).flatMap((s): RawFinding[] => {
     const l = launcherOf(argvOf(s.cfg));
     if (!l || l.pinned) return [];
-    if (l.launcher === 'uv run') return [{ path: s.where, message: `${subject(s)} runs uv run without --locked or --frozen` }];
-    return [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.kind === 'npx' || l.kind === 'uvx' ? ` (blocks: Unpinned ${l.kind} launcher)` : ''}` }];
+    if (l.launcher === 'uv run') return capFor(s, [{ path: s.where, message: `${subject(s)} runs uv run without --locked or --frozen` }]);
+    return capFor(s, [{ path: s.where, message: `${subject(s)} runs ${l.launcher} ${q(l.spec!)} without an exact version${l.kind === 'npx' || l.kind === 'uvx' ? ` (blocks: Unpinned ${l.kind} launcher)` : ''}` }]);
   }),
 );
 
-/** A package-manager configuration line that sets a registry, index, proxy or other package source. */
-const PACKAGE_SOURCE = /^\s*(\[\[?\s*(index|install\.scopes|install\.registry)[^\]]*\]\]?|(@[^\s:=]+:)?registry\s*[=:]|(https?-|no-)?proxy\s*[=:]|(extra-)?index(-url)?\s*[=:]|default-index\s*[=:]|find-links\s*[=:]|npmRegistryServer\s*:|npmScopes\s*:|httpsProxy\s*:|httpProxy\s*:)/im;
+/** A package-manager configuration line that sets a registry, index, proxy or other package source. The leading
+ *  whitespace stops at a line break: `^\s*` let every line start rescan all the blank lines after it, which was
+ *  quadratic in a file of blank lines; a match that started on a blank line also starts at the next line. A table
+ *  header ends on its own line too (`[index` lines with no `]` were quadratic as well) (A09-02). */
+const PACKAGE_SOURCE = /^[^\S\n\r\u2028\u2029]*(\[\[?\s*(index|install\.scopes|install\.registry)[^\]\n\r]*\]\]?|(@[^\s:=]+:)?registry\s*[=:]|(https?-|no-)?proxy\s*[=:]|(extra-)?index(-url)?\s*[=:]|default-index\s*[=:]|find-links\s*[=:]|npmRegistryServer\s*:|npmScopes\s*:|httpsProxy\s*:|httpProxy\s*:)/im;
 /** A uv package-source key (the same keys uv.toml takes, at the top of [tool.uv] or [tool.uv.pip]). */
 const UV_SOURCE_KEY = /^((extra-)?index(-url)?|default-index|find-links)$/i;
 
@@ -450,6 +535,19 @@ function uvSourceAt(path: string[], value: string): boolean {
   return container && inlineEntries(value).some(([k, v]) => uvSourceAt([...path, ...k], v));
 }
 
+/** The key of a TOML table header line (`[a.b]`, `[[a.b]]`, a comment after it), trimmed, or undefined. The same
+ *  result as the 1.1.0 regex /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/ (the key ends at the first `]`, a second `[`
+ *  belongs to the key only when nothing else does), in linear time: that regex was quadratic on a long run of spaces
+ *  with no `]` (A09-02). */
+export function tomlHeader(line: string): string | undefined {
+  if (line[0] !== '[') return undefined;
+  const close = line.indexOf(']');
+  if (close < 0 || !/^\]?\s*(#.*)?$/.test(line.slice(close + 1))) return undefined;
+  const inner = line.slice(1, close);
+  const key = inner.length > 1 && inner[0] === '[' ? inner.slice(1) : inner;
+  return key ? key.trim() : undefined;
+}
+
 /** Whether a pyproject.toml sets a uv package source: an [[tool.uv.index]] table, or an index / index-url /
  *  extra-index-url / default-index / find-links key in [tool.uv] or [tool.uv.pip], also as a dotted or quoted key or
  *  in an inline table (`uv = { index-url = ... }`). Other tools' tables ([tool.pdm], [[tool.poetry.source]]) are not
@@ -459,9 +557,9 @@ export function pyprojectSetsUvSource(text: string): boolean {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/^\s+/, '');
     if (!line || line.startsWith('#')) continue;
-    const h = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
-    if (h) {
-      table = tomlKeyParts(h[1]);
+    const h = tomlHeader(line);
+    if (h !== undefined) {
+      table = tomlKeyParts(h);
       if (table.join('.') === 'tool.uv.index') return true;
       continue;
     }
@@ -483,11 +581,14 @@ export const LST_009 = defineRule(
   },
   (snap) => {
     const p = plugin(snap);
-    const launcher = pluginServers(p).some((s) => launcherOf(argvOf(s.cfg)));
-    if (!launcher) return [];
-    return p.packageConfigs.filter(setsPackageSource).map((c) => ({
-      path: c.path, message: `${c.path} sets a package source (registry, index or proxy) in a plugin that uses a package launcher`,
-    }));
+    const uses = (servers: ServerEntry[]) => servers.some((s) => launcherOf(argvOf(s.cfg)));
+    // Only a launcher in a plugin.json mcpServers file: info in 1.1.1 (A06-01).
+    const own = uses(pluginServers(p, false));
+    if (!own && !uses(pluginServers(p).filter((s) => s.fromFile))) return [];
+    return p.packageConfigs.filter(setsPackageSource).map((c) => {
+      const f: RawFinding = { path: c.path, message: `${c.path} sets a package source (registry, index or proxy) in a plugin that uses a package launcher` };
+      return own ? f : deferred(f);
+    });
   },
 );
 
@@ -526,8 +627,8 @@ export const LST_011 = defineRule(
       for (const [k, v] of Object.entries(obj)) {
         if (!isStr(v)) continue;
         const secretName = kind === 'header' ? SECRET_HEADER.test(k) || isSecretName(k) : isSecretName(k);
-        for (const m of v.matchAll(REF)) {
-          const ref = m[1].trim();
+        for (const m of refs(v)) {
+          const ref = m.ref.trim();
           if (USER_CONFIG.test(ref) || PLUGIN_VAR.test(ref)) continue;
           if (secretName || isSecretName(ref)) out.push({ path: s.where, severity: 'warning', message: `${kind} "${k}" of ${subject(s)} reads \${${ref}} from the user's environment (held: Uses a credential from the user's machine)` });
         }
@@ -540,7 +641,7 @@ export const LST_011 = defineRule(
     };
     check('header', s.cfg.headers);
     check('env', s.cfg.env);
-    return out;
+    return capFor(s, out);
   }),
 );
 
@@ -583,6 +684,8 @@ export const LST_013 = defineRule(
     if (bin.length) out.push({ message: `binary files the validator can't inspect: ${listPreview(bin.map((f) => f.path))}` });
     const links: ListingEntry[] = p.files.filter((f) => f.kind === 'symlink');
     if (links.length) out.push({ message: `symbolic links (blocked where the plugin loads them): ${listPreview(links.map((f) => f.path))}` });
+    // A06-06: installed dependencies and caches are not part of the committed plugin; say which folders were not counted.
+    if (p.skippedDirs?.length) out.push({ severity: 'info', message: `not walked (dependency, VCS or build-cache folders, not counted): ${listPreview(p.skippedDirs)}` });
     return out;
   },
 );
@@ -625,12 +728,14 @@ function concreteUrls(servers: ServerEntry[]): Array<{ s: ServerEntry; url: URL 
   });
 }
 
-function hostMismatch(snap: Snapshot, servers: ServerEntry[]): RawFinding[] {
+/** The servers whose host differs from the checked server, when none of them points at it. */
+function mismatched(snap: Snapshot, servers: ServerEntry[]): Array<{ s: ServerEntry; f: RawFinding }> {
   const host = hostOf(snap);
   const urls = concreteUrls(servers);
   if (!host || !urls.length || urls.some((u) => u.url.hostname.toLowerCase() === host)) return [];
-  return urls.map((u) => ({ path: u.s.where, message: `${subject(u.s)} points at ${q(displayUrl(u.url.href))}, not at the checked server host ${host}` }));
+  return urls.map((u) => ({ s: u.s, f: { path: u.s.where, message: `${subject(u.s)} points at ${q(displayUrl(u.url.href))}, not at the checked server host ${host}` } }));
 }
+const hostMismatch = (snap: Snapshot, servers: ServerEntry[]): RawFinding[] => mismatched(snap, servers).map((m) => m.f);
 
 export const LST_015 = defineRule(
   {
@@ -639,7 +744,13 @@ export const LST_015 = defineRule(
     fix: 'Check the URL the plugin ships (or update .mcp.json to the server you checked).',
     sources: [C_PSC],
   },
-  (snap) => hostMismatch(snap, pluginServers(plugin(snap)).filter((s) => isRemote(s.cfg))),
+  (snap) => {
+    // The 1.1.0 result over .mcp.json and the inline servers, plus at info what the mcpServers files add (A06-01).
+    const p = plugin(snap);
+    const own = hostMismatch(snap, pluginServers(p, false).filter((s) => isRemote(s.cfg)));
+    const added = mismatched(snap, pluginServers(p).filter((s) => isRemote(s.cfg))).filter((m) => m.s.fromFile);
+    return [...own, ...added.map((m) => deferred(m.f))];
+  },
 );
 
 // ---------------------------------------------------------------- ChatGPT package helpers
@@ -1145,6 +1256,9 @@ export function listingRuleChecked(snap: Snapshot, id: string): boolean {
   if (!l?.openai) return false;
   if (id === 'LST-023') return isObj(l.openai.manifest.json) && l.openai.format !== 'mcp-config';
   if (id === 'LST-025') return true;
+  // LST-022 checks nothing when it reads no server: an mcp.json that does not parse or a declared file that is missing
+  // is not a skills-only package, so MAN-020 and MAN-021 stay whole (A06-07).
+  if (id === 'LST-022') return !!openAiInterface(l.openai) && !l.openai.mcp?.error && openAiServers(l.openai).length > 0;
   return !!openAiInterface(l.openai);
 }
 

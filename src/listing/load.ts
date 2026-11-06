@@ -1,12 +1,12 @@
 // Read a Claude plugin folder or a ChatGPT plugin package manifest from disk into a Listing (spec Q3, wave 6).
 // Read-only and bounded: links are listed but never followed, every read is capped, and parse or I/O problems are
 // recorded in Listing.errors instead of thrown. Messages carry relative paths and error codes, not absolute paths.
-import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, opendirSync, openSync, readSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
 import { capStrings, TEXT_CAP } from '../limits.js';
 import { displayUrl } from '../rules/util/net.js';
 import { examineImage, IMAGE_COUNT_CAP } from './image.js';
-import type { Listing, ListingImage, ListingEntry, ListingError, ListingJson, ListingText, OpenAiFormat, OpenAiListing, PluginListing } from './types.js';
+import type { Listing, ListingImage, ListingEntry, ListingError, ListingJson, ListingText, OpenAiFormat, OpenAiListing, PluginListing, PluginMcpFile } from './types.js';
 
 /** A manifest or MCP configuration larger than this is not parsed. This is the tool's own read cap, not a directory
  *  rule (the directory's per-file limit is 5 MiB, and a real manifest is far smaller), so a file over it is reported at
@@ -18,6 +18,56 @@ export const LISTING_TEXT_CAP = 256 * 1024;
 export const LISTING_FILES_CAP = 10_000;
 /** Folder depth walked. */
 const MAX_DEPTH = 32;
+/** VCS metadata folders `--plugin-dir` never walks, at any depth (never part of the committed plugin). */
+export const VCS_DIRS = new Set(['.git', '.hg', '.svn']);
+/** Dependency and build-cache folders `--plugin-dir` does not walk, at any depth, when the plugin's root `.gitignore`
+ *  lists them (1.1.1, A06-06): the directory reviews the committed repository, and an ignored folder of installed
+ *  dependencies is not part of it. A committed one (not in .gitignore) is walked and checked as before. `dist/` and
+ *  `build/` are never skipped: a plugin often commits its built server there. */
+export const DEPENDENCY_DIRS = new Set([
+  'node_modules', 'bower_components', '.venv', 'venv', '__pycache__', 'site-packages', '.tox', '.nox', '.mypy_cache',
+  '.pytest_cache', '.ruff_cache', '.turbo', '.parcel-cache', '.next',
+]);
+/** Every folder name the walk may skip. */
+export const SKIPPED_DIRS = new Set([...VCS_DIRS, ...DEPENDENCY_DIRS]);
+
+/** A root .gitignore line that names a DEPENDENCY_DIRS folder. */
+export interface IgnoreRule { path: string; anchored: boolean; negate: boolean }
+/** Rules kept from a .gitignore (a real one has a handful; the cap bounds the walk on a hostile one). */
+const IGNORE_RULES_CAP = 1000;
+
+/** The lines of a root .gitignore that name a DEPENDENCY_DIRS folder, read as text, never through git: exact names,
+ *  `/name` (root only), `name/`, `**` + `/name` and `a/name` paths; `!` lines re-include. Globs are not expanded. */
+export function gitignoreRules(text: string): IgnoreRule[] {
+  const out: IgnoreRule[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    let p = raw.replace(/[ \t]+$/, '');
+    if (!p || p.startsWith('#')) continue;
+    const negate = p.startsWith('!');
+    if (negate) p = p.slice(1);
+    p = p.replace(/\/+$/, '');
+    if (p.startsWith('**/')) p = p.slice(3);
+    const anchored = p.startsWith('/') || p.slice(0, -1).includes('/');
+    p = p.replace(/^\//, '');
+    if (!DEPENDENCY_DIRS.has(p.split('/').pop()!)) continue;
+    out.push({ path: p, anchored, negate });
+    if (out.length >= IGNORE_RULES_CAP) break;
+  }
+  return out;
+}
+
+/** Whether the folder `rel` (POSIX, relative to the plugin root) is ignored by the rules: the last matching rule wins. */
+export function ignoredBy(rel: string, rules: IgnoreRule[]): boolean {
+  const name = rel.slice(rel.lastIndexOf('/') + 1);
+  let ignored = false;
+  for (const r of rules) if (r.anchored ? r.path === rel : r.path === name) ignored = !r.negate;
+  return ignored;
+}
+
+/** Skipped folders named in the listing (the rest are counted only by being skipped). */
+const SKIPPED_SHOWN = 20;
+/** MCP configuration files read from plugin.json mcpServers. */
+export const MCP_FILES_CAP = 16;
 
 /** Package-manager configuration files that can set a registry, index or proxy (pre-submission checklist). */
 export const PACKAGE_CONFIG_FILES = new Set(['.npmrc', '.yarnrc', '.yarnrc.yml', 'bunfig.toml', 'uv.toml', 'pip.conf', 'pip.ini', 'pyproject.toml']);
@@ -137,14 +187,33 @@ function readText(abs: string, rel: string, source: ListingError['source'], erro
   return r && { path: rel, text: r.text, ...(r.truncated ? { truncated: true } : {}) };
 }
 
-/** Every entry under `root` (links listed, not followed; `.git` skipped), breadth first, at most `cap`. */
-function walk(root: string, maxDepth: number, cap: number, source: ListingError['source'], errors: ListingError[]): { files: ListingEntry[]; truncated: boolean } {
+/** Up to `limit` names of a folder, sorted, read with opendir so a huge folder is not read in full (I-A06-7). */
+function readNames(abs: string, limit: number): string[] {
+  const d = opendirSync(abs);
+  const names: string[] = [];
+  try {
+    while (names.length < limit) {
+      const e = d.readSync();
+      if (!e) break;
+      names.push(e.name);
+    }
+  } finally {
+    d.closeSync();
+  }
+  return names.sort();
+}
+
+/** Every entry under `root` (links listed, not followed; the root `.git` skipped, and with `skip` set the VCS_DIRS
+ *  folders and the DEPENDENCY_DIRS folders the root .gitignore lists, at any depth, recorded in `skip.dirs`), breadth first, at most `cap`. A folder is read only as far as the
+ *  cap needs, so the kept entries of a folder that overflows it are the first ones the system lists, sorted. */
+function walk(root: string, maxDepth: number, cap: number, source: ListingError['source'], errors: ListingError[], skip?: { gitignore: IgnoreRule[]; dirs: string[] }): { files: ListingEntry[]; truncated: boolean } {
   const files: ListingEntry[] = [];
   const queue: Array<{ rel: string; depth: number }> = [{ rel: '', depth: 0 }];
   for (let next = queue.shift(); next; next = queue.shift()) {
     let names: string[];
     try {
-      names = readdirSync(join(root, next.rel)).sort();
+      // Enough names to reach the cap even when every skipped name is in this folder.
+      names = readNames(join(root, next.rel), cap - files.length + SKIPPED_DIRS.size + 1);
     } catch (err) {
       errors.push({ source, path: next.rel || '.', message: `could not be listed (${codeOf(err)})` });
       continue;
@@ -152,19 +221,51 @@ function walk(root: string, maxDepth: number, cap: number, source: ListingError[
     for (const name of names) {
       if (next.depth === 0 && name === '.git') continue;
       const rel = next.rel ? `${next.rel}/${name}` : name;
-      if (files.length >= cap) return { files, truncated: true };
-      let entry: ListingEntry;
-      try {
-        const st = lstatSync(join(root, rel));
-        entry = { path: posix(rel), size: st.isFile() ? st.size : 0, kind: st.isSymbolicLink() ? 'symlink' : st.isDirectory() ? 'dir' : st.isFile() ? 'file' : 'other' };
-      } catch {
-        entry = { path: posix(rel), size: 0, kind: 'other' };
+      let st: ReturnType<typeof lstatSync> | undefined;
+      try { st = lstatSync(join(root, rel)); } catch { st = undefined; }
+      if (skip && SKIPPED_DIRS.has(name) && st?.isDirectory() && (VCS_DIRS.has(name) || ignoredBy(posix(rel), skip.gitignore))) {
+        if (skip.dirs.length < SKIPPED_SHOWN) skip.dirs.push(posix(rel));
+        continue;
       }
+      if (files.length >= cap) return { files, truncated: true };
+      const entry: ListingEntry = st
+        ? { path: posix(rel), size: st.isFile() ? st.size : 0, kind: st.isSymbolicLink() ? 'symlink' : st.isDirectory() ? 'dir' : st.isFile() ? 'file' : 'other' }
+        : { path: posix(rel), size: 0, kind: 'other' };
       files.push(entry);
       if (entry.kind === 'dir' && next.depth + 1 < maxDepth) queue.push({ rel, depth: next.depth + 1 });
     }
   }
   return { files, truncated: false };
+}
+
+/** The MCP configuration files plugin.json names in `mcpServers` (a `.json` string, or the `.json` strings of an
+ *  array), read like the ChatGPT declared file: a `./` path with no `..`, inside the real root, never through a link
+ *  (A06-01). The root `.mcp.json` is read already and is not read twice. Read problems are carried on the entry for
+ *  LST-006, not printed as warnings: in 1.1.1 these files only add info findings. */
+function pluginMcpFiles(realRoot: string, manifest: ListingJson | undefined, listing: Listing): PluginMcpFile[] | undefined {
+  const j = manifest?.json;
+  if (!isObj(j)) return undefined;
+  const raw = j.mcpServers;
+  const refs = (Array.isArray(raw) ? raw : [raw]).filter((r): r is string => typeof r === 'string' && /\.json$/i.test(r.trim()));
+  if (!refs.length) return undefined;
+  const sink: Listing = { errors: [], truncated: listing.truncated };
+  const seen = new Set<string>(['.mcp.json']);
+  const out: PluginMcpFile[] = [];
+  for (const given of refs.slice(0, MCP_FILES_CAP)) {
+    const ref = given.trim();
+    const scheme = /^[a-z][a-z0-9+.-]*:/i.test(ref);
+    const shown = scheme ? displayUrl(ref) : posix(ref);
+    const parts = ref.split(/[\\/]/);
+    if (scheme) { out.push({ ref: shown, path: shown, problem: 'not-relative', error: 'is not a ./ path inside the plugin folder, so it was not read' }); continue; }
+    if (/^([\\/]|[A-Za-z]:)/.test(ref) || parts.includes('..')) { out.push({ ref: shown, path: shown, problem: 'escapes', error: 'is outside the plugin folder (path escapes plugin folder), so it was not read' }); continue; }
+    if (!ref.startsWith('./')) { out.push({ ref: shown, path: shown, problem: 'not-relative', error: 'is not a ./ path inside the plugin folder, so it was not read' }); continue; }
+    const rel = parts.filter((x) => x && x !== '.').join('/');
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const got = readJson(join(realRoot, rel), rel, 'plugin', sink, realRoot);
+    out.push(got ? { ...got, ref: shown } : { ref: shown, path: rel, problem: 'not-found', error: 'does not exist in the plugin folder (Path not found), so it was not read' });
+  }
+  return out;
 }
 
 /** Read a Claude plugin folder: `.claude-plugin/plugin.json`, `.mcp.json`, README, LICENSE, package-manager
@@ -182,11 +283,17 @@ export function loadPluginDir(given: string): Listing {
     listing.plugin = { packageConfigs: [], files: [] };
     return listing;
   }
-  const { files, truncated } = walk(dir, MAX_DEPTH, LISTING_FILES_CAP, 'plugin', errors);
+  // The root .gitignore, read as text (a read problem only means nothing is skipped beyond the VCS folders).
+  const gitignore = gitignoreRules(exists(join(dir, '.gitignore')) ? readText(join(dir, '.gitignore'), '.gitignore', 'plugin', [], dir)?.text ?? '' : '');
+  const skip = { gitignore, dirs: [] as string[] };
+  const { files, truncated } = walk(dir, MAX_DEPTH, LISTING_FILES_CAP, 'plugin', errors, skip);
+  const skippedDirs = skip.dirs;
   const rootFiles = files.filter((f) => !f.path.includes('/') && f.kind === 'file');
   const readmes = rootFiles.filter((f) => README.test(f.path)).sort((a, b) => Number(!/^readme\.md$/i.test(a.path)) - Number(!/^readme\.md$/i.test(b.path)));
+  const manifest = readJson(join(dir, '.claude-plugin', 'plugin.json'), '.claude-plugin/plugin.json', 'plugin', listing, dir);
+  const mcpFiles = pluginMcpFiles(dir, manifest, listing);
   const plugin: PluginListing = {
-    manifest: readJson(join(dir, '.claude-plugin', 'plugin.json'), '.claude-plugin/plugin.json', 'plugin', listing, dir),
+    manifest,
     mcp: readJson(join(dir, '.mcp.json'), '.mcp.json', 'plugin', listing, dir),
     readme: readmes[0] && readText(join(dir, readmes[0].path), readmes[0].path, 'plugin', errors, dir),
     license: rootFiles.find((f) => LICENSE.test(f.path))?.path,
@@ -196,6 +303,8 @@ export function loadPluginDir(given: string): Listing {
       .filter((c) => isPackageConfig(c.path, c.text)),
     files,
     ...(truncated ? { filesTruncated: true } : {}),
+    ...(skippedDirs.length ? { skippedDirs } : {}),
+    ...(mcpFiles ? { mcpFiles } : {}),
   };
   listing.plugin = plugin;
   return listing;

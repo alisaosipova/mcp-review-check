@@ -39,9 +39,23 @@ export interface PluginListing {
   license?: string;
   /** Package-manager configuration files anywhere in the folder (.npmrc, bunfig.toml, uv.toml, a pyproject.toml with uv settings, ...), with their text. */
   packageConfigs: ListingText[];
-  /** Every entry of the folder (links are listed, not followed; `.git` is skipped), up to LISTING_FILES_CAP. */
+  /** Every entry of the folder (links are listed, not followed; `.git` and the SKIPPED_DIRS dependency, VCS and build
+   *  folders are skipped at any depth), up to LISTING_FILES_CAP. */
   files: ListingEntry[];
   filesTruncated?: boolean;
+  /** The skipped dependency, VCS and build folders found (relative paths, at most 20; 1.1.1, A06-06). */
+  skippedDirs?: string[];
+  /** The MCP configuration files plugin.json names in `mcpServers` (a `.json` string or array element), in the order
+   *  written (1.1.1, A06-01). Their findings are info until 1.3.0. */
+  mcpFiles?: PluginMcpFile[];
+}
+
+/** An MCP configuration file named in plugin.json `mcpServers`: read when it is a `./` path inside the plugin. */
+export interface PluginMcpFile extends ListingJson {
+  /** The value as written in plugin.json. */
+  ref: string;
+  /** Why it was not read: not a `./` path, a path that escapes the plugin folder, or a path that does not exist. */
+  problem?: 'not-relative' | 'escapes' | 'not-found';
 }
 
 /** Where the OpenAI listing fields were found: plugin.json with extensions.com.openai (Agent Plugins), a Codex

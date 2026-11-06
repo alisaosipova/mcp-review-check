@@ -1,0 +1,29 @@
+{
+  "name": "acme-notes",
+  "displayName": "Acme Notes",
+  "version": "1.2.0",
+  "description": "Search and summarize notes from your Acme workspace.",
+  "author": {
+    "name": "Acme",
+    "url": "https://acme.test"
+  },
+  "license": "MIT",
+  "icon": "./assets/icon.svg",
+  "documentationUrl": "https://acme.test/docs",
+  "supportUrl": "https://acme.test/support",
+  "privacyPolicyUrl": "https://acme.test/privacy",
+  "termsOfServiceUrl": "https://acme.test/terms",
+  "userConfig": {
+    "api_token": {
+      "type": "string",
+      "title": "API token",
+      "description": "Acme API token",
+      "sensitive": true
+    }
+  },
+  "mcpServers": [
+    "./config/mcp.json",
+    "../outside.json",
+    "./config/missing.json"
+  ]
+}

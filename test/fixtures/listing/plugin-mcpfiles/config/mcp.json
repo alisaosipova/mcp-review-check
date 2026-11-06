@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "acme-extra": {
+      "command": "npx",
+      "args": [
+        "some-unpinned-pkg"
+      ],
+      "env": {
+        "API_TOKEN": "canary-not-a-real-value"
+      }
+    },
+    "acme-remote": {
+      "type": "http",
+      "url": "http://mcp.other.test/mcp"
+    }
+  }
+}
