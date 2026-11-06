@@ -19,6 +19,9 @@ export const isInputRequired = (c: ActiveCall) => isObj(c.result) && c.result.re
 /** Calls that got a final answer; timed-out or failed calls are reported by RT-005 only, interim results by none. */
 const calls = (snap: Snapshot) => (snap.active?.calls ?? []).filter((c) => !c.transportError && !isInputRequired(c));
 const allCalls = (snap: Snapshot) => snap.active?.calls ?? [];
+/** 2026-07-28 header-validation codes; RT-003 does not count them as input-validation errors. */
+const HEADER_CODES = [-32020, -32021, -32022];
+const isModernEra = (s: Snapshot) => s.era === 'modern' || s.era === 'dual';
 const isInvalid = (c: ActiveCall) => c.kind === 'invalid-missing' || c.kind === 'invalid-type';
 const resultObj = (c: ActiveCall): Obj | undefined => (isObj(c.result) ? c.result : undefined);
 const isSuccess = (c: ActiveCall) => !!resultObj(c) && resultObj(c)!.isError !== true;
@@ -74,7 +77,11 @@ export const RT_003 = defineRule(
     fix: 'Return { isError: true, content: [...] } for invalid arguments.',
     sources: ['https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts'],
   },
-  (snap) => calls(snap).filter((c) => isInvalid(c) && c.jsonRpcError !== undefined).map((c) => ({ tool: c.tool, message: `${c.kind} input returned a JSON-RPC error instead of isError` })),
+  // A 2026-07-28 header-validation error (-32020 header mismatch, -32021, -32022) rejects the request's headers before
+  // the tool sees its arguments: not an input-validation answer (A03-01).
+  (snap) => calls(snap)
+    .filter((c) => isInvalid(c) && c.jsonRpcError !== undefined && !(isModernEra(snap) && isObj(c.jsonRpcError) && HEADER_CODES.includes(c.jsonRpcError.code as number)))
+    .map((c) => ({ tool: c.tool, message: `${c.kind} input returned a JSON-RPC error instead of isError` })),
 );
 
 /**

@@ -162,7 +162,8 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
   - No A record → claude error ("Connectors are IPv4-only"). For chatgpt this case is info.
   - Any A or AAAA record in a non-public range (§1.5) → error for both. Mixed public and private also fails.
   - In local mode this is info.
-  - The message notes that the result comes from the system resolver.
+  - The message notes that the result comes from the configured resolver (`dns.resolve*` asks the resolv.conf servers, not "public DNS") and, from 1.2.0, names those servers (`DnsResult.servers` = `dns.getServers()`, I-A04-5).
+  - "Resolves only locally" (the system lookup `dns.lookup` answers, the configured resolver has no A record) needs an authoritative "no records" answer: ENOTFOUND, ENODATA or an empty answer. Any other resolver error (ECONNREFUSED, ETIMEOUT, ESERVFAIL, EREFUSED, ...) is **info** "inconclusive (network): DNS lookup for <host> failed (<code>) (configured resolver ...)" with the system-lookup addresses (1.2.0, A04-02; before, a failed resolver plus a working system lookup was an error naming a public address as local).
 - Why: Claude reaches connectors over IPv4 only. Private addresses are unreachable from both hosts.
 - Fix: publish public A records.
 - Source: https://claude.com/docs/connectors/building/troubleshooting
@@ -198,7 +199,7 @@ Each entry has: ID, title, severity per platform (the keys are the platforms it 
   - Accepted on a public target → spec **info** only, because a public server may treat all origins as valid.
 - Why: the spec requires a 403 for an invalid Origin, but hosts send their own Origin values.
 - Fix: validate Origin against an allowlist that includes the host origins.
-- Source: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+- Source: https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http. On a legacy HTTP+SSE target each finding cites https://modelcontextprotocol.io/specification/2024-11-05/basic/transports first, the page that server implements, which has its own Origin MUST (1.2.0, I-C-4; `sseDocs` in `src/rules/spec.ts`).
 
 **SRV-009 Bot challenge or WAF signature in responses.** Severity: claude=warning, chatgpt=warning. Needs: http.
 - Detect: any exchange matching one of:
@@ -312,7 +313,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
 - Detect: GET with `Accept: text/event-stream`, plus session headers when they exist. Abort after the headers arrive (5 s cap).
   - Legacy: pass on 200 `text/event-stream` or 405. A 400 without a session is accepted. Anything else → warning.
   - Modern-only: pass on 405 only.
-- Source: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+- Source: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports. On a legacy HTTP+SSE target a finding cites the 2024-11-05 transports page first, as SRV-008 does (1.2.0, I-C-4).
 
 **SPEC-006 Mcp-Session-Id format.** Severity: spec=error. Needs: http.
 - Detect:
@@ -338,7 +339,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
 
 **SPEC-010 Resource not found → error, never empty contents.** Severity: spec=error. Needs: resources.
 - Detect: `resources/read` of `mcp-review-check://does-not-exist`.
-  - A result with `contents: []` → error.
+  - A result with `contents: []` → error on the 2026-07-28 probe ("MUST NOT return an empty contents array"). On the 2025-11-25 probe → **warning** citing https://modelcontextprotocol.io/specification/2025-11-25/server/resources#error-handling, which has only "SHOULD return standard JSON-RPC errors" (1.2.0, A04-04; the rule's `severityNote` says so).
   - Modern: the code must be -32602. A -32020/-32021/-32022 answer rejects the probe's headers, not the missing resource, and is inconclusive (no finding).
   - Legacy: -32002 or -32602 is accepted. Any other code → **info**.
   - 2026-07-28 requests carry `Mcp-Name` (params.name for tools/call and prompts/get, params.uri for resources/read, subscribe and unsubscribe) in addition to `Mcp-Method`. A value that is not plain visible ASCII and space, has leading or trailing whitespace, or starts with `=?base64?` and ends with `?=` is sent as `=?base64?{UTF-8 Base64}?=` (`encodeHeaderValue` in `src/protocol/modern.ts`; streamable-http "Value Encoding"; 1.2.0, A03-03; before, it was percent-encoded).
@@ -373,7 +374,7 @@ These rules are evaluated over recorded HTTP exchanges (§4.3). Era tags decide 
 - Detect, over every observed error:
   - `code` is not an integer → error.
   - Only for responses to 2026-07-28 requests (`observedError.modern`, or era `modern` when unknown): code in [-32099, -32020] but not one of -32020/-32021/-32022 → error, and -32002 or -32042 → error ("removed in 2026-07-28"). 2025-11-25 defines -32042 (URL elicitation required) and predates the range policy, so legacy responses get only the integer and id checks.
-  - Response `id` differs from the request id and is not `null` → **warning**. Example: DeepWiki returns `"server-error"`.
+  - Response `id` differs from the request id and is not `null` → **warning**. Example: DeepWiki returns `"server-error"`. An error response with no `id` is read like `id: null` (1.2.0, C-01): the 2026-07-28 Streamable HTTP page lets a 403 for an invalid Origin (and a rejected notification or header) carry a JSON-RPC error without an id.
   - A successful response (a `result`, no `error`) whose `id` is not the request's (strict comparison: `"6"` does not echo `6`) → **warning** "`<source>`: result answers another request id (response id X, request id Y)". Such an entry (`observedError.result: true`, with the request `method`) has no `code`, so the code checks do not apply to it. When the response is to `tools/list`, `resources/list` or `prompts/list` and SPEC-020 reports that listing as failed because of the mismatch, SPEC-016 leaves it to SPEC-020, so one exchange is not reported twice.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic#error-codes, https://www.jsonrpc.org/specification
 
@@ -1008,7 +1009,7 @@ Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `auth
 - Source: https://claude.com/docs/connectors/building/authentication, https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#refresh-tokens
 
 **AUTH-016 Invalid token gets 401.** Severity: spec=error, chatgpt=warning.
-- Detect: a request with `Authorization: Bearer mcp-review-check-invalid-token` returns a status other than 401 → finding. A 401 without a `WWW-Authenticate` pointing to `resource_metadata` → **warning**.
+- Detect: a request with `Authorization: Bearer mcp-review-check-invalid-token` returns a status other than 401 → finding. A 401 without a `WWW-Authenticate` pointing to `resource_metadata` → **warning** only when the unauthenticated challenge carries `resource_metadata` and the PRM was not found at a well-known path (1.2.0, A04-05): a challenge that lacks it on every 401 is AUTH-002's finding, and a well-known PRM is a discovery path of its own, so one root cause gives one finding.
 - Source: https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#token-handling
 
 **AUTH-017 OAuth endpoint latency.** Severity: claude=error.
@@ -1030,7 +1031,8 @@ Needs: auth, unless noted. The probe flow is in §3.3. AS-level checks use `auth
 
 **AUTH-020 Redirect URIs accepted at /authorize.** Severity: claude=error. Needs: active-auth.
 - Detect: GET `authorization_endpoint` with PKCE params and `resource` for each of `https://claude.ai/api/mcp/auth_callback`, `http://localhost:3118/callback` and `http://127.0.0.1:3118/callback`, using `redirect: manual`.
-  - A 400, or an error body mentioning `redirect_uri` → error.
+  - An error body that names the redirect (`invalid_redirect_uri`, redirect_uri wording, or an OAuth `error` JSON that mentions redirect) → error.
+  - A 400 that does not name the redirect → **info** (1.2.0, A04-01; before, any 400 was an error): "inconclusive (network): /authorize refused the probe's client_id (400 <error>); redirect_uri <uri> not verified" when no DCR `client_id` was obtained or the error is `invalid_client`, `unauthorized_client` or `invalid_request`, else "... answered 400 <error> without naming the redirect; redirect_uri <uri> not verified".
   - A login page that shows before validation → **info** ("verify manually").
 - Source: https://claude.com/docs/connectors/building/authentication
 
@@ -1062,7 +1064,7 @@ Safety contract:
 - Source: https://claude.com/docs/connectors/building/review-criteria
 
 **RT-003 Input-validation errors reported with isError.** Severity: spec=warning.
-- Detect: an invalid-argument call returns a JSON-RPC error instead of `isError: true`.
+- Detect: an invalid-argument call returns a JSON-RPC error instead of `isError: true`. On a 2026-07-28 server (era modern or dual) a -32020/-32021/-32022 header-validation error is not counted: it rejects the request's headers before the tool reads its arguments (1.2.0, A03-01).
 - Source: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts
 
 **RT-004 Result size.** Severity: claude=error.
@@ -1456,7 +1458,7 @@ interface Snapshot {
     kind: 'streamable-http' | 'sse' | 'stdio';
     exchanges: HttpExchange[];                     // full trace incl. SDK traffic
     preflight?: HttpExchange;
-    dns?: { a: string[]; aaaa: string[]; error?: string };
+    dns?: { host: string; a: string[]; aaaa: string[]; error?: string; code?: string; lookup?: string[]; servers?: string[] }; // servers: dns.getServers() (1.2.0, I-A04-5)
     tls?: Array<{ host: string; ok: boolean; code?: string }>;
     probes: Partial<Record<WireProbeName, HttpExchange | JsonRpcObservation>>;
     timings: Record<string, number[]>;
@@ -1776,7 +1778,7 @@ export const CTA_TEXT = 'Need help getting your connector approved?';
 - **Q1:** Does ChatGPT read `_meta.ui.domain` ahead of `openai/widgetDomain` when both are present? This decides whether one server can satisfy both hosts' domain rules (§2.11 C1). Until confirmed, APPS-012 prefers `openai/widgetDomain`.
   **Decided 2026-11-02 (0.4.0):** keep. APPS-012 prefers `openai/widgetDomain`; revisit if OpenAI documents the precedence.
 - **Q2:** Should SRV-004's "no A record" be checked against public DNS (DoH) instead of the system resolver? v1 uses the system resolver and says so in the message.
-  **Decided 2026-11-02 (0.4.0):** keep the system resolver; the message says so.
+  **Decided 2026-11-02 (0.4.0):** keep the system resolver; the message says so. **Amendment (2026-11-05, 1.2.0 P4):** the message says "configured resolver" and names the `dns.getServers()` addresses; only NXDOMAIN, NODATA or an empty answer counts as "no records", any other resolver error is inconclusive (A04-02, I-A04-5).
 - **Q3:** Should listing and manifest linting (`--listing listing.json`, `--plugin plugin.json`) turn the MAN-002/015..024 items into automated checks? This is planned for v1.1.
   **Decided 2026-11-02 (0.4.0):** yes, this release. `--plugin-dir` and `--openai-manifest` (not `--listing`/`--plugin`) feed LST-001..LST-026 (§2.13, §3.8), which automate MAN-015, 017, 018, 020 and 023 fully and MAN-002, 016, 019 and 021 in part. The OpenAI listing fields live in plugin.json, not in mcp.json. MAN-022 and MAN-024 stay manual.
 - **Q4:** The score weights (12/4, cap of 3 per rule) are provisional. Revisit them after running the tool on real servers.

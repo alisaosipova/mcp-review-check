@@ -64,7 +64,8 @@ describe('F038 AUTH-020 login page carrying redirect_uri', () => {
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: '<p>Invalid redirect_uri</p>' }))[0].severity).toBe('error');
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 200, bodySnippet: '<p>The redirect_uri is not registered for this client</p>' }))[0].severity).toBe('error');
     expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 403, json: { error: 'invalid_request', error_description: 'redirect_uri mismatch' } }))[0].severity).toBe('error');
-    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 400 }))[0].severity).toBe('error');
+    // 1.2.0 (A04-01): a 400 that does not name the redirect is inconclusive, not a rejection.
+    expect(evaluate(byId('AUTH-020'), authorizeSnap({ status: 400 }))[0].severity).toBe('info');
   });
 });
 
@@ -322,8 +323,8 @@ describe('F060 SPEC-010 content for a missing resource URI', () => {
     expect(evaluate(byId('SPEC-010'), withRead({ contents: [{ uri: 'mcp-review-check://does-not-exist', text: 'hello' }] }))).toMatchObject([{ severity: 'info', message: expect.stringMatching(/returned content instead of an error/) }]);
   });
 
-  it('empty contents stay an error', () => {
-    expect(evaluate(byId('SPEC-010'), withRead({ contents: [] }))).toMatchObject([{ severity: 'error' }]);
+  it('empty contents stay a finding (a warning on the 2025-11-25 probe from 1.2.0, A04-04)', () => {
+    expect(evaluate(byId('SPEC-010'), withRead({ contents: [] }))).toMatchObject([{ severity: 'warning' }]);
   });
 });
 

@@ -1,7 +1,7 @@
 // SPEC: protocol and wire conformance (§2.2).
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding } from './types.js';
-import { isObj, isStr, isStrArray, metaOf, toolName, type Obj } from './util/access.js';
+import { isObj, isStr, isStrArray, metaOf, safeStr, toolName, type Obj } from './util/access.js';
 import { allExchanges, probeExchange, probeRpc, type RpcView } from './util/obs.js';
 
 const LIFECYCLE_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle';
@@ -10,6 +10,14 @@ const LOGGING_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28/s
 const TRANSPORT_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/basic/transports';
 const SHTTP = 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http';
 const SCHEMA_TS = 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts';
+/** The HTTP+SSE transport page (2024-11-05), with its own Origin MUST: the page a legacy SSE server implements (I-C-4). */
+export const TRANSPORTS_2024 = 'https://modelcontextprotocol.io/specification/2024-11-05/basic/transports';
+
+/** On a legacy HTTP+SSE target, each finding cites the 2024-11-05 transports page first, then the rule's sources (I-C-4). */
+export function sseDocs(snap: Snapshot, sources: string[], out: RawFinding[]): RawFinding[] {
+  if (snap.transport.kind !== 'sse') return out;
+  return out.map((f) => ({ ...f, docs: [TRANSPORTS_2024, ...(f.docs ?? sources).filter((u) => u !== TRANSPORTS_2024)] }));
+}
 
 const isModernOnly = (s: Snapshot) => s.era === 'modern';
 /** 2026-07-28 header-validation codes (-32020 header mismatch, -32021, -32022 unsupported version). */
@@ -109,31 +117,35 @@ export const SPEC_004 = defineRule(
   },
 );
 
+const SPEC_005_SOURCES = [TRANSPORT_2025, SUBSCRIPTIONS, SHTTP];
+
 export const SPEC_005 = defineRule(
   {
     id: 'SPEC-005', title: 'GET on the MCP endpoint', severity: { spec: 'warning' }, needs: ['http'],
     rationale: 'GET must open an SSE stream or return 405.',
     fix: 'Return 405 Method Not Allowed for GET if you do not offer a server-initiated stream. On 2026-07-28 answer subscriptions/listen with a text/event-stream response.',
-    sources: [TRANSPORT_2025, SUBSCRIPTIONS, 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
+    sources: SPEC_005_SOURCES,
   },
-  (snap) => {
-    const out: RawFinding[] = [];
-    // 2026-07-28 removed the GET stream: long-lived notifications are the response to a subscriptions/listen POST,
-    // which the run opens (headers only) when the server declares listChanged or resource subscriptions.
-    const listen = probeExchange(snap, 'subscriptionsListen');
-    // A JSON-RPC error answer means the method is unimplemented, not that a stream was expected.
-    if (listen?.status !== undefined && !probeRpc(snap, 'subscriptionsListen')?.error && listen.status >= 200 && listen.status < 300 && mediaType(listen.contentType) !== 'text/event-stream') {
-      out.push({ message: `subscriptions/listen got ${listen.status}${listen.contentType ? ` (${listen.contentType})` : ''}; its response is a text/event-stream that stays open` });
-    }
-    const ex = probeExchange(snap, 'get');
-    if (!ex?.status || ex.status === 401 || snap.transport.kind === 'sse') return out;
-    const sse = ex.status === 200 && mediaType(ex.contentType) === 'text/event-stream';
-    // A modern-only server's GET is SPEC-015's check (sessions and streams belong to earlier revisions).
-    if (isModernOnly(snap)) return out;
-    if (sse || ex.status === 405 || (ex.status === 400 && !snap.transport.sessionId)) return out;
-    return [...out, { message: `GET returned ${ex.status}${ex.contentType ? ` (${ex.contentType})` : ''}; expected 200 text/event-stream or 405` }];
-  },
+  (snap) => sseDocs(snap, SPEC_005_SOURCES, spec005(snap)),
 );
+
+function spec005(snap: Snapshot): RawFinding[] {
+  const out: RawFinding[] = [];
+  // 2026-07-28 removed the GET stream: long-lived notifications are the response to a subscriptions/listen POST,
+  // which the run opens (headers only) when the server declares listChanged or resource subscriptions.
+  const listen = probeExchange(snap, 'subscriptionsListen');
+  // A JSON-RPC error answer means the method is unimplemented, not that a stream was expected.
+  if (listen?.status !== undefined && !probeRpc(snap, 'subscriptionsListen')?.error && listen.status >= 200 && listen.status < 300 && mediaType(listen.contentType) !== 'text/event-stream') {
+    out.push({ message: `subscriptions/listen got ${listen.status}${listen.contentType ? ` (${listen.contentType})` : ''}; its response is a text/event-stream that stays open` });
+  }
+  const ex = probeExchange(snap, 'get');
+  if (!ex?.status || ex.status === 401 || snap.transport.kind === 'sse') return out;
+  const sse = ex.status === 200 && mediaType(ex.contentType) === 'text/event-stream';
+  // A modern-only server's GET is SPEC-015's check (sessions and streams belong to earlier revisions).
+  if (isModernOnly(snap)) return out;
+  if (sse || ex.status === 405 || (ex.status === 400 && !snap.transport.sessionId)) return out;
+  return [...out, { message: `GET returned ${ex.status}${ex.contentType ? ` (${ex.contentType})` : ''}; expected 200 text/event-stream or 405` }];
+}
 
 function sessionIds(snap: Snapshot): string[] {
   const ids = new Set<string>();
@@ -180,7 +192,7 @@ export const SPEC_007 = defineRule(
     if (modern && isModern(snap)) {
       const data = modern.error?.data;
       const ok = modern.status === 400 && modern.error?.code === -32022 && isObj(data) && isStrArray(data.supported);
-      if (!ok) out.push({ message: `server/discover with version 1900-01-01 got ${modern.status ?? 'no status'} / code ${String(modern.error?.code)}; expected 400 / -32022 with data.supported` });
+      if (!ok) out.push({ message: `server/discover with version 1900-01-01 got ${modern.status ?? 'no status'} / code ${safeStr(modern.error?.code)}; expected 400 / -32022 with data.supported` });
     }
     return out;
   },
@@ -197,11 +209,11 @@ export const SPEC_008 = defineRule(
     const out: RawFinding[] = [];
     const modern = probeRpc(snap, 'unknownMethodModern');
     if (modern && isModern(snap) && !(modern.status === 404 && modern.error?.code === -32601)) {
-      out.push({ message: `unknown method got HTTP ${modern.status ?? '?'} / code ${String(modern.error?.code)}; expected 404 / -32601` });
+      out.push({ message: `unknown method got HTTP ${modern.status ?? '?'} / code ${safeStr(modern.error?.code)}; expected 404 / -32601` });
     }
     const legacy = probeRpc(snap, 'unknownMethod');
     if (legacy && !legacy.transportError && legacy.error?.code !== -32601) {
-      out.push({ severity: 'info', message: legacy.error ? `unknown method returned code ${String(legacy.error.code)} instead of -32601 (JSON-RPC deviation)` : 'unknown method returned a result instead of -32601' });
+      out.push({ severity: 'info', message: legacy.error ? `unknown method returned code ${safeStr(legacy.error.code)} instead of -32601 (JSON-RPC deviation)` : 'unknown method returned a result instead of -32601' });
     }
     return out;
   },
@@ -223,6 +235,9 @@ export const SPEC_009 = defineRule(
   },
 );
 
+const RESOURCES_ERRORS_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28/server/resources#error-handling';
+const RESOURCES_ERRORS_2025 = 'https://modelcontextprotocol.io/specification/2025-11-25/server/resources#error-handling';
+
 /** The URI the resourceMissing probes read (src/probe/wire.ts). */
 const MISSING_URI = 'mcp-review-check://does-not-exist';
 
@@ -231,14 +246,18 @@ export const SPEC_010 = defineRule(
     id: 'SPEC-010', title: 'Resource not found → error, never empty contents', severity: { spec: 'error' }, needs: ['resources'],
     rationale: 'Clients cannot tell an empty resource from a missing one.',
     fix: 'Return a JSON-RPC error (-32602) for unknown resource URIs.',
-    sources: ['https://modelcontextprotocol.io/specification/2026-07-28/server/resources#error-handling'],
+    sources: [RESOURCES_ERRORS_2026],
+    severityNote: 'Empty contents is an error only on a 2026-07-28 request (its MUST NOT); on 2025-11-25 the page has only a SHOULD for a JSON-RPC error, so it is a warning (A04-04).',
   },
   (snap) => {
     const out: RawFinding[] = [];
     const check = (v: RpcView | undefined, modern: boolean) => {
       if (!v || v.transportError) return;
       if (isObj(v.result) && Array.isArray(v.result.contents) && v.result.contents.length === 0) {
-        out.push({ message: 'resources/read of a missing URI returned empty contents instead of an error' });
+        // "MUST NOT return an empty contents array" is on the 2026-07-28 page only; 2025-11-25 says servers SHOULD
+        // return a JSON-RPC error, so the legacy probe gets a warning with that page (A04-04).
+        if (modern) out.push({ message: 'resources/read of a missing URI returned empty contents instead of an error' });
+        else out.push({ severity: 'warning', message: 'resources/read of a missing URI returned empty contents instead of an error (2025-11-25: SHOULD return a JSON-RPC error)', docs: [RESOURCES_ERRORS_2025] });
         return;
       }
       // Content for a URI no server can hold: a catch-all handler; it may be deliberate, so an observation.
@@ -250,8 +269,8 @@ export const SPEC_010 = defineRule(
       if (!v.error) return;
       // A header-validation code answers our probe's headers, not the missing resource: inconclusive.
       if (modern && MODERN_HEADER_CODES.includes(code as number)) return;
-      if (modern && code !== -32602) out.push({ message: `resource-not-found returned code ${String(code)}; expected -32602` });
-      if (!modern && code !== -32002 && code !== -32602) out.push({ severity: 'info', message: `resource-not-found returned code ${String(code)}; expected -32002 or -32602` });
+      if (modern && code !== -32602) out.push({ message: `resource-not-found returned code ${safeStr(code)}; expected -32602` });
+      if (!modern && code !== -32002 && code !== -32602) out.push({ severity: 'info', message: `resource-not-found returned code ${safeStr(code)}; expected -32002 or -32602` });
     };
     check(probeRpc(snap, 'resourceMissing'), false);
     if (isModern(snap)) check(probeRpc(snap, 'resourceMissingModern'), true);
@@ -279,7 +298,7 @@ export const SPEC_011 = defineRule(
         : code === -32020 || code === -32021 ? "; the server rejected the probe's headers" : '';
       const supported = isObj(e.data) && isStrArray(e.data.supported) ? `; data.supported: ${e.data.supported.join(', ')}` : '';
       const text = isStr(e.message) && e.message ? ` ${JSON.stringify(e.message.slice(0, 120))}` : '';
-      return [{ severity: 'info', message: `server/discover answered HTTP ${probe?.status ?? '?'} / code ${String(code)}${text}${why}${supported}; the result shape was not checked` }];
+      return [{ severity: 'info', message: `server/discover answered HTTP ${probe?.status ?? '?'} / code ${safeStr(code)}${text}${why}${supported}; the result shape was not checked` }];
     }
     if (!isObj(r)) return [{ message: 'server/discover result is not an object' }];
     const out: RawFinding[] = [];
@@ -356,7 +375,7 @@ export const SPEC_014 = defineRule(
     for (const [name, label] of [['headerMismatchNone', 'missing Mcp-Method'], ['headerMismatchWrong', 'wrong Mcp-Method']] as const) {
       const v = probeRpc(snap, name);
       if (!v) continue;
-      if (!(v.status === 400 && v.error?.code === -32020)) out.push({ message: `${label}: got HTTP ${v.status ?? '?'} / code ${String(v.error?.code)}; expected 400 / -32020` });
+      if (!(v.status === 400 && v.error?.code === -32020)) out.push({ message: `${label}: got HTTP ${v.status ?? '?'} / code ${safeStr(v.error?.code)}; expected 400 / -32020` });
     }
     return out;
   },
@@ -410,7 +429,9 @@ export const SPEC_016 = defineRule(
       if (typeof c !== 'number' || !Number.isInteger(c)) add({ message: `${e.source}: error code ${JSON.stringify(c)} is not an integer` });
       else if (modernPath && (c === -32002 || c === -32042)) add({ message: `${e.source}: 2026-07-28 response uses code ${c}, which that version removed` });
       else if (modernPath && c >= -32099 && c <= -32020 && !MODERN_HEADER_CODES.includes(c)) add({ message: `${e.source}: error code ${c} is in the reserved range` });
-      if (e.requestId !== undefined && e.responseId !== e.requestId && e.responseId !== null) {
+      // An error response without an id is read like id null: the transport page lets a 403 Origin rejection, a
+      // rejected notification or a header-validation error carry no id (C-01). Only a present, other id is reported.
+      if (e.requestId !== undefined && e.responseId !== undefined && e.responseId !== e.requestId && e.responseId !== null) {
         add({ severity: 'warning', message: `${e.source}: response id ${JSON.stringify(e.responseId)} does not match request id ${JSON.stringify(e.requestId)}` });
       }
     }
@@ -431,8 +452,8 @@ export const SPEC_017 = defineRule(
     const out: RawFinding[] = [];
     const owners: Array<[string, unknown, Partial<RawFinding>]> = [['serverInfo', snap.serverInfo, {}]];
     for (const t of snap.tools) owners.push([`tool ${toolName(t)}`, t, { tool: toolName(t) }]);
-    for (const r of snap.resources) owners.push([`resource ${String(r.uri)}`, r, { resource: String(r.uri) }]);
-    for (const p of snap.prompts) owners.push([`prompt ${String(p.name)}`, p, {}]);
+    for (const r of snap.resources) owners.push([`resource ${safeStr(r.uri)}`, r, { resource: safeStr(r.uri) }]);
+    for (const p of snap.prompts) owners.push([`prompt ${safeStr(p.name)}`, p, {}]);
     for (const [label, owner, extra] of owners) {
       if (!isObj(owner) || owner.icons === undefined) continue;
       if (!Array.isArray(owner.icons)) { out.push({ ...extra, message: `${label}: icons is not an array` }); continue; }
@@ -519,8 +540,8 @@ export const SPEC_018 = defineRule(
       }
     };
     for (const t of snap.tools) scan(t, `tool ${toolName(t)}`, { tool: toolName(t) });
-    for (const r of snap.resources) scan(r, `resource ${String(r.uri)}`, { resource: String(r.uri) });
-    for (const p of snap.prompts) scan(p, `prompt ${String(p.name)}`, {});
+    for (const r of snap.resources) scan(r, `resource ${safeStr(r.uri)}`, { resource: safeStr(r.uri) });
+    for (const p of snap.prompts) scan(p, `prompt ${safeStr(p.name)}`, {});
     for (const [method, m] of Object.entries(snap.listMeta)) for (const page of m.rawPages) scan(page, `${method} result`, {});
     for (const [uri, r] of Object.entries(snap.resourceReads)) {
       scan(r.raw, `resources/read ${uri}`, { resource: uri });
@@ -733,7 +754,7 @@ export const SPEC_023 = defineRule(
           } else if (probe?.result !== undefined && probe.status !== undefined && probe.status < 300) {
             issues.add(label, 'tasks/get answered a random, non-existent taskId with a result; the extension requires -32602 (Invalid params)', { severity: 'warning' });
           } else if (probe && code !== -32602) {
-            issues.add(label, `tasks/get for a random taskId got ${probe.status ?? 'no status'} / code ${String(code)}, not -32602; not verified`, { severity: 'info' });
+            issues.add(label, `tasks/get for a random taskId got ${probe.status ?? 'no status'} / code ${safeStr(code)}, not -32602; not verified`, { severity: 'info' });
           }
           const unseen = TASK_METHODS.filter((m) => !answered.has(m) && !(m === 'tasks/get' && probe));
           if (unseen.length) issues.add(label, `${TASKS_KEY} declared; ${unseen.join(', ')} not probed (declared, not verified)`, { severity: 'info' });

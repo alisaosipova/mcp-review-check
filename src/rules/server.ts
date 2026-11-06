@@ -8,13 +8,15 @@ import { displayUrl, hostUnder, isNonPublicIp, SHARED_PLATFORM_SUFFIXES, TUNNEL_
 import { allExchanges, INCONCLUSIVE, probeExchange } from './util/obs.js';
 import { TEXT_CAP } from '../limits.js';
 import { isTlsCode } from '../diagnose.js';
-import { capabilitySources, TASKS_KEY } from './spec.js';
+import { capabilitySources, sseDocs, TASKS_KEY } from './spec.js';
 
 /** Message prefix of a deploy-time finding made informational in local mode; the local banner lists their rules. */
 export const DEPLOY = 'Deploy-time check: ';
 const SUBMISSION = 'https://claude.com/docs/connectors/building/submission';
 const OAI_MCP = 'https://developers.openai.com/plugins/build/mcp-server';
 const OAI_GUIDE = 'https://developers.openai.com/plugins/plugin-guidelines';
+const SHTTP_2026 = 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http';
+
 
 function localize(snap: Snapshot, f: RawFinding): RawFinding {
   return snap.localMode ? { ...f, severity: 'info', message: DEPLOY + f.message } : f;
@@ -119,17 +121,28 @@ export const SRV_004 = defineRule(
     const out: RawFinding[] = [];
     const results = [snap.transport.dns, ...(snap.authProbe?.asDns ?? [])].filter((d) => d !== undefined);
     for (const d of results) {
-      const note = ' (system resolver)';
-      // The system resolver (/etc/hosts, container DNS) answers where public DNS has no A record.
+      // dns.resolve* asks the resolvers in resolv.conf, not "public DNS": the message names them (I-A04-5).
+      const via = d.servers?.length ? `configured resolver ${d.servers.join(', ')}` : 'configured resolver';
+      const note = ` (${via})`;
+      const nxdomain = d.code === 'ENOTFOUND' || (!!d.error && /ENOTFOUND|NXDOMAIN/.test(d.error));
+      const nodata = d.code === 'ENODATA' || (!!d.error && /ENODATA/.test(d.error));
+      // Only an authoritative "no records" answer (NXDOMAIN, NODATA, or an empty answer) proves the name is missing
+      // there. A resolver that failed (ECONNREFUSED, ETIMEOUT, ESERVFAIL, ...) proves nothing (A04-02).
+      const noRecords = !d.error || nxdomain || nodata;
+      if (!noRecords) {
+        const sys = d.lookup?.length ? `; the system lookup gives ${d.lookup.join(', ')}` : '';
+        out.push({ severity: 'info', message: `${INCONCLUSIVE}: DNS lookup for ${d.host} failed (${d.code ?? d.error})${note}${sys}` });
+        continue;
+      }
+      // The system lookup (/etc/hosts, container DNS) answers where the configured resolver has no A record.
       const local = d.a.length ? [] : (d.lookup ?? []).filter((ip) => isIP(ip) === 4 || !!d.error);
-      if (local.length) { out.push(localize(snap, { message: `${d.host} resolves only locally (${local.join(', ')}), not in public DNS` })); continue; }
+      if (local.length) { out.push(localize(snap, { message: `${d.host} resolves only locally (${local.join(', ')}), not via the ${via}` })); continue; }
       if (d.a.length === 0 && d.aaaa.length === 0 && d.error) {
-        // NXDOMAIN or a failed lookup is not an IPv6-only host. When the MCP host itself does not resolve, the
+        // NXDOMAIN or NODATA is not an IPv6-only host. When the MCP host itself does not resolve, the
         // connect failure (SRV-003) carries the verdict and this stays informational.
         const own = d === snap.transport.dns && !!snap.fatal;
-        if (d.code === 'ENOTFOUND' || /ENOTFOUND|NXDOMAIN/.test(d.error)) out.push(localize(snap, { severity: own ? 'info' : undefined, message: `hostname ${d.host} does not resolve (NXDOMAIN)${note}` }));
-        else if (d.code === 'ENODATA' || /ENODATA/.test(d.error)) out.push(localize(snap, { severity: own ? 'info' : undefined, message: `${d.host} has no A or AAAA records${note}` }));
-        else out.push({ severity: 'info', message: `${INCONCLUSIVE}: DNS lookup for ${d.host} failed (${d.code ?? d.error})${note}` });
+        if (nxdomain) out.push(localize(snap, { severity: own ? 'info' : undefined, message: `hostname ${d.host} does not resolve (NXDOMAIN)${note}` }));
+        else out.push(localize(snap, { severity: own ? 'info' : undefined, message: `${d.host} has no A or AAAA records${note}` }));
         continue;
       }
       if (d.a.length === 0) {
@@ -217,7 +230,7 @@ export const SRV_008 = defineRule(
     id: 'SRV-008', title: 'Origin header handling', severity: { claude: 'info', chatgpt: 'info', spec: 'error' }, needs: ['http'],
     rationale: 'The spec requires a 403 for an invalid Origin. Whether a host sends an Origin header, and which one, is not documented.',
     fix: 'Validate Origin against an allowlist; if hosts cannot connect, allow the Origin values they send.',
-    sources: ['https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http'],
+    sources: [SHTTP_2026],
   },
   (snap) => {
     const out: RawFinding[] = [];
@@ -235,7 +248,7 @@ export const SRV_008 = defineRule(
       if (snap.localMode) out.push({ platforms: ['spec'], severity: 'error', message: 'local server (loopback, private address or dotless name) accepts a foreign Origin (DNS rebinding risk)' });
       else out.push({ platforms: ['spec'], severity: 'info', message: 'server accepts any Origin (acceptable for a public server)' });
     }
-    return out;
+    return sseDocs(snap, [SHTTP_2026], out);
   },
 );
 

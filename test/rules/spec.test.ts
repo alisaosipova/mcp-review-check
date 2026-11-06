@@ -50,7 +50,8 @@ const cases: Record<string, Case> = {
   },
   'SPEC-010': {
     pos: snap({ resources: [], set: (s) => { s.transport.probes.resourceMissing = rpc({ result: { contents: [] } }); } }),
-    neg: snap({ resources: [], set: (s) => { s.transport.probes.resourceMissing = rpc({ error: { code: -32002, message: 'not found' } }); } }), severity: 'error',
+    // The 2025-11-25 probe: a SHOULD there, so a warning (A04-04); the 2026-07-28 error is in test/r111-p4-rules.test.ts.
+    neg: snap({ resources: [], set: (s) => { s.transport.probes.resourceMissing = rpc({ error: { code: -32002, message: 'not found' } }); } }), severity: 'warning',
   },
   'SPEC-011': { pos: modern((s) => { s.discoverRaw = { supportedVersions: [], capabilities: {} }; }), neg: modern() },
   'SPEC-012': {

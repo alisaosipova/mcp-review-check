@@ -20,7 +20,7 @@ A local server is reachable only from where the tool runs: inside Docker, `local
 
 ## DNS and TLS errors
 
-The tool uses the system resolver and Node's TLS stack, not your browser's. If a browser opens the URL but the tool does not, the usual causes are an extra root certificate that only the OS or the browser trusts (below), a proxy configured only in the browser, or an IPv6-only or split-horizon DNS name. Rules `SRV-*` report public-internet properties (public IPv4, HTTPS); on `localhost` or a name without a dot they are info only ([local mode](options-and-config.md#local-mode)).
+The tool uses the configured resolver (the resolv.conf servers, which SRV-004 messages name) and Node's TLS stack, not your browser's. If a browser opens the URL but the tool does not, the usual causes are an extra root certificate that only the OS or the browser trusts (below), a proxy configured only in the browser, or an IPv6-only or split-horizon DNS name. Rules `SRV-*` report public-internet properties (public IPv4, HTTPS); on `localhost` or a name without a dot they are info only ([local mode](options-and-config.md#local-mode)).
 
 ## Self-signed and corporate CA certificates
 

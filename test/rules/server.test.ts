@@ -223,7 +223,7 @@ describe('SRV rules', () => {
     const nx = { host: 'nope.acme.test', a: [], aaaa: [], error: 'queryA ENOTFOUND nope.acme.test', code: 'ENOTFOUND' };
     const fatal = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = nx; s.fatal = 'could not complete a handshake'; } }));
     expect(fatal).toHaveLength(1);
-    expect(fatal[0]).toMatchObject({ severity: 'info', message: 'hostname nope.acme.test does not resolve (NXDOMAIN) (system resolver)' });
+    expect(fatal[0]).toMatchObject({ severity: 'info', message: 'hostname nope.acme.test does not resolve (NXDOMAIN) (configured resolver)' });
     expect(fatal[0].message).not.toMatch(/IPv4/);
     // an authorization server that does not resolve is a real blocker
     const as = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = dns(['93.184.216.34']); s.authProbe = { trigger: 'preflight-401', prmAttempts: [], as: [], timings: {}, asDns: [{ ...nx, host: 'auth.acme.test' }] }; } }));
@@ -234,12 +234,12 @@ describe('SRV rules', () => {
 
   it('SRV-004 tells "resolves only locally" (dns.lookup) from "no A record"', () => {
     const local = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([]), lookup: ['127.0.0.1'] }; } }));
-    expect(local.map((x) => [x.severity, x.message])).toEqual([['error', 'mcp.acme.test resolves only locally (127.0.0.1), not in public DNS']]);
+    expect(local.map((x) => [x.severity, x.message])).toEqual([['error', 'mcp.acme.test resolves only locally (127.0.0.1), not via the configured resolver']]);
     const noA = evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...dns([], ['2606:2800:220:1::1']), lookup: ['2606:2800:220:1::1'] }; } }));
-    expect(noA.map((x) => x.message)).toEqual(['mcp.acme.test has no A record; Connectors are IPv4-only (system resolver)', 'mcp.acme.test has no A record (system resolver)']);
-    // a name only /etc/hosts or a container DNS knows: public DNS says NXDOMAIN, the system resolver answers
+    expect(noA.map((x) => x.message)).toEqual(['mcp.acme.test has no A record; Connectors are IPv4-only (configured resolver)', 'mcp.acme.test has no A record (configured resolver)']);
+    // a name only /etc/hosts or a container DNS knows: the configured resolver says NXDOMAIN, the system lookup answers
     const docker = { host: 'mcp.acme.test', a: [], aaaa: [], error: 'queryA ENOTFOUND mcp.acme.test', code: 'ENOTFOUND', lookup: ['172.18.0.2'] };
-    expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = docker; } })).map((x) => x.message)).toEqual(['mcp.acme.test resolves only locally (172.18.0.2), not in public DNS']);
+    expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = docker; } })).map((x) => x.message)).toEqual(['mcp.acme.test resolves only locally (172.18.0.2), not via the configured resolver']);
     expect(evaluate(byId('SRV-004'), snap({ url: URL_OK, set: (s) => { s.transport.dns = { ...docker, lookup: [] }; } }))[0].message).toMatch(/does not resolve \(NXDOMAIN\)/);
   });
 

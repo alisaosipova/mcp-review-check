@@ -79,11 +79,8 @@ function setPath(root: Snapshot, path: Array<string | number>, value: unknown): 
  * Rules whose body still throws on a hostile shape: handed off to the package that owns the rule file. Empty means
  * none; an entry that no longer throws fails the test (stale list).
  */
-const KNOWN_THROWERS: Record<string, string> = {
-  // String(r.uri) / String(p.name) in src/rules/spec.ts (SPEC-017 icons, SPEC-018 _meta keys): P4 replaces them with safeStr.
-  'SPEC-017': 'P4: spec.ts String(r.uri) on a resource uri {"toString":"x"}',
-  'SPEC-018': 'P4: spec.ts String(r.uri) on a resource uri {"toString":"x"}',
-};
+// Empty: P4 replaced String(r.uri) / String(p.name) in src/rules/spec.ts (SPEC-017, SPEC-018) with safeStr.
+const KNOWN_THROWERS: Record<string, string> = {};
 
 describe('hostile-shape fuzz over the catalog (I-A13-1)', () => {
   it('no rule throws on any hostile value of any server field', () => {

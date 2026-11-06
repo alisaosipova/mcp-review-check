@@ -78,6 +78,12 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - The CI pack smoke installs the tree the package ships: it extracts the tarball and runs `npm ci --omit=dev --ignore-scripts` in it, because `npm install <tarball>` ignores npm-shrinkwrap.json and re-resolves the ranges (A08-02).
 - Docs: README and SECURITY.md describe 1.x (no moving `v1` ref, pin a tag or a commit SHA; only the latest 1.x minor gets security fixes, as a patch of that minor) instead of 0.x (A08-05, I-A08-6); the Action input table in docs/guide/ci.md is generated from action.yml (`node scripts/action-inputs.mjs --write`) and checked by the docs test (it said the `version` default was 1.0); `--plugin-dir` and `--openai-manifest` run listing-only without a target; both `--fail-on-drift` advice texts are quoted; the local-mode banner goes to stderr for junit too; the preflight is not retried after a timeout; the `--save-baseline` paragraph says when the earlier baseline is kept and that the folder is created (A12-06, A01-02, A12-04).
 - The GitLab recipe fails on drift only in merge requests, so an intended tool change merged to the default branch becomes the new baseline instead of failing every default-branch job, and a manual `mcp-review-check-refresh` job re-saves the baseline (A12-07).
+- AUTH-020 no longer reports "/authorize rejected redirect_uri" (Claude error) for a 400 that does not name the redirect: a 400 `invalid_client`, `unauthorized_client` or `invalid_request`, or any 400 when no DCR client was registered, is an inconclusive info saying the probe's client_id was refused (A04-01).
+- SRV-004 no longer reports a public host as "resolves only locally" (error) when the resolver itself fails (ECONNREFUSED, ETIMEOUT, ESERVFAIL, ...): that is an inconclusive info with the system-lookup addresses (A04-02).
+- AUTH-016 no longer repeats AUTH-002's missing `resource_metadata` as a spec and ChatGPT warning; it reports only a pointer that the unauthenticated 401 carries and the invalid-token 401 drops, when no well-known PRM resolves (A04-05).
+- SPEC-016 no longer warns about a JSON-RPC error without an `id`, such as the 403 Origin rejection the 2026-07-28 transport page allows; it is read like `id: null` (C-01).
+- RT-003 no longer counts a 2026-07-28 header-validation error (-32020, -32021, -32022) to an invalid-argument call as "a JSON-RPC error instead of isError" (A03-01).
+- SPEC-017 and SPEC-018 no longer throw on a resource `uri` or prompt `name` such as `{"toString":"x"}`, and SPEC error-code messages use `safeStr()` (A13-01).
 
 ### Changed
 
@@ -87,6 +93,9 @@ Each release notes the rule catalog date and groups rule changes under **Rules a
 - `--help` is 84 lines: `--stdio "<command>"` is listed under Options and the `--no-*` opposites share one entry (I-A10-6).
 - The image build pins the privileged `tonistiigi/binfmt` (qemu-v10.2.3) and `moby/buildkit` (v0.34.2) images by digest instead of `latest` and `buildx-stable-1` (A08-04).
 - The npm publish job runs on Node 24.22.2, whose bundled npm 11.19.1 supports trusted publishing, and checks `npm --version` instead of running `npm install -g npm@...` in the job that holds `id-token: write` (I-A08-4).
+- SRV-004 messages say "configured resolver" instead of "system resolver" / "public DNS" and name the resolver servers (`dns.getServers()`, recorded as `DnsResult.servers`); baselines that match the old message text need a refresh (I-A04-5).
+- SPEC-010: empty `contents` for a missing URI on the 2025-11-25 probe is a warning citing the 2025-11-25 resources page (a SHOULD there); it stays an error on the 2026-07-28 probe (A04-04).
+- SRV-008 and SPEC-005 findings on a legacy HTTP+SSE server cite the 2024-11-05 transports page first (I-C-4).
 
 ## [1.1.0] - 2026-11-04
 

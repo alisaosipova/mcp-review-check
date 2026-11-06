@@ -123,6 +123,8 @@ export interface DnsResult {
   code?: string;
   /** Addresses from the system resolver (dns.lookup: /etc/hosts, container DNS), when it answered. */
   lookup?: string[];
+  /** The resolvers resolve4/resolve6 asked (dns.getServers(), from resolv.conf), named in SRV-004 messages (I-A04-5). */
+  servers?: string[];
 }
 
 export interface TlsObservation {

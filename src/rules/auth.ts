@@ -477,7 +477,14 @@ export const AUTH_016 = defineRule(
     if (isTransient(ex)) return [{ severity: 'info', message: `${INCONCLUSIVE}: invalid bearer token got ${ex.status} after retries` }];
     if (ex.status !== 401) return [{ message: `invalid bearer token got ${ex.status}, expected 401` }];
     const ch = parseWwwAuthenticate(ex.headers?.['www-authenticate']).find(isBearerLike);
-    return ch?.params.resource_metadata ? [] : [{ severity: 'warning', message: '401 for an invalid token lacks a WWW-Authenticate resource_metadata' }];
+    if (ch?.params.resource_metadata) return [];
+    // One root cause, one finding (A04-05): a well-known PRM is a discovery path of its own (the spec needs only one),
+    // and a challenge that lacks resource_metadata on every 401 is AUTH-002's finding. This rule reports only a
+    // pointer that the unauthenticated challenge carries and the invalid-token 401 drops.
+    const a = snap.authProbe!;
+    const first = a.challenge?.parsed.find(isBearerLike);
+    if ((a.prm && a.prm.via !== 'header') || !first?.params.resource_metadata) return [];
+    return [{ severity: 'warning', message: '401 for an invalid token lacks the WWW-Authenticate resource_metadata that the unauthenticated 401 carries' }];
   },
 );
 
@@ -547,6 +554,9 @@ export const AUTH_019 = defineRule(
 /** Error wording an authorization server uses for a refused redirect URI (OAuth error codes and common prose). */
 const REDIRECT_REJECTED = /invalid[ _-]?redirect[ _-]?uri|redirect[ _-]?uri[^<>\n]{0,60}\b(is |was )?(invalid|not (allowed|registered|valid|permitted)|mismatch|does not match)/i;
 
+/** OAuth error codes of an /authorize 400 that point at the client or the request, not at redirect_uri (A04-01). */
+const CLIENT_REFUSED = new Set(['invalid_client', 'unauthorized_client', 'invalid_request']);
+
 export const AUTH_020 = defineRule(
   {
     id: 'AUTH-020', title: 'Redirect URIs accepted at /authorize', severity: { claude: 'error' }, needs: ['active-auth'],
@@ -559,8 +569,21 @@ export const AUTH_020 = defineRule(
     const body = ex.bodySnippet ?? '';
     // A login or consent page carries redirect_uri in a hidden input or its script config: only an error body
     // that names it counts as a rejection.
-    if (ex.status === 400 || REDIRECT_REJECTED.test(body) || (isObj(ex.json) && isStr(ex.json.error) && /redirect/i.test(JSON.stringify(ex.json)))) {
+    if (REDIRECT_REJECTED.test(body) || (isObj(ex.json) && isStr(ex.json.error) && /redirect/i.test(JSON.stringify(ex.json)))) {
       return [{ message: `/authorize rejected redirect_uri ${redirect} (${ex.status})` }];
+    }
+    // A 400 that does not name the redirect may refuse the probe's client_id (no DCR client: CIMD-only or
+    // pre-registered clients) or another parameter: the status alone is no verdict on redirect_uri (A04-01).
+    if (ex.status === 400) {
+      const err = isObj(ex.json) && isStr(ex.json.error) ? ex.json.error : ex.oauthError;
+      const shown = isStr(err) ? `400 ${err.slice(0, 80)}` : '400';
+      const clientRefused = !snap.authProbe?.active?.clientId || (isStr(err) && CLIENT_REFUSED.has(err));
+      return [{
+        severity: 'info',
+        message: clientRefused
+          ? `${INCONCLUSIVE}: /authorize refused the probe's client_id (${shown}); redirect_uri ${redirect} not verified`
+          : `${INCONCLUSIVE}: /authorize answered ${shown} without naming the redirect; redirect_uri ${redirect} not verified`,
+      }];
     }
     if (ex.status === 200 && /<form|login|sign in/i.test(body)) return [{ severity: 'info', message: `/authorize shows a login page before validating ${redirect}; verify manually` }];
     return [];
