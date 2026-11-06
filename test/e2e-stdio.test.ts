@@ -188,7 +188,12 @@ describe('e2e stdio', () => {
   });
 
   it('unwritable --output: exit 2 with a clear message, checked before connecting (1.2.0, I-A10-1)', async () => {
-    const r = await cli(['--stdio', GOOD, '--format', 'json', '--output', '/nonexistent-dir-mrc/r.json']);
+    // A path under a regular file cannot be written on any OS. A directory at the filesystem root is no test on Windows:
+    // D:\ is writable for the runner's user and accessSync(W_OK) checks only the read-only attribute there.
+    const dir = mkdtempSync(join(tmpdir(), 'mrc-out-'));
+    writeFileSync(join(dir, 'file'), '');
+    const r = await cli(['--stdio', GOOD, '--format', 'json', '--output', join(dir, 'file', 'r.json')]);
+    rmSync(dir, { recursive: true, force: true });
     expect(r.code).toBe(2);
     expect(r.stderr).toMatch(/cannot write --output .*\(checked before connecting; no report was written\)/);
     expect(r.stdout).toBe('');

@@ -226,7 +226,7 @@ describe('a server that exits after initialize (C001)', () => {
 });
 
 describe('large stdio messages (R047) and the SDK stdio transport shape (F017)', () => {
-  const stdio = (args: string[], timeoutMs = 20000) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs }).then((r) => r.snap);
+  const stdio = (args: string[], timeoutMs = 20000, snapshotBudget?: number) => buildSnapshot({ target: { kind: 'stdio', command: process.execPath, args: [WP2, ...args] }, timeoutMs, snapshotBudget }).then((r) => r.snap);
 
   it('an 11 MB UI resource is read over stdio, as over HTTP (the SDK default buffer is 10 MB)', async () => {
     const snap = await stdio(['bigui', '11']);
@@ -237,10 +237,19 @@ describe('large stdio messages (R047) and the SDK stdio transport shape (F017)',
 
   // 70 MB through the SDK read buffer takes minutes under V8 coverage instrumentation, so the CI coverage job
   // (MCP_REVIEW_CHECK_COVERAGE=1) skips it; the normal test run keeps it.
-  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('a message over the stdio buffer names the overflow on the failed read', async () => {
-    const snap = await stdio(['bigui', '70'], 170000); // the SDK read buffer re-concatenates on every 64 KB chunk, so 70 MB takes ~40 s on a loaded 14-core box and longer on a 2-core CI runner
+  // Since 1.2.0 the byte budget is charged as a large message arrives and before the line reader sees each chunk, so under
+  // the default 64 MB budget a 70 MB message spends the budget before it overflows the 64 MB read buffer, on every OS
+  // whatever its pipe chunk size (before, which came first depended on the chunking: macOS and Windows differed from Linux).
+  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('a message over the stdio buffer names the overflow on the failed read (budget above the buffer)', async () => {
+    const snap = await stdio(['bigui', '70'], 170000, 256 * 1024 * 1024);
     expect(String(snap.resourceReads['ui://big']?.error)).toMatch(/Connection closed.*exceeded the 64 MB stdio read buffer: ReadBuffer exceeded/);
-  }, 300000); // see the timeout above; CI failed this test with the 20 s request timeout
+  }, 300000);
+
+  it.skipIf(!!process.env.MCP_REVIEW_CHECK_COVERAGE)('under the default budget the same message stops the run on the budget, during the UI reads', async () => {
+    const snap = await stdio(['bigui', '70'], 170000);
+    expect(snap.limits?.budgetExhausted?.phase).toBe('UI resource reads');
+    expect(snap.resourceReads['ui://big']).toBeUndefined();
+  }, 300000);
 
   it('the SDK stdio transport still has the private state GroupStdioTransport uses', () => {
     expect(sdkStdioShape(new StdioClientTransport({ command: 'node', stderr: 'pipe' }))).toBe(true);

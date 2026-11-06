@@ -8,15 +8,19 @@ import net, { type AddressInfo } from 'node:net';
 import { Agent, setGlobalDispatcher } from 'undici';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import crossSpawn from 'cross-spawn';
-import { buildSnapshot, launchStdio, LineSplitter, sameOriginRedirect, SESSION_END_TIMEOUT_MS, stdoutTap } from '../src/connect.js';
+import { buildSnapshot, GroupStdioTransport, launchStdio, LineSplitter, sameOriginRedirect, SESSION_END_TIMEOUT_MS, stdoutTap } from '../src/connect.js';
 import { describeCause, describeHttpFailure } from '../src/diagnose.js';
 import { installProxy, proxyRouteLine } from '../src/proxy.js';
 import { preflight } from '../src/probe/network.js';
 import { createRedactor, createTracer } from '../src/protocol/trace.js';
 import { tool } from './helpers.js';
 
-// cross-spawn is mocked: the win32 launch path is checked by its call, not by spawning (this runs on any OS).
-vi.mock('cross-spawn', () => ({ default: vi.fn(() => ({ pid: 1 })) }));
+// cross-spawn is spied on, not replaced: on Windows every stdio test in this file launches through it for real; the
+// win32 launch-path test replaces one call only (mockImplementationOnce), so it runs on any OS.
+vi.mock('cross-spawn', async (importOriginal) => {
+  const real = await importOriginal<{ default: typeof import('cross-spawn').default }>();
+  return { default: vi.fn(real.default) };
+});
 
 const realFetch = globalThis.fetch;
 const closers: Array<() => Promise<void>> = [];
@@ -333,6 +337,8 @@ describe('stdio lines are read in linear time (A09-05)', () => {
 
   it('on win32 the stdio server is launched through cross-spawn (npx, pnpm, .cmd and .bat shims), elsewhere not', () => {
     const opts = { shell: false, windowsHide: true };
+    vi.mocked(crossSpawn).mockClear();
+    vi.mocked(crossSpawn).mockImplementationOnce(() => ({ pid: 1 }) as never);
     launchStdio('npx', ['-y', 'some-mcp'], opts, 'win32');
     expect(vi.mocked(crossSpawn)).toHaveBeenCalledWith('npx', ['-y', 'some-mcp'], opts);
     vi.mocked(crossSpawn).mockClear();
@@ -340,6 +346,61 @@ describe('stdio lines are read in linear time (A09-05)', () => {
     child.on('error', () => {});
     expect(vi.mocked(crossSpawn)).not.toHaveBeenCalled();
   });
+
+  it('LineSplitter gives the same lines for any chunking: 1-byte, odd sizes, CRLF and UTF-8 split across chunks', () => {
+    const text = Buffer.from('{"a":"é€😀"}\r\n\nsecond line\nthird €\n tail');
+    const want = ['{"a":"é€😀"}\r', '', 'second line', 'third €'];
+    for (const size of [1, 2, 3, 5, 7, 16, 64, text.length]) {
+      const s = new LineSplitter(1024);
+      const out: string[] = [];
+      for (let i = 0; i < text.length; i += size) out.push(...s.push(text.subarray(i, i + size)).map((b) => b.toString('utf8')));
+      expect(out, `chunk ${size}`).toEqual(want);
+    }
+    const s = new LineSplitter(1024);
+    expect(s.push(Buffer.alloc(0))).toEqual([]);
+    expect(s.push(Buffer.from('\n')).map(String)).toEqual(['']);
+  });
+
+  it('LineSplitter: a line of exactly max bytes passes in any chunking, one byte more throws, also split over chunks', () => {
+    for (const size of [1, 3, 10]) {
+      const ok = new LineSplitter(10);
+      const line = Buffer.from('0123456789\n');
+      const got: Buffer[] = [];
+      for (let i = 0; i < line.length; i += size) got.push(...ok.push(line.subarray(i, i + size)));
+      expect(got.map(String), `chunk ${size}`).toEqual(['0123456789']);
+      const over = new LineSplitter(10);
+      const long = Buffer.from('0123456789A\n');
+      expect(() => { for (let i = 0; i < long.length; i += size) over.push(long.subarray(i, i + size)); }, `chunk ${size}`).toThrow(/ReadBuffer exceeded maximum size of 10 bytes/);
+    }
+  });
+
+  it('stdoutTap counts a message over the read buffer up to the buffer size, whatever the chunking', () => {
+    const MAX = 64 * 1024 * 1024;
+    const line = Buffer.alloc(MAX + 3 * 65536, 'z');
+    line.write('{"jsonrpc":"2.0","id":1,"result":{"x":"');
+    for (const size of [65536, 65536 + 777, 1 << 20, line.length]) {
+      let counted = 0;
+      const tap = stdoutTap(createRedactor(), (n) => { counted += n; });
+      for (let i = 0; i < line.length; i += size) tap.push(line.subarray(i, i + size));
+      tap.push(Buffer.from('\n'));
+      expect(counted, `chunk ${size}`).toBe(MAX);
+    }
+  }, 60000);
+
+  it('GroupStdioTransport hands each chunk to onChunk before its line reader, so the budget is charged before an overflow', async () => {
+    // A 2 MB line against a 1 MB read buffer, written in small pieces: whatever the pipe chunking, the chunk that
+    // overflows the reader was already seen by onChunk.
+    const t = new GroupStdioTransport({ command: process.execPath, args: ['-e', "for (let i = 0; i < 512; i++) process.stdout.write('x'.repeat(4096)); process.stdout.write('\\n'); setTimeout(() => {}, 3000)"], stderr: 'pipe', maxBufferSize: 1024 * 1024 });
+    let seen = 0;
+    let atOverflow = -1;
+    t.onChunk = (c) => { seen += c.length; };
+    const overflow = new Promise<void>((done) => { t.onerror = (e) => { if (/ReadBuffer exceeded/.test(e.message) && atOverflow < 0) { atOverflow = seen; done(); } }; });
+    await t.start();
+    expect(t.readsOwnStdout).toBe(true);
+    await overflow;
+    await t.close();
+    expect(atOverflow).toBeGreaterThan(1024 * 1024);
+  }, 20000);
 
   it('a large JSON log line on stdout is still foreign output for SRV-018; a large JSON-RPC message is not', () => {
     const tap = stdoutTap(createRedactor());

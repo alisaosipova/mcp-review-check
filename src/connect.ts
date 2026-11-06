@@ -820,16 +820,23 @@ export function stdoutTap(r: Redactor, onMessage?: (bytes: number) => void): { o
     }
     if (mode === 'json') {
       jsonTail = b.length >= JSON_TAIL ? Buffer.from(b.subarray(b.length - JSON_TAIL)) : Buffer.concat([jsonTail, b]).subarray(-JSON_TAIL);
+      // The bytes up to STDIO_MAX_MESSAGE are counted even in the chunk that crosses it, so whether the budget runs out
+      // before the reader overflows does not depend on where the pipe cut its chunks (Linux 64 KB, macOS and Windows less).
+      const counted = Math.min(b.length, Math.max(0, STDIO_MAX_MESSAGE - size));
       size += b.length;
-      if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; size = 0; return; } // the SDK fails on it: not kept, not counted further
-      onMessage?.(b.length);
+      if (counted) onMessage?.(counted);
+      if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; size = 0; } // the SDK fails on it: not kept, not counted further
       return;
     }
     parts.push(b); size += b.length;
     if (size > NON_JSON_HEAD) {
       const head = Buffer.concat(parts, size);
       const first = head.toString('utf8', 0, 64).trimStart()[0];
-      if (first === '{' || first === '[') { mode = 'json'; jsonHead = head.subarray(0, NON_JSON_HEAD); jsonTail = Buffer.from(head.subarray(-JSON_TAIL)); parts = []; onMessage?.(size); }
+      if (first === '{' || first === '[') {
+        mode = 'json'; jsonHead = head.subarray(0, NON_JSON_HEAD); jsonTail = Buffer.from(head.subarray(-JSON_TAIL)); parts = [];
+        onMessage?.(Math.min(size, STDIO_MAX_MESSAGE)); // as for a later chunk: counted up to the read buffer size
+        if (size > STDIO_MAX_MESSAGE) { mode = 'drop'; size = 0; }
+      }
       else { mode = 'head'; parts = [head.subarray(0, NON_JSON_HEAD)]; size = NON_JSON_HEAD; }
     }
   };
@@ -876,8 +883,13 @@ async function connectStdio(t: Extract<TargetSpec, { kind: 'stdio' }>, timeoutMs
       // On POSIX the entry stays while the server's process group outlives its wrapper.
       else for (const set of [progress.children, everyChild]) { set.add(proc); proc.once('exit', () => { if (!running(proc)) set.delete(proc); }); }
     }
-    proc?.stdout?.on('data', (c: Buffer) => stdout.push(c));
+    // GroupStdioTransport hands each chunk to the tap before its own reader (onChunk, set below); an SDK whose private
+    // state differs runs its own start, and the tap then listens on stdout itself.
+    if (!inner.readsOwnStdout) proc?.stdout?.on('data', (c: Buffer) => stdout.push(c));
   };
+  // The byte budget is charged before the line reader sees the chunk, so a message that both spends the budget and
+  // overflows the read buffer stops the run the same way whatever size the OS gives its pipe chunks (macOS, Windows).
+  inner.onChunk = (c) => stdout.push(c);
   const rec = new RecordingTransport(inner as Transport, tap);
   const client = newClient(variant.clientName, variant.capabilities);
   // The main connection's output is visible before the handshake: --max-duration can stop the run during it.
@@ -1179,6 +1191,11 @@ export function sdkStdioShape(t: object): boolean {
  *  started: on POSIX it leads its own process group; close() ends the group (Windows: the tree) before the wrapper.
  *  Its stdout is split into messages by LineSplitter, in linear time (A09-05). */
 export class GroupStdioTransport extends StdioClientTransport {
+  /** Called with each stdout chunk before the line reader parses it (connectStdio's tap: SRV-018 and the byte budget). */
+  onChunk?: (chunk: Buffer) => void;
+  /** start() reads stdout itself (true unless the SDK's private state differs and the SDK's own start runs). */
+  readsOwnStdout = false;
+
   /** The SDK's start (client/stdio.js:60-107) with detached: true on POSIX (Windows has no groups: windowsHide, as the
    *  SDK does) and the linear line reader instead of the SDK's ReadBuffer. */
   override async start(): Promise<void> {
@@ -1186,6 +1203,7 @@ export class GroupStdioTransport extends StdioClientTransport {
     // An SDK whose private state differs (renamed in a release) keeps its own start: no process group, but a working check.
     if (!sdkStdioShape(self)) return super.start();
     if (self._process) throw new Error('StdioClientTransport already started!');
+    this.readsOwnStdout = true;
     const p = self._serverParams;
     const win = process.platform === 'win32';
     const lines = new LineSplitter(self._readBuffer._maxBufferSize ?? STDIO_MAX_MESSAGE);
@@ -1197,6 +1215,7 @@ export class GroupStdioTransport extends StdioClientTransport {
       proc.on('close', () => { self._process = undefined; this.onclose?.(); });
       proc.stdin?.on('error', (e) => this.onerror?.(e));
       proc.stdout?.on('data', (chunk: Buffer) => {
+        try { this.onChunk?.(chunk); } catch (e) { this.onerror?.(e as Error); }
         if (overflowed) return;
         let complete: Buffer[];
         try { complete = lines.push(chunk); } catch (e) { overflowed = true; this.onerror?.(e as Error); this.close().catch(() => {}); return; }

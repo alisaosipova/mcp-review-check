@@ -34,6 +34,8 @@ All three high findings are fixed:
 
 ### Fixed
 
+- A stdio message that both spends the snapshot budget and exceeds the 64 MB read buffer is reported the same way on Linux, macOS and Windows (the budget stop): the budget is now charged before the line reader sees each stdout chunk, so the outcome no longer depends on the pipe chunk size.
+- Tests: the cross-spawn spy no longer replaces the real launcher for the other stdio tests of the same file on Windows; the unwritable `--output` test uses a path under a file, which no OS can write (a directory at the drive root is writable on Windows runners).
 - A `--fail-on-drift` failure (exit 1) no longer reads PASS: the Result line says `FAIL (--fail-on-drift)`, JSON `summary.failed` is true with `gate.reason` `tool definitions changed since baseline (--fail-on-drift)` or `tool definitions not compared (--fail-on-drift)`, JUnit has a failed `tool definitions since baseline` test case per suite and GitHub an `::error` naming the changed tools. The exit code is unchanged (A01-01).
 - In a listing-only run a platform whose input was not given is `INCOMPLETE (not checked: no --openai-manifest)` (or `no --plugin-dir`) instead of NO AUTOMATED BLOCKERS; the exit code and `summary.failed` are unchanged (A10-02).
 - JSON and SARIF write DEL, C1 controls (U+009B CSI, U+0085), format characters (bidi overrides) and U+2028/U+2029 from server text as `\uXXXX`, the same value to a parser (A07-03).
