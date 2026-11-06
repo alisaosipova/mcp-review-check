@@ -77,6 +77,94 @@ export function extractOrigins(html: string): ExtractedOrigin[] {
   return [...origins];
 }
 
+/** Elements whose content is raw text: a `<!--` inside them opens no comment. `plaintext` runs to the end. */
+const RAW_TEXT = new Set(['script', 'style', 'title', 'textarea', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']);
+const TAG_NAME = /[A-Za-z][^\s/>]*/y;
+
+/**
+ * The HTML with its comments replaced by a space (A05-12): a commented-out `<script src>` is never loaded. A forward,
+ * linear tokenizer, so only text a browser reads as a comment is removed:
+ * - a `<!--` inside a tag (`<a title="<!--">`, quote-aware), inside a bogus comment (`<!x ...>`, `<?...>`) or inside
+ *   a raw-text element (script, style, title, textarea, xmp, iframe, noembed, noframes, noscript; plaintext to the end)
+ *   opens no comment;
+ * - a comment ends at once on `<!-->` and `<!--->`, otherwise at the nearest `-->` or `--!>`;
+ * - an unclosed comment, attribute value or raw-text element keeps the rest of the text as is (nothing is hidden).
+ */
+export function stripHtmlComments(html: string): string {
+  if (!html.includes('<!--')) return html;
+  let out = '';
+  let copied = 0;
+  let i = 0;
+  // Cached next positions of the two comment closers, re-searched only once passed (linear on many comments).
+  let dash = -2;
+  let bang = -2;
+  const after = (cache: number, needle: string, from: number): number => (cache === -1 || cache >= from ? cache : html.indexOf(needle, from));
+  scan: while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    if (html.startsWith('<!--', lt)) {
+      const s = lt + 4;
+      let end: number;
+      if (html[s] === '>') end = s + 1;
+      else if (html.startsWith('->', s)) end = s + 2;
+      else {
+        dash = after(dash, '-->', s);
+        bang = after(bang, '--!>', s);
+        const d = dash < 0 ? -1 : dash + 3;
+        const b = bang < 0 ? -1 : bang + 4;
+        end = d < 0 ? b : b < 0 ? d : Math.min(d, b);
+      }
+      if (end < 0) break; // unclosed: kept
+      out += html.slice(copied, lt) + ' ';
+      copied = i = end;
+      continue;
+    }
+    const c = html[lt + 1] ?? '';
+    const closing = c === '/';
+    TAG_NAME.lastIndex = closing ? lt + 2 : lt + 1;
+    const name = TAG_NAME.exec(html);
+    if (!name) {
+      if (c === '!' || c === '?' || closing) { // bogus comment: up to the next '>'
+        const gt = html.indexOf('>', lt + 2);
+        if (gt < 0) break;
+        i = gt + 1;
+      } else i = lt + 1;
+      continue;
+    }
+    // Inside a tag: a quoted attribute value may hold '<!--' and '>'.
+    let j = TAG_NAME.lastIndex;
+    for (;;) {
+      if (j >= html.length) break scan; // unterminated tag: kept
+      const ch = html[j];
+      if (ch === '>') break;
+      if (ch === '=') {
+        let k = j + 1;
+        while (k < html.length && /\s/.test(html[k])) k++;
+        const q = html[k];
+        if (q === '"' || q === "'") {
+          const close = html.indexOf(q, k + 1);
+          if (close < 0) break scan;
+          j = close + 1;
+          continue;
+        }
+        j = k;
+        continue;
+      }
+      j++;
+    }
+    i = j + 1;
+    const tag = name[0].toLowerCase();
+    if (closing || !RAW_TEXT.has(tag)) continue;
+    if (tag === 'plaintext') break;
+    const end = new RegExp(`</${tag}(?![^\\s/>])`, 'gi');
+    end.lastIndex = i;
+    const e = end.exec(html);
+    if (!e) break; // unclosed raw text: kept
+    i = e.index;
+  }
+  return out + html.slice(copied);
+}
+
 function scanOrigins(html: string): ExtractedOrigin[] {
   const out: ExtractedOrigin[] = [];
   const seen = new Set<string>();
@@ -92,7 +180,9 @@ function scanOrigins(html: string): ExtractedOrigin[] {
 
   // [^<>] keeps the scan linear on unterminated tags ("<img<img<img..."); HTML allows '<' in attribute values, rarely used.
   const tagRe = /<(script|link|img|source|video|audio|iframe|base|embed|object)\b[^<>]*>/gi;
-  for (const m of html.matchAll(tagRe)) {
+  // Markup inside an HTML comment is never loaded (A05-12); the JS patterns below still read the raw text.
+  const markup = stripHtmlComments(html);
+  for (const m of markup.matchAll(tagRe)) {
     const tag = m[0];
     const name = m[1].toLowerCase();
     if (name === 'script') add('resource', attr(tag, 'src'), tag, 'tag');
@@ -109,10 +199,10 @@ function scanOrigins(html: string): ExtractedOrigin[] {
       if (srcset) for (const part of srcset.split(',')) add('resource', part.trim().split(/\s+/)[0], tag, 'tag');
     }
   }
-  for (const m of html.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) add('resource', m[1], m[0], 'tag');
+  for (const m of markup.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) add('resource', m[1], m[0], 'tag');
   // CSS url() is case-insensitive, so the JS URL constructor (`new URL("https://...")`, `URL(...)`, `x.URL(...)`) must
   // not be read as one: it builds a value and loads nothing, and a fetch of it is a connect origin, not a resource.
-  for (const [value, evidence] of cssUrls(html)) add('resource', value, evidence, 'tag');
+  for (const [value, evidence] of cssUrls(markup)) add('resource', value, evidence, 'tag');
 
   const lit = `["'\`]((?:https?|wss?):\\/\\/[^"'\`\\s]+)["'\`]`;
   const jsPatterns: Array<[OriginKind, RegExp]> = [

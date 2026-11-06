@@ -121,12 +121,44 @@ export function foldInvisible(text: string): string {
 /**
  * The note a regex finding adds when its snippet quotes the folded text: the hidden characters the scan form removed
  * or turned into spaces, as \u{...} codes, so the evidence still shows them (review R110-Q1-04). Empty when none.
+ *
+ * `match` is the [index, index + length) range of the match on the scan form. The note is added only when a folded
+ * character falls inside that range (A10-04): a hidden character elsewhere in the text, or the emoji presentation
+ * selector of ❤️, did not shape the match. A variation selector on a base it is defined for is never named.
  */
-export function foldNote(raw: string): string {
+export function foldNote(raw: string, match?: { index: number; length: number }): string {
+  if (match !== undefined && !foldedWithin(raw, match.index, match.index + match.length)) return '';
   // From the raw text: NFKC rewrites some of them (U+3164 becomes U+1160), and the note should name what the server sent.
-  const codes = [...new Set([...raw.matchAll(FOLD_BLANK), ...raw.matchAll(FOLD_DROP)].map((m) => `\\u{${m[0].codePointAt(0)!.toString(16).toUpperCase()}}`))];
+  const legit = (m: RegExpMatchArray) => {
+    const cp = m[0].codePointAt(0)!;
+    if (!isVariationSelector(cp)) return false;
+    const before = [...raw.slice(Math.max(0, (m.index ?? 0) - 2), m.index)];
+    const after = [...raw.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 2)].slice(0, 1);
+    const cps = [...before.slice(-1), m[0], ...after];
+    return invisibleOutsideCf(cps, before.length ? 1 : 0) === undefined;
+  };
+  const codes = [...new Set([...raw.matchAll(FOLD_BLANK), ...[...raw.matchAll(FOLD_DROP)].filter((m) => !legit(m))].map((m) => `\\u{${m[0].codePointAt(0)!.toString(16).toUpperCase()}}`))];
   if (!codes.length) return '';
   return ` (matched with hidden characters folded: ${codes.length > 8 ? `${codes.slice(0, 8).join(' ')} … (+${codes.length - 8} more)` : codes.join(' ')})`;
+}
+
+/**
+ * Whether scanForm(raw) folded a character inside the scan-form range [start, end): a removed character between two
+ * matched characters, or a blank turned into a matched space. Walks the NFKC text once with the same classes as
+ * foldInvisible, keeping the scan-form offset.
+ */
+function foldedWithin(raw: string, start: number, end: number): boolean {
+  let pos = 0;
+  for (const ch of nfkc(raw)) {
+    if (pos >= end) return false;
+    if (ch.replace(FOLD_BLANK, ' ') !== ch) {
+      if (pos >= start) return true;
+      pos += 1;
+    } else if (ch.replace(FOLD_DROP, '') === '') {
+      if (pos > start) return true;
+    } else pos += ch.length;
+  }
+  return false;
 }
 
 /** Escape invisible / control characters as \u{...} for display. A zero-width joiner inside an emoji sequence (👨‍💻) is kept. */

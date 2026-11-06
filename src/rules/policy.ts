@@ -62,7 +62,7 @@ export const POL_002 = defineRule(
       const m = MEDIA.exec(n) ?? MEDIA2.exec(n);
       if (!m) continue;
       const design = DESIGN.test(n);
-      out.push({ tool, severity: design ? 'info' : undefined, message: `${where}: AI media generation${design ? ' (design-tool exemption likely applies)' : ''}: "${snippet(n, m.index, m[0].length)}"${n === text ? '' : foldNote(text)}` });
+      out.push({ tool, severity: design ? 'info' : undefined, message: `${where}: AI media generation${design ? ' (design-tool exemption likely applies)' : ''}: "${snippet(n, m.index, m[0].length)}"${n === text ? '' : foldNote(text, { index: m.index, length: m[0].length })}` });
     }
     return out;
   },
@@ -85,7 +85,7 @@ export const POL_003 = defineRule(
   (snap) => corpus(snap, { values: false }).flatMap((e): RawFinding[] => {
     const text = scanEntry(e);
     const m = ADS.exec(text) ?? ENDORSE.exec(text);
-    return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` }] : [];
+    return m ? [{ tool: e.tool, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text, { index: m.index, length: m[0].length })}` }] : [];
   }),
 );
 
@@ -129,7 +129,7 @@ export const POL_004 = defineRule(
     for (const e of corpus(snap, { values: false })) {
       const text = scanEntry(e);
       const m = UPSELL.exec(text);
-      if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` });
+      if (m) out.push({ tool: e.tool, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text, { index: m.index, length: m[0].length })}` });
     }
     for (const r of uiResources(snap)) {
       if (!r.html) continue;

@@ -35,7 +35,7 @@ export function matchPattern(p: Pattern, text: string): RegExpExecArray | null {
 }
 
 function finding(e: CorpusEntry, text: string, m: RegExpExecArray, extra: Partial<RawFinding> = {}): RawFinding {
-  return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}`, evidence: m[0].slice(0, 120), ...extra };
+  return { tool: e.tool, resource: e.where.startsWith('resource') ? e.subject : undefined, path: e.path, message: `${locationOf(e)}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text, { index: m.index, length: m[0].length })}`, evidence: m[0].slice(0, 120), ...extra };
 }
 
 /**
@@ -89,17 +89,81 @@ function emojiNeighbor(cps: string[], i: number, step: 1 | -1): string {
 /** Printable ASCII and ordinary whitespace: no hidden character and no other script, the common case, skipped fast. */
 const PLAIN_ASCII = /^[\x20-\x7e\t\n\r]*$/;
 
+/**
+ * Code point indexes of the tag characters of an RGI subdivision flag (A05-07): U+1F3F4 followed by the tag spelling
+ * of gbeng, gbsct or gbwls and the cancel tag U+E007F (England, Scotland, Wales). Every other tag run stays hard.
+ */
+const RGI_SUBDIVISIONS = new Set(['gbeng', 'gbsct', 'gbwls']);
+function subdivisionFlagTags(cps: string[]): Set<number> {
+  const out = new Set<number>();
+  cps.forEach((ch, i) => {
+    if (ch !== '\u{1F3F4}') return;
+    let tag = '';
+    for (let j = i + 1; j <= i + 5; j++) {
+      const cp = cps[j]?.codePointAt(0) ?? 0;
+      if (cp < 0xe0061 || cp > 0xe007a) return; // tag a..z
+      tag += String.fromCharCode(cp - 0xe0000);
+    }
+    if (RGI_SUBDIVISIONS.has(tag) && cps[i + 6] === '\u{E007F}') for (let j = i + 1; j <= i + 6; j++) out.add(j);
+  });
+  return out;
+}
+
+/** Letters and marks of scripts whose spelling uses ZWNJ/ZWJ: the joining scripts and the Brahmic (Indic) scripts. */
+/** ZWNJ breaks a cursive join: the joining scripts only. */
+const ZWNJ_SCRIPT = /^[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Mandaic}]$/u;
+/** ZWJ selects a conjunct or half form: the Brahmic scripts only. */
+const ZWJ_SCRIPT = /^[\p{Script=Devanagari}\p{Script=Bengali}\p{Script=Gurmukhi}\p{Script=Gujarati}\p{Script=Oriya}\p{Script=Tamil}\p{Script=Telugu}\p{Script=Kannada}\p{Script=Malayalam}\p{Script=Sinhala}]$/u;
+/** At most this many ZWNJ/ZWJ in one word count as spelling; more is a smuggling run. */
+const MAX_JOINERS_PER_WORD = 2;
+const LETTER_OR_MARK = /^[\p{L}\p{M}]$/u;
+/** Letters of the right-to-left scripts, beside which LRM/RLM/ALM fix punctuation placement. */
+const RTL_LETTER = /^[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}]$/u;
+const scriptLetter = (re: RegExp, c: string | undefined) => !!c && LETTER_OR_MARK.test(c) && re.test(c);
+
+/** Indexes of ZWNJ/ZWJ in words (runs of letters, marks and joiners) holding more than MAX_JOINERS_PER_WORD of them. */
+function crowdedJoiners(cps: string[]): Set<number> {
+  const out = new Set<number>();
+  let run: number[] = [];
+  const flush = () => { if (run.length > MAX_JOINERS_PER_WORD) for (const j of run) out.add(j); run = []; };
+  cps.forEach((ch, i) => {
+    if (ch === '\u200C' || ch === '\u200D') run.push(i);
+    else if (!LETTER_OR_MARK.test(ch)) flush();
+  });
+  flush();
+  return out;
+}
+const rtlLetter = (c: string | undefined) => !!c && /^\p{L}$/u.test(c) && RTL_LETTER.test(c);
+
+/**
+ * A format character that spelling needs (A05-08): ZWNJ or ZWJ between two letters (or a letter and a virama) of a
+ * joining or Indic script (Persian "می‌خواهم", Devanagari "क्‍ष"), or LRM/RLM/ALM next to a right-to-left letter. The
+ * same characters inside a Latin word or in a run are still reported.
+ */
+function orthographicFormat(cps: string[], i: number, cp: number, crowded: () => Set<number>): boolean {
+  if (cp === 0x200c || cp === 0x200d) {
+    const re = cp === 0x200c ? ZWNJ_SCRIPT : ZWJ_SCRIPT;
+    return scriptLetter(re, cps[i - 1]) && scriptLetter(re, cps[i + 1]) && !crowded().has(i);
+  }
+  if (cp === 0x200e || cp === 0x200f || cp === 0x061c) return rtlLetter(cps[i - 1]) || rtlLetter(cps[i + 1]);
+  return false;
+}
+
 export function hiddenChars(text: string): { hard: string[]; soft: string[] } {
   if (PLAIN_ASCII.test(text)) return { hard: [], soft: [] };
   const cps = [...text];
   const hard: string[] = [];
   const soft: string[] = [];
+  const flagTags = text.includes('\u{1F3F4}') ? subdivisionFlagTags(cps) : undefined;
+  let crowded: Set<number> | undefined;
   cps.forEach((ch, i) => {
     const cp = ch.codePointAt(0)!;
     const hex = `\\u{${cp.toString(16).toUpperCase()}}`;
-    if ((cp >= 0xe0000 && cp <= 0xe007f) || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)) hard.push(hex);
-    else if (/\p{Cf}/u.test(ch)) {
+    if ((cp >= 0xe0000 && cp <= 0xe007f) || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)) {
+      if (!flagTags?.has(i)) hard.push(hex);
+    } else if (/\p{Cf}/u.test(ch)) {
       if (cp === 0x200d && PICTO.test(emojiNeighbor(cps, i, -1)) && PICTO.test(emojiNeighbor(cps, i, 1))) return; // emoji ZWJ sequence
+      if (orthographicFormat(cps, i, cp, () => (crowded ??= crowdedJoiners(cps)))) return;
       soft.push(hex);
     } else {
       // Variation-selector runs, Hangul fillers, the Braille blank, CGJ (A05-02).
@@ -143,6 +207,12 @@ const GREEK_LOOKALIKE = /[ΑΒΕΖΗΙΚΜΝΟΡΤΥΧαγικνορυχϲϳ]/u;
  * match and the test is linear on any word.
  */
 const GREEK_NOTATION = /^[A-Z]+[α-ω][A-Zα-ω]*$/u;
+/**
+ * The same notation led by lowercase Greek (A05-09): NF-κB (the word "κB"), αSMA, γH2AX ("γH"), αKG, and the integrin
+ * form αvβ3 ("αvβ"). Only Greek letters that do not pass for Latin ones (no ο ι ν ρ υ χ), so "ιOS", "οPENAI",
+ * "ρAYPAL" and "νISA" are still a mix; lowercase Latin after the capitals is not allowed ("ιPhone").
+ */
+const GREEK_PREFIX_NOTATION = /^[αβγδεζηθκλμξπστφψω]+[A-Z][A-Zαβγδεζηθκλμξπστφψω]*$|^[αβ][a-z][αβ]$/u;
 
 /** Fullwidth Latin letters (Script=Latin) and Mathematical Alphanumeric letters (Script=Common): "Ｇoogle", "𝐏aypal" (A05-10). */
 const FULLWIDTH_OR_MATH = /[\uFF21-\uFF3A\uFF41-\uFF5A\u{1D400}-\u{1D6A5}]/u;
@@ -156,7 +226,7 @@ export function mixedScript(word: string): boolean {
   if (/[A-Za-z]/.test(word) && FULLWIDTH_OR_MATH.test(word)) return true;
   if (!/\p{Script=Latin}/u.test(word)) return false;
   if (/[\p{Script=Cyrillic}\p{Script=Armenian}\p{Script=Cherokee}]/u.test(word)) return true;
-  return GREEK_LOOKALIKE.test(word) && !GREEK_NOTATION.test(word);
+  return GREEK_LOOKALIKE.test(word) && !GREEK_NOTATION.test(word) && !GREEK_PREFIX_NOTATION.test(word);
 }
 
 export const INJ_002 = defineRule(
@@ -188,6 +258,35 @@ const PSEUDO_TAG = /<\/?(system|important|instructions?|admin|assistant|secret|h
 /** The tag is named as markup ("Returns the <Secret> element of the KeyVault XML response"), not used as one. */
 const NAMED_AS_MARKUP = /^\s+(xml |html )?(elements?|tags?|nodes?|attributes?|fields?)\b/i;
 
+const PSEUDO_TAG_ALL = new RegExp(PSEUDO_TAG.source, 'gi');
+/** `<secret-name>`, `<admin_host>`: one hyphenated or underscored word, no whitespace, no attributes. */
+const PLACEHOLDER = /^<([A-Za-z]+[-_][\w-]*)>$/;
+
+/** A character next to a placeholder in a URL or command line. */
+const URL_OR_CLI = /[/.:=]/;
+
+/**
+ * The first pseudo-system tag, read for placeholders (A05-11). A `<name-word>` (no whitespace, no attributes) with no
+ * closing `</name-word` in the text is a placeholder: skipped when a neighbouring character is URL- or CLI-like
+ * ("https://<vault>.vault.azure.net/secrets/<secret-name>", "--host=<admin-host>"), otherwise reported at info
+ * ("<system-prompt> You are ..." may still be a pseudo-tag). Any other match wins at its own severity.
+ */
+function pseudoTag(text: string): { m: RegExpExecArray; placeholder: boolean } | null {
+  PSEUDO_TAG_ALL.lastIndex = 0;
+  let closers: Set<string> | undefined; // every `</name-word` of the text, collected once (linear on many placeholders)
+  let soft: RegExpExecArray | undefined;
+  for (let m = PSEUDO_TAG_ALL.exec(text); m; m = PSEUDO_TAG_ALL.exec(text)) {
+    const ph = PLACEHOLDER.exec(m[0]);
+    if (!ph) return { m, placeholder: false };
+    closers ??= new Set([...text.matchAll(/<\/([A-Za-z]+[-_][\w-]*)/g)].map((c) => c[1].toLowerCase()));
+    if (closers.has(ph[1].toLowerCase())) return { m, placeholder: false };
+    const before = text[m.index - 1] ?? '';
+    const after = text[m.index + m[0].length] ?? '';
+    if (!URL_OR_CLI.test(before) && !URL_OR_CLI.test(after)) soft ??= m;
+  }
+  return soft ? { m: soft, placeholder: true } : null;
+}
+
 /** First `<!-- ... -->` comment, found with indexOf (a lazy regex is quadratic on many '<!--' without '-->'). */
 export function htmlComment(text: string): RegExpExecArray | null {
   const start = text.indexOf('<!--');
@@ -210,10 +309,14 @@ export const INJ_003 = defineRule(
       const text = scanEntry(e);
       if (!text.includes('<')) continue; // both forms start with '<'
       const comment = htmlComment(text);
-      const m = comment ?? PSEUDO_TAG.exec(text);
+      const tag = comment ? null : pseudoTag(text);
+      const m = comment ?? tag?.m;
       if (!m) continue;
       const f = finding(e, text, m);
-      if (!comment && NAMED_AS_MARKUP.test(text.slice(m.index + m[0].length))) {
+      if (tag?.placeholder) {
+        f.severity = 'info';
+        f.message += ' (an unclosed <name-word> reads as a placeholder: fine when it stands for a value)';
+      } else if (!comment && NAMED_AS_MARKUP.test(text.slice(m.index + m[0].length))) {
         f.severity = 'info';
         f.message += ' (named as a markup element: fine when it documents a data format)';
       }

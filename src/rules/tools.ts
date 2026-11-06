@@ -3,7 +3,7 @@ import type { Snapshot } from '../snapshot.js';
 import { ALL_VERBS, READ_VERBS, WRITE_VERBS } from './lexicon.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isNonEmptyStr, isObj, isStr, isStrArray, listPreview, metaOf, properties, toolName, uiUriOf, type Obj } from './util/access.js';
-import { deref, enumValues, resolvedNode, walkSchema } from './util/schemaWalk.js';
+import { deref, enumValues, resolvedNode, unwrapNullable, walkSchema } from './util/schemaWalk.js';
 import { capMessage, firstVerb, shortPointer, snippet, tokenize, toolKind, wordCount, words } from './util/text.js';
 import { TEXT_CAP, TOOL_LIST_MAX_BYTES, TOOL_LIST_MAX_COUNT } from '../limits.js';
 
@@ -242,9 +242,19 @@ const HTTP_TOOL_NAME = /(api|http|rest|raw)_?(request|call|query)|^request$|^cal
 /** The values a mode or method switch lists, a free branch beside them aside (util/schemaWalk.ts). */
 const listedValues = (node: Obj) => enumValues(node, { open: true });
 
-function isFreeString(node: Obj): boolean {
-  // A `$ref` that did not resolve locally has an unknown shape: not evidence of a free-form string.
-  return (node.type === 'string' || node.type === undefined) && typeof node.$ref !== 'string' && listedValues(node) === undefined && node.pattern === undefined && node.format === undefined;
+const freeShape = (node: Obj, root?: unknown) =>
+  (node.type === 'string' || node.type === undefined) && typeof node.$ref !== 'string' && enumValues(node, { open: true, root }) === undefined && node.pattern === undefined && node.format === undefined;
+
+/**
+ * A free-form string parameter. A `$ref` that did not resolve locally has an unknown shape: not evidence of one. With
+ * `root`, the node must also be free through an optional wrapper (A05-05): `{anyOf: [{$ref: Enum}, {type: 'null'}]}` or
+ * `{anyOf: [{type: 'integer'}, {type: 'null'}]}` is constrained. The wrapper test can only clear a match, never add one.
+ */
+function isFreeString(node: Obj, root?: unknown): boolean {
+  if (!freeShape(node)) return false;
+  if (root === undefined) return true;
+  const u = unwrapNullable(root, node);
+  return !u.unresolved && freeShape(u.node, root);
 }
 
 /** Top-level input properties with each local `$ref` resolved, so an enum kept in `$defs` still counts. */
@@ -283,7 +293,7 @@ export const TOOL_023 = defineRule(
       if (vals.some((v) => SAFE_METHODS.includes(v)) && vals.some((v) => UNSAFE_METHODS.includes(v))) {
         return { path: methodPath, message: `method parameter allows both safe and unsafe HTTP methods (${vals.join(', ')})` };
       }
-      if (isFreeString(methodProp) && nameHit) return { severity: 'warning', path: methodPath, message: 'generic HTTP tool with a free-form method parameter' };
+      if (isFreeString(methodProp, t.inputSchema) && nameHit) return { severity: 'warning', path: methodPath, message: 'generic HTTP tool with a free-form method parameter' };
       return undefined;
     }
     return nameHit ? { severity: 'info', message: 'name suggests a generic HTTP passthrough tool' } : undefined;
@@ -339,7 +349,7 @@ export const TOOL_025 = defineRule(
     const hasDiscovery = snap.tools.some((t) => DISCOVERY.test(toolName(t)));
     return perTool(snap, (t, name) => {
       const props = resolvedProperties(t.inputSchema);
-      const opProp = Object.entries(props).find(([k, v]) => OP_PROP.test(k) && isObj(v) && isFreeString(v));
+      const opProp = Object.entries(props).find(([k, v]) => OP_PROP.test(k) && isObj(v) && isFreeString(v, t.inputSchema));
       const argsObj = Object.values(props).some((v) => isObj(v) && isFreeObject(v));
       if (hasDiscovery && opProp && argsObj) return { message: `dispatcher: takes "${opProp[0]}" plus a free-form arguments object next to a discovery tool` };
       if ((EXEC_NAME.test(name) || /execute_operation|call_api|run_action|invoke_endpoint/i.test(name)) && opProp) {
@@ -390,8 +400,8 @@ export const TOOL_026 = defineRule(
     const hasRequest = Object.keys(props).some((k) => REQUEST_PROP.test(k));
     const hit = Object.entries(props).find(([k, v]) => {
       if (!isObj(v)) return false;
-      if (RAW_BODY.test(k)) return isFreeObject(v) || (hasRequest && isFreeString(v));
-      return (RAW_QUERY.test(k) || (hasMethod && RAW_TARGET.test(k))) && (isFreeString(v) || isFreeObject(v));
+      if (RAW_BODY.test(k)) return isFreeObject(v) || (hasRequest && isFreeString(v, t.inputSchema));
+      return (RAW_QUERY.test(k) || (hasMethod && RAW_TARGET.test(k))) && (isFreeString(v, t.inputSchema) || isFreeObject(v));
     });
     if (!hit) return undefined;
     const d = isStr(t.description) ? t.description : '';

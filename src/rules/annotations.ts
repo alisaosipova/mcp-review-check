@@ -3,7 +3,7 @@ import { HARD_DESTRUCTIVE, IRREVERSIBLE, READ_VERBS, WRITE_VERBS } from './lexic
 import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
 import { annotations, isObj, isStr, type Obj } from './util/access.js';
-import { enumValues, resolvedNode, walkSchema } from './util/schemaWalk.js';
+import { enumValues, resolvedNode, unwrapNullable, walkSchema } from './util/schemaWalk.js';
 import { compoundWriteVerb, firstVerb, tokenize, toolKind } from './util/text.js';
 
 const SCHEMA_TS = 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts';
@@ -153,7 +153,10 @@ export const TOOL_015 = defineRule(
       // The property node is visited before its `$ref` target, so it is also judged through the ref: an enum, integer or
       // anyOf of consts kept in `$defs` is constrained, and a ref that does not resolve locally is not evidence.
       const r = resolvedNode(t.inputSchema, n);
-      const free = freeForm(n) && !r.unresolved && freeForm(r.node) && enumValues(r.node) === undefined;
+      // Through an optional wrapper too (A05-05): anyOf [{$ref: Enum}, {type: 'null'}] is a closed list, not free text.
+      const u = unwrapNullable(t.inputSchema, n);
+      const free = freeForm(n) && !r.unresolved && freeForm(r.node) && enumValues(r.node, { root: t.inputSchema }) === undefined
+        && !u.unresolved && freeForm(u.node) && enumValues(u.node, { root: t.inputSchema }) === undefined;
       // `to` is a recipient only on a tool that sends messages (a date range or a graph edge also has `to`).
       const target = TARGET_PROP.test(v.name) || n.format === 'uri' || (sends && (RECIPIENT_PROP.test(v.name) || n.format === 'email'));
       if (free && target) prop = v.rawName;

@@ -2,7 +2,7 @@
 import type { Snapshot } from '../snapshot.js';
 import { defineRule, type RawFinding, type Severity } from './types.js';
 import { isObj, toolName } from './util/access.js';
-import { deref, resolvedNode, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
+import { deref, resolvedNode, unwrapNullable, walkSchema, type SchemaVisit } from './util/schemaWalk.js';
 import { corpus, foldNote, locationOf, scanEntry, snippet } from './util/text.js';
 
 const CLAUDE_POLICY = 'https://support.claude.com/en/articles/13145358-anthropic-software-directory-policy';
@@ -12,10 +12,12 @@ interface NameRule { re: RegExp; severity?: Severity; label: string; skip?: (v: 
 
 /**
  * A skip tested on the node as written and, for a local $ref, on the node it resolves to (A05-04): `{$ref: '#/$defs/Hours'}`
- * with Hours an integer is as non-text as `{type: 'integer'}`. The resolved node can only add a skip, never remove one.
+ * with Hours an integer is as non-text as `{type: 'integer'}`. Also through an optional wrapper (A05-05): pydantic
+ * `int | None` is `{anyOf: [{type: 'integer'}, {type: 'null'}]}`. The resolved node can only add a skip, never remove one.
  */
 const orResolved = (test: (node: Record<string, unknown>, v: SchemaVisit) => boolean) => (v: SchemaVisit, root: unknown): boolean =>
-  test(v.node, v) || (typeof v.node.$ref === 'string' && test(resolvedNode(root, v.node).node, v));
+  test(v.node, v) || (typeof v.node.$ref === 'string' && test(resolvedNode(root, v.node).node, v))
+  || ((Array.isArray(v.node.anyOf) || Array.isArray(v.node.oneOf)) && test(unwrapNullable(root, v.node).node, v));
 
 /** Match property names across all input schemas; one finding per tool+path. */
 function scanNames(snap: Snapshot, rules: NameRule[], extra?: (v: SchemaVisit, root: unknown) => RawFinding | undefined): RawFinding[] {
@@ -45,7 +47,7 @@ function scanText(snap: Snapshot, re: RegExp, label: string, severity?: Severity
   for (const e of corpus(snap)) {
     const text = scanEntry(e);
     const m = re.exec(text);
-    if (m) out.push({ tool: e.tool, path: e.path, severity, message: `${locationOf(e)} ${label}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text)}` });
+    if (m) out.push({ tool: e.tool, path: e.path, severity, message: `${locationOf(e)} ${label}: "${snippet(text, m.index, m[0].length)}"${text === e.text ? '' : foldNote(e.text, { index: m.index, length: m[0].length })}` });
   }
   return out;
 }
@@ -78,7 +80,8 @@ export const DATA_001 = defineRule(
     ...scanNames(
       snap,
       [
-        { re: STRONG_CONVO, label: 'requests conversation data' },
+        // A name match on a parameter that cannot carry text (an integer `context_window` in tokens) is no request (A05-06).
+        { re: STRONG_CONVO, label: 'requests conversation data', skip: orResolved(isNonText) },
         { re: WEAK_CONVO, severity: 'warning', label: 'may request conversation data (check it is not chat history)', skip: orResolved(isNonText) },
       ],
       (v, root) => (isRoleContentArray(v, root) ? { message: `parameter "${v.rawName}" is an array of {role, content} messages` } : undefined),

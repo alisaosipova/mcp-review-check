@@ -4,8 +4,8 @@ import _Ajv2019 from 'ajv/dist/2019.js';
 import _AjvDraft7 from 'ajv';
 import { perTool } from './tools.js';
 import { defineRule, type RawFinding } from './types.js';
-import { isObj, isStr } from './util/access.js';
-import { deref, resolvePointer, schemaMetrics, walkSchema } from './util/schemaWalk.js';
+import { isObj, isStr, type Obj } from './util/access.js';
+import { deref, resolvePointer, schemaMetrics, unwrapNullable, walkSchema } from './util/schemaWalk.js';
 import { capMessage, shortPointer } from './util/text.js';
 
 type AjvLike = {
@@ -324,6 +324,24 @@ export const TOOL_036 = defineRule(
 
 const HEADER_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
+const HEADER_TYPES = ['string', 'integer', 'boolean'];
+
+/**
+ * A nullable primitive (A05-13): `type: [prim, 'null']`, or anyOf/oneOf of one primitive branch and `{type: 'null'}`
+ * (pydantic `str | None`). The 2026-07-28 schema-extension text limits x-mcp-header to primitive types and its own
+ * table says a null value makes the client omit the header, so the nullable form is not a violation.
+ */
+function nullablePrimitive(root: unknown, node: Obj, type: unknown): boolean {
+  if (Array.isArray(type)) {
+    const rest = type.filter((x) => x !== 'null');
+    return rest.length === 1 && type.length === 2 && HEADER_TYPES.includes(String(rest[0]));
+  }
+  if (type !== undefined || !(Array.isArray(node.anyOf) || Array.isArray(node.oneOf))) return false;
+  const u = unwrapNullable(root, node);
+  if (u.unresolved || Array.isArray(u.node.anyOf) || Array.isArray(u.node.oneOf)) return false; // not a single-branch wrapper
+  return isStr(u.node.type) && HEADER_TYPES.includes(u.node.type);
+}
+
 export const TOOL_021 = defineRule(
   {
     id: 'TOOL-021', title: 'x-mcp-header constraints', severity: { spec: 'error' }, needs: ['tools'],
@@ -348,7 +366,7 @@ export const TOOL_021 = defineRule(
       // target is not reported.
       const target = deref(t.inputSchema, v.node);
       const type = v.node.type ?? (isObj(target) ? target.type : undefined);
-      if (!['string', 'integer', 'boolean'].includes(String(type))) {
+      if (!HEADER_TYPES.includes(String(type)) && !nullablePrimitive(t.inputSchema, v.node, type)) {
         const what = type === undefined ? 'a property without a type' : `a ${JSON.stringify(type)} property`;
         out.push({ path: v.path, message: `x-mcp-header on ${what}.${suffix}` });
       }

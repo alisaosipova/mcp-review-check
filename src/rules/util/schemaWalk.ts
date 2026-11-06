@@ -119,6 +119,42 @@ export function resolvedNode(root: unknown, node: Obj): { node: Obj; unresolved:
   return { node: Object.assign({}, ...layers.slice().reverse()), unresolved: false };
 }
 
+const NULL_KEYS = new Set(['type', 'title', 'description']);
+/** A `{type: 'null'}` branch (title and description aside): an optional wrapper's null side adds no value. */
+export const isNullBranch = (s: unknown): boolean =>
+  isObj(s) && s.type === 'null' && Object.keys(s).every((x) => NULL_KEYS.has(x));
+
+/**
+ * A node seen through an optional wrapper (A05-05): pydantic `Optional[X]` and zod `.nullable()` emit
+ * `{anyOf: [X, {type: 'null'}]}`, often with X a `$ref` into `$defs`. When anyOf/oneOf has exactly one branch that is
+ * not a null branch, that branch, resolved through its local `$ref` chain, is merged under the node's own keywords
+ * (the combinator itself dropped). Any other node is returned through resolvedNode unchanged. `unresolved` is set when
+ * the node or the branch is a `$ref` that does not resolve locally (unknown shape).
+ *
+ * Used only where it can remove a false positive (free-form tests, the DATA non-text skips); rules that report on a
+ * listed value (TOOL-023 method mix, TOOL-024) keep reading the node as written, so a patch adds no finding.
+ */
+export function unwrapNullable(root: unknown, node: Obj): { node: Obj; unresolved: boolean } {
+  const r = resolvedNode(root, node);
+  if (r.unresolved) return r;
+  const base = r.node;
+  delete base.$ref;
+  for (const k of ['anyOf', 'oneOf']) {
+    const list = base[k];
+    if (!Array.isArray(list) || list.length < 2) continue;
+    const rest = list.filter((s) => !isNullBranch(s));
+    if (rest.length !== 1 || !isObj(rest[0])) continue;
+    const inner = resolvedNode(root, rest[0]);
+    if (inner.unresolved) return { node: base, unresolved: true };
+    const own = { ...base };
+    delete own[k];
+    const merged: Obj = { ...inner.node, ...own };
+    delete merged.$ref;
+    return { node: merged, unresolved: false };
+  }
+  return { node: base, unresolved: false };
+}
+
 /**
  * The closed value list of a node: `enum`, `const`, or an anyOf/oneOf whose every branch is a `const`/`enum` branch (a
  * `{type: 'null'}` branch, as in an optional enum, adds no free value). One free branch such as `{type: 'string'}`
@@ -126,18 +162,21 @@ export function resolvedNode(root: unknown, node: Obj): { node: Obj; unresolved:
  *
  * `open: true` returns the listed values even when a free branch sits beside them: the values a mode or method switch
  * names ("GET" and "POST" next to `{type: 'string'}` still mix safe and unsafe methods, TOOL-023/024).
+ * `root` resolves `$ref` branches; only the free-form tests pass it (A05-05).
  */
-export function enumValues(node: Obj, opts: { open?: boolean } = {}): unknown[] | undefined {
+export function enumValues(node: Obj, opts: { open?: boolean; root?: unknown } = {}): unknown[] | undefined {
   if (Array.isArray(node.enum)) return node.enum;
   for (const k of ['oneOf', 'anyOf']) {
     const list = node[k];
     if (Array.isArray(list) && list.length) {
       const consts: unknown[] = [];
       let closed = true;
-      for (const s of list) {
+      for (const raw of list) {
+        // With `root`, a `$ref` branch is read through its target (an Optional enum kept in `$defs`, A05-05).
+        const s = opts.root !== undefined && isObj(raw) && typeof raw.$ref === 'string' ? resolvedBranch(opts.root, raw) : raw;
         if (isObj(s) && s.const !== undefined) consts.push(s.const);
         else if (isObj(s) && Array.isArray(s.enum)) consts.push(...s.enum);
-        else if (isObj(s) && s.type === 'null' && Object.keys(s).every((x) => x === 'type' || x === 'title' || x === 'description')) continue;
+        else if (isNullBranch(s)) continue;
         else closed = false;
       }
       if ((closed || opts.open) && consts.length) return consts;
@@ -145,6 +184,12 @@ export function enumValues(node: Obj, opts: { open?: boolean } = {}): unknown[] 
   }
   if (node.const !== undefined) return [node.const];
   return undefined;
+}
+
+/** A `$ref` branch through its local chain, or the branch itself when the chain does not resolve. */
+function resolvedBranch(root: unknown, s: Obj): Obj {
+  const r = resolvedNode(root, s);
+  return r.unresolved ? s : r.node;
 }
 
 /** Structural metrics without following $ref (TOOL-020). */
