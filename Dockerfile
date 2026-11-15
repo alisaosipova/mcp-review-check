@@ -8,14 +8,14 @@
 # Base image pinned by digest (node:22-alpine, multi-arch index, resolved 2026-11-03); Dependabot (docker ecosystem,
 # .github/dependabot.yml) opens a PR when the digest changes, for example with a Node 22 patch release.
 
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS build
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS build
 ARG VERSION
 RUN test -n "$VERSION" || { echo "build-arg VERSION is required (for example 0.5.0)" >&2; exit 1; }
 # No install scripts of the package or its dependencies run.
 RUN npm install --global --ignore-scripts --no-audit --no-fund "mcp-review-check@${VERSION}" \
  && npm cache clean --force
 
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
 ARG VERSION
 LABEL org.opencontainers.image.title="mcp-review-check" \
       org.opencontainers.image.version="${VERSION}" \
